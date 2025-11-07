@@ -1,0 +1,286 @@
+"""
+LLM client wrapper using LiteLLM.
+
+Provides a unified interface for calling different LLM providers
+with automatic retry, error handling, and token tracking.
+"""
+
+import logging
+from typing import Dict, List, Optional, Any, Type, TypeVar
+from pydantic import BaseModel
+import litellm
+from litellm import completion
+
+from src.common.config import get_settings
+
+settings = get_settings()
+logger = logging.getLogger(__name__)
+
+T = TypeVar('T', bound=BaseModel)
+
+# Configure LiteLLM
+litellm.set_verbose = False  # Set to True for debugging
+
+
+class LLMClient:
+    """Client for making LLM API calls using LiteLLM."""
+
+    def __init__(self, model: Optional[str] = None):
+        """
+        Initialize LLM client.
+
+        Args:
+            model: Model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-20241022")
+                   Defaults to settings.default_llm_model
+        """
+        self.model = model or settings.default_llm_model
+
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        response_format: Optional[Dict[str, Any]] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate completion from LLM.
+
+        Args:
+            prompt: User prompt
+            system_prompt: System prompt
+            temperature: Sampling temperature (0.0 - 2.0)
+            max_tokens: Maximum tokens to generate
+            response_format: Response format (e.g., {"type": "json_object"})
+            **kwargs: Additional arguments passed to litellm.completion()
+
+        Returns:
+            Dict containing:
+                - content: Generated text
+                - prompt_tokens: Number of prompt tokens
+                - completion_tokens: Number of completion tokens
+                - total_tokens: Total tokens used
+                - model: Model used
+                - cost: Estimated cost in USD
+
+        Raises:
+            Exception: If API call fails after retries
+        """
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            logger.info(f"Calling {self.model} with {len(prompt)} char prompt")
+
+            response = completion(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format=response_format,
+                **kwargs
+            )
+
+            # Extract response data
+            content = response.choices[0].message.content
+            usage = response.usage
+
+            result = {
+                "content": content,
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "model": response.model,
+            }
+
+            # Calculate cost using LiteLLM's built-in cost tracking
+            try:
+                cost = litellm.completion_cost(completion_response=response)
+                result["cost"] = cost
+            except Exception as e:
+                logger.warning(f"Failed to calculate cost: {e}")
+                result["cost"] = 0.0
+
+            logger.info(
+                f"✓ Generated {usage.completion_tokens} tokens "
+                f"(total: {usage.total_tokens}, cost: ${result['cost']:.4f})"
+            )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"LLM generation failed: {e}")
+            raise
+
+    def generate_json(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> Dict[str, Any]:
+        """
+        Generate JSON completion from LLM.
+
+        Automatically sets response_format to JSON mode.
+
+        Args:
+            prompt: User prompt
+            system_prompt: System prompt
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional arguments
+
+        Returns:
+            Dict containing the response (same as generate())
+        """
+        return self.generate(
+            prompt=prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format={"type": "json_object"},
+            **kwargs
+        )
+
+    def generate_structured(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> tuple[T, Dict[str, Any]]:
+        """
+        Generate structured output from LLM using Pydantic models.
+
+        This method enforces that the LLM output conforms to the provided Pydantic model schema,
+        ensuring consistent and validated responses.
+
+        Args:
+            prompt: User prompt
+            response_model: Pydantic model class defining the expected output structure
+            system_prompt: System prompt
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional arguments
+
+        Returns:
+            Tuple of (parsed_model_instance, metadata_dict) where:
+                - parsed_model_instance: Validated Pydantic model instance
+                - metadata_dict: Dict with prompt_tokens, completion_tokens, total_tokens, model, cost
+
+        Raises:
+            Exception: If API call fails or response doesn't match schema
+        """
+        # Add schema to prompt to guide the LLM
+        schema_prompt = f"{prompt}\n\nRespond with JSON matching this schema:\n{response_model.model_json_schema()}"
+
+        # Generate with JSON mode
+        response = self.generate_json(
+            prompt=schema_prompt,
+            system_prompt=system_prompt,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            **kwargs
+        )
+
+        # Parse and validate response against Pydantic model
+        try:
+            import json
+            content_json = json.loads(response["content"])
+            parsed_model = response_model.model_validate(content_json)
+
+            # Return model instance and metadata separately
+            metadata = {
+                "prompt_tokens": response["prompt_tokens"],
+                "completion_tokens": response["completion_tokens"],
+                "total_tokens": response["total_tokens"],
+                "model": response["model"],
+                "cost": response["cost"],
+            }
+
+            return parsed_model, metadata
+
+        except Exception as e:
+            logger.error(f"Failed to parse LLM response into {response_model.__name__}: {e}")
+            logger.error(f"Response content: {response.get('content', '')[:500]}")
+            raise ValueError(f"LLM response doesn't match expected schema: {e}")
+
+    def batch_generate(
+        self,
+        prompts: List[str],
+        mode: str = "text",
+        response_model: Optional[Type[T]] = None,
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> List[Any]:
+        """
+        Generate completions for multiple prompts.
+
+        Supports three modes:
+        - "text": Regular text generation (returns List[Dict])
+        - "json": JSON generation (returns List[Dict])
+        - "structured": Structured output with Pydantic validation (returns List[Tuple[Model, Dict]])
+
+        Args:
+            prompts: List of user prompts
+            mode: Generation mode - "text", "json", or "structured"
+            response_model: Pydantic model class (required for mode="structured")
+            system_prompt: System prompt applied to all
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens per generation
+            **kwargs: Additional arguments
+
+        Returns:
+            - mode="text" or "json": List[Dict[str, Any]]
+            - mode="structured": List[Tuple[Model, Dict[str, Any]]]
+
+        Raises:
+            ValueError: If mode="structured" but response_model is not provided
+        """
+        if mode == "structured" and response_model is None:
+            raise ValueError("response_model is required when mode='structured'")
+
+        results = []
+        for i, prompt in enumerate(prompts):
+            logger.info(f"Processing prompt {i+1}/{len(prompts)} (mode={mode})")
+
+            if mode == "text":
+                result = self.generate(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs
+                )
+            elif mode == "json":
+                result = self.generate_json(
+                    prompt=prompt,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs
+                )
+            elif mode == "structured":
+                result = self.generate_structured(
+                    prompt=prompt,
+                    response_model=response_model,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs
+                )
+            else:
+                raise ValueError(f"Invalid mode: {mode}. Must be 'text', 'json', or 'structured'")
+
+            results.append(result)
+
+        return results

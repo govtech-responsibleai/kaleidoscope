@@ -1,0 +1,87 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16-alpine
+    container_name: kaleidoscope-db
+    environment:
+      POSTGRES_USER: kaleidoscope
+      POSTGRES_PASSWORD: kaleidoscope_dev_password
+      POSTGRES_DB: kaleidoscope
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kaleidoscope"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - kaleidoscope-network
+
+  # Kaleidoscope API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kaleidoscope-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Database
+      DATABASE_URL: postgresql://kaleidoscope:kaleidoscope_dev_password@db:5432/kaleidoscope
+      DATABASE_ECHO: "False"
+
+      # LLM Settings
+      # DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-}  # Optional - defaults to gemini/gemini-2.0-flash
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+
+      # Phoenix (optional - comment out if not using)
+      # PHOENIX_COLLECTOR_ENDPOINT: ${PHOENIX_COLLECTOR_ENDPOINT:-}
+      # PHOENIX_API_KEY: ${PHOENIX_API_KEY:-}
+
+      # API Settings
+      API_TITLE: Kaleidoscope API
+      API_VERSION: 1.0.0
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    networks:
+      - kaleidoscope-network
+    command: python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Test runner (optional - run tests in container)
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kaleidoscope-test
+    environment:
+      DATABASE_URL: postgresql://kaleidoscope:kaleidoscope_dev_password@db:5432/kaleidoscope_test
+      DATABASE_ECHO: "False"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./pytest.ini:/app/pytest.ini
+    networks:
+      - kaleidoscope-network
+    profiles:
+      - test
+    command: pytest -v
+
+volumes:
+  postgres_data:
+
+networks:
+  kaleidoscope-network:
+    driver: bridge
