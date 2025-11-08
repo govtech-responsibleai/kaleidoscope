@@ -91,7 +91,7 @@ The default model is defined in `src/common/config.py` and set to `gemini/gemini
 
 ### Overriding the Default Model
 
-You can override the default model in three ways:
+You can override the default model in two ways:
 
 **1. Per-Request Override (Recommended for testing different models)**
 ```bash
@@ -120,12 +120,6 @@ environment:
   OPENAI_API_KEY: ${OPENAI_API_KEY}
 ```
 
-**3. Shell Environment Variable**
-```bash
-export DEFAULT_LLM_MODEL=claude-3-5-sonnet-20241022
-python -m uvicorn src.main:app --reload
-```
-
 ### Supported Models (via LiteLLM)
 
 - **Gemini (requires `GEMINI_API_KEY`):**
@@ -142,11 +136,6 @@ python -m uvicorn src.main:app --reload
   - `claude-3-5-sonnet-20241022`
   - `claude-3-opus-20240229`
 
-### Get Your API Keys
-
-- **Google Gemini**: https://aistudio.google.com/app/apikey
-- **OpenAI**: https://platform.openai.com/api-keys
-- **Anthropic**: https://console.anthropic.com/
 
 ## API Endpoints
 
@@ -442,7 +431,7 @@ alembic downgrade -1
 - [x] Add unit tests for similarity functions
 - [x] Add knowledge base document upload and processing
 - [ ] Setup CI/CD
-- [ ] Deploy to serverless (AWS Lambda, GCP Cloud Functions, etc.)
+- [ ] Deploy to serverless (AWS Lambda, AWS RDS, etc.)
 - [ ] Add scoring service (judge LLM evaluation)
 
 ## License
