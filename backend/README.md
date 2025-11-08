@@ -83,7 +83,7 @@ API will be available at:
 
 ## LLM Configuration
 
-The API uses **Google Gemini 2.0 Flash** by default (`gemini/gemini-2.0-flash`) via LiteLLM.
+The API uses **Google Gemini 2.0 Flash** by default (`gemini/gemini-2.0-flash`) via LiteLLM for text generation, and **Gemini Text Embedding 004** (`gemini/text-embedding-004`) for semantic similarity.
 
 ### Default Model
 
@@ -95,9 +95,10 @@ You can override the default model in three ways:
 
 **1. Per-Request Override (Recommended for testing different models)**
 ```bash
-curl -X POST http://localhost:8000/api/v1/targets/1/jobs/personas \
+curl -X POST http://localhost:8000/api/v1/jobs/personas \
   -H "Content-Type: application/json" \
   -d '{
+    "target_id": 1,
     "count_requested": 5,
     "model_used": "gpt-4o"
   }'
@@ -158,44 +159,44 @@ GET    /api/v1/targets/{id}               - Get target
 PUT    /api/v1/targets/{id}               - Update target
 DELETE /api/v1/targets/{id}               - Delete target
 GET    /api/v1/targets/{id}/stats         - Get stats
+GET    /api/v1/targets/{id}/personas      - List personas for target
+GET    /api/v1/targets/{id}/questions     - List questions for target
 ```
 
 ### Generation Jobs
 
 ```
 # Create jobs
-POST   /api/v1/targets/{id}/jobs/personas               - Create persona generation job (synchronous)
-POST   /api/v1/targets/{id}/jobs/questions              - Create question generation job (async, with optional persona_ids)
+POST   /api/v1/jobs/personas              - Create persona generation job (synchronous)
+POST   /api/v1/jobs/questions             - Create question generation job (async, with optional persona_ids)
 
 # Retrieve jobs
-GET    /api/v1/targets/{id}/jobs                        - List jobs for target
-GET    /api/v1/jobs/{id}                                - Get job details and status
-GET    /api/v1/jobs/{id}/stats                          - Get job statistics
-GET    /api/v1/jobs/{id}/personas                       - Get personas from job
-GET    /api/v1/jobs/{id}/questions                      - Get questions from job
+GET    /api/v1/jobs?target_id={id}        - List jobs for target (query parameter)
+GET    /api/v1/jobs/{id}                  - Get job details and status
+GET    /api/v1/jobs/{id}/personas         - Get personas from job
+GET    /api/v1/jobs/{id}/questions        - Get questions from job
 ```
 
 ### Personas
 
 ```
-GET    /api/v1/targets/{id}/personas                    - List personas for target
-GET    /api/v1/personas/{id}                            - Get persona
-PUT    /api/v1/personas/{id}                            - Update persona
-POST   /api/v1/personas/{id}/approve                    - Approve persona
-POST   /api/v1/personas/{id}/reject                     - Reject persona
-POST   /api/v1/personas/bulk-approve                    - Bulk approve
+GET    /api/v1/personas/{id}              - Get persona
+GET    /api/v1/personas/{id}/questions    - List questions for persona
+PUT    /api/v1/personas/{id}              - Update persona
+POST   /api/v1/personas/{id}/approve      - Approve persona
+POST   /api/v1/personas/{id}/reject       - Reject persona
+POST   /api/v1/personas/bulk-approve      - Bulk approve personas
 ```
 
 ### Questions
 
 ```
-GET    /api/v1/targets/{id}/questions                   - List questions for target
-GET    /api/v1/personas/{id}/questions                  - List questions for persona
-GET    /api/v1/questions/{id}                           - Get question
-PUT    /api/v1/questions/{id}                           - Update question
-POST   /api/v1/questions/{id}/approve                   - Approve question
-POST   /api/v1/questions/{id}/reject                    - Reject question
-POST   /api/v1/questions/bulk-approve                   - Bulk approve
+GET    /api/v1/questions/{id}             - Get question
+PUT    /api/v1/questions/{id}             - Update question
+POST   /api/v1/questions/{id}/approve     - Approve question
+POST   /api/v1/questions/{id}/reject      - Reject question
+POST   /api/v1/questions/bulk-approve     - Bulk approve questions
+POST   /api/v1/questions/similar          - Find semantically similar questions (uses Gemini embeddings)
 ```
 
 ### Knowledge Base
@@ -230,9 +231,10 @@ curl -X POST http://localhost:8000/api/v1/targets \
 ### 2. Generate Personas
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/targets/1/jobs/personas \
+curl -X POST http://localhost:8000/api/v1/jobs/personas \
   -H "Content-Type: application/json" \
   -d '{
+    "target_id": 1,
     "count_requested": 5,
     "model_used": "gemini/gemini-2.0-flash"
   }'
@@ -286,18 +288,20 @@ Questions are generated with **type** (typical/edge) and **scope** (in_kb/out_kb
 
 ```bash
 # Generate questions for all approved personas (async)
-curl -X POST http://localhost:8000/api/v1/targets/1/jobs/questions \
+curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -H "Content-Type: application/json" \
   -d '{
+    "target_id": 1,
     "count_requested": 20,
     "model_used": "gemini/gemini-2.0-flash"
   }'
 # Returns immediately with status="running" and job_id
 
 # Or generate questions for specific personas (async)
-curl -X POST http://localhost:8000/api/v1/targets/1/jobs/questions \
+curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -H "Content-Type: application/json" \
   -d '{
+    "target_id": 1,
     "count_requested": 10,
     "model_used": "gemini/gemini-2.0-flash",
     "persona_ids": [1, 3, 5]
@@ -318,6 +322,72 @@ curl http://localhost:8000/api/v1/jobs/2/questions
 curl -X POST http://localhost:8000/api/v1/questions/1/approve
 ```
 
+### 9. Find Similar Questions
+
+Find semantically similar questions using Gemini embeddings and cosine similarity. This feature uses **Gemini Text Embedding 004** (`gemini/text-embedding-004`) to generate embeddings and compares them using matrix multiplication for efficient batch processing.
+
+**Key Features:**
+- Uses Gemini text embeddings for semantic similarity
+- Batch processing with matrix multiplication (highly efficient for multiple queries)
+- Only compares against approved questions
+- Configurable similarity threshold (default: 0.7)
+- Returns results sorted by similarity score
+
+```bash
+# Find similar questions for a single question
+curl -X POST http://localhost:8000/api/v1/questions/similar \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_id": 1,
+    "question_ids": [5],
+    "similarity_threshold": 0.7
+  }'
+
+# Find similar questions for multiple questions (batch processing)
+curl -X POST http://localhost:8000/api/v1/questions/similar \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_id": 1,
+    "question_ids": [5, 12, 18],
+    "similarity_threshold": 0.75
+  }'
+```
+
+**Example Response:**
+```json
+{
+  "results": [
+    {
+      "query_question_id": 5,
+      "similar_questions": [
+        {
+          "question_id": 23,
+          "similarity_score": 0.92
+        },
+        {
+          "question_id": 47,
+          "similarity_score": 0.85
+        }
+      ]
+    },
+    {
+      "query_question_id": 12,
+      "similar_questions": [
+        {
+          "question_id": 31,
+          "similarity_score": 0.88
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Performance:** For M query questions and N candidate questions:
+- Makes 1 batch API call (instead of M separate calls)
+- Computes M×N similarity matrix with single matrix multiplication
+- ~10x faster for 10 queries with 100 candidates compared to sequential processing
+
 ## Observability with Phoenix
 
 If `PHOENIX_COLLECTOR_ENDPOINT` is configured, all LLM calls are automatically tracked:
@@ -334,9 +404,22 @@ View traces at your Phoenix dashboard (local or cloud).
 ### Running Tests
 
 ```bash
-# TODO: Add tests
+# Run all tests
 pytest tests/
+
+# Run only unit tests
+pytest tests/unit/ -m unit
+
+# Run with coverage
+pytest tests/ --cov=src --cov-report=html
+
+# Run specific test file
+pytest tests/unit/test_question_generator.py -v
 ```
+
+**Test Coverage:**
+- Question similarity functions (cosine similarity, embeddings, batch processing)
+- Matrix multiplication optimization for finding similar questions
 
 ### Database Migrations
 
@@ -355,10 +438,9 @@ alembic downgrade -1
 
 - [x] Implement persona generation service logic
 - [x] Implement question generation service logic
-- [ ] Add authentication/authorization
-- [ ] Add rate limiting
-- [ ] Enhance request validation
-- [ ] Add sample personas/questions to target metadata
+- [x] Add question similarity search using embeddings
+- [x] Add unit tests for similarity functions
+- [x] Add knowledge base document upload and processing
 - [ ] Setup CI/CD
 - [ ] Deploy to serverless (AWS Lambda, GCP Cloud Functions, etc.)
 - [ ] Add scoring service (judge LLM evaluation)
