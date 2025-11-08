@@ -201,7 +201,6 @@ The frontend integrates with the Kaleidoscope backend API:
 APP_NAME = "Kaleidoscope"
 JOB_POLLING_INTERVAL = 10000  // 10 seconds
 DEFAULT_PERSONA_COUNT = 5
-DEFAULT_LLM_MODEL = "gpt-4o-mini"
 ```
 
 ### Theme (lib/theme.tsx)
