@@ -7,10 +7,18 @@ import {
   CardContent,
   Typography,
   CircularProgress,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  TextField,
 } from "@mui/material";
+import { Edit as EditIcon } from "@mui/icons-material";
 import { useParams } from "next/navigation";
 import { targetApi } from "@/lib/api";
-import { TargetResponse, TargetStats } from "@/lib/types";
+import { TargetResponse, TargetStats, TargetUpdate, EndpointType } from "@/lib/types";
 import DocumentList from "@/components/DocumentList";
 
 export default function TargetOverview() {
@@ -21,6 +29,9 @@ export default function TargetOverview() {
   const [stats, setStats] = useState<TargetStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [documentRefreshKey, setDocumentRefreshKey] = useState(0);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editForm, setEditForm] = useState<TargetUpdate>({});
 
   const fetchData = async () => {
     try {
@@ -41,7 +52,34 @@ export default function TargetOverview() {
     fetchData();
   }, [targetId]);
 
-  const mockAccuracy = stats ? 85.3 : 0;
+  const handleEditOpen = () => {
+    if (target) {
+      setEditForm({
+        name: target.name,
+        agency: target.agency || "",
+        purpose: target.purpose || "",
+        target_users: target.target_users || "",
+        api_endpoint: target.api_endpoint || "",
+        endpoint_type: target.endpoint_type || EndpointType.AIBOTS,
+        endpoint_config: target.endpoint_config || { api_key: "" },
+      });
+      setEditOpen(true);
+    }
+  };
+
+  const handleEditSave = async () => {
+    setEditLoading(true);
+    try {
+      await targetApi.update(targetId, editForm);
+      await fetchData();
+      setEditOpen(false);
+    } catch (error) {
+      console.error("Failed to update target:", error);
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -64,9 +102,14 @@ export default function TargetOverview() {
       <Box sx={{ display: "flex", gap: 3, mb: 3, flexDirection: { xs: "column", md: "row" } }}>
         <Card sx={{ flex: { md: "0 0 55%" }, height: "350px" }}>
           <CardContent>
-            <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-              Target Details
-            </Typography>
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+              <Typography variant="h6" fontWeight={600}>
+                Target Details
+              </Typography>
+              <IconButton size="small" onClick={handleEditOpen}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Box>
             <Box sx={{ display: "flex", gap: 2 }}>
               <Box sx={{ flex: 1 }}>
                 <Box mb={2}>
@@ -126,19 +169,6 @@ export default function TargetOverview() {
         <Card sx={{ flex: 1 }}>
           <CardContent>
             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Accuracy
-            </Typography>
-            <Typography variant="h4" fontWeight={600}>
-              {mockAccuracy}%
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              (Mocked)
-            </Typography>
-          </CardContent>
-        </Card>
-        <Card sx={{ flex: 1 }}>
-          <CardContent>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
               Personas
             </Typography>
             <Typography variant="h4" fontWeight={600}>
@@ -157,6 +187,62 @@ export default function TargetOverview() {
           </CardContent>
         </Card>
       </Box>
+
+      {/* Edit Target Dialog */}
+      <Dialog open={editOpen} onClose={() => setEditOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Edit Target</DialogTitle>
+        <DialogContent>
+          <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
+            <TextField
+              label="Name"
+              fullWidth
+              value={editForm.name || ""}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            />
+            <TextField
+              label="Agency"
+              fullWidth
+              value={editForm.agency || ""}
+              onChange={(e) => setEditForm({ ...editForm, agency: e.target.value })}
+            />
+            <TextField
+              label="Purpose"
+              fullWidth
+              multiline
+              rows={2}
+              value={editForm.purpose || ""}
+              onChange={(e) => setEditForm({ ...editForm, purpose: e.target.value })}
+            />
+            <TextField
+              label="Target Users"
+              fullWidth
+              value={editForm.target_users || ""}
+              onChange={(e) => setEditForm({ ...editForm, target_users: e.target.value })}
+            />
+            <TextField
+              label="API Endpoint"
+              fullWidth
+              value={editForm.api_endpoint || ""}
+              onChange={(e) => setEditForm({ ...editForm, api_endpoint: e.target.value })}
+            />
+            <TextField
+              label="AIBots API Key"
+              fullWidth
+              value={editForm.endpoint_config?.api_key || ""}
+              onChange={(e) => setEditForm({
+                ...editForm,
+                endpoint_config: { ...editForm.endpoint_config, api_key: e.target.value }
+              })}
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditOpen(false)} disabled={editLoading}>Cancel</Button>
+          <Button onClick={handleEditSave} variant="contained" disabled={editLoading}>
+            {editLoading ? <CircularProgress size={24} /> : "Save"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

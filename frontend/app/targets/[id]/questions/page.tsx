@@ -32,6 +32,7 @@ import {
   Close as CloseIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
+  Delete as DeleteIcon,
 } from "@mui/icons-material";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
@@ -225,9 +226,13 @@ export default function QuestionsPage() {
     setSimilarQuestionsMap({});
   };
 
-  const getMockScore = (questionId: number) => {
-    const seed = questionId * 123;
-    return (70 + ((seed % 30) / 100)).toFixed(2);
+  const handleDeleteQuestion = async (questionId: number) => {
+    try {
+      await questionApi.delete(questionId);
+      fetchData();
+    } catch (error) {
+      console.error("Failed to delete question:", error);
+    }
   };
 
   const getPersonaTitle = (personaId: number) => {
@@ -480,7 +485,7 @@ export default function QuestionsPage() {
                   <TableCell align="center">Persona</TableCell>
                   <TableCell align="center">Type</TableCell>
                   <TableCell align="center">Scope</TableCell>
-                  <TableCell align="center">Score</TableCell>
+                  <TableCell align="center" width={50}></TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -511,12 +516,13 @@ export default function QuestionsPage() {
                       />
                     </TableCell>
                     <TableCell align="center">
-                      <Typography fontWeight={600}>
-                        {getMockScore(question.id)}%
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        (Mocked)
-                      </Typography>
+                      <IconButton
+                        size="small"
+                        onClick={() => handleDeleteQuestion(question.id)}
+                        sx={{ opacity: 0.5, "&:hover": { opacity: 1, color: "error.main" } }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
                     </TableCell>
                   </TableRow>
                 ))}
