@@ -5,7 +5,7 @@ SQLAlchemy ORM models for the database schema.
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, ForeignKey,
-    Enum, Float, UniqueConstraint
+    Enum, Float, UniqueConstraint, JSON
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -56,7 +56,8 @@ class Target(Base):
     purpose = Column(Text, nullable=True)
     target_users = Column(Text, nullable=True)
     api_endpoint = Column(String, nullable=True)
-    knowledge_base_path = Column(String, nullable=True)
+    endpoint_type = Column(String, nullable=True)  # "aibots", "custom_api", etc.
+    endpoint_config = Column(JSON, nullable=True)  # Type-specific config
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -149,6 +150,38 @@ class Question(Base):
 
     def __repr__(self):
         return f"<Question(id={self.id}, persona_id={self.persona_id}, type={self.type.value}, scope={self.scope.value}, status={self.status.value})>"
+
+
+class Answer(Base):
+    """Generated answer from AIBots API for a question."""
+    __tablename__ = "answers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # AIBots identifiers
+    chat_id = Column(String, nullable=True)
+    message_id = Column(String, nullable=True)
+
+    # Important fields (extracted for easy querying)
+    answer_content = Column(Text, nullable=False)
+    system_prompt = Column(Text, nullable=True)
+    model = Column(String, nullable=True)
+    guardrails = Column(JSON, nullable=True)
+    rag_citations = Column(JSON, nullable=True)
+
+    # Full raw response for traceability
+    raw_response = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    question = relationship("Question", backref="answers")
+    target = relationship("Target", backref="answers")
+
+    def __repr__(self):
+        return f"<Answer(id={self.id}, question_id={self.question_id})>"
 
 
 class KnowledgeBaseDocument(Base):

@@ -3,8 +3,14 @@ Pydantic models for Target API requests and responses.
 """
 
 from datetime import datetime
-from typing import Optional
-from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any
+from enum import Enum
+from pydantic import BaseModel, Field, model_validator
+
+
+class EndpointType(str, Enum):
+    """Supported endpoint types."""
+    aibots = "aibots"
 
 
 class TargetBase(BaseModel):
@@ -14,7 +20,16 @@ class TargetBase(BaseModel):
     purpose: Optional[str] = Field(None, description="Purpose of the target application")
     target_users: Optional[str] = Field(None, description="Expected target users")
     api_endpoint: Optional[str] = Field(None, description="API endpoint to call for generating responses")
-    knowledge_base_path: Optional[str] = Field(None, description="Path to knowledge base documents")
+    endpoint_type: Optional[EndpointType] = Field(None, description="Endpoint type: 'aibots', etc.")
+    endpoint_config: Optional[Dict[str, Any]] = Field(None, description="Type-specific endpoint config")
+
+    @model_validator(mode='after')
+    def validate_endpoint_config(self):
+        if self.endpoint_type == EndpointType.aibots:
+            config = self.endpoint_config or {}
+            if not config.get("api_key"):
+                raise ValueError("api_key is required in endpoint_config for aibots endpoint")
+        return self
 
 
 class TargetCreate(TargetBase):
@@ -29,7 +44,16 @@ class TargetUpdate(BaseModel):
     purpose: Optional[str] = None
     target_users: Optional[str] = None
     api_endpoint: Optional[str] = None
-    knowledge_base_path: Optional[str] = None
+    endpoint_type: Optional[EndpointType] = None
+    endpoint_config: Optional[Dict[str, Any]] = None
+
+    @model_validator(mode='after')
+    def validate_endpoint_config(self):
+        if self.endpoint_type == EndpointType.aibots:
+            config = self.endpoint_config or {}
+            if not config.get("api_key"):
+                raise ValueError("api_key is required in endpoint_config for aibots endpoint")
+        return self
 
 
 class TargetResponse(TargetBase):

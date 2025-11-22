@@ -18,7 +18,7 @@ from src.common.database.connection import init_db
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
 
 # Import routers from services
-from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents
+from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -74,6 +74,7 @@ app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", 
 # Jobs router has no prefix because routes define full paths (e.g., /targets/{id}/jobs/...)
 app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"])
 app.include_router(kb_documents.router, prefix=settings.api_prefix, tags=["Knowledge Base"])
+app.include_router(answers.router, prefix=f"{settings.api_prefix}/answers", tags=["Answers"])
 
 # Future: Include routers from other services
 # from src.scoring.api.routes import scores

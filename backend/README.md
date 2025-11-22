@@ -200,6 +200,18 @@ DELETE /api/v1/knowledge-base/documents/{id}            - Delete KB document
 
 **Supported document formats:** PDF, DOCX, TXT, MD
 
+### Answers
+
+Generate answers for questions using external APIs (e.g., AIBots).
+
+```
+POST   /api/v1/answers                         - Generate answer for a question
+GET    /api/v1/answers/{id}                    - Get answer by ID
+GET    /api/v1/answers/question/{question_id}  - Get all answers for a question
+GET    /api/v1/answers/target/{target_id}      - Get all answers for a target
+DELETE /api/v1/answers/{id}                    - Delete answer
+```
+
 ## Usage Example
 
 ### 1. Create a Target
@@ -212,10 +224,22 @@ curl -X POST http://localhost:8000/api/v1/targets \
     "agency": "GovTech Singapore",
     "purpose": "Provide responsible AI guidance",
     "target_users": "Government officers",
-    "api_endpoint": "https://api.example.com/chat",
-    "knowledge_base_path": "/data/rai_docs"
+    "api_endpoint": "https://api.uat.aibots.gov.sg/v1.0/api",
+    "endpoint_type": "aibots",
+    "endpoint_config": {
+      "api_key": "your_aibots_api_key"
+    }
   }'
 ```
+
+**Target fields:**
+- `name` (required): Name of the target application
+- `agency`: Agency owning the target
+- `purpose`: Purpose of the target application
+- `target_users`: Expected target users
+- `api_endpoint`: Base URL for the API (required for answer generation)
+- `endpoint_type`: Type of endpoint (`aibots` currently supported)
+- `endpoint_config`: Type-specific config (for `aibots`: `{"api_key": "..."}`)
 
 ### 2. Generate Personas
 
@@ -311,7 +335,36 @@ curl http://localhost:8000/api/v1/jobs/2/questions
 curl -X POST http://localhost:8000/api/v1/questions/1/approve
 ```
 
-### 9. Find Similar Questions
+### 9. Generate Answers
+
+Generate answers for approved questions using the target's configured API endpoint:
+
+```bash
+# Generate an answer for a question
+curl -X POST http://localhost:8000/api/v1/answers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "question_id": 1
+  }'
+```
+
+**Response:**
+```json
+{
+  "id": 1,
+  "question_id": 1,
+  "target_id": 1,
+  "answer_content": "The AI model should...",
+  "model": "azure~gpt-4",
+  "rag_citations": [
+    {"id": 1, "chunk": "Relevant knowledge base content..."},
+    {"id": 2, "chunk": "Another relevant chunk..."}
+  ],
+  "created_at": "2024-01-01T00:00:00"
+}
+```
+
+### 10. Find Similar Questions
 
 Find semantically similar questions using Gemini embeddings and cosine similarity. This feature uses **Gemini Text Embedding 004** (`gemini/text-embedding-004`) to generate embeddings and compares them using matrix multiplication for efficient batch processing.
 
@@ -430,6 +483,7 @@ alembic downgrade -1
 - [x] Add question similarity search using embeddings
 - [x] Add unit tests for similarity functions
 - [x] Add knowledge base document upload and processing
+- [x] Add answer generation service (AIBots integration)
 - [ ] Setup CI/CD
 - [ ] Deploy to serverless (AWS Lambda, AWS RDS, etc.)
 - [ ] Add scoring service (judge LLM evaluation)

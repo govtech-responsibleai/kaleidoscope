@@ -8,7 +8,17 @@ WORKDIR /app
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     postgresql-client \
+    wget \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# Install SSL certs for Cloudflare
+RUN wget --no-check-certificate -q -O /usr/local/share/ca-certificates/Cloudflare_CA.crt \
+https://seed-general-public-files.s3.ap-southeast-1.amazonaws.com/seed-cloudflare-root-certs/Cloudflare_CA.pem \
+&& update-ca-certificates
+
+# Set SSL cert path for httpx
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # Copy requirements first for better caching
 COPY requirements.txt .
