@@ -26,7 +26,7 @@ import {
   InsertDriveFile as FileIcon,
 } from "@mui/icons-material";
 import { targetApi, kbDocumentApi } from "@/lib/api";
-import { TargetCreate } from "@/lib/types";
+import { TargetCreate, EndpointType } from "@/lib/types";
 
 interface CreateTargetModalProps {
   open: boolean;
@@ -51,13 +51,23 @@ export default function CreateTargetModal({
     purpose: "",
     target_users: "",
     api_endpoint: "",
-    knowledge_base_path: "",
+    endpoint_type: EndpointType.AIBOTS,
+    endpoint_config: { api_key: "" },
   });
 
   const handleChange = (field: keyof TargetCreate) => (
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     setFormData({ ...formData, [field]: event.target.value });
+  };
+
+  const handleConfigChange = (field: "api_key") => (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setFormData({
+      ...formData,
+      endpoint_config: { ...formData.endpoint_config, [field]: event.target.value },
+    });
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,7 +136,8 @@ export default function CreateTargetModal({
         purpose: "",
         target_users: "",
         api_endpoint: "",
-        knowledge_base_path: "",
+        endpoint_type: EndpointType.AIBOTS,
+        endpoint_config: { api_key: "" },
       });
       setSelectedFiles([]);
       setUploadProgress(0);
@@ -201,10 +212,10 @@ export default function CreateTargetModal({
             disabled={loading || uploadingFiles}
           />
           <TextField
-            label="Knowledge Base Path"
+            label="AIBots API Key"
             fullWidth
-            value={formData.knowledge_base_path}
-            onChange={handleChange("knowledge_base_path")}
+            value={formData.endpoint_config?.api_key || ""}
+            onChange={handleConfigChange("api_key")}
             disabled={loading || uploadingFiles}
           />
 

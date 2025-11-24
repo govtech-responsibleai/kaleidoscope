@@ -22,13 +22,22 @@ export enum JobStatus {
 }
 
 // Target types
+export enum EndpointType {
+  AIBOTS = "aibots",
+}
+
+export interface EndpointConfig {
+  api_key?: string;
+}
+
 export interface TargetBase {
   name: string;
   agency?: string;
   purpose?: string;
   target_users?: string;
   api_endpoint?: string;
-  knowledge_base_path?: string;
+  endpoint_type?: EndpointType;
+  endpoint_config?: EndpointConfig;
 }
 
 export interface TargetCreate extends TargetBase {}
@@ -39,7 +48,8 @@ export interface TargetUpdate {
   purpose?: string;
   target_users?: string;
   api_endpoint?: string;
-  knowledge_base_path?: string;
+  endpoint_type?: EndpointType;
+  endpoint_config?: EndpointConfig;
 }
 
 export interface TargetResponse extends TargetBase {
