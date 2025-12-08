@@ -4,8 +4,8 @@ SQLAlchemy ORM models for the database schema.
 
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, ForeignKey,
-    Enum, Float, UniqueConstraint, JSON
+    Boolean, Column, Integer, String, Text, DateTime, ForeignKey,
+    Enum, Float, UniqueConstraint, JSON, func
 )
 from sqlalchemy.orm import relationship
 import enum
@@ -13,6 +13,17 @@ import enum
 from src.common.database.connection import Base
 
 
+##### ENUMS #####
+
+# Common 
+class JobStatusEnum(enum.Enum):
+    """Status of a generic job."""
+    running = "running"
+    completed = "completed"
+    failed = "failed"
+    paused = "paused" # For QAJob
+
+# Scoring
 class StatusEnum(enum.Enum):
     """Status for personas and questions."""
     pending = "pending"
@@ -20,31 +31,45 @@ class StatusEnum(enum.Enum):
     rejected = "rejected"
     edited = "edited"
 
-
 class JobTypeEnum(enum.Enum):
     """Type of generation job."""
     persona_generation = "persona_generation"
     question_generation = "question_generation"
-
-
-class JobStatusEnum(enum.Enum):
-    """Status of a generation job."""
-    running = "running"
-    completed = "completed"
-    failed = "failed"
-
 
 class QuestionTypeEnum(enum.Enum):
     """Type of question."""
     typical = "typical"  # Typical use case questions
     edge = "edge"  # Edge case questions
 
-
 class QuestionScopeEnum(enum.Enum):
     """Scope of question relative to knowledge base."""
     in_kb = "in_kb"  # Question about content within the knowledge base
     out_kb = "out_kb"  # Question about content outside the knowledge base
 
+
+# Scoring
+class QAJobTypeEnum(enum.Enum):
+    """Type of generation job."""
+    claim_scoring_full = "claim_scoring_full" # Handles answer generation -> process claims -> judge claims
+    response_scoring_full = "response_scoring_full" # Handles answer generation -> judge answers
+    claim_scoring_only = "claim_scoring_only" # Handles read claims -> judge claims
+    response_scoring_only = "response_scoring_only" # Handles read answers -> judge claims
+
+class QAJobStageEnum(enum.Enum):
+    """Stages of a QAJob"""
+    starting = "starting"
+    generating_answers = "generating_answers"
+    processing_answers = "processing_answers" # Any type of answer processing, e.g. extracting claims, or processing full responses
+    scoring_answers = "scoring_answers" # Any type of answer scoring, e.g. claim scoring or response scoring
+    completed = "completed" # Any type of answer scoring, e.g. claim scoring or response scoring
+
+class JudgeTypeEnum(enum.Enum):
+    """Type of judge evaluation."""
+    claim_based = "claim_based"  # Evaluates claims individually, then aggregates
+    response_level = "response_level"  # Evaluates entire response holistically
+
+
+##### GENERAL #####
 
 class Target(Base):
     """Target application for evaluation."""
@@ -66,10 +91,13 @@ class Target(Base):
     personas = relationship("Persona", back_populates="target", cascade="all, delete-orphan")
     questions = relationship("Question", back_populates="target", cascade="all, delete-orphan")
     kb_documents = relationship("KnowledgeBaseDocument", back_populates="target", cascade="all, delete-orphan")
+    snapshots = relationship("Snapshot", back_populates="target", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Target(id={self.id}, name='{self.name}')>"
 
+
+##### QUERY GENERATION #####
 
 class Job(Base):
     """Generation job for personas or questions."""
@@ -147,6 +175,8 @@ class Question(Base):
     job = relationship("Job", back_populates="questions_generated")
     persona = relationship("Persona", back_populates="questions")
     target = relationship("Target", back_populates="questions")
+    answers = relationship("Answer", back_populates="question", cascade="all, delete-orphan")
+    qa_jobs = relationship("QAJob", back_populates="question", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Question(id={self.id}, persona_id={self.persona_id}, type={self.type.value}, scope={self.scope.value}, status={self.status.value})>"
@@ -158,7 +188,7 @@ class Answer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
-    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+    snapshot_id = Column(Integer, ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # AIBots identifiers
     chat_id = Column(String, nullable=True)
@@ -174,14 +204,26 @@ class Answer(Base):
     # Full raw response for traceability
     raw_response = Column(JSON, nullable=True)
 
+    # Annotation selection
+    is_selected_for_annotation = Column(Boolean, default=False, nullable=False)
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
-    question = relationship("Question", backref="answers")
-    target = relationship("Target", backref="answers")
+    snapshot = relationship("Snapshot", back_populates="answers")
+    question = relationship("Question", back_populates="answers")
+    claims = relationship("AnswerClaim", back_populates="answer", cascade="all, delete-orphan")
+    scores = relationship("AnswerScore", back_populates="answer", cascade="all, delete-orphan")
+    annotation = relationship("Annotation", back_populates="answer", uselist=False, cascade="all, delete-orphan")
+    qa_job = relationship("QAJob", back_populates="answer", uselist=False, cascade="all, delete-orphan")
+
+    # Unique constraint: one answer per question per snapshot
+    __table_args__ = (
+        UniqueConstraint('question_id', 'snapshot_id', name='uix_question_snapshot_answer'),
+    )
 
     def __repr__(self):
-        return f"<Answer(id={self.id}, question_id={self.question_id})>"
+        return f"<Answer(id={self.id}, question_id={self.question_id}, snapshot_id={self.snapshot_id})>"
 
 
 class KnowledgeBaseDocument(Base):
@@ -204,3 +246,173 @@ class KnowledgeBaseDocument(Base):
 
     def __repr__(self):
         return f"<KnowledgeBaseDocument(id={self.id}, target_id={self.target_id}, filename='{self.filename}')>"
+
+
+##### SCORING #####
+
+class Snapshot(Base):
+    """Snapshots for a target."""
+    __tablename__ = "snapshots"
+
+    # PK
+    id = Column(Integer, primary_key=True, index=True)
+    # FK
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Fields
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    target = relationship("Target", back_populates="snapshots")
+    answers = relationship("Answer", back_populates="snapshot", cascade="all, delete-orphan")
+    qa_jobs = relationship("QAJob", back_populates="snapshot", cascade="all, delete-orphan")
+
+    def __repr__(self):
+        return f"<Snapshot(id={self.id}, target_id={self.target_id}, name='{self.name}')>"
+
+class QAJob(Base):
+    """QA job for the scoring pipeline for 1 question - answer pair."""
+    __tablename__ = "qa_jobs"
+
+    # PK
+    id = Column(Integer, primary_key=True, index=True)
+    # FK
+    snapshot_id = Column(Integer, ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
+    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Fields
+    type = Column(Enum(QAJobTypeEnum), nullable=False, index=True)
+    status = Column(Enum(JobStatusEnum), default=JobStatusEnum.running, nullable=False, index=True)
+    stage = Column(Enum(QAJobStageEnum), default=QAJobStageEnum.starting, nullable=False, index=True)
+    prompt_tokens = Column(Integer, default=0)
+    completion_tokens = Column(Integer, default=0)
+    total_cost = Column(Float, default=0.0)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    snapshot = relationship("Snapshot", back_populates="qa_jobs")
+    question = relationship("Question", back_populates="qa_jobs")
+    answer = relationship("Answer", back_populates="qa_job", uselist=False)
+    judge = relationship("Judge", back_populates="qa_jobs")
+
+    def __repr__(self):
+        return f"<QAJob(id={self.id}, type={self.type.value}, status={self.status.value}, stage={self.stage.value})>"
+
+
+class Judge(Base):
+    """Judges for the scoring pipeline."""
+    __tablename__ = "judges"
+
+    # PK
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # Fields
+    name = Column(String, nullable=False)
+    model_name = Column(String, nullable=False)
+    prompt_template = Column(Text, nullable=False)
+    params = Column(JSON, nullable=False, default=dict)
+    judge_type = Column(Enum(JudgeTypeEnum), nullable=False)
+    is_baseline = Column(Boolean, default=False, nullable=False)
+    is_editable = Column(Boolean, default=True, nullable=False)
+
+    # Relationships
+    qa_jobs = relationship("QAJob", back_populates="judge")
+    answer_scores = relationship("AnswerScore", back_populates="judge")
+
+
+
+class AnswerClaim(Base):
+    """
+    A single claim extracted from an answer.
+    """
+    __tablename__ = "answer_claims"
+
+    # PK
+    id = Column(Integer, primary_key=True, index=True)
+    # FK
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Fields
+    claim_index = Column(Integer, nullable=False) # position of this claim within the answer (0, 1, 2, …)
+    text = Column(Text, nullable=False)
+    checkworthy = Column(Boolean, nullable=False)  # True = worth scoring, False = not worth scoring
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    checked_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    answer = relationship("Answer", back_populates="claims")
+    claim_scores = relationship("AnswerClaimScore", back_populates="claim", cascade="all, delete-orphan")
+
+
+class AnswerClaimScore(Base):
+    """
+    Score for a *single claim*, usually tied to an answer-level score / judge.
+    """
+    __tablename__ = "answer_claim_scores"
+
+    # PK
+    id = Column(Integer, primary_key=True, index=True)
+    # FK
+    claim_id = Column(Integer, ForeignKey("answer_claims.id"), nullable=False)
+    answer_score_id = Column(Integer, ForeignKey("answer_scores.id"), nullable=False)
+
+    # Fields
+    label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate (Hallucinated)
+    explanation = Column(Text, nullable=False)  # Why claim is/isn't supported by KB\
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    
+    # Relationships
+    claim = relationship("AnswerClaim", back_populates="claim_scores")
+    answer_score = relationship("AnswerScore", back_populates="claim_scores")
+
+
+class AnswerScore(Base):
+    """
+    One row per (answer, judge) pair:
+    - aggregate score at answer level
+    - can optionally be broken down into claim-level scores
+    """
+    __tablename__ = "answer_scores"
+
+    # PK
+    id = Column(Integer, primary_key=True, index=True)
+    # FK
+    answer_id = Column(Integer, ForeignKey("answers.id"), nullable=False)
+    judge_id = Column(Integer, ForeignKey("judges.id"), nullable=False)
+
+    # Fields
+    overall_label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate (Hallucinated)
+    explanation = Column(Text, nullable=True)  # Aggregated explanation
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    answer = relationship("Answer", back_populates="scores")
+    judge = relationship("Judge", back_populates="answer_scores")
+    claim_scores = relationship("AnswerClaimScore", back_populates="answer_score", cascade="all, delete-orphan")
+
+class Annotation(Base):
+    """
+    Human annotation at answer level.
+    """
+    __tablename__ = "annotations"
+
+    id = Column(Integer, primary_key=True, index=True)
+
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    # if you have annotators / annotation sets, add FKs here:
+    # annotation_set_id = Column(Integer, ForeignKey("annotation_sets.id"), nullable=False)
+    # annotator_id = Column(Integer, ForeignKey("annotators.id"), nullable=True)
+
+    label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate
+    notes = Column(Text, nullable=True)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    answer = relationship("Answer", back_populates="annotation")

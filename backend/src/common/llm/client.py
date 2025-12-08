@@ -9,7 +9,7 @@ import logging
 from typing import Dict, List, Optional, Any, Type, TypeVar
 from pydantic import BaseModel
 import litellm
-from litellm import completion
+from litellm import completion, acompletion
 
 from src.common.config import get_settings
 
@@ -210,6 +210,95 @@ class LLMClient:
         except Exception as e:
             logger.error(f"Failed to parse LLM response into {response_model.__name__}: {e}")
             logger.error(f"Response content: {response.get('content', '')[:500]}")
+            raise ValueError(f"LLM response doesn't match expected schema: {e}")
+
+    async def generate_structured_async(
+        self,
+        prompt: str,
+        response_model: Type[T],
+        system_prompt: Optional[str] = None,
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        **kwargs
+    ) -> tuple[T, Dict[str, Any]]:
+        """
+        Generate structured output from LLM using Pydantic models (async version).
+
+        This is the async version of generate_structured() for use with asyncio.
+        Use this when you need to make multiple LLM calls concurrently.
+
+        Args:
+            prompt: User prompt
+            response_model: Pydantic model class defining the expected output structure
+            system_prompt: System prompt
+            temperature: Sampling temperature
+            max_tokens: Maximum tokens to generate
+            **kwargs: Additional arguments
+
+        Returns:
+            Tuple of (parsed_model_instance, metadata_dict) where:
+                - parsed_model_instance: Validated Pydantic model instance
+                - metadata_dict: Dict with prompt_tokens, completion_tokens, total_tokens, model, cost
+
+        Raises:
+            Exception: If API call fails or response doesn't match schema
+        """
+        # Add schema to prompt to guide the LLM
+        schema_prompt = f"{prompt}\n\nRespond with JSON matching this schema:\n{response_model.model_json_schema()}"
+
+        # Build messages
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": schema_prompt})
+
+        try:
+            logger.info(f"Calling {self.model} (async) with {len(schema_prompt)} char prompt")
+
+            # Call async LLM with JSON mode
+            response = await acompletion(
+                model=self.model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+                **kwargs
+            )
+
+            # Extract response data
+            content = response.choices[0].message.content
+            usage = response.usage
+
+            # Calculate cost using LiteLLM's built-in cost tracking
+            try:
+                cost = litellm.completion_cost(completion_response=response)
+            except Exception as e:
+                logger.warning(f"Failed to calculate cost: {e}")
+                cost = 0.0
+
+            logger.info(
+                f"✓ Generated {usage.completion_tokens} tokens "
+                f"(total: {usage.total_tokens}, cost: ${cost:.4f})"
+            )
+
+            # Parse and validate response against Pydantic model
+            import json
+            content_json = json.loads(content)
+            parsed_model = response_model.model_validate(content_json)
+
+            # Return model instance and metadata separately
+            metadata = {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+                "model": response.model,
+                "cost": cost,
+            }
+
+            return parsed_model, metadata
+
+        except Exception as e:
+            logger.error(f"Async LLM generation failed for {response_model.__name__}: {e}")
             raise ValueError(f"LLM response doesn't match expected schema: {e}")
 
     def batch_generate(
