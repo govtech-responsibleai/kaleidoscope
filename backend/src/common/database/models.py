@@ -210,12 +210,12 @@ class Answer(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relationships
+    qa_jobs = relationship("QAJob", back_populates="answer", cascade="all, delete")
     snapshot = relationship("Snapshot", back_populates="answers")
     question = relationship("Question", back_populates="answers")
     claims = relationship("AnswerClaim", back_populates="answer", cascade="all, delete-orphan")
     scores = relationship("AnswerScore", back_populates="answer", cascade="all, delete-orphan")
     annotation = relationship("Annotation", back_populates="answer", uselist=False, cascade="all, delete-orphan")
-    qa_job = relationship("QAJob", back_populates="answer", uselist=False, cascade="all, delete-orphan")
 
     # Unique constraint: one answer per question per snapshot
     __table_args__ = (
@@ -281,8 +281,8 @@ class QAJob(Base):
     # FK
     snapshot_id = Column(Integer, ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
     question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
-    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
-    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=False, index=True)
+    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="SET NULL"), nullable=True, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Fields
     type = Column(Enum(QAJobTypeEnum), nullable=False, index=True)
@@ -297,8 +297,13 @@ class QAJob(Base):
     # Relationships
     snapshot = relationship("Snapshot", back_populates="qa_jobs")
     question = relationship("Question", back_populates="qa_jobs")
-    answer = relationship("Answer", back_populates="qa_job", uselist=False)
+    answer = relationship("Answer", back_populates="qa_jobs")
     judge = relationship("Judge", back_populates="qa_jobs")
+
+    # Unique constraint: one job per (snapshot, question, judge) combination
+    __table_args__ = (
+        UniqueConstraint('snapshot_id', 'question_id', 'judge_id', name='uix_snapshot_question_judge'),
+    )
 
     def __repr__(self):
         return f"<QAJob(id={self.id}, type={self.type.value}, status={self.status.value}, stage={self.stage.value})>"
@@ -339,7 +344,7 @@ class AnswerClaim(Base):
 
     # Fields
     claim_index = Column(Integer, nullable=False) # position of this claim within the answer (0, 1, 2, …)
-    text = Column(Text, nullable=False)
+    claim_text = Column(Text, nullable=False)
     checkworthy = Column(Boolean, nullable=False)  # True = worth scoring, False = not worth scoring
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -359,7 +364,7 @@ class AnswerClaimScore(Base):
     # PK
     id = Column(Integer, primary_key=True, index=True)
     # FK
-    claim_id = Column(Integer, ForeignKey("answer_claims.id"), nullable=False)
+    claim_id = Column(Integer, ForeignKey("answer_claims.id", ondelete="CASCADE"), nullable=False)
     answer_score_id = Column(Integer, ForeignKey("answer_scores.id"), nullable=False)
 
     # Fields
@@ -383,8 +388,8 @@ class AnswerScore(Base):
     # PK
     id = Column(Integer, primary_key=True, index=True)
     # FK
-    answer_id = Column(Integer, ForeignKey("answers.id"), nullable=False)
-    judge_id = Column(Integer, ForeignKey("judges.id"), nullable=False)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=True)
+    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=True)
 
     # Fields
     overall_label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate (Hallucinated)

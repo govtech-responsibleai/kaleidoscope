@@ -2,18 +2,24 @@
 Service for generating answers using AIBots API.
 """
 
+import asyncio
 import logging
 import httpx
+import litellm 
 from typing import Dict, Any
 
 from sqlalchemy.orm import Session
 
 from src.common.config import get_settings
 from src.common.database.models import Question, Answer, QAJob, JobStatusEnum, QAJobStageEnum
-from src.common.database.repositories.answer_repo import AnswerRepository
-from src.common.database.repositories.question_repo import QuestionRepository
-from src.common.database.repositories.qa_job_repo import QAJobRepository
+from src.common.database.repositories import (
+    AnswerRepository,
+    QuestionRepository,
+    QAJobRepository,
+    KBDocumentRepository
+)
 from src.common.llm import CostTracker
+from src.common.models.qa_job import QAJobFailureMessage
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -42,6 +48,9 @@ class AnswerGenerator:
                 raise ValueError(f"QAJob {job_id} not found")
             self.cost_tracker = CostTracker(job_id=job_id)
 
+    #######################
+    # Synchronous methods #
+    #######################
     def generate(self, question_id: int, snapshot_id: int = None) -> Answer:
         """
         Generate an answer for a question using AIBots API.
@@ -78,6 +87,7 @@ class AnswerGenerator:
 
         base_url = target.api_endpoint.rstrip("/")
 
+        # Comment the next 3 lines out and uncomment _mock_answer to generate mock responses.
         # Create chat session
         chat_id = self._create_chat(question, api_key, base_url)
 
@@ -87,6 +97,8 @@ class AnswerGenerator:
         # Extract and store answer
         answer = self._save_answer(question, chat_id, api_response, snapshot_id)
 
+        # # MMOCK ANSWER, bring this back to run a simple LLM call as the mock chatbot
+        # answer = self._mock_answer(question_id, snapshot_id)
         return answer
 
     def _create_chat(self, question: Question, api_key: str, base_url: str) -> str:
@@ -196,7 +208,53 @@ class AnswerGenerator:
 
         return answer
 
-    def generate_for_job(self, question_id: int, snapshot_id: int) -> None:
+    def _mock_answer(self, question_id: int, snapshot_id: int) -> Answer:
+        # Get question
+        question = QuestionRepository.get_by_id(self.db, question_id)
+        # Get compiled KB text from documents
+        kb_text = KBDocumentRepository.get_compiled_text(self.db, question.target_id)
+
+        system_prompt = (
+            "You are a member of the Responsible AI team at an organisation. you are to reference the given knowledge base "
+            "and reply the user. It is important that you be straightforward, very concise, and clear. The knowledge base "
+            "will be provided along with the user input for your reference."
+        )
+        user_prompt = f"##Question:\n{question.text}\n\n##Knowledge Base\n{kb_text}"
+
+        print("START: Mocking answer for question", question_id)
+        response = litellm.completion(
+            model="gpt-5-nano",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=1.0,
+        )
+        print("DONE: Mocking answer for question", question_id)
+
+        content = response.choices[0].message.content
+        answer_data = {
+            "snapshot_id": snapshot_id,
+            "question_id": question_id,
+            "chat_id": "mock-chat",
+            "message_id": question_id,
+            "answer_content": content,
+            "system_prompt": system_prompt,
+            "model": response.model,
+            "guardrails": {},
+            "rag_citations": [],
+            "raw_response": response.model_dump(),
+            "is_selected_for_annotation": False,
+        }
+
+        answer = AnswerRepository.create(self.db, answer_data)
+        logger.info("Cheap LLM mock answer %s for question %s", answer.id, question_id)
+        return answer
+
+    ########################
+    # Asynchronous methods #
+    ########################
+    async def generate_for_job(self, question_id: int, snapshot_id: int) -> None:
         """
         Generate answer for a QA job with status tracking.
 
@@ -231,35 +289,228 @@ class AnswerGenerator:
             existing_answer = AnswerRepository.get_by_question_and_snapshot(self.db, question_id, snapshot_id)
 
             if existing_answer:
+                answer = existing_answer
                 logger.info(f"Answer already exists for question {question_id}, snapshot {snapshot_id}. Skipping generation.")
             else:
-                # Generate new answer using existing generate() method
-                answer = self.generate(question_id, snapshot_id)
+                # Generate new answer using async flow to avoid blocking the loop
+                answer = await self.generate_async(question_id, snapshot_id)
                 logger.info(f"Generated answer {answer.id} for question {question_id}, snapshot {snapshot_id}")
 
-            # Update job costs
-            self._update_job_status()
+            # Update job with answer_id and costs
+            self._update_job(answer_id=answer.id)
 
             # Call next stage in pipeline
             from src.scoring.services.claim_processor import extract_and_check_claims
-            extract_and_check_claims(self.db, self.job_id)
+            await extract_and_check_claims(self.db, self.job_id)
 
         except Exception as e:
             logger.error(f"Answer generation failed for job {self.job_id}: {e}", exc_info=True)
-            raise
 
-    def _update_job_status(self) -> None:
-        """Update job costs in database."""
+            failure_message = QAJobFailureMessage("generating_answers")
+            existing_answer = AnswerRepository.get_by_question_and_snapshot(self.db, question_id, snapshot_id)
+
+            if existing_answer:
+                answer = AnswerRepository.update(
+                    self.db,
+                    existing_answer.id,
+                    {
+                        "answer_content": failure_message,
+                        "chat_id": None,
+                        "message_id": None,
+                        "is_selected_for_annotation": False
+                    }
+                )
+                logger.info(f"Updated existing answer {answer.id} to failure state for question {question_id}")
+            else:
+                # Create default answer to mark failure and preserve partial progress
+                answer_data = {
+                    "snapshot_id": snapshot_id,
+                    "question_id": question_id,
+                    "answer_content": failure_message,
+                    "chat_id": None,
+                    "message_id": None,
+                    "is_selected_for_annotation": False
+                }
+                answer = AnswerRepository.create(self.db, answer_data)
+                logger.info(f"Created failure answer {answer.id} for question {question_id}")
+
+            # Update job with failure status and answer_id
+            QAJobRepository.update_status(
+                self.db,
+                self.job_id,
+                JobStatusEnum.failed,
+                self.job.stage,
+                answer_id=answer.id
+            )
+
+    
+    async def generate_async(self, question_id: int, snapshot_id: int = None) -> Answer:
+        """
+        Async variant of generate() for use in asyncio pipelines.
+
+        Args:
+            question_id: ID of the question to generate answer for
+            snapshot_id: Optional snapshot ID to associate with the answer
+
+        Returns:
+            Created Answer object
+        """
+        question = QuestionRepository.get_by_id(self.db, question_id)
+        if not question:
+            raise ValueError(f"Question with id {question_id} not found")
+
+        target = question.target
+        if not target.endpoint_type or target.endpoint_type != "aibots":
+            raise ValueError(f"Target {target.id} endpoint type '{target.endpoint_type}' not supported. Only 'aibots' is supported.")
+
+        if not target.api_endpoint:
+            raise ValueError(f"Target {target.id} missing api_endpoint")
+
+        config = target.endpoint_config or {}
+        api_key = config.get("api_key")
+
+        if not api_key:
+            raise ValueError(f"Target {target.id} missing api_key in endpoint_config")
+
+        base_url = target.api_endpoint.rstrip("/")
+
+        # # Comment the next 3 lines out and uncomment _mock_answer to generate mock responses.
+        # Create chat session
+        chat_id = await self._create_chat_async(question, api_key, base_url)
+
+        # Send message and get response
+        api_response = await self._send_message_async(chat_id, question.text, api_key, base_url)
+
+        # Extract and store answer
+        answer = await self._save_answer_async(question, chat_id, api_response, snapshot_id)
+
+        # # MOCK ANSWER, bring this back to run a simple LLM call as the mock chatbot
+        # answer = await self._mock_answer_async(question_id, snapshot_id)
+        return answer
+    
+
+    async def _create_chat_async(self, question: Question, api_key: str, base_url: str) -> str:
+        """Async helper mirroring _create_chat to avoid blocking."""
+        url = f"{base_url}/chats"
+
+        payload = {
+            "name": f"Kaleidoscope - Q{question.id}",
+            "agents": []
+        }
+
+        headers = {
+            "X-ATLAS-Key": api_key,
+            "Content-Type": "application/json"
+        }
+
+        print(f"[async] Creating chat at: {url}")
+        print(f"[async] Payload: {payload}")
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+
+        print(f"[async] Create chat response: {data}")
+        return data["id"]
+
+    async def _send_message_async(self, chat_id: str, content: str, api_key: str, base_url: str) -> Dict[str, Any]:
+        """Async helper mirroring _send_message."""
+        url = f"{base_url}/chats/{chat_id}/messages?streaming=false&cloak=false"
+
+        headers = {
+            "X-ATLAS-Key": api_key,
+        }
+
+        data = {"content": content}
+
+        print(f"[async] Sending message to: {url}")
+        print(f"[async] Message payload: {data}")
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(url, data=data, headers=headers)
+            print(f"[async] Message response status: {response.status_code}")
+            print(f"[async] Message response body: {response.text}")
+            response.raise_for_status()
+
+        return response.json()
+
+    async def _save_answer_async(
+        self,
+        question: Question,
+        chat_id: str,
+        api_response: Dict[str, Any],
+        snapshot_id: int = None
+    ) -> Answer:
+        """Async wrapper for _save_answer to maintain API symmetry."""
+        return self._save_answer(question, chat_id, api_response, snapshot_id)
+    
+
+    async def _mock_answer_async(self, question_id: int, snapshot_id: int) -> Answer:
+        """Async version of the LiteLLM-backed mock answer."""
+        question = QuestionRepository.get_by_id(self.db, question_id)
+        kb_text = KBDocumentRepository.get_compiled_text(self.db, question.target_id)
+
+        system_prompt = (
+            "You are a member of the Responsible AI team at an organisation. you are to reference the given knowledge base "
+            "and reply the user. It is important that you be straightforward, very concise, and clear. The knowledge base "
+            "will be provided along with the user input for your reference."
+        )
+        user_prompt = f"##Question:\n{question.text}\n\n##Knowledge Base\n{kb_text}"
+
+        print("START: Async Mocking answer for question", question_id)
+        response = await litellm.acompletion(
+            model="gpt-5-nano",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=1.0,
+        )
+        print("DONE: Async Mocking answer for question", question_id)
+
+        content = response.choices[0].message.content
+        answer_data = {
+            "snapshot_id": snapshot_id,
+            "question_id": question_id,
+            "chat_id": "mock-chat",
+            "message_id": question_id,
+            "answer_content": content,
+            "system_prompt": system_prompt,
+            "model": response.model,
+            "guardrails": {},
+            "rag_citations": [],
+            "raw_response": response.model_dump(),
+            "is_selected_for_annotation": False,
+        }
+
+        answer = AnswerRepository.create(self.db, answer_data)
+        logger.info("[async] Cheap LLM mock answer %s for question %s", answer.id, question_id)
+        return answer
+
+    def _update_job(self, answer_id: int = None) -> None:
+        """
+        Update job with answer_id and costs in database.
+
+        Args:
+            answer_id: Optional answer ID to set
+        """
         if self.cost_tracker is None:
             return
 
         summary = self.cost_tracker.get_summary()
 
-        # Update job with accumulated costs
-        self.job.prompt_tokens += summary["prompt_tokens"]
-        self.job.completion_tokens += summary["completion_tokens"]
-        self.job.total_cost += summary["total_cost"]
-        self.db.commit()
+        # Update job using repository (keeps current status/stage, adds costs, sets answer_id)
+        QAJobRepository.update_status(
+            self.db,
+            self.job_id,
+            status=self.job.status,  # Keep current status
+            stage=self.job.stage,    # Keep current stage
+            answer_id=answer_id,
+            prompt_tokens=summary["prompt_tokens"],
+            completion_tokens=summary["completion_tokens"],
+            total_cost=summary["total_cost"]
+        )
 
         logger.info(f"Updated QAJob {self.job_id} costs: ${summary['total_cost']:.4f}")
 
@@ -269,16 +520,7 @@ def generate_answer_for_question(db: Session, question_id: int) -> Answer:
     generator = AnswerGenerator(db)
     return generator.generate(question_id)
 
-
-def generate_answer_for_job(db: Session, job_id: int, question_id: int, snapshot_id: int) -> None:
-    """
-    Generate answer for a QA job (convenience function).
-
-    Args:
-        db: Database session
-        job_id: QAJob ID to track progress
-        question_id: Question ID to generate answer for
-        snapshot_id: Snapshot ID for the answer
-    """
+async def generate_answer_for_job(db: Session, job_id: int, question_id: int, snapshot_id: int) -> None:
+    """Async convenience wrapper for QA job pipeline."""
     generator = AnswerGenerator(db, job_id)
-    generator.generate_for_job(question_id, snapshot_id)
+    await generator.generate_for_job(question_id, snapshot_id)

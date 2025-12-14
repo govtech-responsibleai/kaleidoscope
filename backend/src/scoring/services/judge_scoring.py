@@ -18,6 +18,7 @@ from src.common.database.repositories.kb_document_repo import KBDocumentReposito
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
 from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult
+from src.common.models.qa_job import QAJobFailureMessage
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +93,24 @@ class AnswerJudge:
             self._update_job_status()
 
             # Update job status to completed
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.completed, QAJobStageEnum.scoring_answers)
+            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.completed, QAJobStageEnum.completed)
             logger.info(f"QAJob {self.job_id}: Completed with overall_label={answer_score.overall_label}")
 
         except Exception as e:
             logger.error(f"Answer scoring failed for job {self.job_id}: {e}", exc_info=True)
-            raise
+
+            # Create failure message AnswerScore to mark failure and preserve partial progress
+            answer_score_data = {
+                "answer_id": self.answer.id,
+                "judge_id": self.judge.id,
+                "overall_label": False,  # Mark as inaccurate due to scoring failure
+                "explanation": QAJobFailureMessage("scoring_answers")
+            }
+            answer_score = AnswerScoreRepository.create(self.db, answer_score_data)
+            logger.info(f"Created failure message answer score {answer_score.id} for answer {self.answer.id}")
+
+            # Update job with failure status
+            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.failed, self.job.stage)
 
     async def _score_claim_based(self):
         """
@@ -140,7 +153,9 @@ class AnswerJudge:
             # Render prompt for this claim
             prompt = render_template(
                 "claim_level_judge.md",
-                claim_text=claim.text,
+                question_text=self.answer.question.text,
+                answer_text=self.answer.answer_content,
+                claim_text=claim.claim_text,
                 kb_documents=kb_text,
                 **self.judge.params
             )
@@ -168,8 +183,8 @@ class AnswerJudge:
             claim_score_data = {
                 "claim_id": claim.id,
                 "answer_score_id": answer_score.id,
-                "label": result.is_accurate,
-                "explanation": result.explanation
+                "label": result.label,
+                "explanation": result.reasoning
             }
             AnswerClaimScoreRepository.create(self.db, claim_score_data)
 
@@ -197,22 +212,20 @@ class AnswerJudge:
             # Track costs
             self.cost_tracker.add_call(metadata)
 
-            logger.debug(f"Claim {claim.id} scored: accurate={result.is_accurate}")
+            logger.debug(f"Claim {claim.id} scored: accurate={result.label}")
             return result
 
         except Exception as e:
             logger.error(f"Failed to score claim {claim.id}: {e}", exc_info=True)
-            # Return a default result on error
             return ClaimJudgmentResult(
-                is_accurate=False,
-                explanation=f"Error during scoring: {str(e)}"
+                label=False,
+                reasoning=f"Error during scoring: {e}"
             )
 
     def _aggregate_claim_scores(self, results: List[ClaimJudgmentResult]) -> tuple[bool, str]:
         """
         Aggregate claim-level scores to overall answer label.
-
-        Uses majority vote: if more than 50% of claims are accurate, answer is accurate.
+        All claims must be accurate for overall_label to be accurate.
 
         Args:
             results: List of ClaimJudgmentResult objects
@@ -223,11 +236,11 @@ class AnswerJudge:
         if not results:
             return True, "No claims to evaluate"
 
-        accurate_count = sum(1 for r in results if r.is_accurate)
+        accurate_count = sum(1 for r in results if r.label)
         total_count = len(results)
         accuracy_ratio = accurate_count / total_count
 
-        overall_label = accuracy_ratio > 0.5  # Majority vote
+        overall_label = accurate_count == total_count
 
         explanation = (
             f"Aggregated from {total_count} claims: "
@@ -277,45 +290,37 @@ class AnswerJudge:
             answer_score_data = {
                 "answer_id": self.answer.id,
                 "judge_id": self.judge.id,
-                "overall_label": result.is_accurate,
-                "explanation": result.explanation
+                "overall_label": result.label,
+                "explanation": result.reasoning
             }
             answer_score = AnswerScoreRepository.create(self.db, answer_score_data)
 
-            logger.info(f"Scored answer {self.answer.id} holistically. Accurate: {result.is_accurate}")
+            logger.info(f"Scored answer {self.answer.id} holistically. Accurate: {result.label}")
             return answer_score
 
         except Exception as e:
             logger.error(f"Failed to score answer {self.answer.id}: {e}", exc_info=True)
-            # Create a default score on error
-            answer_score_data = {
-                "answer_id": self.answer.id,
-                "judge_id": self.judge.id,
-                "overall_label": False,
-                "explanation": f"Error during scoring: {str(e)}"
-            }
-            return AnswerScoreRepository.create(self.db, answer_score_data)
+            raise
 
     def _update_job_status(self) -> None:
         """Update job costs in database."""
         summary = self.cost_tracker.get_summary()
 
-        # Update job with accumulated costs
-        self.job.prompt_tokens += summary["prompt_tokens"]
-        self.job.completion_tokens += summary["completion_tokens"]
-        self.job.total_cost += summary["total_cost"]
-        self.db.commit()
+        # Update job using repository (keeps current status/stage, adds costs)
+        QAJobRepository.update_status(
+            self.db,
+            self.job_id,
+            status=self.job.status,  # Keep current status
+            stage=self.job.stage,    # Keep current stage
+            prompt_tokens=summary["prompt_tokens"],
+            completion_tokens=summary["completion_tokens"],
+            total_cost=summary["total_cost"]
+        )
 
         logger.info(f"Updated QAJob {self.job_id} costs: ${summary['total_cost']:.4f}")
 
 
-def score_answer(db: Session, job_id: int) -> None:
-    """
-    Score an answer for a QA job (convenience function).
-
-    Args:
-        db: Database session
-        job_id: QAJob ID to process
-    """
+async def score_answer(db: Session, job_id: int) -> None:
+    """Async convenience wrapper for running the judge."""
     judge = AnswerJudge(db, job_id)
-    asyncio.run(judge.score())
+    await judge.score()

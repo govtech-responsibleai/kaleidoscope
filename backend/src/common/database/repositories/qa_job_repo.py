@@ -69,13 +69,51 @@ class QAJobRepository:
         )
 
     @staticmethod
+    def get_by_snapshot_question_judge(
+        db: Session,
+        snapshot_id: int,
+        question_id: int,
+        judge_id: int
+    ) -> Optional[QAJob]:
+        """Get QA job for a specific snapshot, question, and judge combination."""
+        return (
+            db.query(QAJob)
+            .filter(
+                QAJob.snapshot_id == snapshot_id,
+                QAJob.question_id == question_id,
+                QAJob.judge_id == judge_id
+            )
+            .order_by(QAJob.updated_at.desc())
+            .first()
+        )
+
+    @staticmethod
     def update_status(
         db: Session,
         qa_job_id: int,
         status: JobStatusEnum,
-        stage: Optional[QAJobStageEnum] = None
+        stage: Optional[QAJobStageEnum] = None,
+        answer_id: Optional[int] = None,
+        prompt_tokens: Optional[int] = None,
+        completion_tokens: Optional[int] = None,
+        total_cost: Optional[float] = None
     ) -> Optional[QAJob]:
-        """Update QA job status and optionally stage."""
+        """
+        Update QA job status and optionally stage, answer_id, and costs.
+
+        Args:
+            db: Database session
+            qa_job_id: QA job ID
+            status: New status
+            stage: Optional new stage
+            answer_id: Optional answer ID to set
+            prompt_tokens: Optional prompt tokens to add (accumulated)
+            completion_tokens: Optional completion tokens to add (accumulated)
+            total_cost: Optional total cost to add (accumulated)
+
+        Returns:
+            Updated QAJob object or None if not found
+        """
         qa_job = db.query(QAJob).filter(QAJob.id == qa_job_id).first()
         if not qa_job:
             return None
@@ -83,6 +121,14 @@ class QAJobRepository:
         qa_job.status = status
         if stage is not None:
             qa_job.stage = stage
+        if answer_id is not None:
+            qa_job.answer_id = answer_id
+        if prompt_tokens is not None:
+            qa_job.prompt_tokens += prompt_tokens
+        if completion_tokens is not None:
+            qa_job.completion_tokens += completion_tokens
+        if total_cost is not None:
+            qa_job.total_cost += total_cost
 
         db.commit()
         db.refresh(qa_job)

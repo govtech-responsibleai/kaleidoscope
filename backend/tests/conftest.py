@@ -293,8 +293,8 @@ def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
     qa_job = QAJob(
         snapshot_id=sample_snapshot.id,
         question_id=sample_question.id,
-        answer_id=sample_answer.id,
         judge_id=judge.id,
+        answer_id=sample_answer.id,
         type=QAJobTypeEnum.claim_scoring_full,
         status=JobStatusEnum.running,
         stage=QAJobStageEnum.starting
@@ -349,7 +349,7 @@ def sample_claims(test_db, sample_answer):
         AnswerClaim(
             answer_id=sample_answer.id,
             claim_index=0,
-            text="AI poses privacy risks.",
+            claim_text="AI poses privacy risks.",
             checkworthy=True,
             created_at=datetime.utcnow(),
             checked_at=datetime.utcnow()
@@ -357,7 +357,7 @@ def sample_claims(test_db, sample_answer):
         AnswerClaim(
             answer_id=sample_answer.id,
             claim_index=1,
-            text="Bias is a concern.",
+            claim_text="Bias is a concern.",
             checkworthy=True,
             created_at=datetime.utcnow(),
             checked_at=datetime.utcnow()
@@ -365,7 +365,7 @@ def sample_claims(test_db, sample_answer):
         AnswerClaim(
             answer_id=sample_answer.id,
             claim_index=2,
-            text="Transparency is important.",
+            claim_text="Transparency is important.",
             checkworthy=True,
             created_at=datetime.utcnow(),
             checked_at=datetime.utcnow()

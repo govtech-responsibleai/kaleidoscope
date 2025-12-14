@@ -51,11 +51,16 @@ from src.common.models.snapshot import (
     SnapshotUpdate,
     SnapshotResponse
 )
+from src.common.models.answer import (
+    AnswerCreate,
+    AnswerResponse,
+    AnswerListResponse,
+    AnswerBulkSelection
+)
 from src.common.models.judge import (
     JudgeType,
     JudgeCreate,
     JudgeUpdate,
-    JudgeDuplicate,
     JudgeResponse,
     ClaimJudgmentResult,
     ResponseJudgmentResult
@@ -83,7 +88,7 @@ from src.common.models.qa_job import (
     QAJobStage,
     QAJobCreate,
     QAJobStart,
-    QAJobResume,
+    QAJobPauseRequest,
     QAJobResponse,
     QAJobDetailResponse,
     QAJobListResponse
@@ -133,11 +138,15 @@ __all__ = [
     "SnapshotCreate",
     "SnapshotUpdate",
     "SnapshotResponse",
+    # Answer
+    "AnswerCreate",
+    "AnswerResponse",
+    "AnswerListResponse",
+    "AnswerBulkSelection",
     # Judge
     "JudgeType",
     "JudgeCreate",
     "JudgeUpdate",
-    "JudgeDuplicate",
     "JudgeResponse",
     "ClaimJudgmentResult",
     "ResponseJudgmentResult",
@@ -161,7 +170,7 @@ __all__ = [
     "QAJobStage",
     "QAJobCreate",
     "QAJobStart",
-    "QAJobResume",
+    "QAJobPauseRequest",
     "QAJobResponse",
     "QAJobDetailResponse",
     "QAJobListResponse",

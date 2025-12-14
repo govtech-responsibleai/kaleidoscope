@@ -41,13 +41,15 @@ class AnswerScoreRepository:
         answer_id: int,
         judge_id: int
     ) -> Optional[AnswerScore]:
-        """Get score for a specific answer and judge combination."""
+        """Get most recent score for a specific answer and judge combination."""
         return (
             db.query(AnswerScore)
             .filter(
                 AnswerScore.answer_id == answer_id,
                 AnswerScore.judge_id == judge_id
             )
+            .order_by(AnswerScore.created_at.desc())
+            .limit(1)
             .first()
         )
 

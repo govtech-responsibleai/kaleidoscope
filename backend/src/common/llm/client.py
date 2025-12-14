@@ -4,15 +4,17 @@ LLM client wrapper using LiteLLM.
 Provides a unified interface for calling different LLM providers
 with automatic retry, error handling, and token tracking.
 """
-
 import logging
 from typing import Dict, List, Optional, Any, Type, TypeVar
 from pydantic import BaseModel
 import litellm
-from litellm import completion, acompletion
 
-from src.common.config import get_settings
+import dotenv
+dotenv.load_dotenv()
 
+from src.common.config import get_settings, MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE
+
+# litellm.callbacks = ["arize_phoenix"] # See https://docs.litellm.ai/docs/observability/phoenix_integration
 settings = get_settings()
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,6 @@ T = TypeVar('T', bound=BaseModel)
 
 # Configure LiteLLM
 litellm.set_verbose = False  # Set to True for debugging
-
 
 class LLMClient:
     """Client for making LLM API calls using LiteLLM."""
@@ -72,10 +73,14 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
+        # Check if model forces temperature params (e.g. for reasoning)
+        if [keyword in self.model for keyword in MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE]:
+            temperature = 1.0
+
         try:
             logger.info(f"Calling {self.model} with {len(prompt)} char prompt")
 
-            response = completion(
+            response = litellm.completion(
                 model=self.model,
                 messages=messages,
                 temperature=temperature,
@@ -181,6 +186,7 @@ class LLMClient:
         # Add schema to prompt to guide the LLM
         schema_prompt = f"{prompt}\n\nRespond with JSON matching this schema:\n{response_model.model_json_schema()}"
 
+        # MOCK temporarily - uncomment below for real LLM calls
         # Generate with JSON mode
         response = self.generate_json(
             prompt=schema_prompt,
@@ -211,6 +217,8 @@ class LLMClient:
             logger.error(f"Failed to parse LLM response into {response_model.__name__}: {e}")
             logger.error(f"Response content: {response.get('content', '')[:500]}")
             raise ValueError(f"LLM response doesn't match expected schema: {e}")
+
+        return parsed_model, metadata
 
     async def generate_structured_async(
         self,
@@ -252,11 +260,16 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": schema_prompt})
 
+        # Check if model forces temperature params (e.g. for reasoning)
+        if [keyword in self.model for keyword in MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE]:
+            temperature = 1.0
+            
         try:
             logger.info(f"Calling {self.model} (async) with {len(schema_prompt)} char prompt")
 
+            # MOCK temporarily - uncomment below for real LLM calls
             # Call async LLM with JSON mode
-            response = await acompletion(
+            response = await litellm.acompletion(
                 model=self.model,
                 messages=messages,
                 temperature=temperature,

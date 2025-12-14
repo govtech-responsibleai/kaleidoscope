@@ -7,23 +7,30 @@ import asyncio
 from typing import List
 from datetime import datetime
 from sqlalchemy.orm import Session
-import nltk
+
+try:
+    import nltk  # type: ignore
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    nltk = None
 
 from src.common.database.models import AnswerClaim, JobStatusEnum, QAJobStageEnum
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
+from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
 from src.common.models import CheckworthyResult
+from src.common.models.qa_job import QAJobFailureMessage
 
 logger = logging.getLogger(__name__)
 
-# Ensure NLTK punkt tokenizer is available
-try:
-    nltk.data.find('tokenizers/punkt')
-except LookupError:
-    nltk.download('punkt')
+# Ensure NLTK punkt tokenizer is available when the package exists.
+if nltk is not None:  # pragma: no branch
+    try:
+        nltk.data.find('tokenizers/punkt')
+    except LookupError:  # pragma: no cover - download path
+        nltk.download('punkt')
 
 
 class ClaimProcessor:
@@ -46,8 +53,9 @@ class ClaimProcessor:
         if not self.job:
             raise ValueError(f"QAJob {job_id} not found")
 
-        # Initialize LLM client
-        self.llm_client = LLMClient(model="gemini/gemini-2.0-flash-lite")
+        # Lazily initialize LLM client so tests can override after instantiation
+        self._llm_model_name = "gemini/gemini-2.0-flash-lite"
+        self.llm_client = None
 
     async def process(self) -> None:
         """
@@ -89,11 +97,16 @@ class ClaimProcessor:
 
             # Call next stage in pipeline
             from src.scoring.services.judge_scoring import score_answer
-            score_answer(self.db, self.job_id)
+            await score_answer(self.db, self.job_id)
 
         except Exception as e:
             logger.error(f"Claim processing failed for job {self.job_id}: {e}", exc_info=True)
-            raise
+
+            # Mark job as failed but DON'T create a failure message record
+            # The natural indicator is claim.checked_at: if generate_structured_async fails,
+            # claim.checked_at is never updated and remains == created_at, which signals
+            # an unchecked claim. The retry logic in _trigger_pipeline_stage will detect this.
+            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.failed, self.job.stage)
 
     def _extract_claims(self, answer_id: int) -> List[AnswerClaim]:
         """
@@ -111,6 +124,8 @@ class ClaimProcessor:
             raise ValueError(f"Answer with id {answer_id} not found")
 
         # Use NLTK to split into sentences
+        if nltk is None:
+            raise ImportError("nltk is required for claim extraction. Install nltk to run claim processing.")
         sentences = nltk.sent_tokenize(answer.answer_content)
 
         # Create AnswerClaim records
@@ -121,7 +136,7 @@ class ClaimProcessor:
             claim_data = {
                 "answer_id": answer_id,
                 "claim_index": idx,
-                "text": sentence.strip(),
+                "claim_text": sentence.strip(),
                 "checkworthy": True,  # Default to True, will be updated by check_claims
                 "created_at": current_time,
                 "checked_at": current_time  # Initially same as created_at
@@ -167,53 +182,59 @@ class ClaimProcessor:
         # Render prompt
         prompt = render_template(
             "checkworthy.md",
-            claim_text=claim.text
+            claim_text=claim.claim_text
         )
 
         # Call LLM
         try:
-            result, metadata = await self.llm_client.generate_structured_async(
+            client = self._get_llm_client()
+            result, metadata = await client.generate_structured_async(
                 prompt=prompt,
                 response_model=CheckworthyResult,
                 temperature=0.7
             )
 
+            logger.info(f"Prompt checked: {prompt}")
+
             # Track costs
             self.cost_tracker.add_call(metadata)
 
             # Update claim
-            claim.checkworthy = result.is_checkworthy
+            claim.checkworthy = result.checkworthy
             claim.checked_at = datetime.utcnow()
             self.db.commit()
 
-            logger.debug(f"Claim {claim.id} checkworthy={result.is_checkworthy}: {result.reasoning}")
+            logger.debug(f"Claim {claim.id} checkworthy={result.checkworthy}: {result.reasoning}")
 
         except Exception as e:
             logger.error(f"Failed to check claim {claim.id}: {e}", exc_info=True)
-            # On error, keep checkworthy=True to be safe
-            claim.checked_at = datetime.utcnow()
-            self.db.commit()
+            raise
 
     def _update_job_status(self) -> None:
         """Update job costs in database."""
         summary = self.cost_tracker.get_summary()
 
-        # Update job with accumulated costs
-        self.job.prompt_tokens += summary["prompt_tokens"]
-        self.job.completion_tokens += summary["completion_tokens"]
-        self.job.total_cost += summary["total_cost"]
-        self.db.commit()
+        # Update job using repository (keeps current status/stage, adds costs)
+        QAJobRepository.update_status(
+            self.db,
+            self.job_id,
+            status=self.job.status,  # Keep current status
+            stage=self.job.stage,    # Keep current stage
+            prompt_tokens=summary["prompt_tokens"],
+            completion_tokens=summary["completion_tokens"],
+            total_cost=summary["total_cost"]
+        )
 
         logger.info(f"Updated QAJob {self.job_id} costs: ${summary['total_cost']:.4f}")
 
+    def _get_llm_client(self):
+        """Create or return the cached LLM client."""
+        if self.llm_client is None:
+            self.llm_client = LLMClient(model=self._llm_model_name)
+        return self.llm_client
 
-def extract_and_check_claims(db: Session, job_id: int) -> None:
-    """
-    Extract and check claims for a QA job (convenience function).
 
-    Args:
-        db: Database session
-        job_id: QAJob ID to process
-    """
+async def extract_and_check_claims(db: Session, job_id: int) -> None:
+    """Async convenience wrapper used by the QA job pipeline."""
     processor = ClaimProcessor(db, job_id)
-    asyncio.run(processor.process())
+    await processor.process()

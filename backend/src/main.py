@@ -17,10 +17,17 @@ from src.common.config import get_settings
 from src.common.database.connection import init_db
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
 
-# Import routers from services
+# Import routers from query generation
 from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
 
+# Import routers from scoring
+from src.scoring.api.routes import snapshots, judges, qa_jobs, annotations, metrics
+
 settings = get_settings()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
 logger = logging.getLogger(__name__)
 
 
@@ -74,11 +81,14 @@ app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", 
 # Jobs router has no prefix because routes define full paths (e.g., /targets/{id}/jobs/...)
 app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"])
 app.include_router(kb_documents.router, prefix=settings.api_prefix, tags=["Knowledge Base"])
-app.include_router(answers.router, prefix=f"{settings.api_prefix}/answers", tags=["Answers"])
+app.include_router(answers.router, prefix=f"{settings.api_prefix}", tags=["Answers"])
 
-# Future: Include routers from other services
-# from src.scoring.api.routes import scores
-# app.include_router(scores.router, prefix=f"{settings.api_prefix}/scores", tags=["Scoring"])
+# Include routers from scoring service
+app.include_router(snapshots.router, prefix=f"{settings.api_prefix}", tags=["Snapshots"])
+app.include_router(judges.router, prefix=f"{settings.api_prefix}", tags=["Judges"])
+app.include_router(qa_jobs.router, prefix=f"{settings.api_prefix}", tags=["QA Jobs"])
+app.include_router(annotations.router, prefix=f"{settings.api_prefix}", tags=["Annotations"])
+app.include_router(metrics.router, prefix=f"{settings.api_prefix}", tags=["Metrics"])
 
 
 @app.get("/")
@@ -87,7 +97,7 @@ async def root():
     return {
         "message": "Kaleidoscope API",
         "version": settings.api_version,
-        "services": ["query_generation"],
+        "services": ["query_generation", "scoring"],
         "docs": "/docs"
     }
 

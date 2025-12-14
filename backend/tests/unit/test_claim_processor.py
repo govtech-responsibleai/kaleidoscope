@@ -3,7 +3,7 @@ Unit tests for ClaimProcessor service.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime
 
 from src.scoring.services.claim_processor import ClaimProcessor
@@ -24,12 +24,13 @@ class TestClaimProcessor:
 
         # Verify 3 claims created
         assert len(claims) == 3
-        assert claims[0].text == "AI poses privacy risks."
-        assert claims[1].text == "Bias is a concern."
-        assert claims[2].text == "Transparency is important."
+        assert claims[0].claim_text == "AI poses privacy risks."
+        assert claims[1].claim_text == "Bias is a concern."
+        assert claims[2].claim_text == "Transparency is important."
         assert all(claim.checkworthy is True for claim in claims)
         assert all(claim.answer_id == sample_answer.id for claim in claims)
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
     async def test_check_claims_updates_all_checked_at(
         self, mock_llm_class, test_db, sample_qa_job, sample_answer
@@ -49,7 +50,7 @@ class TestClaimProcessor:
         # Mock LLM client
         mock_llm_instance = MagicMock()
         mock_checkworthy_result = CheckworthyResult(
-            is_checkworthy=True,
+            checkworthy=True,
             reasoning="This is a factual claim that can be verified."
         )
         mock_metadata = {
@@ -59,8 +60,8 @@ class TestClaimProcessor:
             "model": "gemini/gemini-2.0-flash-lite",
             "cost": 0.0001
         }
-        mock_llm_instance.generate_structured_async.return_value = (
-            mock_checkworthy_result, mock_metadata
+        mock_llm_instance.generate_structured_async = AsyncMock(
+            return_value=(mock_checkworthy_result, mock_metadata)
         )
         mock_llm_class.return_value = mock_llm_instance
 
@@ -76,9 +77,10 @@ class TestClaimProcessor:
             assert claim.checked_at > past_time
             assert claim.checked_at != claim.created_at
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
-    @patch('src.scoring.services.judge_scoring.score_answer')
-    def test_process_success(
+    @patch('src.scoring.services.judge_scoring.score_answer', new_callable=AsyncMock)
+    async def test_process_success(
         self, mock_score_answer, mock_llm_class, test_db, sample_qa_job, sample_answer
     ):
         """Test full process pipeline: extract -> check -> update costs -> call next stage."""
@@ -88,7 +90,7 @@ class TestClaimProcessor:
         async def async_return(*args, **kwargs):
             return (
                 CheckworthyResult(
-                    is_checkworthy=True,
+                    checkworthy=True,
                     reasoning="Checkworthy claim"
                 ),
                 {
@@ -100,13 +102,12 @@ class TestClaimProcessor:
                 }
             )
 
-        mock_llm_instance.generate_structured_async.side_effect = async_return
+        mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
         # Process
-        import asyncio
         processor = ClaimProcessor(test_db, sample_qa_job.id)
-        asyncio.run(processor.process())
+        await processor.process()
 
         # Verify claims created
         from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
@@ -123,18 +124,18 @@ class TestClaimProcessor:
         assert sample_qa_job.total_cost == pytest.approx(0.0006, rel=1e-6)
 
         # Verify next stage called
-        mock_score_answer.assert_called_once_with(test_db, sample_qa_job.id)
+        mock_score_answer.assert_awaited_once_with(test_db, sample_qa_job.id)
 
-    def test_process_skips_if_not_running(self, test_db, sample_qa_job, sample_answer):
+    @pytest.mark.asyncio
+    async def test_process_skips_if_not_running(self, test_db, sample_qa_job, sample_answer):
         """Test that process exits early if job is not running."""
         # Set job to paused
         sample_qa_job.status = JobStatusEnum.paused
         test_db.commit()
 
         # Process
-        import asyncio
         processor = ClaimProcessor(test_db, sample_qa_job.id)
-        asyncio.run(processor.process())
+        await processor.process()
 
         # Verify no claims created
         from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository

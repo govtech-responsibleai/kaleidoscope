@@ -61,33 +61,7 @@ class JudgeRepository:
         judge = db.query(Judge).filter(Judge.id == judge_id).first()
         if not judge:
             return False
-
         db.delete(judge)
         db.commit()
         return True
 
-    @staticmethod
-    def duplicate(db: Session, judge_id: int, new_name: str) -> Optional[Judge]:
-        """
-        Duplicate an existing judge configuration.
-        Creates a copy with a new name, keeping all other config the same.
-        The duplicate is always editable and not a baseline.
-        """
-        source_judge = db.query(Judge).filter(Judge.id == judge_id).first()
-        if not source_judge:
-            return None
-
-        new_judge = Judge(
-            name=new_name,
-            model_name=source_judge.model_name,
-            prompt_template=source_judge.prompt_template,
-            params=source_judge.params,
-            judge_type=source_judge.judge_type,
-            is_baseline=False,
-            is_editable=True
-        )
-
-        db.add(new_judge)
-        db.commit()
-        db.refresh(new_judge)
-        return new_judge

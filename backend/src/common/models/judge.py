@@ -33,11 +33,6 @@ class JudgeUpdate(BaseModel):
     judge_type: Optional[JudgeType] = None
 
 
-class JudgeDuplicate(BaseModel):
-    """Request model for duplicating a judge."""
-    new_name: str = Field(..., description="Name for the duplicated judge")
-
-
 class JudgeResponse(BaseModel):
     """Response model for Judge."""
     id: int
@@ -55,11 +50,11 @@ class JudgeResponse(BaseModel):
 
 class ClaimJudgmentResult(BaseModel):
     """Pydantic model for claim-level judge response."""
-    is_accurate: bool = Field(..., description="True if claim is supported by knowledge base, False if hallucinated")
-    explanation: str = Field(..., description="Detailed explanation of why the claim is accurate or inaccurate")
+    label: bool = Field(..., description="True if claim is supported by knowledge base, False if hallucinated")
+    reasoning: str = Field(..., description="Detailed explanation of why the claim is accurate or inaccurate")
 
 
 class ResponseJudgmentResult(BaseModel):
     """Pydantic model for response-level judge response."""
-    is_accurate: bool = Field(..., description="True if response is overall accurate, False if inaccurate")
-    explanation: str = Field(..., description="Detailed explanation of the judgment")
+    label: bool = Field(..., description="True if response is overall accurate, False if inaccurate")
+    reasoning: str = Field(..., description="Detailed explanation of the judgment")

@@ -52,13 +52,14 @@ class AnswerRepository:
         question_id: int,
         snapshot_id: int
     ) -> Optional[Answer]:
-        """Get answer for a specific question in a snapshot."""
+        """Get most recent answer for a specific question in a snapshot."""
         return (
             db.query(Answer)
             .filter(
                 Answer.snapshot_id == snapshot_id,
                 Answer.question_id == question_id
             )
+            .order_by(Answer.created_at.desc())
             .first()
         )
 
@@ -78,15 +79,45 @@ class AnswerRepository:
         )
 
     @staticmethod
+    def update(db: Session, answer_id: int, answer_data: dict) -> Optional[Answer]:
+        """Update an answer."""
+        answer = db.query(Answer).filter(Answer.id == answer_id).first()
+        if not answer:
+            return None
+
+        for key, value in answer_data.items():
+            if value is not None:
+                setattr(answer, key, value)
+
+        db.commit()
+        db.refresh(answer)
+        return answer
+
+    @staticmethod
     def update_annotation_selection(
         db: Session,
-        answer_ids: List[int],
-        is_selected: bool
+        selections: List[dict]
     ) -> List[Answer]:
-        """Update annotation selection status for multiple answers."""
+        """
+        Update annotation selection with individual values per answer.
+
+        Args:
+            db: Database session
+            selections: List of dicts with answer_id and is_selected
+                        [{"answer_id": 1, "is_selected": True}, ...]
+
+        Returns:
+            List of updated Answer objects
+        """
+        answer_ids = [s["answer_id"] for s in selections]
         answers = db.query(Answer).filter(Answer.id.in_(answer_ids)).all()
+
+        # Create lookup for selection values
+        selection_map = {s["answer_id"]: s["is_selected"] for s in selections}
+
         for answer in answers:
-            answer.is_selected_for_annotation = is_selected
+            answer.is_selected_for_annotation = selection_map[answer.id]
+
         db.commit()
         return answers
 

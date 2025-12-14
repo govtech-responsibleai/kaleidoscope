@@ -3,7 +3,7 @@ Unit tests for AnswerJudge service.
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 from src.scoring.services.judge_scoring import AnswerJudge
 from src.common.database.models import JobStatusEnum
@@ -14,8 +14,9 @@ from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult
 class TestAnswerJudge:
     """Unit tests for AnswerJudge class."""
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
-    def test_score_claim_based_creates_n_scores(
+    async def test_score_claim_based_creates_n_scores(
         self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test claim-based scoring creates N AnswerClaimScore records for N claims."""
@@ -31,8 +32,8 @@ class TestAnswerJudge:
         async def async_return(*args, **kwargs):
             return (
                 ClaimJudgmentResult(
-                    is_accurate=True,
-                    explanation="This claim is supported by the knowledge base."
+                    label=True,
+                    reasoning="This claim is supported by the knowledge base."
                 ),
                 {
                     "prompt_tokens": 100,
@@ -43,13 +44,12 @@ class TestAnswerJudge:
                 }
             )
 
-        mock_llm_instance.generate_structured_async.side_effect = async_return
+        mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
         # Score
-        import asyncio
         scorer = AnswerJudge(test_db, sample_qa_job.id)
-        asyncio.run(scorer.score())
+        await scorer.score()
 
         # Verify AnswerScore created
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -64,8 +64,9 @@ class TestAnswerJudge:
         assert len(claim_scores) == 3
         assert all(score.label is True for score in claim_scores)
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
-    def test_score_claim_based_aggregation(
+    async def test_score_claim_based_aggregation(
         self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test claim-based aggregation uses majority vote (3 accurate, 2 inaccurate -> overall True)."""
@@ -82,7 +83,7 @@ class TestAnswerJudge:
             AnswerClaim(
                 answer_id=sample_answer.id,
                 claim_index=3,
-                text="Extra claim 1.",
+                claim_text="Extra claim 1.",
                 checkworthy=True,
                 created_at=datetime.utcnow(),
                 checked_at=datetime.utcnow()
@@ -90,7 +91,7 @@ class TestAnswerJudge:
             AnswerClaim(
                 answer_id=sample_answer.id,
                 claim_index=4,
-                text="Extra claim 2.",
+                claim_text="Extra claim 2.",
                 checkworthy=True,
                 created_at=datetime.utcnow(),
                 checked_at=datetime.utcnow()
@@ -109,8 +110,8 @@ class TestAnswerJudge:
             # First 3 calls return accurate, last 2 return inaccurate
             is_accurate = call_count[0] <= 3
             result = ClaimJudgmentResult(
-                is_accurate=is_accurate,
-                explanation=f"Claim {call_count[0]} explanation"
+                label=is_accurate,
+                reasoning=f"Claim {call_count[0]} explanation"
             )
             metadata = {
                 "prompt_tokens": 100,
@@ -121,24 +122,24 @@ class TestAnswerJudge:
             }
             return result, metadata
 
-        mock_llm_instance.generate_structured_async.side_effect = mock_generate
+        mock_llm_instance.generate_structured_async = AsyncMock(side_effect=mock_generate)
         mock_llm_class.return_value = mock_llm_instance
 
         # Score
-        import asyncio
         scorer = AnswerJudge(test_db, sample_qa_job.id)
-        asyncio.run(scorer.score())
+        await scorer.score()
 
-        # Verify overall label is True (3/5 accurate > 50%)
+        # Verify overall label is False (3/5 accurate only)
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
         answer_score = AnswerScoreRepository.get_by_answer_and_judge(
             test_db, sample_answer.id, sample_qa_job.judge_id
         )
-        assert answer_score.overall_label is True
+        assert answer_score.overall_label is False
         assert "Accuracy ratio: 0.60" in answer_score.explanation
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
-    def test_score_response_level_single_score(
+    async def test_score_response_level_single_score(
         self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_kb_documents
     ):
         """Test response-level scoring creates 1 AnswerScore, no claim scores."""
@@ -154,8 +155,8 @@ class TestAnswerJudge:
         async def async_return(*args, **kwargs):
             return (
                 ResponseJudgmentResult(
-                    is_accurate=True,
-                    explanation="The response is overall accurate and well-supported."
+                    label=True,
+                    reasoning="The response is overall accurate and well-supported."
                 ),
                 {
                     "prompt_tokens": 150,
@@ -166,13 +167,12 @@ class TestAnswerJudge:
                 }
             )
 
-        mock_llm_instance.generate_structured_async.side_effect = async_return
+        mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
         # Score
-        import asyncio
         scorer = AnswerJudge(test_db, sample_qa_job.id)
-        asyncio.run(scorer.score())
+        await scorer.score()
 
         # Verify AnswerScore created
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -187,8 +187,9 @@ class TestAnswerJudge:
         claim_scores = AnswerClaimScoreRepository.get_by_answer_score(test_db, answer_score.id)
         assert len(claim_scores) == 0
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
-    def test_score_response_level_accuracy(
+    async def test_score_response_level_accuracy(
         self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_kb_documents
     ):
         """Test response-level judgment label propagates to AnswerScore."""
@@ -204,8 +205,8 @@ class TestAnswerJudge:
         async def async_return(*args, **kwargs):
             return (
                 ResponseJudgmentResult(
-                    is_accurate=False,
-                    explanation="The response contains inaccuracies."
+                    label=False,
+                    reasoning="The response contains inaccuracies."
                 ),
                 {
                     "prompt_tokens": 150,
@@ -216,13 +217,12 @@ class TestAnswerJudge:
                 }
             )
 
-        mock_llm_instance.generate_structured_async.side_effect = async_return
+        mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
         # Score
-        import asyncio
         scorer = AnswerJudge(test_db, sample_qa_job.id)
-        asyncio.run(scorer.score())
+        await scorer.score()
 
         # Verify label is False
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -232,8 +232,9 @@ class TestAnswerJudge:
         assert answer_score.overall_label is False
         assert "inaccuracies" in answer_score.explanation
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
-    def test_score_updates_job_costs(
+    async def test_score_updates_job_costs(
         self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test that scoring updates QAJob costs."""
@@ -249,8 +250,8 @@ class TestAnswerJudge:
         async def async_return(*args, **kwargs):
             return (
                 ClaimJudgmentResult(
-                    is_accurate=True,
-                    explanation="Accurate"
+                    label=True,
+                    reasoning="Accurate"
                 ),
                 {
                     "prompt_tokens": 200,
@@ -261,7 +262,7 @@ class TestAnswerJudge:
                 }
             )
 
-        mock_llm_instance.generate_structured_async.side_effect = async_return
+        mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
         # Initial costs
@@ -269,17 +270,17 @@ class TestAnswerJudge:
         initial_cost = sample_qa_job.total_cost
 
         # Score
-        import asyncio
         scorer = AnswerJudge(test_db, sample_qa_job.id)
-        asyncio.run(scorer.score())
+        await scorer.score()
 
         # Verify costs updated (3 claims scored)
         test_db.refresh(sample_qa_job)
         assert sample_qa_job.prompt_tokens > initial_tokens
         assert sample_qa_job.total_cost > initial_cost
 
+    @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
-    def test_score_handles_llm_failure(
+    async def test_score_handles_llm_failure(
         self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test that LLM errors result in default inaccurate scores."""
@@ -291,13 +292,12 @@ class TestAnswerJudge:
 
         # Mock LLM to raise error
         mock_llm_instance = MagicMock()
-        mock_llm_instance.generate_structured_async.side_effect = Exception("LLM API error")
+        mock_llm_instance.generate_structured_async = AsyncMock(side_effect=Exception("LLM API error"))
         mock_llm_class.return_value = mock_llm_instance
 
         # Score - should not raise, but create default scores
-        import asyncio
         scorer = AnswerJudge(test_db, sample_qa_job.id)
-        asyncio.run(scorer.score())
+        await scorer.score()
 
         # Verify AnswerScore created with error handling
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository

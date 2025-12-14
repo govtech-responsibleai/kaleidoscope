@@ -30,6 +30,7 @@ class QAJobStage(str, Enum):
     generating_answers = "generating_answers"
     processing_answers = "processing_answers"
     scoring_answers = "scoring_answers"
+    completed = "completed"
 
 
 class QAJobCreate(BaseModel):
@@ -46,13 +47,13 @@ class QAJobStart(BaseModel):
     snapshot_id: int = Field(..., description="Snapshot ID")
     judge_id: int = Field(..., description="Judge ID to use for scoring")
     question_ids: list[int] = Field(..., description="List of question IDs to process")
-    start_stage: Optional[QAJobStage] = Field(None, description="Optional starting stage (default: starting)")
+    job_ids: Optional[list[int]] = Field(None, description="List of QA job IDs to resume")
+    is_scoring: bool = Field(False, description="Flag to indicate if this is a scoring job")
 
 
-class QAJobResume(BaseModel):
-    """Request model for resuming a paused QA job."""
-    job_id: int = Field(..., description="QA job ID to resume")
-    override_stage: Optional[QAJobStage] = Field(None, description="Optional stage override (use with caution)")
+class QAJobPauseRequest(BaseModel):
+    """Request model for pausing QA jobs in batch."""
+    job_ids: list[int] = Field(..., description="List of QA job IDs to pause")
 
 
 class QAJobResponse(BaseModel):
@@ -60,7 +61,7 @@ class QAJobResponse(BaseModel):
     id: int
     snapshot_id: int
     question_id: int
-    answer_id: int
+    answer_id: Optional[int] = None
     judge_id: int
     type: QAJobType
     status: JobStatus
@@ -83,3 +84,25 @@ class QAJobListResponse(BaseModel):
     """Response model for listing QA jobs."""
     jobs: list[QAJobResponse]
     total: int
+
+
+# Utility function for failure sentinels
+def QAJobFailureMessage(stage: str) -> str:
+    """
+    Generate standardized failure message for QAJob stages.
+
+    This sentinel value is used to mark database records (Answer, AnswerClaim, AnswerScore)
+    as failed without losing the partial progress. It allows the pipeline to detect
+    failures and retry from the exact failure point.
+
+    Args:
+        stage: The stage name where the failure occurred (e.g., "generating_answers")
+
+    Returns:
+        Standardized failure message string
+
+    Example:
+        >>> QAJobFailureMessage("generating_answers")
+        '[FAILED at generating_answers]'
+    """
+    return f"[FAILED at {stage}]"

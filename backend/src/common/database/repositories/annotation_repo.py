@@ -77,6 +77,60 @@ class AnnotationRepository:
         )
 
     @staticmethod
+    def check_annotation_completion(db: Session, snapshot_id: int) -> dict:
+        """
+        Check if all selected answers have been annotated.
+
+        Args:
+            db: Database session
+            snapshot_id: Snapshot ID
+
+        Returns:
+            Dictionary with completion statistics:
+            {
+                "total_selected": int,
+                "total_selected_and_annotated": int,
+                "is_complete": bool,
+                "completion_percentage": float
+            }
+        """
+        # Count all answers selected for annotation
+        total_selected = (
+            db.query(Answer)
+            .filter(
+                Answer.snapshot_id == snapshot_id,
+                Answer.is_selected_for_annotation == True
+            )
+            .count()
+        )
+
+        # Count selected answers that have annotations
+        total_selected_and_annotated = (
+            db.query(Annotation)
+            .join(Answer)
+            .filter(
+                Answer.snapshot_id == snapshot_id,
+                Answer.is_selected_for_annotation == True
+            )
+            .count()
+        )
+
+        # Calculate completion status
+        is_complete = total_selected > 0 and total_selected == total_selected_and_annotated
+        completion_percentage = (
+            (total_selected_and_annotated / total_selected * 100)
+            if total_selected > 0
+            else 0.0
+        )
+
+        return {
+            "total_selected": total_selected,
+            "total_selected_and_annotated": total_selected_and_annotated,
+            "is_complete": is_complete,
+            "completion_percentage": round(completion_percentage, 2)
+        }
+
+    @staticmethod
     def update(db: Session, annotation_id: int, annotation_data: dict) -> Optional[Annotation]:
         """Update an annotation."""
         annotation = db.query(Annotation).filter(Annotation.id == annotation_id).first()

@@ -8,6 +8,7 @@ from typing import Optional
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
+MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE = {"gpt-5"}
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
@@ -25,7 +26,9 @@ class Settings(BaseSettings):
     default_llm_model: str = "gemini/gemini-2.0-flash-lite"
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
-    gemini_api_key: Optional[str] = None  # For Gemini models
+    gemini_api_key: Optional[str] = None  # For Gemini models and Vertex AI
+    azure_ai_api_key: Optional[str] = None 
+    azure_ai_api_base: Optional[str] = None 
 
     # Phoenix Observability (optional)
     phoenix_api_key: Optional[str] = None

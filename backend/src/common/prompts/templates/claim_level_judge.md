@@ -10,27 +10,28 @@ IMPORTANT: The CLAIM does NOT need to cover all the claims in the DOCUMENT.
 
 Output your final label by strictly following this format: "true" if the claim can be inferred from the DOCUMENT and "false" if the claim cannot be inferred from the contents of the DOCUMENT.
 
-Show your reasoning.  Be concise in the reasoning and focus more on the failures, if any.
+Show your reasoning. Be concise in the reasoning and focus more on the failures, if any.
 
 --
 (These do not count as background information):
 QUESTION:
-{{question}}
+{{question_text}}
 
 ANSWER:
 {{answer_text}}
 
 --
 DOCUMENT:
-{{knowledge_base_context}}
+{{kb_documents}}
 
 --
-CLAIM:
+
+CLAIM to evaluate:
 {{claim_text}}
 
 --
 
-Your output should be in JSON FORMAT with the keys "REASONING" and "SCORE".
+Your output should be in JSON FORMAT with the keys "label" and "reasoning".
 
 Ensure that the JSON is valid and properly formatted.
 

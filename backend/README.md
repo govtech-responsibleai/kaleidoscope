@@ -83,11 +83,11 @@ API will be available at:
 
 ## LLM Configuration
 
-The API uses **Google Gemini 2.0 Flash** by default (`gemini/gemini-2.0-flash`) via LiteLLM for text generation, and **Gemini Text Embedding 004** (`gemini/text-embedding-004`) for semantic similarity.
+The API uses **Google Gemini 2.0 Flash** by default (`gemini/gemini-2.0-flash-lite`) via LiteLLM for text generation, and **Gemini Text Embedding 004** (`gemini/text-embedding-004`) for semantic similarity.
 
 ### Default Model
 
-The default model is defined in `src/common/config.py` and set to `gemini/gemini-2.0-flash`.
+The default model is defined in `src/common/config.py` and set to `gemini/gemini-2.0-flash-lite`.
 
 ### Overriding the Default Model
 
@@ -123,18 +123,25 @@ environment:
 ### Supported Models (via LiteLLM)
 
 - **Gemini (requires `GEMINI_API_KEY`):**
-  - `gemini/gemini-2.0-flash` (default, fast and cost-effective)
-  - `gemini/gemini-1.5-flash`
-  - `gemini/gemini-1.5-pro`
+  - `gemini/gemini-2.0-flash-lite` (default)
+  - `gemini/gemini-2.0-flash`
+  - `gemini/gemini-2.5-flash-lite`
+  - `gemini/gemini-2.0-flash`
 
 - **OpenAI (requires `OPENAI_API_KEY`):**
-  - `gpt-4o-mini`
-  - `gpt-4o`
-  - `gpt-4-turbo`
+  - `gpt-5-nano`
+  - `gpt-5-mini`
+  - `gpt-5`
 
-- **Anthropic (requires `ANTHROPIC_API_KEY`):**
-  - `claude-3-5-sonnet-20241022`
-  - `claude-3-opus-20240229`
+- **Azure OpenAI (requires `AZURE_AI_API_KEY` and `AZURE_AI_API_BASE`):**
+  - `azure/gpt-5-nano-2025-08-07`
+  - `azure/gpt-5-mini-2025-08-07`
+  - `azure/gpt-5-2025-08-07`
+
+- **Vertex AI Anthropic (requires `GEMINI_API_KEY`):**
+  - `vertex_ai/claude-haiku-4-5`
+  - `vertex_ai/claude-sonnet-4-5`
+  - `vertex_ai/claude-opus-4-5`
 
 
 ## API Endpoints
@@ -205,16 +212,99 @@ DELETE /api/v1/knowledge-base/documents/{id}            - Delete KB document
 Generate answers for questions using external APIs (e.g., AIBots).
 
 ```
-POST   /api/v1/answers                         - Generate answer for a question
-GET    /api/v1/answers/{id}                    - Get answer by ID
-GET    /api/v1/answers/question/{question_id}  - Get all answers for a question
-GET    /api/v1/answers/target/{target_id}      - Get all answers for a target
-DELETE /api/v1/answers/{id}                    - Delete answer
+POST   /api/v1/answers                                          - Generate answer for a question
+GET    /api/v1/answers/{id}                                     - Get answer by ID
+DELETE /api/v1/answers/{id}                                     - Delete answer by ID
+GET    /api/v1/question/{question_id}/answers                   - Get all answers for a question
+GET    /api/v1/target/{target_id}/answers                       - Get all answers for a target
+GET    /api/v1/snapshots/{snapshot_id}/answers                   - Get all answers for a snapshot
+GET    /api/v1/answers/{answer_id}/scores/{judge_id}            - Get answer scores
+GET    /api/v1/answers/{answer_id}/claims                       - Get answer claims with scores
+PUT    /api/v1/answers/{answer_id}/selection                    - Toggle answer selection
+PUT    /api/v1/answers/bulk-selection                           - Bulk update answer selection
+PUT    /api/v1/snapshots/{snapshot_id}answers/select-default     - Bulk update answer selection
 ```
 
-## Usage Example
+### Snapshots
 
-### 1. Create a Target
+Snapshots are versioned evaluation runs that capture answer sets for analysis.
+
+```
+POST   /api/v1/snapshots                              - Create snapshot
+GET    /api/v1/targets/{target_id}/snapshots          - List snapshots for target
+GET    /api/v1/snapshots/{snapshot_id}                - Get snapshot details
+PUT    /api/v1/snapshots/{snapshot_id}                - Update snapshot name/description
+DELETE /api/v1/snapshots/{snapshot_id}                - Delete snapshot
+GET    /api/v1/snapshots/{snapshot_id}/stats          - Get snapshot statistics
+```
+
+### Judges
+
+Judges are LLM-based evaluators that assess answer accuracy. Two types are supported:
+
+- **Claim-based**: Extracts claims from answers, evaluates each claim, then aggregates to overall label
+- **Response-level**: Evaluates the entire answer holistically in a single LLM call
+
+```
+POST   /api/v1/judges/seed                            - Seed default judges
+GET    /api/v1/judges                                 - List all judges
+POST   /api/v1/judges                                 - Create custom judge
+GET    /api/v1/judges/baseline                        - Get baseline judge
+GET    /api/v1/judges/{judge_id}                      - Get judge details
+PUT    /api/v1/judges/{judge_id}                      - Update judge (if editable)
+DELETE /api/v1/judges/{judge_id}                      - Delete judge (if editable)
+```
+
+### QA Jobs
+
+QA Jobs orchestrate the automated scoring pipeline:
+
+1. **Generate Answer**: Call target chatbot API to get answer
+2. **Extract Claims**: Split answer into sentences, check if checkworthy (claim-based only)
+3. **Score Answer**: Use judge LLM to evaluate accuracy
+
+```
+POST   /api/v1/snapshots/{snapshot_id}/qa-jobs/start  - Start QA jobs batch (async)
+POST   /api/v1/qa-jobs/pause                          - Pause running jobs
+GET    /api/v1/snapshots/{snapshot_id}/qa-jobs        - List QA jobs for snapshot
+GET    /api/v1/qa-jobs/{job_id}                       - Get job details with costs
+```
+
+### Annotations
+
+Manual annotations allow humans to label answer accuracy for judge validation.
+
+```
+POST   /api/v1/annotations                                  - Create single annotation
+POST   /api/v1/annotations/bulk                             - Bulk create annotations
+GET    /api/v1/snapshots/{snapshot_id}/annotations          - List annotations for snapshot
+GET    /api/v1/snapshots/{snapshot_id}/annotations/completion-status  - Check completion progress
+GET    /api/v1/answers/{answer_id}/annotations              - Get annotation for answer
+GET    /api/v1/annotations/{annotation_id}                  - Get annotation by ID
+PUT    /api/v1/annotations/{annotation_id}                  - Update annotation
+DELETE /api/v1/annotations/{annotation_id}                  - Delete annotation
+```
+
+### Metrics
+
+Calculate judge performance and export results.
+
+```
+GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/alignment   - Calculate judge alignment (F1, precision, recall, accuracy)
+GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/accuracy    - Calculate chatbot accuracy per judge
+GET    /api/v1/snapshots/{snapshot_id}/results                       - Get aggregated results with majority vote
+POST   /api/v1/snapshots/{snapshot_id}/export                        - Export results as CSV
+```
+
+## End-to-End Evaluation Workflow
+
+This section demonstrates the complete evaluation pipeline from target creation through final metrics export.
+
+---
+
+### Phase 1: Setup
+
+#### 1.1 Create Target
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/targets \
@@ -229,7 +319,7 @@ curl -X POST http://localhost:8000/api/v1/targets \
     "endpoint_config": {
       "api_key": "your_aibots_api_key"
     }
-  }'
+  }' | jq
 ```
 
 **Target fields:**
@@ -241,7 +331,33 @@ curl -X POST http://localhost:8000/api/v1/targets \
 - `endpoint_type`: Type of endpoint (`aibots` currently supported)
 - `endpoint_config`: Type-specific config (for `aibots`: `{"api_key": "..."}`)
 
-### 2. Generate Personas
+#### 1.2 Upload Knowledge Base Documents
+
+Upload documents that will be used to generate in-KB vs out-of-KB questions:
+
+```bash
+# Upload a PDF document
+curl -X POST http://localhost:8000/api/v1/targets/1/knowledge-base/upload \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@/path/to/document.pdf" | jq
+
+# Upload a text document
+curl -X POST http://localhost:8000/api/v1/targets/1/knowledge-base/upload \
+  -H "Content-Type: multipart/form-data" \
+  -F "file=@/path/to/guide.md" | jq
+
+# List all KB documents for a target
+curl http://localhost:8000/api/v1/targets/1/knowledge-base/documents | jq
+
+# Get compiled KB text (for review)
+curl http://localhost:8000/api/v1/targets/1/knowledge-base/text | jq
+```
+
+---
+
+### Phase 2: Persona Generation
+
+#### 2.1 Generate Personas
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/jobs/personas \
@@ -250,54 +366,42 @@ curl -X POST http://localhost:8000/api/v1/jobs/personas \
     "target_id": 1,
     "count_requested": 5,
     "model_used": "gemini/gemini-2.0-flash"
-  }'
+  }' | jq
 ```
 
-### 3. Check Job Status
+#### 2.2 Check Job Status
 
 ```bash
-curl http://localhost:8000/api/v1/jobs/1
+curl http://localhost:8000/api/v1/jobs/1 | jq
 ```
 
-### 4. List Generated Personas
+#### 2.3 List Generated Personas
 
 ```bash
-curl http://localhost:8000/api/v1/jobs/1/personas
+curl http://localhost:8000/api/v1/jobs/1/personas | jq
 ```
 
-### 5. Upload Knowledge Base Documents
-
-Upload documents that will be used to generate in-KB vs out-of-KB questions:
+#### 2.4 Approve Personas
 
 ```bash
-# Upload a PDF document
-curl -X POST http://localhost:8000/api/v1/targets/1/knowledge-base/upload \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@/path/to/document.pdf"
+# Approve individual persona
+curl -X POST http://localhost:8000/api/v1/personas/1/approve | jq
 
-# Upload a text document
-curl -X POST http://localhost:8000/api/v1/targets/1/knowledge-base/upload \
-  -H "Content-Type: multipart/form-data" \
-  -F "file=@/path/to/guide.md"
-
-# List all KB documents for a target
-curl http://localhost:8000/api/v1/targets/1/knowledge-base/documents
-
-# Get compiled KB text (for review)
-curl http://localhost:8000/api/v1/targets/1/knowledge-base/text
+# Or bulk approve
+curl -X POST http://localhost:8000/api/v1/personas/bulk-approve \
+  -H "Content-Type: application/json" \
+  -d '{"persona_ids": [1, 2, 3, 4, 5]}' | jq
 ```
 
-### 6. Approve a Persona
+---
 
-```bash
-curl -X POST http://localhost:8000/api/v1/personas/1/approve
-```
+### Phase 3: Question Generation
 
-### 7. Generate Questions
+#### 3.1 Generate Questions
 
-**Note:** Question generation runs asynchronously. The endpoint returns immediately with `status="running"`. Use `GET /jobs/{id}` to check completion status.
+Questions are generated with **type** (typical/edge) and **scope** (in_kb/out_kb) attributes based on uploaded KB documents.
 
-Questions are generated with **type** (typical/edge) and **scope** (in_kb/out_kb) attributes. The system uses the uploaded knowledge base documents to generate questions both within and outside the KB scope.
+**Note:** Question generation runs asynchronously. The endpoint returns immediately with `status="running"`.
 
 ```bash
 # Generate questions for all approved personas (async)
@@ -305,12 +409,12 @@ curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -H "Content-Type: application/json" \
   -d '{
     "target_id": 1,
-    "count_requested": 20,
+    "count_requested": 1,
     "model_used": "gemini/gemini-2.0-flash"
-  }'
+  }' | jq
 # Returns immediately with status="running" and job_id
 
-# Or generate questions for specific personas (async)
+# Or generate questions for specific personas
 curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -H "Content-Type: application/json" \
   -d '{
@@ -318,117 +422,245 @@ curl -X POST http://localhost:8000/api/v1/jobs/questions \
     "count_requested": 10,
     "model_used": "gemini/gemini-2.0-flash",
     "persona_ids": [1, 3, 5]
-  }'
+  }' | jq
+```
 
-# Check job completion status
-curl http://localhost:8000/api/v1/jobs/2
+#### 3.2 Check Job Completion
+
+```bash
+curl http://localhost:8000/api/v1/jobs/2 | jq
 # Returns job with status: "running", "completed", or "failed"
 ```
 
-### 8. List and Approve Questions
+#### 3.3 Review and Approve Questions
 
 ```bash
 # List questions from job
-curl http://localhost:8000/api/v1/jobs/2/questions
+curl http://localhost:8000/api/v1/jobs/2/questions | jq
 
-# Approve a question
-curl -X POST http://localhost:8000/api/v1/questions/1/approve
+# Approve individual question
+curl -X POST http://localhost:8000/api/v1/questions/1/approve | jq
+
+# Or bulk approve
+curl -X POST http://localhost:8000/api/v1/questions/bulk-approve \
+  -H "Content-Type: application/json" \
+  -d '{"question_ids": [1, 2, 3, 4]}' | jq
 ```
 
-### 9. Generate Answers
+#### 3.4 Find Similar Questions (Optional)
 
-Generate answers for approved questions using the target's configured API endpoint:
+Find semantically similar questions using **Gemini Text Embedding 004** for deduplication.
 
 ```bash
-# Generate an answer for a question
-curl -X POST http://localhost:8000/api/v1/answers \
-  -H "Content-Type: application/json" \
-  -d '{
-    "question_id": 1
-  }'
-```
-
-**Response:**
-```json
-{
-  "id": 1,
-  "question_id": 1,
-  "target_id": 1,
-  "answer_content": "The AI model should...",
-  "model": "azure~gpt-4",
-  "rag_citations": [
-    {"id": 1, "chunk": "Relevant knowledge base content..."},
-    {"id": 2, "chunk": "Another relevant chunk..."}
-  ],
-  "created_at": "2024-01-01T00:00:00"
-}
-```
-
-### 10. Find Similar Questions
-
-Find semantically similar questions using Gemini embeddings and cosine similarity. This feature uses **Gemini Text Embedding 004** (`gemini/text-embedding-004`) to generate embeddings and compares them using matrix multiplication for efficient batch processing.
-
-**Key Features:**
-- Uses Gemini text embeddings for semantic similarity
-- Batch processing with matrix multiplication (highly efficient for multiple queries)
-- Only compares against approved questions
-- Configurable similarity threshold (default: 0.7)
-- Returns results sorted by similarity score
-
-```bash
-# Find similar questions for a single question
-curl -X POST http://localhost:8000/api/v1/questions/similar \
-  -H "Content-Type: application/json" \
-  -d '{
-    "target_id": 1,
-    "question_ids": [5],
-    "similarity_threshold": 0.7
-  }'
-
-# Find similar questions for multiple questions (batch processing)
 curl -X POST http://localhost:8000/api/v1/questions/similar \
   -H "Content-Type: application/json" \
   -d '{
     "target_id": 1,
     "question_ids": [5, 12, 18],
     "similarity_threshold": 0.75
-  }'
+  }' | jq
 ```
 
-**Example Response:**
+**Performance:** Uses batch processing with matrix multiplication (~10x faster for large sets).
+
+---
+
+### Phase 4: Create Snapshot & Generate Answers
+
+#### 4.1 Create Snapshot
+
+Snapshots are versioned evaluation runs that capture answer sets.
+
+```bash
+curl -X POST http://localhost:8000/api/v1/snapshots \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_id": 1,
+    "name": "Baseline Eval",
+    "description": "Initial evaluation of RAI chatbot"
+  }' | jq
+```
+
+---
+
+### Phase 5: Automated Scoring (QA Jobs)
+
+#### 5.1 Seed Default Judges
+
+```bash
+curl -X POST http://localhost:8000/api/v1/judges/seed | jq
+```
+
+This creates default judges:
+- **Baseline Gemini Flash Lite** (claim-based, baseline)
+- **Gemini Flash** (claim-based)
+- **GPT-5 Nano** (claim-based)
+
+#### 5.2 Start QA Jobs
+
+Each job runs through the full pipeline: **Generate Answer → Extract Claims → Score Answer**
+
+```bash
+# Start QA jobs for questions 1-5 with baseline judge
+curl -X POST http://localhost:8000/api/v1/snapshots/1/qa-jobs/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "snapshot_id": 1,
+    "judge_id": 1,
+    "question_ids": [1, 2, 3, 4],
+    "is_scoring": false
+  }' | jq
+```
+
+**Job Stages:**
+- `starting` → `generating_answers` → `processing_answers` → `scoring_answers` → `completed`
+
+#### 5.3 Monitor Job Progress
+
+```bash
+# Check individual job status
+curl http://localhost:8000/api/v1/qa-jobs/1 | jq
+
+# List all jobs for snapshot
+curl http://localhost:8000/api/v1/snapshots/2/qa-jobs | jq
+```
+
+#### 5.4 Pause/Resume Jobs (Optional)
+
+```bash
+# Pause running jobs
+curl -X POST http://localhost:8000/api/v1/qa-jobs/pause \
+  -H "Content-Type: application/json" \
+  -d '{"job_ids": [1, 2, 3]}' | jq
+
+# Resume by starting again with same parameters
+curl -X POST http://localhost:8000/api/v1/snapshots/1/qa-jobs/start \
+  -H "Content-Type: application/json" \
+  -d '{
+    "snapshot_id": 1,
+    "judge_id": 1,
+    "job_ids": [1, 2, 3],
+    "is_scoring": false
+  }' | jq
+```
+
+Failed stages are retried when resumed.
+
+---
+
+### Phase 6: Human Annotations
+
+For judge validation, manually annotate a subset of answers.
+
+#### 6.1 Select Answers for Annotation
+
+Before annotating, you must select which answers to annotate. You can auto-select 20% or manually select specific answers.
+
+```bash
+# Option 1: Auto-select 20% of answers (minimum 1)
+curl -X POST http://localhost:8000/api/v1/snapshots/1/answers/select-default | jq
+
+# Option 2: Manually select specific answers
+# Toggle single answer
+curl -X PUT http://localhost:8000/api/v1/answers/1/selection | jq
+
+# Bulk select multiple answers
+curl -X POST http://localhost:8000/api/v1/answers/bulk-selection \
+  -H "Content-Type: application/json" \
+  -d '{
+    "selections": [
+      {"answer_id": 1, "is_selected": true}
+    ]
+  }' | jq
+```
+
+#### 6.2 Create Annotations
+
+```bash
+# Bulk create annotations for selected answers
+curl -X POST http://localhost:8000/api/v1/annotations/bulk \
+  -H "Content-Type: application/json" \
+  -d '{
+    "annotations": [
+      {"answer_id": 1, "label": true, "notes": "Accurate response"},
+      {"answer_id": 2, "label": false, "notes": "Contains hallucination"},
+      {"answer_id": 3, "label": true, "notes": "Correct but incomplete"}
+    ]
+  }' | jq
+```
+
+#### 6.3 Check Annotation Progress
+
+```bash
+curl http://localhost:8000/api/v1/snapshots/1/annotations/completion-status | jq
+```
+
+Returns:
 ```json
 {
-  "results": [
-    {
-      "query_question_id": 5,
-      "similar_questions": [
-        {
-          "question_id": 23,
-          "similarity_score": 0.92
-        },
-        {
-          "question_id": 47,
-          "similarity_score": 0.85
-        }
-      ]
-    },
-    {
-      "query_question_id": 12,
-      "similar_questions": [
-        {
-          "question_id": 31,
-          "similarity_score": 0.88
-        }
-      ]
-    }
-  ]
+  "total_selected": 10,
+  "total_selected_and_annotated": 3,
+  "is_complete": false,
+  "completion_percentage": 30.0
 }
 ```
 
-**Performance:** For M query questions and N candidate questions:
-- Makes 1 batch API call (instead of M separate calls)
-- Computes M×N similarity matrix with single matrix multiplication
-- ~10x faster for 10 queries with 100 candidates compared to sequential processing
+---
+
+### Phase 7: Metrics & Export
+
+#### 7.1 Calculate Judge Alignment
+
+Compares judge scores to human annotations using F1, precision, recall, and accuracy.
+
+```bash
+curl http://localhost:8000/api/v1/snapshots/1/judges/1/alignment | jq
+```
+
+Returns:
+```json
+{
+  "f1": 0.857,
+  "precision": 0.900,
+  "recall": 0.818,
+  "accuracy": 0.850,
+  "sample_count": 20
+}
+```
+
+#### 7.2 Calculate Chatbot Accuracy
+
+Based on judge scores across all answers.
+
+```bash
+curl http://localhost:8000/api/v1/snapshots/1/judges/1/accuracy | jq
+```
+
+Returns:
+```json
+{
+  "accuracy": 0.730,
+  "total_answers": 100,
+  "accurate_count": 73
+}
+```
+
+#### 7.3 Get Aggregated Results
+
+Returns majority-vote labels across all judges with individual breakdowns.
+
+```bash
+curl http://localhost:8000/api/v1/snapshots/1/results | jq
+```
+
+#### 7.4 Export Results as CSV
+
+```bash
+curl -X POST http://localhost:8000/api/v1/snapshots/1/export \
+  --output results.csv | jq
+```
+
+CSV contains: Question | Answer | Accuracy | Metadata (per-judge breakdown)
 
 ## Observability with Phoenix
 
@@ -484,9 +716,11 @@ alembic downgrade -1
 - [x] Add unit tests for similarity functions
 - [x] Add knowledge base document upload and processing
 - [x] Add answer generation service (AIBots integration)
+- [x] Add scoring service (judge LLM evaluation)
+- [x] Add human annotation workflow
+- [x] Add metrics calculation and export
 - [ ] Setup CI/CD
 - [ ] Deploy to serverless (AWS Lambda, AWS RDS, etc.)
-- [ ] Add scoring service (judge LLM evaluation)
 
 ## License
 

@@ -27,10 +27,10 @@ System Context
 - Purpose: {{purpose}}
 
 Knowledge Base Context
-{{knowledge_base_context}}
+{{kb_documents}}
 
 Question Asked
-{{question}}
+{{question_text}}
 
 Answer to Evaluate
 {{answer_text}}

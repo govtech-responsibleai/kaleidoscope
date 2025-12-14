@@ -12,7 +12,7 @@ class AnswerClaimResponse(BaseModel):
     id: int
     answer_id: int
     claim_index: int
-    text: str
+    claim_text: str
     checkworthy: bool
     created_at: datetime
     checked_at: datetime
@@ -29,5 +29,5 @@ class AnswerClaimListResponse(BaseModel):
 
 class CheckworthyResult(BaseModel):
     """Pydantic model for checkworthy LLM response."""
-    is_checkworthy: bool = Field(..., description="True if claim is worth fact-checking, False otherwise")
+    checkworthy: bool = Field(..., description="True if claim is worth fact-checking, False otherwise")
     reasoning: str = Field(..., description="Brief explanation for the decision")
