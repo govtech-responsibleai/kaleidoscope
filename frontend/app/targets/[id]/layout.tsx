@@ -37,7 +37,20 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
   const [uploading, setUploading] = useState(false);
 
   // Determine active tab based on pathname
-  const activeTab = pathname.includes("/questions") ? "questions" : "overview";
+  const getActiveTab = () => {
+    if (pathname.includes("/annotation")) {
+      return "annotation";
+    }
+    if (pathname.includes("/scoring")) {
+      return "scoring";
+    }
+    if (pathname.includes("/questions")) {
+      return "questions";
+    }
+    return "overview";
+  };
+
+  const activeTab = getActiveTab();
 
   const fetchData = async () => {
     try {
@@ -89,11 +102,16 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
     }
   };
 
+
   const handleTabChange = (_event: React.SyntheticEvent, newValue: string) => {
     if (newValue === "overview") {
       router.push(`/targets/${targetId}`);
     } else if (newValue === "questions") {
       router.push(`/targets/${targetId}/questions`);
+    } else if (newValue === "annotation") {
+      router.push(`/targets/${targetId}/annotation`);
+    } else if (newValue === "scoring") {
+      router.push(`/targets/${targetId}/scoring`);
     }
   };
 
@@ -120,12 +138,9 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
   return (
     <Box>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Button
-          startIcon={<ArrowBackIcon />}
-          onClick={() => router.push("/")}
-        >
-          Back to Targets
-        </Button>
+        <Typography variant="h4" component="h1" fontWeight={600} gutterBottom>
+          {target.name}
+        </Typography>
         <Box display="flex" gap={2}>
           <Button
             component="label"
@@ -153,14 +168,12 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
         </Box>
       </Box>
 
-      <Typography variant="h4" component="h1" fontWeight={600} gutterBottom>
-        {target.name}
-      </Typography>
-
       <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3 }}>
         <Tabs value={activeTab} onChange={handleTabChange}>
           <Tab label="Overview" value="overview" />
           <Tab label="Questions" value="questions" />
+          <Tab label="Annotations" value="annotation" />
+          <Tab label="Scoring" value="scoring" />
         </Tabs>
       </Box>
 

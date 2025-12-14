@@ -19,6 +19,29 @@ import {
   KBDocumentListResponse,
   KBDocumentTextResponse,
   KBCompiledTextResponse,
+  Snapshot,
+  SnapshotCreate,
+  SnapshotUpdate,
+  SnapshotStats,
+  Answer,
+  AnswerListResponse,
+  AnswerScore,
+  AnswerClaimsWithScoresResponse,
+  BulkSelectionRequest,
+  Annotation,
+  AnnotationCreate,
+  AnnotationBulkCreate,
+  AnnotationCompletionStatus,
+  JudgeConfig,
+  JudgeCreate,
+  JudgeUpdate,
+  JudgeModelOption,
+  QAJob,
+  QAJobStartRequest,
+  JudgeAlignment,
+  JudgeAccuracy,
+  ResultRow,
+  SnapshotResultsResponse,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -154,6 +177,145 @@ export const kbDocumentApi = {
 
   delete: (documentId: number) =>
     api.delete(`/knowledge-base/documents/${documentId}`),
+};
+
+// Snapshot endpoints
+export const snapshotApi = {
+  create: (data: SnapshotCreate) =>
+    api.post<Snapshot>("/snapshots", data),
+
+  list: (targetId: number) =>
+    api.get<Snapshot[]>(`targets/${targetId}/snapshots`),
+
+  get: (snapshotId: number) =>
+    api.get<Snapshot>(`/snapshots/${snapshotId}`),
+
+
+  update: (snapshotId: number, data: SnapshotUpdate) =>
+    api.put<Snapshot>(`/snapshots/${snapshotId}`, data),
+
+  delete: (snapshotId: number) =>
+    api.delete(`/snapshots/${snapshotId}`),
+
+  getStats: (snapshotId: number) =>
+    api.get<SnapshotStats>(`/snapshots/${snapshotId}/stats`),
+};
+
+// Answer endpoints
+export const answerApi = {
+  list: (snapshotId: number, selectedOnly?: boolean) =>
+    api.get<AnswerListResponse>(`/snapshots/${snapshotId}/answers`),
+
+  get: (answerId: number) =>
+    api.get<Answer>(`/answers/${answerId}`),
+
+  getScores: (answerId: number, judgeId: number) =>
+    api.get<AnswerScore>(`/answers/${answerId}/scores/${judgeId}`),
+
+  getClaims: (answerId: number, judgeId: number) =>
+    api.get<AnswerClaimsWithScoresResponse>(`/answers/${answerId}/claims`, {
+      params: { judge_id: judgeId },
+    }),
+
+  updateSelection: (answerId: number, isSelected: boolean) =>
+    api.put(`/answers/${answerId}/selection`, { is_selected_for_annotation: isSelected }),
+
+  bulkSelection: (data: BulkSelectionRequest) =>
+    api.post("/answers/bulk-selection", data),
+
+  selectDefault: (snapshotId: number) =>
+    api.post(`/snapshots/${snapshotId}/answers/select-default`),
+};
+
+// Annotation endpoints
+export const annotationApi = {
+  create: (data: AnnotationCreate) =>
+    api.post<Annotation>("/annotations", data),
+
+  bulkCreate: (data: AnnotationBulkCreate) =>
+    api.post<Annotation[]>("/annotations/bulk", data),
+
+  listBySnapshot: (snapshotId: number) =>
+    api.get<Annotation[]>(`/snapshots/${snapshotId}/annotations`),
+
+  getByAnswer: (answerId: number) =>
+    api.get<Annotation>(`/answers/${answerId}/annotations`),
+
+  get: (annotationId: number) =>
+    api.get<Annotation>(`/annotations/${annotationId}`),
+
+  update: (annotationId: number, data: Partial<AnnotationCreate>) =>
+    api.put<Annotation>(`/annotations/${annotationId}`, data),
+
+  delete: (annotationId: number) =>
+    api.delete(`/annotations/${annotationId}`),
+
+  getCompletionStatus: (snapshotId: number) =>
+    api.get<AnnotationCompletionStatus>(`/snapshots/${snapshotId}/annotations/completion-status`),
+};
+
+// Judge endpoints
+export const judgeApi = {
+  create: (data: JudgeCreate) =>
+    api.post<JudgeConfig>("/judges", data),
+
+  list: (targetId?: number) =>
+    api.get<JudgeConfig[]>("/judges", {
+      params: targetId ? { target_id: targetId } : undefined,
+    }),
+
+  get: (judgeId: number) =>
+    api.get<JudgeConfig>(`/judges/${judgeId}`),
+
+  update: (judgeId: number, data: JudgeUpdate) =>
+    api.put<JudgeConfig>(`/judges/${judgeId}`, data),
+
+  delete: (judgeId: number) =>
+    api.delete(`/judges/${judgeId}`),
+
+  getBaseline: () =>
+    api.get<JudgeConfig>("/judges/baseline"),
+
+  seedDefaults: () =>
+    api.post<JudgeConfig[]>("/judges/seed"),
+
+  listAvailableModels: () =>
+    api.get<JudgeModelOption[]>("/judges/available-models"),
+};
+
+// QA Job endpoints
+export const qaJobApi = {
+  start: (snapshotId: number, data: QAJobStartRequest) =>
+    api.post<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs/start`, {
+      snapshot_id: snapshotId,
+      ...data,
+    }),
+
+  pause: (jobIds: number[]) =>
+    api.post<QAJob[]>('/qa-jobs/pause', { job_ids: jobIds }),
+
+  list: (snapshotId: number) =>
+    api.get<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs`),
+
+  get: (jobId: number) =>
+    api.get<QAJob>(`/qa-jobs/${jobId}`),
+};
+
+// Metrics endpoints
+export const metricsApi = {
+  getAlignment: (snapshotId: number, judgeId: number) =>
+    api.get<JudgeAlignment>(`/snapshots/${snapshotId}/judges/${judgeId}/alignment`),
+
+  getAccuracy: (snapshotId: number, judgeId: number) =>
+    api.get<JudgeAccuracy>(`/snapshots/${snapshotId}/judges/${judgeId}/accuracy`),
+
+  getResults: (snapshotId: number) =>
+    api.get<SnapshotResultsResponse>(`/snapshots/${snapshotId}/results`),
+
+  exportCSV: (snapshotId: number) =>
+    api.post(`/snapshots/${snapshotId}/export`, undefined, {
+      responseType: "blob",
+    }),
 };
 
 export default api;

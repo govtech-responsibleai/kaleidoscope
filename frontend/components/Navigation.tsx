@@ -29,7 +29,7 @@ export default function Navigation({ children }: NavigationProps) {
   const pathname = usePathname();
 
   const menuItems = [
-    { label: "Home", icon: <HomeIcon />, path: "/" },
+    { label: "Targets", icon: <HomeIcon />, path: "/" },
   ];
 
   return (
@@ -42,6 +42,7 @@ export default function Navigation({ children }: NavigationProps) {
           "& .MuiDrawer-paper": {
             width: DRAWER_WIDTH,
             boxSizing: "border-box",
+            backgroundColor: "#f5f5f5",
           },
         }}
       >
@@ -73,7 +74,6 @@ export default function Navigation({ children }: NavigationProps) {
           p: 3,
           width: { sm: `calc(100% - ${DRAWER_WIDTH}px)` },
           minHeight: "100vh",
-          backgroundColor: "#f5f5f5",
         }}
       >
         <Toolbar />

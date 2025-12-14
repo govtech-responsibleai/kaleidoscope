@@ -15,6 +15,10 @@ downloads/
 eggs/
 .eggs/
 lib/
+!*lib/api.ts
+!*lib/constants.ts
+!*lib/theme.tsx
+!*lib/types.ts
 lib64/
 parts/
 sdist/
@@ -205,3 +209,15 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# macOS
+.DS_Store
+
+# Next.js
+.next/
+
+# Dependencies
+node_modules/
+
+# TypeScript
+tsconfig.tsbuildinfo

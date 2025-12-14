@@ -17,7 +17,7 @@ import {
 } from "@mui/material";
 import { Edit as EditIcon } from "@mui/icons-material";
 import { useParams } from "next/navigation";
-import { targetApi } from "@/lib/api";
+import { targetApi, snapshotApi, judgeApi } from "@/lib/api";
 import { TargetResponse, TargetStats, TargetUpdate, EndpointType } from "@/lib/types";
 import DocumentList from "@/components/DocumentList";
 
@@ -32,15 +32,21 @@ export default function TargetOverview() {
   const [editOpen, setEditOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
   const [editForm, setEditForm] = useState<TargetUpdate>({});
+  const [snapshotCount, setSnapshotCount] = useState(0);
+  const [judgeCount, setJudgeCount] = useState(0);
 
   const fetchData = async () => {
     try {
-      const [targetRes, statsRes] = await Promise.all([
+      const [targetRes, statsRes, snapshotsRes, judgesRes] = await Promise.all([
         targetApi.get(targetId),
         targetApi.getStats(targetId),
+        snapshotApi.list(targetId),
+        judgeApi.list(targetId),
       ]);
       setTarget(targetRes.data);
       setStats(statsRes.data);
+      setSnapshotCount(snapshotsRes.data.length);
+      setJudgeCount(judgesRes.data.length);
     } catch (error) {
       console.error("Failed to fetch target data:", error);
     } finally {
@@ -165,8 +171,18 @@ export default function TargetOverview() {
       </Box>
 
       {/* Statistics Cards */}
-      <Box sx={{ display: "flex", gap: 3, flexDirection: { xs: "column", sm: "row" } }}>
-        <Card sx={{ flex: 1 }}>
+      <Box
+        sx={{
+          display: "grid",
+          gap: 3,
+          gridTemplateColumns: {
+            xs: "repeat(1, minmax(0, 1fr))",
+            sm: "repeat(2, minmax(0, 1fr))",
+            md: "repeat(4, minmax(0, 1fr))",
+          },
+        }}
+      >
+        <Card>
           <CardContent>
             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
               Personas
@@ -176,13 +192,33 @@ export default function TargetOverview() {
             </Typography>
           </CardContent>
         </Card>
-        <Card sx={{ flex: 1 }}>
+        <Card>
           <CardContent>
             <Typography variant="subtitle2" color="text.secondary" gutterBottom>
               Questions
             </Typography>
             <Typography variant="h4" fontWeight={600}>
               {totalQuestions}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Snapshots
+            </Typography>
+            <Typography variant="h4" fontWeight={600}>
+              {snapshotCount}
+            </Typography>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent>
+            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+              Judges
+            </Typography>
+            <Typography variant="h4" fontWeight={600}>
+              {judgeCount}
             </Typography>
           </CardContent>
         </Card>
