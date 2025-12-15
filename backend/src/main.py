@@ -14,7 +14,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.common.config import get_settings
-from src.common.database.connection import init_db
+from src.common.database.connection import init_db, SessionLocal
+from src.common.database.seed import seed_default_judges
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
 
 # Import routers from query generation
@@ -44,6 +45,15 @@ async def lifespan(app: FastAPI):
     # Initialize database
     init_db()
     logger.info("✓ Database initialized")
+
+    # Seed default data
+    db = SessionLocal()
+    try:
+        seed_default_judges(db)
+    except Exception as e:
+        logger.error(f"Failed to seed default judges: {e}")
+    finally:
+        db.close()
 
     # Setup Phoenix instrumentation for LLM tracking
     phoenix_url = setup_phoenix_instrumentation(project_name="kaleidoscope-api")

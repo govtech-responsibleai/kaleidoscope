@@ -16,7 +16,6 @@ from src.common.database.repositories.answer_score_repo import AnswerScoreReposi
 from src.query_generation.services.answer_generator import generate_answer_for_job
 from src.scoring.services.claim_processor import extract_and_check_claims
 from src.scoring.services.judge_scoring import score_answer
-from src.common.models.qa_job import QAJobFailureMessage
 
 logger = logging.getLogger(__name__)
 
@@ -110,13 +109,13 @@ class QAJobProcessor:
                 self.db, self.question_id, self.snapshot_id
             )
 
-            # Check if answer exists AND is not a failure message
-            if answer and answer.answer_content and answer.answer_content != QAJobFailureMessage("generating_answers"):
+            # Check if answer exists
+            if answer and answer.answer_content:
                 # Valid answer exists, move to claim processing
                 logger.info(f"QAJob {job.id}: Answer exists, moving to claim processing")
                 await extract_and_check_claims(self.db, job.id)
             else:
-                # Answer missing or failed, retry generation
+                # Answer missing, generate it
                 logger.info(f"QAJob {job.id}: Answer missing, generating answer")
                 await generate_answer_for_job(self.db, job.id, self.question_id, self.snapshot_id)
 
@@ -153,15 +152,15 @@ class QAJobProcessor:
                 self.db, job.answer_id, self.judge_id
             )
 
-            # Check if score exists AND is not a failure message
-            if score and score.explanation != QAJobFailureMessage("scoring_answers"):
+            # Check if score exists
+            if score:
                 # Valid score exists, mark as completed
                 logger.info(f"QAJob {job.id}: Score already exists, marking as completed")
                 QAJobRepository.update_status(
                     self.db, job.id, JobStatusEnum.completed, QAJobStageEnum.completed
                 )
             else:
-                # Score missing or failed, retry scoring
+                # Score missing, run scoring
                 logger.info(f"QAJob {job.id}: Score missing, running scoring")
                 await score_answer(self.db, job.id)
 
@@ -260,13 +259,8 @@ def get_or_create_qajobs_batch(
             )
 
             if existing_job:
-                # Job exists - update status if needed
-                if existing_job.status == JobStatusEnum.paused:
-                    # Resume paused job
-                    QAJobRepository.update_status(
-                        db, existing_job.id, JobStatusEnum.running, existing_job.stage
-                    )
-                    logger.info(f"Resuming paused job {existing_job.id}")
+                # Job exists - retrieve as-is (status will be managed by .run())
+                logger.info(f"Retrieved existing job {existing_job.id} with status={existing_job.status.value}")
                 jobs.append(existing_job)
             else:
                 # Create new job
@@ -290,22 +284,11 @@ def get_or_create_qajobs_batch(
                 logger.info(f"Created new QAJob {job.id} for question {qn_id}")
                 jobs.append(job)
     else:
-        # Resume specific jobs by ID
+        # Retrieve specific jobs by ID (status will be managed by .run())
         for job_id in job_ids:
             job = QAJobRepository.get_by_id(db, job_id)
             if job:
-                # Validate job status before resuming
-                if job.status == JobStatusEnum.paused:
-                    QAJobRepository.update_status(
-                        db, job_id, JobStatusEnum.running, job.stage
-                    )
-                    logger.info(f"Resuming paused job {job_id}")
-                elif job.status == JobStatusEnum.failed:
-                    # Allow retrying failed jobs
-                    QAJobRepository.update_status(
-                        db, job_id, JobStatusEnum.running, job.stage
-                    )
-                    logger.info(f"Retrying failed job {job_id}")
+                logger.info(f"Retrieved job {job_id} with status={job.status.value}, stage={job.stage.value}")
                 jobs.append(job)
             else:
                 logger.warning(f"Job {job_id} not found, skipping")

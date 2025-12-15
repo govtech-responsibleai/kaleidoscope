@@ -19,7 +19,6 @@ from src.common.database.repositories import (
     KBDocumentRepository
 )
 from src.common.llm import CostTracker
-from src.common.models.qa_job import QAJobFailureMessage
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
@@ -87,7 +86,6 @@ class AnswerGenerator:
 
         base_url = target.api_endpoint.rstrip("/")
 
-        # Comment the next 3 lines out and uncomment _mock_answer to generate mock responses.
         try:
             # Create chat session
             chat_id = self._create_chat(question, api_key, base_url)
@@ -296,10 +294,11 @@ class AnswerGenerator:
             existing_answer = AnswerRepository.get_by_question_and_snapshot(self.db, question_id, snapshot_id)
 
             if existing_answer:
+                # Valid answer exists, reuse it
                 answer = existing_answer
                 logger.info(f"Answer already exists for question {question_id}, snapshot {snapshot_id}. Skipping generation.")
             else:
-                # Generate new answer using async flow to avoid blocking the loop
+                # Generate new answer
                 answer = await self.generate_async(question_id, snapshot_id)
                 logger.info(f"Generated answer {answer.id} for question {question_id}, snapshot {snapshot_id}")
 
@@ -313,41 +312,12 @@ class AnswerGenerator:
         except Exception as e:
             logger.error(f"Answer generation failed for job {self.job_id}: {e}", exc_info=True)
 
-            failure_message = QAJobFailureMessage("generating_answers")
-            existing_answer = AnswerRepository.get_by_question_and_snapshot(self.db, question_id, snapshot_id)
-
-            if existing_answer:
-                answer = AnswerRepository.update(
-                    self.db,
-                    existing_answer.id,
-                    {
-                        "answer_content": failure_message,
-                        "chat_id": None,
-                        "message_id": None,
-                        "is_selected_for_annotation": False
-                    }
-                )
-                logger.info(f"Updated existing answer {answer.id} to failure state for question {question_id}")
-            else:
-                # Create default answer to mark failure and preserve partial progress
-                answer_data = {
-                    "snapshot_id": snapshot_id,
-                    "question_id": question_id,
-                    "answer_content": failure_message,
-                    "chat_id": None,
-                    "message_id": None,
-                    "is_selected_for_annotation": False
-                }
-                answer = AnswerRepository.create(self.db, answer_data)
-                logger.info(f"Created failure answer {answer.id} for question {question_id}")
-
-            # Update job with failure status and answer_id
+            # Mark job as failed (don't create failure Answer record)
             QAJobRepository.update_status(
                 self.db,
                 self.job_id,
                 JobStatusEnum.failed,
-                self.job.stage,
-                answer_id=answer.id
+                self.job.stage
             )
 
     
@@ -381,7 +351,6 @@ class AnswerGenerator:
 
         base_url = target.api_endpoint.rstrip("/")
 
-        # # Comment the next 3 lines out and uncomment _mock_answer to generate mock responses.
         try:
             # Create chat session
             chat_id = await self._create_chat_async(question, api_key, base_url)

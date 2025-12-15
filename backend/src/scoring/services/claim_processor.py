@@ -21,7 +21,6 @@ from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
 from src.common.models import CheckworthyResult
-from src.common.models.qa_job import QAJobFailureMessage
 
 logger = logging.getLogger(__name__)
 
@@ -193,8 +192,6 @@ class ClaimProcessor:
                 response_model=CheckworthyResult,
                 temperature=0.7
             )
-
-            logger.info(f"Prompt checked: {prompt}")
 
             # Track costs
             self.cost_tracker.add_call(metadata)

@@ -86,23 +86,3 @@ class QAJobListResponse(BaseModel):
     total: int
 
 
-# Utility function for failure sentinels
-def QAJobFailureMessage(stage: str) -> str:
-    """
-    Generate standardized failure message for QAJob stages.
-
-    This sentinel value is used to mark database records (Answer, AnswerClaim, AnswerScore)
-    as failed without losing the partial progress. It allows the pipeline to detect
-    failures and retry from the exact failure point.
-
-    Args:
-        stage: The stage name where the failure occurred (e.g., "generating_answers")
-
-    Returns:
-        Standardized failure message string
-
-    Example:
-        >>> QAJobFailureMessage("generating_answers")
-        '[FAILED at generating_answers]'
-    """
-    return f"[FAILED at {stage}]"

@@ -18,7 +18,6 @@ from src.common.database.repositories.kb_document_repo import KBDocumentReposito
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
 from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult
-from src.common.models.qa_job import QAJobFailureMessage
 
 logger = logging.getLogger(__name__)
 
@@ -98,16 +97,6 @@ class AnswerJudge:
 
         except Exception as e:
             logger.error(f"Answer scoring failed for job {self.job_id}: {e}", exc_info=True)
-
-            # Create failure message AnswerScore to mark failure and preserve partial progress
-            answer_score_data = {
-                "answer_id": self.answer.id,
-                "judge_id": self.judge.id,
-                "overall_label": False,  # Mark as inaccurate due to scoring failure
-                "explanation": QAJobFailureMessage("scoring_answers")
-            }
-            answer_score = AnswerScoreRepository.create(self.db, answer_score_data)
-            logger.info(f"Created failure message answer score {answer_score.id} for answer {self.answer.id}")
 
             # Update job with failure status
             QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.failed, self.job.stage)
