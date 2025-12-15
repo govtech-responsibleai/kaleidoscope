@@ -112,7 +112,7 @@ class MetricsService:
             raise ValueError(f"No overlapping annotations and scores found for snapshot {snapshot_id}, judge {judge_id}")
 
         # Calculate metrics using sklearn. Positive Label: False (Inaccurate), Negative Label: True (Accurate)
-        f1 = f1_score(y_true, y_pred, average='binary', pos_label=False, zero_division=0)
+        f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
         precision = precision_score(y_true, y_pred, average='binary', pos_label=False, zero_division=0)
         recall = recall_score(y_true, y_pred, average='binary', pos_label=False, zero_division=0)
         accuracy = accuracy_score(y_true, y_pred)

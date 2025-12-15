@@ -88,17 +88,20 @@ class AnswerGenerator:
         base_url = target.api_endpoint.rstrip("/")
 
         # Comment the next 3 lines out and uncomment _mock_answer to generate mock responses.
-        # Create chat session
-        chat_id = self._create_chat(question, api_key, base_url)
+        try:
+            # Create chat session
+            chat_id = self._create_chat(question, api_key, base_url)
 
-        # Send message and get response
-        api_response = self._send_message(chat_id, question.text, api_key, base_url)
+            # Send message and get response
+            api_response = self._send_message(chat_id, question.text, api_key, base_url)
 
-        # Extract and store answer
-        answer = self._save_answer(question, chat_id, api_response, snapshot_id)
+            # Extract and store answer
+            answer = self._save_answer(question, chat_id, api_response, snapshot_id)
 
-        # # MMOCK ANSWER, bring this back to run a simple LLM call as the mock chatbot
-        # answer = self._mock_answer(question_id, snapshot_id)
+        except: 
+            # MMOCK ANSWER, bring this back to run a simple LLM call as the mock chatbot
+            answer = self._mock_answer(question_id, snapshot_id)
+
         return answer
 
     def _create_chat(self, question: Question, api_key: str, base_url: str) -> str:
@@ -229,10 +232,14 @@ class AnswerGenerator:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=1.0,
+            num_retries=settings.llm_num_retries,
+            timeout=600,
         )
         print("DONE: Mocking answer for question", question_id)
 
         content = response.choices[0].message.content
+        # Append disclaimer to response content 
+        content = f"Disclaimer: API endpoint failed to return content. Presenting a mocked response instead.\n\n" + content
         answer_data = {
             "snapshot_id": snapshot_id,
             "question_id": question_id,
@@ -375,17 +382,20 @@ class AnswerGenerator:
         base_url = target.api_endpoint.rstrip("/")
 
         # # Comment the next 3 lines out and uncomment _mock_answer to generate mock responses.
-        # Create chat session
-        chat_id = await self._create_chat_async(question, api_key, base_url)
+        try:
+            # Create chat session
+            chat_id = await self._create_chat_async(question, api_key, base_url)
 
-        # Send message and get response
-        api_response = await self._send_message_async(chat_id, question.text, api_key, base_url)
+            # Send message and get response
+            api_response = await self._send_message_async(chat_id, question.text, api_key, base_url)
 
-        # Extract and store answer
-        answer = await self._save_answer_async(question, chat_id, api_response, snapshot_id)
+            # Extract and store answer
+            answer = await self._save_answer_async(question, chat_id, api_response, snapshot_id)
 
-        # # MOCK ANSWER, bring this back to run a simple LLM call as the mock chatbot
-        # answer = await self._mock_answer_async(question_id, snapshot_id)
+        except:
+            # MOCK ANSWER, runs a simple LLM call as the mock chatbot
+            answer = await self._mock_answer_async(question_id, snapshot_id)
+
         return answer
     
 
@@ -466,10 +476,14 @@ class AnswerGenerator:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=1.0,
+            num_retries=settings.llm_num_retries,
+            timeout=600,
         )
         print("DONE: Async Mocking answer for question", question_id)
 
         content = response.choices[0].message.content
+        # Append disclaimer to response content 
+        content = f"Disclaimer: API endpoint failed to return content. Presenting a mocked response instead.\n\n" + content
         answer_data = {
             "snapshot_id": snapshot_id,
             "question_id": question_id,

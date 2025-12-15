@@ -4,6 +4,7 @@ LLM client wrapper using LiteLLM.
 Provides a unified interface for calling different LLM providers
 with automatic retry, error handling, and token tracking.
 """
+import asyncio
 import logging
 from typing import Dict, List, Optional, Any, Type, TypeVar
 from pydantic import BaseModel
@@ -35,6 +36,8 @@ class LLMClient:
                    Defaults to settings.default_llm_model
         """
         self.model = model or settings.default_llm_model
+        # Semaphore to limit concurrent async requests (prevents rate limiting)
+        self._semaphore = asyncio.Semaphore(settings.llm_max_concurrent)
 
     def generate(
         self,
@@ -86,6 +89,8 @@ class LLMClient:
                 temperature=temperature,
                 max_tokens=max_tokens,
                 response_format=response_format,
+                num_retries=settings.llm_num_retries,
+                timeout=600,
                 **kwargs
             )
 
@@ -117,7 +122,11 @@ class LLMClient:
             return result
 
         except Exception as e:
-            logger.error(f"LLM generation failed: {e}")
+            # Log rate limit errors specifically
+            if "429" in str(e) or "rate" in str(e).lower():
+                logger.error(f"Rate limit error (after {settings.llm_num_retries} retries): {e}")
+            else:
+                logger.error(f"LLM generation failed: {e}")
             raise
 
     def generate_json(
@@ -268,15 +277,18 @@ class LLMClient:
             logger.info(f"Calling {self.model} (async) with {len(schema_prompt)} char prompt")
 
             # MOCK temporarily - uncomment below for real LLM calls
-            # Call async LLM with JSON mode
-            response = await litellm.acompletion(
-                model=self.model,
-                messages=messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-                **kwargs
-            )
+            # Call async LLM with JSON mode (with semaphore to limit concurrency)
+            async with self._semaphore:
+                response = await litellm.acompletion(
+                    model=self.model,
+                    messages=messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    response_format={"type": "json_object"},
+                    num_retries=settings.llm_num_retries,
+                    timeout=600,
+                    **kwargs
+                )
 
             # Extract response data
             content = response.choices[0].message.content
@@ -311,7 +323,11 @@ class LLMClient:
             return parsed_model, metadata
 
         except Exception as e:
-            logger.error(f"Async LLM generation failed for {response_model.__name__}: {e}")
+            # Log rate limit errors specifically
+            if "429" in str(e) or "rate" in str(e).lower():
+                logger.error(f"Rate limit error (after {settings.llm_num_retries} retries) for {response_model.__name__}: {e}")
+            else:
+                logger.error(f"Async LLM generation failed for {response_model.__name__}: {e}")
             raise ValueError(f"LLM response doesn't match expected schema: {e}")
 
     def batch_generate(
