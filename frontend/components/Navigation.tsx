@@ -76,7 +76,7 @@ export default function Navigation({ children }: NavigationProps) {
           minHeight: "100vh",
         }}
       >
-        <Toolbar sx={{minHeight: "4% !important"}}/>
+        <Toolbar/>
         {children}
       </Box>
     </Box>

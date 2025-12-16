@@ -28,6 +28,8 @@ The platform automates the creation of diverse evaluation questions across user 
 - **Frontend Library**: React 19
 - **HTTP Client**: Axios
 - **Styling**: Material-UI components + Emotion CSS-in-JS
+- **Data Visualization**: D3.js (for snapshot accuracy charts)
+- **PDF Generation**: html2canvas + jsPDF (for report export)
 
 ## Prerequisites
 
@@ -85,9 +87,12 @@ kaleidoscope-frontend/
 │           └── page.tsx         # Scoring & judge management page
 ├── components/                  # React components
 │   ├── Navigation.tsx           # Sidebar navigation
-│   ├── CreateTargetModal.tsx    # Modal for creating targets
 │   ├── GenerateEvalsModal.tsx   # Modal for persona/question generation
-│   ├── DocumentList.tsx         # Knowledge base document management
+│   ├── overview/                # Overview page components
+│   │   ├── CreateTargetModal.tsx        # Modal for creating targets
+│   │   ├── DocumentList.tsx             # Knowledge base document management
+│   │   ├── SnapshotAccuracyChart.tsx    # D3.js chart for snapshot accuracy trends
+│   │   └── LatestSnapshotMetricsCard.tsx # Latest snapshot metrics with judge reliability
 │   ├── annotation/              # Annotation page components
 │   │   ├── QAJobControl.tsx     # Start/pause/resume controls with status
 │   │   ├── QAList.tsx           # List of Q&A items with claim highlighting
@@ -146,11 +151,18 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
   - Number of personas
   - Number of questions
   - Number of snapshots
+  - Number of judges
 - **Document Management**:
   - View list of uploaded documents with metadata
   - Upload additional documents
   - Delete existing documents
   - See document details (size, pages, upload date)
+- **Snapshot Performance Tracking**:
+  - View accuracy trends across snapshots with interactive D3.js bar chart
+  - View aggregated accuracy based on majority vote from aligned judges with judge reliability indicators
+- **Report Export**:
+  - Download PDF report of overview with all metrics and visualizations
+  - One-click export for sharing evaluation results
 - Click "Delete Target" to remove the entire target
 - Navigate to Questions, Annotation, or Scoring tabs
 
@@ -266,53 +278,61 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
 The frontend integrates with the Kaleidoscope backend API:
 
 ### Target Endpoints
-- `POST /targets` - Create target (with optional document upload)
+- `POST /targets` - Create target
 - `GET /targets` - List all targets
 - `GET /targets/:id` - Get target details
+- `PUT /targets/:id` - Update target
 - `DELETE /targets/:id` - Delete target
 - `GET /targets/:id/stats` - Get target statistics
+- `GET /targets/:id/personas` - List personas for target
+- `GET /targets/:id/questions` - List questions for target
+- `GET /targets/:id/snapshots` - List snapshots for target
 
 ### Knowledge Base Document Endpoints
-- `POST /targets/:id/kb-docs/upload` - Upload documents (multipart/form-data)
-- `GET /targets/:id/kb-docs` - List all documents for target
-- `GET /kb-docs/:id` - Get document details
-- `DELETE /kb-docs/:id` - Delete document
-
-### Persona Endpoints
-- `POST /targets/:id/jobs/personas` - Create persona generation job
-- `GET /jobs/:id/personas` - Get generated personas
-- `POST /personas/bulk-approve` - Approve selected personas
-- `POST /personas/:id/approve` - Approve single persona
-- `POST /personas/:id/reject` - Reject single persona
-
-### Question Endpoints
-- `POST /targets/:id/jobs/questions` - Create question generation job (10 questions per job)
-- `GET /jobs/targets/:id/questions` - Get questions for target
-- `GET /jobs/:id` - Poll job status
-- `POST /questions/find-similar` - Find similar questions (batch)
-- `POST /questions/bulk-approve` - Approve multiple questions
-- `POST /questions/:id/approve` - Approve single question
-- `POST /questions/:id/reject` - Reject single question
+- `POST /targets/:id/knowledge-base/upload` - Upload documents (multipart/form-data)
+- `GET /targets/:id/knowledge-base/documents` - List all documents for target
+- `GET /targets/:id/knowledge-base/text` - Get compiled text from all KB documents
+- `GET /knowledge-base/documents/:id` - Get specific KB document with text
+- `DELETE /knowledge-base/documents/:id` - Delete KB document
 
 ### Job Endpoints
+- `POST /jobs/personas` - Create persona generation job
+- `POST /jobs/questions` - Create question generation job
+- `GET /jobs?target_id={id}` - List jobs for target (query parameter)
 - `GET /jobs/:id` - Get job status and details
-- `GET /jobs/:id/stats` - Get job statistics
-- `POST /targets/:id/jobs/personas` - Create persona generation job
-- `POST /targets/:id/jobs/questions` - Create question generation job
+- `GET /jobs/:id/personas` - Get personas from completed job
+- `GET /jobs/:id/questions` - Get questions from completed job
+
+### Persona Endpoints
+- `GET /personas/:id` - Get single persona
+- `PUT /personas/:id` - Update persona
+- `POST /personas/:id/approve` - Approve single persona
+- `POST /personas/:id/reject` - Reject single persona
+- `POST /personas/bulk-approve` - Approve multiple personas
+- `GET /personas/:id/questions` - List questions for persona
+
+### Question Endpoints
+- `GET /questions/:id` - Get single question
+- `PUT /questions/:id` - Update question
+- `POST /questions/:id/approve` - Approve single question
+- `POST /questions/:id/reject` - Reject single question
+- `POST /questions/bulk-approve` - Approve multiple questions
+- `POST /questions/similar` - Find similar questions (batch)
 
 ### Snapshot Endpoints
 - `POST /snapshots` - Create new snapshot
-- `GET /targets/:id/snapshots` - List snapshots for target
 - `GET /snapshots/:id` - Get snapshot details
 - `PUT /snapshots/:id` - Update snapshot
 - `DELETE /snapshots/:id` - Delete snapshot
 - `GET /snapshots/:id/stats` - Get snapshot statistics
 
 ### Answer Endpoints
+- `POST /answers` - Generate answer for a question
+- `GET /answers/:id` - Get answer by ID
+- `DELETE /answers/:id` - Delete answer
 - `GET /snapshots/:id/answers` - List all answers for snapshot
-- `GET /answers/:id` - Get answer details
 - `GET /answers/:id/scores/:judgeId` - Get answer scores from specific judge
-- `GET /answers/:id/claims` - Get answer claims with scores
+- `GET /answers/:id/claims?judge_id={id}` - Get answer claims with scores
 - `PUT /answers/:id/selection` - Update answer selection status
 - `POST /answers/bulk-selection` - Bulk update answer selections
 - `POST /snapshots/:id/answers/select-default` - Auto-select default answers for annotation
@@ -321,31 +341,34 @@ The frontend integrates with the Kaleidoscope backend API:
 - `POST /annotations` - Create annotation
 - `POST /annotations/bulk` - Bulk create annotations
 - `GET /snapshots/:id/annotations` - List annotations for snapshot
+- `GET /snapshots/:id/annotations/completion-status` - Check annotation completion status
 - `GET /answers/:id/annotations` - Get annotation for specific answer
+- `GET /annotations/:id` - Get annotation by ID
 - `PUT /annotations/:id` - Update annotation
 - `DELETE /annotations/:id` - Delete annotation
-- `GET /snapshots/:id/annotations/completion-status` - Check annotation completion status
 
 ### Judge Endpoints
-- `POST /judges` - Create new judge
-- `GET /judges` - List all judges
-- `GET /judges/:id` - Get judge details
-- `PUT /judges/:id` - Update judge configuration
-- `DELETE /judges/:id` - Delete judge
-- `GET /judges/baseline` - Get baseline judge
 - `POST /judges/seed` - Seed default judges
+- `GET /judges` - List all judges
+- `POST /judges` - Create custom judge
+- `GET /judges/baseline` - Get baseline judge
+- `GET /judges/available-models` - Get available models
+- `GET /judges/:id` - Get judge details
+- `PUT /judges/:id` - Update judge configuration (if editable)
+- `DELETE /judges/:id` - Delete judge (if editable)
 
 ### QA Job Endpoints
 - `POST /snapshots/:id/qa-jobs/start` - Start QA job (answer generation + baseline scoring)
-- `POST /qa-jobs/pause` - Pause running QA job
+- `POST /qa-jobs/pause` - Pause running QA jobs
 - `GET /snapshots/:id/qa-jobs` - List QA jobs for snapshot
 - `GET /qa-jobs/:id` - Get QA job details and status
 
 ### Metrics & Export Endpoints
-- `GET /snapshots/:id/judges/:judgeId/alignment` - Get judge alignment metrics (F1, precision, recall)
+- `GET /snapshots/:id/judges/:judgeId/alignment` - Get judge alignment metrics (F1, precision, recall, accuracy)
 - `GET /snapshots/:id/judges/:judgeId/accuracy` - Get judge accuracy on all responses
 - `GET /snapshots/:id/results` - Get aggregated results with judge breakdown
 - `POST /snapshots/:id/export` - Export results to CSV
+- `GET /targets/:id/snapshot-metrics` - Get aggregated metrics for all snapshots of a target
 
 ## Configuration
 
@@ -364,7 +387,7 @@ Customize the Material-UI theme by editing `lib/theme.tsx`:
 ```typescript
 export const theme = createTheme({
   palette: {
-    primary: { main: "#1976d2" },
+    primary: { main: "#1d2766" },
     secondary: { main: "#dc004e" },
   },
 });
@@ -402,6 +425,34 @@ File upload implementation:
 - Sequential upload (not parallel)
 - Error handling per file with user feedback
 - Uses FormData for multipart/form-data requests
+
+### Snapshot Metrics Visualization
+
+The Overview page provides comprehensive performance tracking across snapshot iterations:
+
+**Snapshot Accuracy Chart:**
+- D3.js-powered interactive bar chart showing accuracy trends
+- X-axis: Snapshot names
+- Y-axis: Aggregated accuracy percentage (0-100%)
+
+**Latest Snapshot Metrics Card:**
+- Displays most recent snapshot's performance at a glance
+- Shows aggregated accuracy percentage (majority vote from aligned judges)
+- Judge reliability indicators:
+  - **Green badge**: Reliable judges found (F1 ≥ 0.5)
+  - **Warning badge**: No aligned judges (needs more annotation)
+- Displays judge alignment range (min-max F1 scores)
+- Shows count of reliable evaluators
+
+**Metrics Calculation:**
+- `aggregated_accuracy`: Percentage of accurate responses based on majority vote from judges with F1 ≥ 0.5
+- `judge_alignment_range`: Min and max F1 scores of judges that aligned with human annotations
+- `reliable_judge_count`: Number of judges achieving F1 ≥ 0.5 threshold
+- Only judges with sufficient annotation alignment contribute to aggregated accuracy
+
+**PDF Report Export:**
+- One-click export of entire overview page as PDF
+- Includes all metrics, charts, and statistics
 
 ### Similarity Detection
 
@@ -448,7 +499,6 @@ npm run lint         # Run ESLint
 - [ ] Question and persona editing capabilities
 - [ ] Batch operations for questions (bulk delete, bulk edit)
 - [ ] Question versioning and history tracking
-- [ ] Overview dashboard with trend analysis
 - [ ] Multi-turn evaluation workflow 
 - [ ] Bias-adjusted judge accuracy
 

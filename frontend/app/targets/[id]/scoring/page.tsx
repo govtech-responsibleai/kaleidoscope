@@ -358,7 +358,7 @@ export default function ScoringPage() {
       />
 
       {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
           {error}
         </Alert>
       )}
@@ -380,69 +380,74 @@ export default function ScoringPage() {
             : "Complete annotations in the annotation tab to view scoring."}
         </Alert>
       ) : (
-        <Stack spacing={1.5}>
-          {/* Judge Controls */}
-          <Box sx={{ display: "flex", justifyContent: "flex-end", gap: 1 }}>
+          <Stack spacing={1.5}>
+            {/* Judge Controls */}
+            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+              <Typography variant="h5">
+                Evaluator List
+              </Typography>
 
-            <Tooltip title="Add Judge">
-              <IconButton
-                color="primary"
-                sx={{ border: 1, borderColor: "divider" }}
-                aria-label="add judge"
-                onClick={() => handleOpenDialog("create")}
-              >
-                <AddIcon />
-              </IconButton>
-            </Tooltip>
+              <Box sx={{ display: "flex", gap: 1 }}>
+                <Tooltip title="Add Judge">
+                  <IconButton
+                    color="primary"
+                    sx={{ border: 1, borderColor: "divider" }}
+                    aria-label="add judge"
+                    onClick={() => handleOpenDialog("create")}
+                  >
+                    <AddIcon />
+                  </IconButton>
+                </Tooltip>
 
-            <span>
-              <IconButton
-                sx={{ border: 1, borderColor: "divider" }}
-                aria-label="scroll judges left"
-                onClick={() => handleScrollJudgeCards("left")}
-                disabled={judges.length === 0}
-              >
-                <ArrowBackIosNewIcon fontSize="small" />
-              </IconButton>
-            </span>
-            <span>
-              <IconButton
-                sx={{ border: 1, borderColor: "divider" }}
-                aria-label="scroll judges right"
-                onClick={() => handleScrollJudgeCards("right")}
-                disabled={judges.length === 0}
-              >
-                <ArrowForwardIosIcon fontSize="small" />
-              </IconButton>
-            </span>
-          </Box>
-
-          {/* Judge Cards */}
-          <JudgeCards
-            judges={judges}
-            snapshotId={selectedSnapshotId}
-            judgeJobs={judgeJobs}
-            scrollContainerRef={judgeCardsRef}
-            onRunJudge={handleRunJudge}
-            onEditJudge={(judge) => handleOpenDialog("edit", judge)}
-            onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
-            onDeleteJudge={handleDeleteJudge}
-          />
-
-          <Divider />
-
-          {/* Results Table */}
-          {resultsLoading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-              <CircularProgress />
+              <span>
+                <IconButton
+                  sx={{ border: 1, borderColor: "divider" }}
+                  aria-label="scroll judges left"
+                  onClick={() => handleScrollJudgeCards("left")}
+                  disabled={judges.length === 0}
+                >
+                  <ArrowBackIosNewIcon fontSize="small" />
+                </IconButton>
+              </span>
+              <span>
+                <IconButton
+                  sx={{ border: 1, borderColor: "divider" }}
+                  aria-label="scroll judges right"
+                  onClick={() => handleScrollJudgeCards("right")}
+                  disabled={judges.length === 0}
+                >
+                  <ArrowForwardIosIcon fontSize="small" />
+                </IconButton>
+              </span>
+              </Box>
             </Box>
-          ) : (
-            <ResultsTable
-              results={results}
+
+            {/* Judge Cards */}
+            <JudgeCards
+              judges={judges}
               snapshotId={selectedSnapshotId}
+              judgeJobs={judgeJobs}
+              scrollContainerRef={judgeCardsRef}
+              onRunJudge={handleRunJudge}
+              onEditJudge={(judge) => handleOpenDialog("edit", judge)}
+              onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
+              onDeleteJudge={handleDeleteJudge}
             />
-          )}
-        </Stack>
+
+            <Divider />
+
+            {/* Results Table */}
+            {resultsLoading ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
+                <CircularProgress />
+              </Box>
+            ) : (
+              <ResultsTable
+                results={results}
+                snapshotId={selectedSnapshotId}
+              />
+            )}
+          </Stack>
       )}
 
       {/* Create/Edit Judge Dialog */}

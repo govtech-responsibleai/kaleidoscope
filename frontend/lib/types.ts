@@ -448,6 +448,21 @@ export interface SnapshotResultsResponse {
   total: number;
 }
 
+export interface SnapshotMetric {
+  snapshot_id: number;
+  snapshot_name: string;
+  created_at: string;
+  aggregated_accuracy: number;
+  total_answers: number;
+  judge_alignment_range: { min: number; max: number } | null;
+  has_aligned_judges: boolean;
+  reliable_judge_count: number;
+}
+
+export interface SnapshotMetricsResponse {
+  snapshots: SnapshotMetric[];
+}
+
 // Additional types for frontend use
 /**
  * Aggregated QA data keyed by question id.

@@ -62,7 +62,7 @@ export default function SnapshotHeader({
         spacing={2}
         alignItems="flex-end"
         justifyContent="space-between"
-        sx={{ mb: 2 }}
+        sx={{ mb: 3 }}
       >
         <Box sx={{ width: "100%" }}>
           <FormControl fullWidth size="small">
