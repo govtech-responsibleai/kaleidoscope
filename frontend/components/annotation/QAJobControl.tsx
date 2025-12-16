@@ -118,6 +118,20 @@ export default function QAJobControl({
   const failedCount = statusGroups[JobStatus.FAILED] ?? 0;
   const pausedCount = statusGroups[JobStatus.PAUSED] ?? 0;
 
+  // Detect unevaluated questions (questions not yet in qaJobs)
+  const unevaluatedQuestions = useMemo(() => {
+    const evaluatedQuestionIds = new Set(qaJobs.map((job) => job.question_id));
+    const unevaluated = questionIds.filter((qid) => !evaluatedQuestionIds.has(qid));
+
+    if (unevaluated.length > 0) {
+      console.log(`QAJobControl: Detected ${unevaluated.length} new questions not yet evaluated:`, unevaluated);
+    } else {
+      console.log("QAJobControl: No new questions to evaluate.");
+    }
+
+    return unevaluated;
+  }, [qaJobs, questionIds]);
+
   // Update counts of the STAGEs each QAJob is in
   const stageGroups = useMemo(() => {
     const groups: Record<QAJobStageEnum, number> = {
@@ -403,6 +417,9 @@ export default function QAJobControl({
 
     if (answers.length === 0) return;
 
+    // Wait until all answers for the selected questions are ready
+    if (answers.length < questionIds.length) return;
+
     const hasSelection = answers.some((answer) => answer.is_selected_for_annotation);
     if (hasSelection) {
       defaultSelectionAttemptedRef.current.add(snapshotId);
@@ -500,6 +517,15 @@ export default function QAJobControl({
     }
 
     if (completedCount === totalJobs) {
+      if (unevaluatedQuestions.length > 0) {
+        return (
+          <Chip
+            label={`Pending, (${unevaluatedQuestions.length}) new questions detected`}
+            color="warning"
+            size="small"
+          />
+        );
+      }
       return <Chip label="Completed" color="success" size="small" />;
     }
 
@@ -566,7 +592,7 @@ export default function QAJobControl({
 
   const controlIcon = controlState === "pause" ? <PauseIcon /> : <PlayArrowIcon />;
   const controlColor = controlState === "disabled" ? "default" : "primary";
-  const isScoringComplete = totalJobs > 0 && completedCount === totalJobs;
+  const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && unevaluatedQuestions.length === 0;
 
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {

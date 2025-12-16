@@ -31,6 +31,22 @@ export const theme = createTheme({
         },
       },
     },
+    MuiCard: {
+      styleOverrides: {
+        root: {
+          borderRadius: 8
+        },
+      },
+      variants: [
+        {
+          props: { variant: "outlined" },
+          style: {
+            border: "1px solid rgb(180, 180, 180)",
+            borderRadius: 8
+          },
+        },
+      ],
+    },
     MuiFormControl: {
       styleOverrides: {
         root: {
@@ -65,7 +81,7 @@ export const theme = createTheme({
           "& .MuiOutlinedInput-notchedOutline": { padding: 0 },
         },
         input: {
-          paddingTop: "10px" // optional, keeps spacing consistent once the notch is gone
+          paddingTop: "5px" 
         },
       },
     },

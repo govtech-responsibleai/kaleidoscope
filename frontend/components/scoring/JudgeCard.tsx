@@ -98,7 +98,7 @@ export default function JudgeCard({
   };
 
   return (
-    <Card variant="outlined" sx={{ flex: "0 0 31%" ,boxShadow: "none", height: "100%" }}>
+    <Card variant="outlined" sx={{ flex: "0 0 31%" , height: "100%" }}>
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -117,53 +117,12 @@ export default function JudgeCard({
         </Stack>
 
         <Stack spacing={1} sx={{ mt: 2, flexGrow: 1 }}>
-          {/* Judge Alignment */}
-          <Box>
-            <Typography variant="caption" color="text.secondary">
-              Evaluator Reliability
-            </Typography>
-
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="h5">{alignment ? `${(alignment.f1*100).toFixed(1)}%` : "--"}</Typography>
-              <Tooltip
-                title={
-                  alignment
-                    ? `Based on ${alignment.sample_count} annotations`
-                    : "Waiting for judge evaluations"
-                }
-              >
-                <InfoOutlinedIcon fontSize="small" color="action" />
-              </Tooltip>
-            </Stack>
-            
-            {/* <Stack direction="row" spacing={3}>
-              <Box sx={{ pr: 2 }}>
-                <Typography variant="h5">{alignment ? `${alignment.f1.toFixed(1)}%` : "--"}</Typography>
-              </Box>
-              <Box sx={{ pr: 2, borderRight: 1, borderColor: "divider" }}>
-                <Typography variant="caption">F1</Typography>
-                <Typography variant="h5">{alignment ? `${alignment.f1.toFixed(1)}%` : "--"}</Typography>
-              </Box>
-              <Box sx={{ pr: 2, borderRight: 1, borderColor: "divider" }}>
-                <Typography variant="caption">Recall</Typography>
-                <Typography variant="h5">{alignment ? `${alignment.recall.toFixed(1)}%` : "--"}</Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption">Precision</Typography>
-                <Typography variant="h5">{alignment ? `${alignment.precision.toFixed(1)}%` : "--"}</Typography>
-              </Box>
-            </Stack> */}
-          </Box>
-
-          <Divider />
-
           <Box>
             <Typography variant="caption" color="text.secondary">
               Chatbot Accuracy
             </Typography>
-
             <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="h5">{accuracy ? `${(accuracy.accuracy*100).toFixed(1)}%` : "--"}</Typography>
+              <Typography variant="h4">{accuracy ? `${(accuracy.accuracy*100).toFixed(1)}%` : "--"}</Typography>
               <Tooltip
                 title={
                   accuracy
@@ -174,7 +133,28 @@ export default function JudgeCard({
                 <InfoOutlinedIcon fontSize="small" color="action" />
               </Tooltip>
             </Stack>
+          </Box>
 
+          <Divider />
+
+          {/* Judge Alignment */}
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Evaluator Reliability
+            </Typography>
+
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="h4">{alignment ? `${(alignment.f1*100).toFixed(1)}%` : "--"}</Typography>
+              <Tooltip
+                title={
+                  alignment
+                    ? `Calculated from ${alignment.sample_count} annotations`
+                    : "Waiting for judge evaluations"
+                }
+              >
+                <InfoOutlinedIcon fontSize="small" color="action" />
+              </Tooltip>
+            </Stack>
           </Box>
         </Stack>
 

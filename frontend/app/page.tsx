@@ -109,6 +109,7 @@ export default function Home() {
           {targets.map((target) => (
             <Card
               key={target.id}
+              variant="outlined"
               sx={{
                 minWidth: 0,
                 height: "100%",
@@ -116,7 +117,7 @@ export default function Home() {
                 flexDirection: "column",
                 cursor: "pointer",
                 transition: "all 0.2s",
-                "&:hover": { transform: "translateY(-4px)", boxShadow: 4 },
+                "&:hover": { transform: "translateY(-4px)", boxShadow: 3 },
               }}
               onClick={() => handleTargetClick(target.id)}
             >
