@@ -169,9 +169,43 @@ class MetricsService:
             "accurate_count": accurate_count
         }
 
+    def _calculate_judge_reliability_map(self, snapshot_id: int) -> Dict[int, float]:
+        """
+        Calculate reliability (F1 score) for all judges on a snapshot.
+
+        Helper method that computes judge alignment for each judge and returns
+        a mapping of judge_id to F1 score. Judges with no annotations or errors
+        are assigned a reliability of 0.0.
+
+        Args:
+            snapshot_id: Snapshot ID
+
+        Returns:
+            Dict mapping judge_id to F1 score (reliability)
+        """
+        judges = JudgeRepository.get_all(self.db)
+        reliability_map: Dict[int, float] = {}
+
+        for judge in judges:
+            reliability = 0.0
+            try:
+                metrics = self.calculate_judge_alignment(snapshot_id, judge.id)
+                reliability = metrics.get("f1", 0.0) or 0.0
+            except ValueError:
+                # No overlapping annotations/scores – treat as unreliable
+                reliability = 0.0
+            except Exception:
+                logger.exception(
+                    "Failed to calculate reliability for judge %s", judge.id
+                )
+                reliability = 0.0
+            reliability_map[judge.id] = reliability
+
+        return reliability_map
+
     def get_aggregated_results(self, snapshot_id: int) -> List[Dict]:
         """
-        Get aggregated evaluation results for all answers in a snapshot.
+        Get aggregated evaluation results across all answers in a snapshot.
 
         For each answer:
         1. Gets scores from all judges
@@ -208,22 +242,7 @@ class MetricsService:
         # Get all judges and their reliability (F1) scores
         judges = JudgeRepository.get_all(self.db)
         judge_map = {judge.id: judge.name for judge in judges}
-        reliability_map: Dict[int, float] = {}
-
-        for judge in judges:
-            reliability = 0.0
-            try:
-                metrics = self.calculate_judge_alignment(snapshot_id, judge.id)
-                reliability = metrics.get("f1", 0.0) or 0.0
-            except ValueError:
-                # No overlapping annotations/scores – treat as unreliable
-                reliability = 0.0
-            except Exception:
-                logger.exception(
-                    "Failed to calculate reliability for judge %s", judge.id
-                )
-                reliability = 0.0
-            reliability_map[judge.id] = reliability
+        reliability_map = self._calculate_judge_reliability_map(snapshot_id)
 
         results = []
 
@@ -335,6 +354,92 @@ class MetricsService:
         )
 
         return csv_content
+
+    def calculate_snapshot_summary(self, snapshot_id: int) -> Dict:
+        """
+        Calculate summary metrics for a snapshot.
+
+        This method aggregates results across all answers and judges to provide
+        high-level metrics for visualization and reporting.
+
+        Args:
+            snapshot_id: Snapshot ID
+
+        Returns:
+            Dict with summary metrics:
+            {
+                "aggregated_accuracy": 0.73,        # % of answers with majority "accurate"
+                "total_answers": 100,
+                "accurate_count": 73,
+                "pending_count": 12,                # None/ties/no aligned judges
+                "judge_alignment_range": {
+                    "min": 0.50,
+                    "max": 0.85
+                },
+                "has_aligned_judges": True          # any F1 > 0.5
+            }
+
+        Raises:
+            ValueError: If no answers found for snapshot
+        """
+        # Get aggregated results for all answers
+        aggregated_results = self.get_aggregated_results(snapshot_id)
+
+        # Count accurate vs pending answers
+        total_answers = len(aggregated_results)
+        accurate_count = 0
+        pending_count = 0
+
+        for result in aggregated_results:
+            aggregated_accuracy = result.get("aggregated_accuracy", {})
+            label = aggregated_accuracy.get("label")
+            method = aggregated_accuracy.get("method")
+
+            if method == "majority" and label is True:
+                accurate_count += 1
+            else:
+                # Includes: label=False (inaccurate), label=None (tied), or no_aligned_judge
+                pending_count += 1
+
+        # Calculate overall aggregated accuracy
+        aggregated_accuracy = accurate_count / total_answers if total_answers > 0 else 0.0
+
+        # Get judge reliability scores
+        reliability_map = self._calculate_judge_reliability_map(snapshot_id)
+
+        # Calculate judge alignment range and check for aligned judges
+        if reliability_map:
+            judge_alignment_range = {
+                "min": 2,
+                "max": 0
+            }
+            reliable_judge_count = 0
+            for v in reliability_map.values():
+                if v >= 0.5:
+                    reliable_judge_count += 1
+                    judge_alignment_range["min"] = min(judge_alignment_range["min"], v)
+                    judge_alignment_range["max"] = max(judge_alignment_range["max"], v)
+            has_aligned_judges = reliable_judge_count > 0
+        else:
+            judge_alignment_range = None
+            reliable_judge_count = 0
+            has_aligned_judges = False
+
+        logger.info(
+            f"Snapshot {snapshot_id} summary: "
+            f"Accuracy={aggregated_accuracy:.3f} ({accurate_count}/{total_answers}), "
+            f"Reliable judges: {reliable_judge_count}"
+        )
+
+        return {
+            "aggregated_accuracy": round(aggregated_accuracy, 3),
+            "total_answers": total_answers,
+            "accurate_count": accurate_count,
+            "pending_count": pending_count,
+            "judge_alignment_range": judge_alignment_range,
+            "has_aligned_judges": has_aligned_judges,
+            "reliable_judge_count": reliable_judge_count
+        }
 
 
 def calculate_judge_alignment(db: Session, snapshot_id: int, judge_id: int) -> Dict:

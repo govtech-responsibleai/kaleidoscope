@@ -227,12 +227,12 @@ PUT    /api/v1/snapshots/{snapshot_id}answers/select-default     - Bulk update a
 
 ### Snapshots
 
-Snapshots are versioned evaluation runs that capture answer sets for analysis.
+Snapshots are versioned evaluation runs that capture answer sets for analysis. Snapshot responses include computed fields for tracking annotation progress: `answer_count`, `selected_for_annotation_count`, and `annotated_count`.
 
 ```
 POST   /api/v1/snapshots                              - Create snapshot
 GET    /api/v1/targets/{target_id}/snapshots          - List snapshots for target
-GET    /api/v1/snapshots/{snapshot_id}                - Get snapshot details
+GET    /api/v1/snapshots/{snapshot_id}                - Get snapshot details (includes computed counts)
 PUT    /api/v1/snapshots/{snapshot_id}                - Update snapshot name/description
 DELETE /api/v1/snapshots/{snapshot_id}                - Delete snapshot
 GET    /api/v1/snapshots/{snapshot_id}/stats          - Get snapshot statistics
@@ -246,10 +246,10 @@ Judges are LLM-based evaluators that assess answer accuracy. Two types are suppo
 - **Response-level**: Evaluates the entire answer holistically in a single LLM call
 
 ```
-POST   /api/v1/judges/seed                            - Seed default judges
 GET    /api/v1/judges                                 - List all judges
 POST   /api/v1/judges                                 - Create custom judge
 GET    /api/v1/judges/baseline                        - Get baseline judge
+GET    /api/v1/judges/available-models                - Get baseline judge
 GET    /api/v1/judges/{judge_id}                      - Get judge details
 PUT    /api/v1/judges/{judge_id}                      - Update judge (if editable)
 DELETE /api/v1/judges/{judge_id}                      - Delete judge (if editable)
@@ -275,14 +275,14 @@ GET    /api/v1/qa-jobs/{job_id}                       - Get job details with cos
 Manual annotations allow humans to label answer accuracy for judge validation.
 
 ```
-POST   /api/v1/annotations                                  - Create single annotation
-POST   /api/v1/annotations/bulk                             - Bulk create annotations
-GET    /api/v1/snapshots/{snapshot_id}/annotations          - List annotations for snapshot
+POST   /api/v1/annotations                                       - Create single annotation
+POST   /api/v1/annotations/bulk                                  - Bulk create annotations
+GET    /api/v1/snapshots/{snapshot_id}/annotations               - List annotations for snapshot
 GET    /api/v1/snapshots/{snapshot_id}/annotations/completion-status  - Check completion progress
-GET    /api/v1/answers/{answer_id}/annotations              - Get annotation for answer
-GET    /api/v1/annotations/{annotation_id}                  - Get annotation by ID
-PUT    /api/v1/annotations/{annotation_id}                  - Update annotation
-DELETE /api/v1/annotations/{annotation_id}                  - Delete annotation
+GET    /api/v1/answers/{answer_id}/annotations                   - Get annotation for answer
+GET    /api/v1/annotations/{annotation_id}                       - Get annotation by ID
+PUT    /api/v1/annotations/{annotation_id}                       - Update annotation
+DELETE /api/v1/annotations/{annotation_id}                       - Delete annotation
 ```
 
 ### Metrics
@@ -294,6 +294,7 @@ GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/alignment   - Calculate
 GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/accuracy    - Calculate chatbot accuracy per judge
 GET    /api/v1/snapshots/{snapshot_id}/results                       - Get aggregated results with majority vote
 POST   /api/v1/snapshots/{snapshot_id}/export                        - Export results as CSV
+GET    /api/v1/targets/{target_id}/snapshot-metrics                  - Get aggregated metrics for all snapshots of a target
 ```
 
 ## End-to-End Evaluation Workflow
@@ -316,9 +317,7 @@ curl -X POST http://localhost:8000/api/v1/targets \
     "target_users": "Government officers",
     "api_endpoint": "https://api.uat.aibots.gov.sg/v1.0/api",
     "endpoint_type": "aibots",
-    "endpoint_config": {
-      "api_key": "your_aibots_api_key"
-    }
+    "endpoint_config": {"api_key": "your_aibots_api_key"}
   }' | jq
 ```
 
@@ -365,7 +364,7 @@ curl -X POST http://localhost:8000/api/v1/jobs/personas \
   -d '{
     "target_id": 1,
     "count_requested": 5,
-    "model_used": "gemini/gemini-2.0-flash"
+    "model_used": "gemini/gemini-2.0-flash-lite"
   }' | jq
 ```
 
@@ -485,18 +484,7 @@ curl -X POST http://localhost:8000/api/v1/snapshots \
 
 ### Phase 5: Automated Scoring (QA Jobs)
 
-#### 5.1 Seed Default Judges
-
-```bash
-curl -X POST http://localhost:8000/api/v1/judges/seed | jq
-```
-
-This creates default judges:
-- **Baseline Gemini Flash Lite** (claim-based, baseline)
-- **Gemini Flash** (claim-based)
-- **GPT-5 Nano** (claim-based)
-
-#### 5.2 Start QA Jobs
+#### 5.1 Start QA Jobs
 
 Each job runs through the full pipeline: **Generate Answer → Extract Claims → Score Answer**
 
@@ -515,7 +503,7 @@ curl -X POST http://localhost:8000/api/v1/snapshots/1/qa-jobs/start \
 **Job Stages:**
 - `starting` → `generating_answers` → `processing_answers` → `scoring_answers` → `completed`
 
-#### 5.3 Monitor Job Progress
+#### 5.2 Monitor Job Progress
 
 ```bash
 # Check individual job status
@@ -525,7 +513,7 @@ curl http://localhost:8000/api/v1/qa-jobs/1 | jq
 curl http://localhost:8000/api/v1/snapshots/2/qa-jobs | jq
 ```
 
-#### 5.4 Pause/Resume Jobs (Optional)
+#### 5.3 Pause/Resume Jobs (Optional)
 
 ```bash
 # Pause running jobs
@@ -661,6 +649,38 @@ curl -X POST http://localhost:8000/api/v1/snapshots/1/export \
 ```
 
 CSV contains: Question | Answer | Accuracy | Metadata (per-judge breakdown)
+
+#### 7.5 Get Snapshot Metrics (Target-Level)
+
+Returns aggregated performance metrics across all snapshots for a target, useful for tracking improvements over time.
+
+```bash
+curl http://localhost:8000/api/v1/targets/1/snapshot-metrics | jq
+```
+
+Returns:
+```json
+{
+  "snapshots": [
+    {
+      "snapshot_id": 1,
+      "snapshot_name": "v1.0",
+      "created_at": "2025-01-15T10:30:00Z",
+      "aggregated_accuracy": 0.73,
+      "total_answers": 100,
+      "judge_alignment_range": {"min": 0.85, "max": 0.92},
+      "has_aligned_judges": true,
+      "reliable_judge_count": 2
+    }
+  ]
+}
+```
+
+**Metrics explanation:**
+- `aggregated_accuracy`: Overall accuracy based on majority vote across aligned judges
+- `judge_alignment_range`: F1 score range of judges that aligned with human annotations (F1 ≥ 0.7)
+- `has_aligned_judges`: Whether any judges achieved alignment threshold
+- `reliable_judge_count`: Number of judges with F1 ≥ 0.7
 
 ## Observability with Phoenix
 

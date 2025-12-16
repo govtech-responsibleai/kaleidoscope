@@ -52,21 +52,21 @@ def _require_model(value: str) -> str:
 
 DEFAULT_JUDGES = [
     {
-        "name": "Baseline Judge 1",
+        "name": "Baseline Evaluator 1",
         "model_name": _require_model("gemini/gemini-2.0-flash-lite-001"),
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": True,
         "is_editable": False,
     },
     {
-        "name": "Baseline Judge 2",
+        "name": "Baseline Evaluator 2",
         "model_name": _require_model("gemini/gemini-2.0-flash-001"),
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": False,
         "is_editable": False,
     },
     {
-        "name": "Baseline Judge 3",
+        "name": "Baseline Evaluator 3",
         "model_name": _require_model("azure/gpt-5-nano-2025-08-07"),
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": False,
