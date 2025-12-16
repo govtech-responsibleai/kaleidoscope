@@ -258,9 +258,9 @@ export default function QuestionsPage() {
     <Box>
       {/* Job Status Section */}
       {jobStatus && (
-        <Card sx={{ mb: 3, backgroundColor: "#f5f5f5" }}>
+        <Card variant="outlined" sx={{ mb: 3, backgroundColor: "#f5f5f5" }}>
           <CardContent>
-            <Typography variant="h6" fontWeight={600} gutterBottom>
+            <Typography variant="h6" fontWeight={600} sx={{mb: 2}}>
               Generation Job
             </Typography>
 
@@ -284,10 +284,10 @@ export default function QuestionsPage() {
                     <CardContent>
                       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
                         <Box flex={1}>
-                          <Typography variant="subtitle1" fontWeight={600} gutterBottom>
+                          <Typography variant="subtitle1" fontWeight={600} sx={{mb: 2}}>
                             New Question
                           </Typography>
-                          <Typography variant="body1" gutterBottom>
+                          <Typography variant="body1" sx={{mb: 2}}>
                             {newQ.text}
                           </Typography>
                           <Box display="flex" gap={1} mt={1}>
@@ -321,7 +321,7 @@ export default function QuestionsPage() {
                       {similarQuestionsMap[newQ.id] && similarQuestionsMap[newQ.id].length > 0 && (
                         <>
                           <Divider sx={{ my: 2 }} />
-                          <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                          <Typography variant="subtitle2" color="text.secondary" sx={{mb: 2}}>
                             Similar Existing Questions ({similarQuestionsMap[newQ.id].length})
                           </Typography>
                           {similarQuestionsMap[newQ.id].map((similarQ) => (
@@ -477,7 +477,7 @@ export default function QuestionsPage() {
             </Box>
           </Paper>
 
-          <TableContainer component={Paper}>
+          <TableContainer component={Paper} variant="outlined">
             <Table>
               <TableHead>
                 <TableRow>

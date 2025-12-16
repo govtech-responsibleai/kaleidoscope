@@ -8,7 +8,6 @@ import {
   Card,
   CardContent,
   CardActions,
-  Grid,
   CircularProgress,
 } from "@mui/material";
 import { Add as AddIcon } from "@mui/icons-material";
@@ -96,51 +95,69 @@ export default function Home() {
           </Button>
         </Box>
       ) : (
-        <Grid container spacing={3}>
+        <Box
+          display="grid"
+          gap={3}
+          sx={{
+            gridTemplateColumns: {
+              xs: "repeat(1, minmax(0, 1fr))",
+              sm: "repeat(2, minmax(0, 1fr))",
+              md: "repeat(4, minmax(0, 1fr))",
+            },
+          }}
+        >
           {targets.map((target) => (
-            <Grid item xs={12} sm={6} md={4} key={target.id}>
-              <Card
-                sx={{
-                  height: "100%",
-                  display: "flex",
-                  flexDirection: "column",
-                  cursor: "pointer",
-                  transition: "all 0.2s",
-                  "&:hover": {
-                    transform: "translateY(-4px)",
-                    boxShadow: 4,
-                  },
-                }}
-                onClick={() => handleTargetClick(target.id)}
-              >
-                <CardContent sx={{ flexGrow: 1 }}>
-                  <Typography variant="h6" component="h2" gutterBottom>
-                    {target.name}
+            <Card
+              key={target.id}
+              variant="outlined"
+              sx={{
+                minWidth: 0,
+                height: "100%",
+                display: "flex",
+                flexDirection: "column",
+                cursor: "pointer",
+                transition: "all 0.2s",
+                "&:hover": { transform: "translateY(-4px)", boxShadow: 3 },
+              }}
+              onClick={() => handleTargetClick(target.id)}
+            >
+              <CardContent sx={{ flexGrow: 1, minWidth: 0 }}>
+                <Typography
+                  variant="h6"
+                  component="h2"
+                  gutterBottom
+                  sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                >
+                  {target.name}
+                </Typography>
+                {target.agency && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    gutterBottom
+                    sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  >
+                    {target.agency}
                   </Typography>
-                  {target.agency && (
-                    <Typography
-                      variant="body2"
-                      color="text.secondary"
-                      gutterBottom
-                    >
-                      {target.agency}
-                    </Typography>
-                  )}
-                  {target.purpose && (
-                    <Typography variant="body2" color="text.secondary">
-                      {target.purpose}
-                    </Typography>
-                  )}
-                </CardContent>
-                <CardActions>
-                  <Button size="small" onClick={() => handleTargetClick(target.id)}>
-                    View Details
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
+                )}
+                {target.purpose && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+                  >
+                    {target.purpose}
+                  </Typography>
+                )}
+              </CardContent>
+              <CardActions>
+                <Button size="small" onClick={() => handleTargetClick(target.id)}>
+                  View Details
+                </Button>
+              </CardActions>
+            </Card>
           ))}
-        </Grid>
+        </Box>
       )}
 
       <CreateTargetModal

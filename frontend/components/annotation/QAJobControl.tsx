@@ -1,0 +1,701 @@
+"use client";
+
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Box,
+  Chip,
+  CircularProgress,
+  IconButton,
+  Stack,
+  Tooltip,
+  Typography,
+} from "@mui/material";
+import {
+  PlayArrow as PlayArrowIcon,
+  Pause as PauseIcon,
+  Update as UpdateIcon,
+} from "@mui/icons-material";
+import {
+  Answer,
+  QAJob,
+  QAJobStageEnum,
+  JobStatus,
+  QAMap, 
+  QARecord
+} from "@/lib/types";
+import { answerApi, qaJobApi } from "@/lib/api";
+
+interface QAJobControlProps {
+  snapshotId: number | null;
+  baselineJudgeId: number | null;
+  questionIds: number[];
+  qaJobs: QAJob[];
+  setQaJobs: React.Dispatch<React.SetStateAction<QAJob[]>>;
+  qaMap: QAMap;
+  setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
+  onError?: (message: string) => void;
+}
+
+type ControlState = "start" | "pause" | "resume" | "disabled";
+
+const getStageLabel = (stage: QAJobStageEnum): string => {
+  switch (stage) {
+    case QAJobStageEnum.STARTING:
+      return "Starting";
+    case QAJobStageEnum.GENERATING_ANSWERS:
+      return "Generating";
+    case QAJobStageEnum.PROCESSING_ANSWERS:
+      return "Processing";
+    case QAJobStageEnum.SCORING_ANSWERS:
+      return "Scoring";
+    case QAJobStageEnum.COMPLETED:
+      return "Completed";
+    default:
+      return "Unknown";
+  }
+};
+
+export default function QAJobControl({
+  snapshotId,
+  baselineJudgeId,
+  questionIds,
+  qaJobs,
+  setQaJobs,
+  qaMap,
+  setQaMap,
+  onError,
+}: QAJobControlProps) {
+  const [jobInAction, setJobInAction] = useState(false); // To prevent double submits of a job request
+  const [loadingInitialData, setLoadingInitialData] = useState(true); // Wait for the first set of data to be ready
+  const pollingIntervalRef = useRef<number | null>(null);
+  const qaMapRef = useRef<QAMap>({});
+  const activeSnapshotIdRef = useRef<number | null>(null);
+  const onErrorRef = useRef(onError);
+  const defaultSelectionAttemptedRef = useRef<Set<number>>(new Set());
+  const defaultSelectionInFlightRef = useRef<Set<number>>(new Set());
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  const notifyError = useCallback((message: string) => {
+    onErrorRef.current?.(message);
+  }, []);
+
+  // refs don't trigger re-renders
+  useEffect(() => {
+    qaMapRef.current = qaMap;
+  }, [qaMap]);
+
+  useEffect(() => {
+    activeSnapshotIdRef.current = snapshotId;
+  }, [snapshotId]);
+
+  // Update STATUS counts
+  const statusGroups = useMemo(() => {
+    return qaJobs.reduce(
+      (groups, job) => {
+        groups[job.status] = (groups[job.status] ?? 0) + 1;
+        return groups;
+      },
+      {
+        [JobStatus.RUNNING]: 0,
+        [JobStatus.COMPLETED]: 0,
+        [JobStatus.FAILED]: 0,
+        [JobStatus.PAUSED]: 0,
+      } as Record<JobStatus, number>
+    );
+  }, [qaJobs]);
+
+  const runningCount = statusGroups[JobStatus.RUNNING] ?? 0;
+  const completedCount = statusGroups[JobStatus.COMPLETED] ?? 0;
+  const failedCount = statusGroups[JobStatus.FAILED] ?? 0;
+  const pausedCount = statusGroups[JobStatus.PAUSED] ?? 0;
+
+  // Detect unevaluated questions (questions not yet in qaJobs)
+  const unevaluatedQuestions = useMemo(() => {
+    const evaluatedQuestionIds = new Set(qaJobs.map((job) => job.question_id));
+    const unevaluated = questionIds.filter((qid) => !evaluatedQuestionIds.has(qid));
+
+    if (unevaluated.length > 0) {
+      console.log(`QAJobControl: Detected ${unevaluated.length} new questions not yet evaluated:`, unevaluated);
+    } else {
+      console.log("QAJobControl: No new questions to evaluate.");
+    }
+
+    return unevaluated;
+  }, [qaJobs, questionIds]);
+
+  // Update counts of the STAGEs each QAJob is in
+  const stageGroups = useMemo(() => {
+    const groups: Record<QAJobStageEnum, number> = {
+      [QAJobStageEnum.STARTING]: 0,
+      [QAJobStageEnum.GENERATING_ANSWERS]: 0,
+      [QAJobStageEnum.PROCESSING_ANSWERS]: 0,
+      [QAJobStageEnum.SCORING_ANSWERS]: 0,
+      [QAJobStageEnum.COMPLETED]: 0,
+    };
+
+    qaJobs.forEach((job) => {
+      if (job.status === JobStatus.RUNNING) {
+        groups[job.stage]++;
+      }
+    });
+
+    return groups;
+  }, [qaJobs]);
+
+  const updateQaMapEntry = useCallback(
+    (questionId: number, partial: Partial<QARecord>) => {
+      setQaMap((prev) => {
+        const base = prev[questionId] || { questionId };
+        return {
+          ...prev,
+          [questionId]: {
+            ...base,
+            ...partial,
+          },
+        };
+      });
+    },
+    [setQaMap]
+  );
+
+  // Check if answer/claims/scoring data already exists 
+  
+  const ensureAnswerLoaded = useCallback(
+    async (job: QAJob) => {
+      if (!job.answer_id) return;
+      if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+      const entry = qaMapRef.current[job.question_id];
+      if (entry?.answer && entry.answer.id === job.answer_id && entry.answer.answer_content) {
+        return;
+      }
+
+      try {
+        const response = await answerApi.get(job.answer_id);
+        if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+        updateQaMapEntry(job.question_id, { answer: response.data });
+      } catch (err) {
+        console.error("Failed to fetch answer:", err);
+        notifyError("Unable to load answers for this snapshot.");
+      }
+    },
+    [updateQaMapEntry, notifyError]
+  );
+
+  const ensureClaimsLoaded = useCallback(
+    async (job: QAJob) => {
+      if (!job.answer_id || !baselineJudgeId) return;
+      if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+      const entry = qaMapRef.current[job.question_id];
+      if (entry?.claims && entry.claims.length > 0) {
+        return;
+      }
+
+      try {
+        const response = await answerApi.getClaims(job.answer_id, baselineJudgeId);
+        const claims = response.data.claims.map(({ score, ...claim }) => claim);
+        const claimScores = response.data.claims
+          .map((item) => item.score)
+          .filter((score): score is NonNullable<typeof score> => Boolean(score));
+        if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+        updateQaMapEntry(job.question_id, { claims, claimScores });
+      } catch (err) {
+        console.error("Failed to fetch claims:", err);
+        notifyError("Unable to load claim data.");
+      }
+    },
+    [baselineJudgeId, updateQaMapEntry, notifyError]
+  );
+
+  const ensureScoreLoaded = useCallback(
+    async (job: QAJob) => {
+      if (!job.answer_id || !baselineJudgeId) return;
+      if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+      const entry = qaMapRef.current[job.question_id];
+      if (entry?.answerScore) {
+        return;
+      }
+
+      try {
+        const response = await answerApi.getScores(job.answer_id, baselineJudgeId);
+        if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+        updateQaMapEntry(job.question_id, {
+          answerScore: response.data,
+          claimScores: response.data.claim_scores,
+        });
+      } catch (err) {
+        console.error("Failed to fetch score:", err);
+        notifyError("Unable to load judge scores.");
+      }
+    },
+    [baselineJudgeId, updateQaMapEntry, notifyError]
+  );
+
+  // Load existing answers and jobs when snapshot changes
+  useEffect(() => {
+    if (!snapshotId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadData = async () => {
+      console.log("Loading initial data...")
+      setLoadingInitialData(true);
+      try {
+        const [jobsResponse, answersResponse] = await Promise.all([
+          qaJobApi.list(snapshotId),
+          answerApi.list(snapshotId),
+        ]);
+
+        if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
+
+        // Get all jobs for this snapshot and (baseline) judge
+        const baselineJobs = baselineJudgeId
+          ? jobsResponse.data.filter(
+              (job) => job.judge_id === baselineJudgeId
+            )
+          : jobsResponse.data;
+        setQaJobs(baselineJobs);
+
+        const answers = answersResponse.data.answers;
+
+        // Ensure any already annotated answers stay in the annotation set.
+        const annotatedNeedingSelection = answers.filter(
+          (answer) => answer.has_annotation && !answer.is_selected_for_annotation
+        );
+        let normalizedAnswers = answers;
+
+        if (annotatedNeedingSelection.length > 0) {
+          try {
+            await answerApi.bulkSelection({
+              selections: annotatedNeedingSelection.map((answer) => ({
+                answer_id: answer.id,
+                is_selected: true,
+              })),
+            });
+            if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
+            const annotatedIds = new Set(annotatedNeedingSelection.map((answer) => answer.id));
+            normalizedAnswers = answers.map((answer) =>
+              annotatedIds.has(answer.id)
+                ? { ...answer, is_selected_for_annotation: true }
+                : answer
+            );
+          } catch (err) {
+            console.error("Failed to sync annotation selections:", err);
+            notifyError("Some annotated answers temporarily dropped out of the annotation set.");
+          }
+        }
+
+        if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
+
+        setQaMap(() => {
+          const initial: QAMap = { ...qaMapRef.current };
+          normalizedAnswers.forEach((answer) => {
+            const existing = initial[answer.question_id];
+            initial[answer.question_id] = {
+              questionId: answer.question_id,
+              ...existing,
+              answer,
+            };
+          });
+          return initial;
+        });
+        console.log("Loaded initial data...")
+      } catch (err) {
+        console.error("Failed to load QA data:", err);
+        notifyError("Failed to load QA data for this snapshot.");
+      } finally {
+        if (!cancelled && snapshotId === activeSnapshotIdRef.current) {
+          setLoadingInitialData(false);
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotId, baselineJudgeId, setQaJobs, setQaMap, notifyError]);
+
+  // Update QA data as jobs progress depending on their STAGE
+  useEffect(() => {
+    if (!snapshotId) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const hydrate = async () => {
+      for (const job of qaJobs) {
+        if (cancelled) break;
+
+        // No answer yet
+        if (!job.answer_id) continue;
+
+        console.log("Hydrating job at stage:", job.stage);
+        // Answer done, no claims/scores yet
+        if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS) {
+          await ensureAnswerLoaded(job);
+          
+        // Answer/claims done, no scores yet
+        } else if (job.stage === QAJobStageEnum.SCORING_ANSWERS) {
+          await ensureAnswerLoaded(job);
+          await ensureClaimsLoaded(job);
+        
+        // Answer/claims/scores done
+        } else if (job.stage === QAJobStageEnum.COMPLETED) {
+          await ensureAnswerLoaded(job);
+          await ensureClaimsLoaded(job);
+          await ensureScoreLoaded(job);
+        }
+      }
+    };
+
+    hydrate();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [qaJobs, snapshotId, ensureAnswerLoaded, ensureClaimsLoaded, ensureScoreLoaded]);
+
+  // Polling control functions
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current !== null) {
+      window.clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  const checkData = async () => {
+    if (!snapshotId || !baselineJudgeId) return;
+    try {
+      const response = await qaJobApi.list(snapshotId);
+      console.log("Current job list...", response);
+      const baselineJobs = response.data.filter(
+        (job) => job.judge_id === baselineJudgeId
+      );
+      setQaJobs(baselineJobs);
+
+      // Stop polling if all jobs are done
+      const allDone = baselineJobs.every(
+        (job) => job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED
+      );
+      if (allDone && baselineJobs.length > 0) {
+        stopPolling();
+      }
+    } catch (err) {
+      console.error("Failed to poll job status:", err);
+    }
+  };
+
+  const startPolling = useCallback(() => {
+    console.log("Started polling...");
+    if (pollingIntervalRef.current !== null) return; // Already polling
+
+    pollingIntervalRef.current = window.setInterval(checkData, 2000);
+  }, [snapshotId, baselineJudgeId, stopPolling]);
+
+  // Automatically trigger default selection once answers exist but none are selected.
+  useEffect(() => {
+    if (!snapshotId) return;
+    if (defaultSelectionAttemptedRef.current.has(snapshotId)) return;
+    if (defaultSelectionInFlightRef.current.has(snapshotId)) return;
+
+    const answers: Answer[] = Object.values(qaMap)
+      .map((entry) => entry.answer)
+      .filter((answer): answer is Answer => Boolean(answer));
+
+    if (answers.length === 0) return;
+
+    // Wait until all answers for the selected questions are ready
+    if (answers.length < questionIds.length) return;
+
+    const hasSelection = answers.some((answer) => answer.is_selected_for_annotation);
+    if (hasSelection) {
+      defaultSelectionAttemptedRef.current.add(snapshotId);
+      return;
+    }
+
+    let cancelled = false;
+    defaultSelectionInFlightRef.current.add(snapshotId);
+
+    const applyDefaultSelection = async () => {
+      try {
+        await answerApi.selectDefault(snapshotId);
+        if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
+
+        const refreshed = await answerApi.list(snapshotId);
+        if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
+
+        setQaMap((prev) => {
+          const next: QAMap = { ...prev };
+          refreshed.data.answers.forEach((answer) => {
+            const existing = next[answer.question_id];
+            next[answer.question_id] = {
+              ...existing,
+              questionId: answer.question_id,
+              answer,
+            };
+          });
+          return next;
+        });
+        if (!cancelled) {
+          defaultSelectionAttemptedRef.current.add(snapshotId);
+        }
+      } catch (err) {
+        console.error("Failed to auto-select default answers:", err);
+      } finally {
+        defaultSelectionInFlightRef.current.delete(snapshotId);
+      }
+    };
+
+    applyDefaultSelection();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotId, qaMap, setQaMap]);
+
+  // Cleanup polling on unmount or snapshot/judge change
+  useEffect(() => {
+    return () => {
+      stopPolling();
+    };
+  }, [snapshotId, baselineJudgeId, stopPolling]);
+
+  const totalJobs = qaJobs.length;
+
+  // UI chips to display the STATUS and STAGE of the QA job.
+  const getStatusChip = () => {
+
+    if (!snapshotId || !baselineJudgeId || questionIds.length === 0) {
+      return <Chip label="Select a snapshot" size="small" />;
+    }
+
+    if (loadingInitialData) {
+      return (
+        <Chip
+          icon={<CircularProgress size={14} />}
+          label="Loading..."
+          size="small"
+        />
+      );
+    }
+
+    if (totalJobs === 0) {
+      return <Chip label="Not Started" color="default" size="small" />;
+    }
+
+    if (runningCount > 0) {
+      const dominantStage = Object.entries(stageGroups).reduce(
+        (max, [stage, count]) => {
+          return count > max.count
+            ? { stage: stage as QAJobStageEnum, count }
+            : max;
+        },
+        { stage: QAJobStageEnum.STARTING, count: 0 }
+      ).stage;
+
+      return (
+        <Chip
+          icon={<UpdateIcon />}
+          label={`${getStageLabel(dominantStage)} • ${completedCount}/${totalJobs}`}
+          color="warning"
+          size="small"
+        />
+      );
+    }
+
+    if (completedCount === totalJobs) {
+      if (unevaluatedQuestions.length > 0) {
+        return (
+          <Chip
+            label={`Pending, (${unevaluatedQuestions.length}) new questions detected`}
+            color="warning"
+            size="small"
+          />
+        );
+      }
+      return <Chip label="Completed" color="success" size="small" />;
+    }
+
+    if (failedCount > 0) {
+      return (
+        <Chip
+          label={`Failed: ${failedCount}/${totalJobs}`}
+          color="error"
+          size="small"
+        />
+      );
+    }
+
+    if (pausedCount > 0) {
+      return (
+        <Chip
+          icon={<PauseIcon />}
+          label={`Paused: ${completedCount}/${totalJobs}`}
+          color="default"
+          size="small"
+        />
+      );
+    }
+
+    return <Chip label="Idle" size="small" />;
+  };
+
+  const controlState: ControlState = (() => {
+    if (!snapshotId || !baselineJudgeId || questionIds.length === 0 ) {
+      return "disabled";
+    }
+
+    if (
+      totalJobs === 0 ||
+      completedCount === totalJobs ||
+      failedCount === totalJobs
+    ) {
+      return "start";
+    }
+
+    if (runningCount > 0) {
+      return "pause";
+    }
+
+    if (pausedCount > 0) {
+      return "resume";
+    }
+
+    return "start";
+  })();
+
+  const controlTooltip = (() => {
+    switch (controlState) {
+      case "start":
+        return "Start judge evaluation";
+      case "pause":
+        return "Pause judge evaluation";
+      case "resume":
+        return "Resume judge evaluation";
+      default:
+        return "Select a snapshot to control scoring";
+    }
+  })();
+
+  const controlIcon = controlState === "pause" ? <PauseIcon /> : <PlayArrowIcon />;
+  const controlColor = controlState === "disabled" ? "default" : "primary";
+  const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && unevaluatedQuestions.length === 0;
+
+  // Functions to start, pause, and resume the QA jobs
+  const handleStart = async () => {
+    if (!snapshotId || !baselineJudgeId || questionIds.length === 0) return;
+
+    setJobInAction(true);
+    try {
+      const response = await qaJobApi.start(snapshotId, {
+        judge_id: baselineJudgeId,
+        question_ids: questionIds,
+        is_scoring: false,
+      });
+      setQaJobs(response.data);
+      startPolling();
+    } catch (err) {
+      console.error("Failed to start QA jobs:", err);
+      notifyError("Failed to start QA jobs.");
+    } finally {
+      setJobInAction(false);
+    }
+  };
+
+  const handlePause = async () => {
+    if (qaJobs.length === 0) return;
+    setJobInAction(true);
+    try {
+      const response = await qaJobApi.pause(qaJobs.map((job) => job.id));
+      setQaJobs(response.data);
+      stopPolling();
+    } catch (err) {
+      console.error("Failed to pause QA jobs:", err);
+      notifyError("Failed to pause QA jobs.");
+    } finally {
+      setJobInAction(false);
+    }
+  };
+
+  const handleResume = async () => {
+    if (!snapshotId || !baselineJudgeId) return;
+    const pausedJobs = qaJobs.filter((job) => job.status === JobStatus.PAUSED);
+    if (pausedJobs.length === 0) return;
+
+    setJobInAction(true);
+    try {
+      const response = await qaJobApi.start(snapshotId, {
+        judge_id: baselineJudgeId,
+        question_ids: pausedJobs.map((job) => job.question_id),
+        job_ids: pausedJobs.map((job) => job.id),
+        is_scoring: false,
+      });
+      setQaJobs(response.data);
+      startPolling();
+    } catch (err) {
+      console.error("Failed to resume QA jobs:", err);
+      notifyError("Failed to resume QA jobs.");
+    } finally {
+      setJobInAction(false);
+    }
+  };
+
+  const handleControlClick = () => {
+    if (controlState === "start") {
+      console.log("calling handleStart")
+      handleStart();
+    } else if (controlState === "pause") {
+      console.log("calling handlePause")
+      handlePause();
+    } else if (controlState === "resume") {
+      console.log("calling handleResume")
+      handleResume();
+    }
+  };
+
+  return (
+    <Box sx={{ mb: 2 }}>
+      <Stack direction="row" spacing={2} alignItems="center">
+        <Typography variant="body2" fontWeight={600}>
+          Scoring status:
+        </Typography>
+
+        {getStatusChip()}
+
+        <Tooltip title={controlTooltip} placement="top">
+          <span>
+            <IconButton
+              size="small"
+              color={controlColor}
+              onClick={handleControlClick}
+              disabled={
+                controlState === "disabled" ||
+                jobInAction ||
+                loadingInitialData ||
+                isScoringComplete
+              }
+              aria-label={controlTooltip}
+              sx = {{border:1}}
+            >
+              {jobInAction ? <CircularProgress size={18} /> : controlIcon}
+            </IconButton>
+          </span>
+        </Tooltip>
+
+      </Stack>
+    </Box>
+  );
+}

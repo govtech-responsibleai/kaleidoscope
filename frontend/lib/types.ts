@@ -19,6 +19,16 @@ export enum JobStatus {
   RUNNING = "running",
   COMPLETED = "completed",
   FAILED = "failed",
+  PAUSED = "paused",
+}
+
+// Job progress tracking for multiple jobs
+export interface JobProgress {
+  completed: number;
+  running: number;
+  paused: number;
+  failed: number;
+  total: number;
 }
 
 // Target types
@@ -207,3 +217,249 @@ export interface KBCompiledTextResponse {
   total_size_bytes: number;
   documents: Array<{ id: number; filename: string; size: number }>;
 }
+
+// Snapshot types
+export interface SnapshotCreate {
+  target_id: number;
+  name: string;
+  description?: string;
+}
+
+export interface SnapshotUpdate {
+  name?: string;
+  description?: string;
+}
+
+export interface Snapshot {
+  id: number;
+  target_id: number;
+  name: string;
+  description?: string;
+  answer_count: number;
+  selected_for_annotation_count: number;
+  annotated_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SnapshotStats {
+  total_answers: number;
+  selected_count: number;
+  annotated_count: number;
+}
+
+// QAJob types
+export enum QAJobStageEnum {
+  STARTING = "starting",
+  GENERATING_ANSWERS = "generating_answers",
+  PROCESSING_ANSWERS = "processing_answers",
+  SCORING_ANSWERS = "scoring_answers",
+  COMPLETED = "completed",
+}
+
+export interface QAJob {
+  id: number;
+  snapshot_id: number;
+  question_id: number;
+  answer_id: number | null;
+  judge_id: number;
+  type: string;
+  status: JobStatus;
+  stage: QAJobStageEnum;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_cost: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface QAJobStartRequest {
+  judge_id: number;
+  question_ids: number[];
+  job_ids?: number[]
+  is_scoring: boolean;
+}
+
+// Answer types
+export interface AnswerClaim {
+  id: number;
+  answer_id: number;
+  claim_text: string;
+  sequence_order: number;
+  checkworthy: boolean;
+}
+
+export interface Answer {
+  id: number;
+  snapshot_id: number;
+  question_id: number;
+  question_text: string;
+  answer_content: string;
+  is_selected_for_annotation: boolean;
+  has_annotation: boolean;
+  claims?: AnswerClaim[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnswerListResponse {
+  answers: Answer[];
+}
+
+export interface AnswerClaimScore {
+  id: number;
+  answer_score_id: number;
+  claim_id: number;
+  label: boolean;
+  explanation: string;
+}
+
+export interface AnswerScore {
+  id: number;
+  answer_id: number;
+  judge_config_id: number;
+  qa_job_id: number;
+  overall_label: boolean;
+  explanation?: string;
+  claim_scores: AnswerClaimScore[];
+  created_at: string;
+}
+
+export interface AnswerWithClaims extends Answer {
+  claims: AnswerClaim[];
+}
+
+export interface AnswerClaimsWithScoresResponse {
+  claims: (AnswerClaim & { score?: AnswerClaimScore })[];
+}
+
+export interface BulkSelectionRequest {
+  selections: { answer_id: number; is_selected: boolean }[];
+}
+
+// Annotation types
+export interface AnnotationCreate {
+  answer_id: number;
+  label: boolean;
+  notes?: string;
+}
+
+export interface AnnotationBulkCreate {
+  annotations: AnnotationCreate[];
+}
+
+export interface Annotation {
+  id: number;
+  answer_id: number;
+  label: boolean;
+  notes?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AnnotationCompletionStatus {
+  total_selected: number;
+  total_annotated: number;
+  is_complete: boolean;
+}
+
+// Judge types
+export type JudgeType = "claim_based" | "response_level";
+
+export interface JudgeModelOption {
+  value: string;
+  label: string;
+}
+
+export interface JudgeConfig {
+  id: number;
+  target_id: number;
+  name: string;
+  model_name: string;
+  temperature?: number;
+  judge_type: JudgeType;
+  is_baseline: boolean;
+  is_editable: boolean;
+  params: Record<string, any>;
+  prompt_template?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface JudgeCreate {
+  target_id: number;
+  name: string;
+  model_name: string;
+  judge_type: JudgeType;
+  params?: Record<string, any>;
+  prompt_template?: string;
+}
+
+export interface JudgeUpdate {
+  name?: string;
+  model_name?: string;
+  judge_type?: JudgeType;
+  params?: Record<string, any>;
+  prompt_template?: string;
+}
+
+// Metrics types
+export interface JudgeAlignment {
+  judge_id: number;
+  snapshot_id: number;
+  f1: number;
+  precision: number;
+  recall: number;
+  accuracy: number;
+  sample_count: number;
+}
+
+export interface JudgeAccuracy {
+  judge_id: number;
+  snapshot_id: number;
+  accuracy: number;
+  accurate_count: number;
+  total_answers: number;
+}
+
+export type AggregationMethod =
+  | "majority"
+  | "majority_tied"
+  | "no_aligned_judge";
+
+export interface AggregatedAccuracy {
+  answer_id: number;
+  method: AggregationMethod;
+  label: boolean | null;
+  metadata: string[];
+}
+
+export interface ResultRow {
+  question_id: number;
+  question_text: string;
+  answer_id: number;
+  answer_content: string;
+  aggregated_accuracy: AggregatedAccuracy;
+}
+
+export interface SnapshotResultsResponse {
+  snapshot_id: number;
+  results: ResultRow[];
+  total: number;
+}
+
+// Additional types for frontend use
+/**
+ * Aggregated QA data keyed by question id.
+ * Each entry contains the progressively loaded artifacts
+ * for a single question/answer pair.
+ */
+export interface QARecord {
+  questionId: number;
+  answer?: Answer;
+  claims?: AnswerClaim[];
+  claimScores?: AnswerClaimScore[];
+  answerScore?: AnswerScore | null;
+}
+
+export type QAMap = Record<number, QARecord>;
