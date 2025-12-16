@@ -72,6 +72,7 @@ docker-compose up -d
 ```bash
 docker-compose build
 docker-compose up -d
+docker-compose up -d --build  # one-shot rebuild + start
 ```
 
 ## Running Tests

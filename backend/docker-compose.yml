@@ -55,7 +55,7 @@ services:
       - ./tests:/app/tests
     networks:
       - kaleidoscope-network
-    command: python -m uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
+    command: python -m uvicorn src.main:app --host 0.0.0.0 --port 8000
 
   # Test runner (optional - run tests in container)
   test:

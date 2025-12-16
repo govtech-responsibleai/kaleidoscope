@@ -61,8 +61,9 @@ class TestPersonaGenerationAPI:
 
         # 1. Generate personas
         gen_response = test_client.post(
-            f"/api/v1/targets/{sample_target.id}/jobs/personas",
+            "/api/v1/jobs/personas",
             json={
+                "target_id": sample_target.id,
                 "count_requested": 3,
                 "model_used": "gpt-4o-mini"
             }
@@ -99,8 +100,9 @@ class TestPersonaGenerationAPI:
     def test_generate_personas_target_not_found(self, test_client):
         """Test error handling when target doesn't exist."""
         response = test_client.post(
-            "/api/v1/targets/999/jobs/personas",
+            "/api/v1/jobs/personas",
             json={
+                "target_id": 999,
                 "count_requested": 3,
                 "model_used": "gpt-4o-mini"
             }

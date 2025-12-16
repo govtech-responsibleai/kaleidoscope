@@ -25,8 +25,9 @@ class TestQuestionGenerationAPI:
         """
         # 1. Generate questions for all approved personas
         gen_response = test_client.post(
-            f"/api/v1/targets/{sample_target.id}/jobs/questions",
+            "/api/v1/jobs/questions",
             json={
+                "target_id": sample_target.id,
                 "count_requested": 10,
                 "model_used": "gpt-4o-mini"
             }
@@ -62,8 +63,9 @@ class TestQuestionGenerationAPI:
 
         # 1. Generate questions for specific persona
         gen_response = test_client.post(
-            f"/api/v1/targets/{sample_target.id}/jobs/questions",
+            "/api/v1/jobs/questions",
             json={
+                "target_id": sample_target.id,
                 "count_requested": 5,
                 "model_used": "gpt-4o-mini",
                 "persona_ids": [approved_persona_id]
@@ -84,8 +86,9 @@ class TestQuestionGenerationAPI:
     def test_question_generation_invalid_persona_id(self, test_client, sample_target):
         """Test error handling when persona_id doesn't exist."""
         response = test_client.post(
-            f"/api/v1/targets/{sample_target.id}/jobs/questions",
+            "/api/v1/jobs/questions",
             json={
+                "target_id": sample_target.id,
                 "count_requested": 5,
                 "model_used": "gpt-4o-mini",
                 "persona_ids": [9999]  # Non-existent persona
@@ -117,8 +120,9 @@ class TestQuestionGenerationAPI:
         persona_id = sample_personas[0].id
 
         response = test_client.post(
-            f"/api/v1/targets/{other_target_id}/jobs/questions",
+            "/api/v1/jobs/questions",
             json={
+                "target_id": other_target_id,
                 "count_requested": 5,
                 "model_used": "gpt-4o-mini",
                 "persona_ids": [persona_id]
@@ -131,8 +135,9 @@ class TestQuestionGenerationAPI:
     def test_question_generation_no_approved_personas(self, test_client, sample_target):
         """Test error handling when target has no approved personas."""
         response = test_client.post(
-            f"/api/v1/targets/{sample_target.id}/jobs/questions",
+            "/api/v1/jobs/questions",
             json={
+                "target_id": sample_target.id,
                 "count_requested": 5,
                 "model_used": "gpt-4o-mini"
                 # No persona_ids, should use all approved personas
@@ -149,8 +154,9 @@ class TestQuestionGenerationAPI:
     def test_question_generation_target_not_found(self, test_client):
         """Test error handling when target doesn't exist."""
         response = test_client.post(
-            "/api/v1/targets/999/jobs/questions",
+            "/api/v1/jobs/questions",
             json={
+                "target_id": 999,
                 "count_requested": 5,
                 "model_used": "gpt-4o-mini"
             }
@@ -168,8 +174,9 @@ class TestQuestionGenerationAPI:
 
         # Generate questions for multiple personas
         gen_response = test_client.post(
-            f"/api/v1/targets/{sample_target.id}/jobs/questions",
+            "/api/v1/jobs/questions",
             json={
+                "target_id": sample_target.id,
                 "count_requested": 10,
                 "model_used": "gpt-4o-mini",
                 "persona_ids": persona_ids
