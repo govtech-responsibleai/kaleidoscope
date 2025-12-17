@@ -230,12 +230,14 @@ PUT    /api/v1/snapshots/{snapshot_id}answers/select-default     - Bulk update a
 Snapshots are versioned evaluation runs that capture answer sets for analysis. Snapshot responses include computed fields for tracking annotation progress: `answer_count`, `selected_for_annotation_count`, and `annotated_count`.
 
 ```
-POST   /api/v1/snapshots                              - Create snapshot
-GET    /api/v1/targets/{target_id}/snapshots          - List snapshots for target
-GET    /api/v1/snapshots/{snapshot_id}                - Get snapshot details (includes computed counts)
-PUT    /api/v1/snapshots/{snapshot_id}                - Update snapshot name/description
-DELETE /api/v1/snapshots/{snapshot_id}                - Delete snapshot
-GET    /api/v1/snapshots/{snapshot_id}/stats          - Get snapshot statistics
+POST   /api/v1/snapshots                                                - Create snapshot
+GET    /api/v1/targets/{target_id}/snapshots                            - List snapshots for target
+GET    /api/v1/snapshots/{snapshot_id}                                  - Get snapshot details (includes computed counts)
+PUT    /api/v1/snapshots/{snapshot_id}                                  - Update snapshot name/description
+DELETE /api/v1/snapshots/{snapshot_id}                                  - Delete snapshot
+GET    /api/v1/snapshots/{snapshot_id}/stats                            - Get snapshot statistics
+GET    /api/v1/snapshots/{snapshot_id}/questions/approved/without-answers  - Get approved questions without answers for judge
+GET    /api/v1/snapshots/{snapshot_id}/questions/approved/without-scores   - Get approved questions without scores for judge
 ```
 
 ### Judges

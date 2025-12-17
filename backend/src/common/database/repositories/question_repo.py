@@ -3,9 +3,10 @@ Repository for Question database operations.
 """
 
 from typing import List, Optional
+from sqlalchemy import and_, not_, exists
 from sqlalchemy.orm import Session, joinedload
 
-from src.common.database.models import Question, StatusEnum
+from src.common.database.models import Question, QAJob, Answer, AnswerScore, StatusEnum
 
 
 class QuestionRepository:
@@ -129,5 +130,96 @@ class QuestionRepository:
                 Question.target_id == target_id,
                 Question.status == StatusEnum.approved
             )
+            .all()
+        )
+
+    @staticmethod
+    def get_approved_questions_without_answers(
+        db: Session,
+        target_id: int,
+        snapshot_id: int,
+        judge_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Question]:
+        """
+        Get approved questions that don't have QA jobs for a specific snapshot/judge.
+
+        Args:
+            db: Database session
+            target_id: Target ID to filter questions
+            snapshot_id: Snapshot ID to check for QA jobs
+            judge_id: Judge ID to check for QA jobs
+            skip: Number of records to skip for pagination
+            limit: Maximum number of records to return
+
+        Returns:
+            List of approved questions without QA jobs for the given snapshot/judge
+        """
+        # Subquery to check if a QA job exists for this question, snapshot, and judge
+        qa_job_exists = exists().where(
+            and_(
+                QAJob.question_id == Question.id,
+                QAJob.snapshot_id == snapshot_id,
+                QAJob.judge_id == judge_id
+            )
+        )
+
+        return (
+            db.query(Question)
+            .options(joinedload(Question.persona))
+            .filter(
+                Question.target_id == target_id,
+                Question.status == StatusEnum.approved,
+                not_(qa_job_exists)
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def get_approved_questions_without_scores(
+        db: Session,
+        target_id: int,
+        snapshot_id: int,
+        judge_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Question]:
+        """
+        Get approved questions that have answers but no scores for a specific snapshot/judge.
+
+        Args:
+            db: Database session
+            target_id: Target ID to filter questions
+            snapshot_id: Snapshot ID to check for answers
+            judge_id: Judge ID to check for scores
+            skip: Number of records to skip for pagination
+            limit: Maximum number of records to return
+
+        Returns:
+            List of approved questions with answers but no scores for the given snapshot/judge
+        """
+        # Join Question -> Answer -> AnswerScore (left join on score)
+        # Filter where answer exists but score doesn't
+        return (
+            db.query(Question)
+            .options(joinedload(Question.persona))
+            .join(Answer, and_(
+                Answer.question_id == Question.id,
+                Answer.snapshot_id == snapshot_id
+            ))
+            .outerjoin(AnswerScore, and_(
+                AnswerScore.answer_id == Answer.id,
+                AnswerScore.judge_id == judge_id
+            ))
+            .filter(
+                Question.target_id == target_id,
+                Question.status == StatusEnum.approved,
+                AnswerScore.id.is_(None)  # No score exists
+            )
+            .offset(skip)
+            .limit(limit)
             .all()
         )
