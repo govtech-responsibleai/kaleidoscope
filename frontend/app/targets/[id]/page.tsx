@@ -13,13 +13,26 @@ import {
   DialogContent,
   DialogActions,
   Button,
+  Stack,
   TextField,
+  Grid,
 } from "@mui/material";
-import { Edit as EditIcon } from "@mui/icons-material";
+import {
+  Edit as EditIcon,
+  Person as PersonIcon,
+  QuestionMark as QuestionMarkIcon,
+  ScreenshotMonitor as ScreenshotMonitorIcon,
+  SmartToy as SmartToyIcon,
+  Download as DownloadIcon
+} from "@mui/icons-material";
 import { useParams } from "next/navigation";
-import { targetApi, snapshotApi, judgeApi } from "@/lib/api";
-import { TargetResponse, TargetStats, TargetUpdate, EndpointType } from "@/lib/types";
-import DocumentList from "@/components/DocumentList";
+import { targetApi, snapshotApi, judgeApi, metricsApi } from "@/lib/api";
+import { TargetResponse, TargetStats, TargetUpdate, EndpointType, SnapshotMetric } from "@/lib/types";
+import DocumentList from "@/components/overview/DocumentList";
+import SnapshotAccuracyChart from "@/components/overview/SnapshotAccuracyChart";
+import LatestSnapshotMetricsCard from "@/components/overview/LatestSnapshotMetricsCard";
+import html2canvas from "html2canvas";
+import jsPDF from "jspdf";
 
 export default function TargetOverview() {
   const params = useParams();
@@ -34,23 +47,29 @@ export default function TargetOverview() {
   const [editForm, setEditForm] = useState<TargetUpdate>({});
   const [snapshotCount, setSnapshotCount] = useState(0);
   const [judgeCount, setJudgeCount] = useState(0);
+  const [snapshotMetrics, setSnapshotMetrics] = useState<SnapshotMetric[]>([]);
+  const [metricsLoading, setMetricsLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   const fetchData = async () => {
     try {
-      const [targetRes, statsRes, snapshotsRes, judgesRes] = await Promise.all([
+      const [targetRes, statsRes, snapshotsRes, judgesRes, metricsRes] = await Promise.all([
         targetApi.get(targetId),
         targetApi.getStats(targetId),
         snapshotApi.list(targetId),
         judgeApi.list(targetId),
+        metricsApi.getSnapshotMetrics(targetId),
       ]);
       setTarget(targetRes.data);
       setStats(statsRes.data);
       setSnapshotCount(snapshotsRes.data.length);
       setJudgeCount(judgesRes.data.length);
+      setSnapshotMetrics(metricsRes.data.snapshots);
     } catch (error) {
       console.error("Failed to fetch target data:", error);
     } finally {
       setLoading(false);
+      setMetricsLoading(false);
     }
   };
 
@@ -86,6 +105,52 @@ export default function TargetOverview() {
     }
   };
 
+  const handleDownloadReport = async () => {
+    setDownloading(true);
+    try {
+      const element = document.getElementById('report-content');
+      if (!element) throw new Error('Report content not found');
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+      });
+
+      const imgData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF('p', 'mm', 'a4');
+
+      // Define margins (in mm)
+      const margin = 10;
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const contentWidth = pageWidth - (margin * 2);
+      const contentHeight = (canvas.height * contentWidth) / canvas.width;
+
+      // Handle multi-page if needed
+      let heightLeft = contentHeight;
+      let position = margin;
+
+      pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+      heightLeft -= (pageHeight - margin * 2);
+
+      while (heightLeft > 0) {
+        position = -(contentHeight - heightLeft) + margin;
+        pdf.addPage();
+        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
+        heightLeft -= (pageHeight - margin * 2);
+      }
+
+      pdf.save(`${target?.name || 'target'}_report_${new Date().toISOString().split('T')[0]}.pdf`);
+    } catch (error) {
+      console.error('Failed to generate report:', error);
+      alert('Failed to generate report. Please try again.');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
 
   if (loading) {
     return (
@@ -104,9 +169,23 @@ export default function TargetOverview() {
 
   return (
     <Box>
-      {/* Target Details and Knowledge Base Documents - Side by Side */}
-      <Box sx={{ display: "flex", gap: 3, mb: 3, flexDirection: { xs: "column", md: "row" } }}>
-        <Card sx={{ flex: { md: "0 0 55%" }, height: "350px" }}>
+      {/* Header with Download Report Button */}
+      <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", mb: 3 }}>
+        <Button
+          variant="contained"
+          startIcon={<DownloadIcon />}
+          onClick={handleDownloadReport}
+          disabled={downloading || loading}
+        >
+          {downloading ? "Generating PDF..." : "Download Report"}
+        </Button>
+      </Box>
+
+      {/* Report Content */}
+      <Box id="report-content">
+        {/* Target Details and Knowledge Base Documents - Side by Side */}
+        <Box sx={{ display: "flex", gap: 3, mb: 3, flexDirection: { xs: "column", md: "row" } }}>
+        <Card variant="outlined" sx={{ flex: { md: "0 0 55%" }, height: "300px" }}>
           <CardContent>
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
               <Typography variant="h6" fontWeight={600}>
@@ -158,7 +237,8 @@ export default function TargetOverview() {
             </Box>
           </CardContent>
         </Card>
-        <Card sx={{ flex: { md: "0 0 calc(45% - 24px)" }, height: "350px", display: "flex", flexDirection: "column" }}>
+
+        <Card variant="outlined" sx={{ flex: { md: "0 0 calc(45% - 24px)" }, height: "300px", display: "flex", flexDirection: "column" }}>
           <CardContent sx={{ flexGrow: 1, display: "flex", flexDirection: "column", overflow: "hidden", pb: 2 }}>
             <DocumentList
               key={documentRefreshKey}
@@ -175,6 +255,7 @@ export default function TargetOverview() {
         sx={{
           display: "grid",
           gap: 3,
+          mb: 3, 
           gridTemplateColumns: {
             xs: "repeat(1, minmax(0, 1fr))",
             sm: "repeat(2, minmax(0, 1fr))",
@@ -182,46 +263,80 @@ export default function TargetOverview() {
           },
         }}
       >
-        <Card>
+        <Card variant="outlined">
           <CardContent>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Personas
-            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+              <PersonIcon fontSize="small" sx={{ opacity: 0.5 }}/>
+              <Typography variant="subtitle2" color="text.secondary">
+                Personas
+              </Typography>
+            </Stack>
             <Typography variant="h4" fontWeight={600}>
               {totalPersonas}
             </Typography>
           </CardContent>
         </Card>
-        <Card>
+
+        <Card variant="outlined">
           <CardContent>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Questions
-            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+              <QuestionMarkIcon fontSize="small" sx={{ opacity: 0.5 }}/>
+              <Typography variant="subtitle2" color="text.secondary">
+                Questions
+              </Typography>
+            </Stack>
             <Typography variant="h4" fontWeight={600}>
               {totalQuestions}
             </Typography>
           </CardContent>
         </Card>
-        <Card>
+
+        <Card variant="outlined">
           <CardContent>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Snapshots
-            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+              <ScreenshotMonitorIcon fontSize="small" sx={{ opacity: 0.5 }}/>
+              <Typography variant="subtitle2" color="text.secondary">
+                Snapshots
+              </Typography>
+            </Stack>
             <Typography variant="h4" fontWeight={600}>
               {snapshotCount}
             </Typography>
           </CardContent>
         </Card>
-        <Card>
+
+        <Card variant="outlined">
           <CardContent>
-            <Typography variant="subtitle2" color="text.secondary" gutterBottom>
-              Judges
-            </Typography>
+            <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
+              <SmartToyIcon fontSize="small" sx={{ opacity: 0.5 }}/>
+              <Typography variant="subtitle2" color="text.secondary">
+                Judges
+              </Typography>
+            </Stack>
             <Typography variant="h4" fontWeight={600}>
               {judgeCount}
             </Typography>
           </CardContent>
         </Card>
+      </Box>
+
+      {/* Snapshot Accuracy Chart and Metrics */}
+      <Box 
+        sx={{
+          mb: 3,
+        }}>
+        <Stack direction="row" spacing={3}>
+          <SnapshotAccuracyChart
+            data={snapshotMetrics}
+            loading={metricsLoading}
+          />
+
+          <LatestSnapshotMetricsCard
+            latestSnapshot={snapshotMetrics[0] || null}
+            loading={metricsLoading}
+          />
+        </Stack>
+      </Box>
       </Box>
 
       {/* Edit Target Dialog */}

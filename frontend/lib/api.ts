@@ -42,6 +42,7 @@ import {
   JudgeAccuracy,
   ResultRow,
   SnapshotResultsResponse,
+  SnapshotMetricsResponse,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -316,6 +317,9 @@ export const metricsApi = {
     api.post(`/snapshots/${snapshotId}/export`, undefined, {
       responseType: "blob",
     }),
+
+  getSnapshotMetrics: (targetId: number) =>
+    api.get<SnapshotMetricsResponse>(`/targets/${targetId}/snapshot-metrics`),
 };
 
 export default api;

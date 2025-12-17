@@ -105,6 +105,7 @@ export default function ResultsTable({
   return (
     <Box>
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
+        <Typography variant="h5">All Questions & Responses</Typography>
         <FormControlLabel
           control={
             <Checkbox
@@ -117,6 +118,7 @@ export default function ResultsTable({
           }
           label="Show only disagreements"
         />
+
 
         <Box sx={{ flexGrow: 1 }} />
 
@@ -138,7 +140,7 @@ export default function ResultsTable({
               <TableCell sx={{ width: "35%" }}>Question</TableCell>
               <TableCell sx={{ width: "35%" }}>Answer</TableCell>
               <TableCell sx={{ width: "10%" }}>Accuracy</TableCell>
-              <TableCell sx={{ width: "20%" }}>Metadata</TableCell>
+              <TableCell sx={{ width: "20%" }}>Evaluators</TableCell>
             </TableRow>
           </TableHead>
 

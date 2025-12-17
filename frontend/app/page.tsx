@@ -14,7 +14,7 @@ import { Add as AddIcon } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { targetApi } from "@/lib/api";
 import { TargetResponse } from "@/lib/types";
-import CreateTargetModal from "@/components/CreateTargetModal";
+import CreateTargetModal from "@/components/overview/CreateTargetModal";
 
 export default function Home() {
   const router = useRouter();
