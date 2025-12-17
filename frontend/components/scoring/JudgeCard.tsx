@@ -24,6 +24,8 @@ interface JudgeCardProps {
   judge: JudgeConfig;
   snapshotId: number;
   jobs: QAJob[];
+  questionsWithoutScores: number;
+  hasQuestionsWithoutAnswers: boolean;
   onRun: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
@@ -34,6 +36,8 @@ export default function JudgeCard({
   judge,
   snapshotId,
   jobs,
+  questionsWithoutScores,
+  hasQuestionsWithoutAnswers,
   onRun,
   onEdit,
   onDuplicate,
@@ -46,13 +50,12 @@ export default function JudgeCard({
 
   // Calculate aggregate status from jobs
   const isRunning = jobs.some((job) => job.status === JobStatus.RUNNING);
-  const isCompleted = jobs.length > 0 && jobs.every((job) => job.status === JobStatus.COMPLETED);
+  const isCompleted = jobs.length > 0 && jobs.every((job) => job.status === JobStatus.COMPLETED) && questionsWithoutScores === 0;
   const completedCount = jobs.filter((job) => job.status === JobStatus.COMPLETED).length;
   const totalJobs = jobs.length;
 
   // Fetch metrics when job completes
   useEffect(() => {
-    "HIT THE USE EFFECT"
     if (isCompleted && snapshotId) {
       fetchMetrics();
     }
@@ -173,14 +176,18 @@ export default function JudgeCard({
           fullWidth
           sx={{ mt: 2 }}
           onClick={onRun}
-          disabled={isRunning || isCompleted || loadingMetrics}
+          disabled={isRunning || isCompleted || loadingMetrics || hasQuestionsWithoutAnswers}
         >
           {isRunning ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CircularProgress size={16} /> Running ({completedCount}/{totalJobs})
             </Box>
+          ) : totalJobs === 0 ? (
+            "Run"
+          ) : questionsWithoutScores > 0 ? (
+            `Update (${questionsWithoutScores} new question${questionsWithoutScores > 1 ? "s" : ""})`
           ) : (
-            "Run Judge"
+            "Completed"
           )}
         </Button>
 

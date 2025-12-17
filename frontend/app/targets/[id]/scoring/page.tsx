@@ -65,6 +65,10 @@ export default function ScoringPage() {
   const [annotationStatus, setAnnotationStatus] = useState<AnnotationCompletionStatus | null>(null);
   const [checkingAnnotations, setCheckingAnnotations] = useState(true);
 
+  // Questions status state
+  const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number>(0);
+  const [questionsWithoutScores, setQuestionsWithoutScores] = useState<Record<number, number>>({});
+
   // UI state
   const [error, setError] = useState<string | null>(null);
   const judgeCardsRef = useRef<HTMLDivElement | null>(null);
@@ -136,6 +140,39 @@ export default function ScoringPage() {
     }
   }, []);
 
+  // Fetch questions without answers (using baseline judge)
+  const fetchQuestionsWithoutAnswers = useCallback(async (snapshotId: number) => {
+    const baselineJudge = judges.find((j) => j.is_baseline);
+    if (!baselineJudge) {
+      setQuestionsWithoutAnswers(0);
+      return;
+    }
+
+    try {
+      const response = await questionApi.listApprovedWithoutAnswers(snapshotId, baselineJudge.id);
+      setQuestionsWithoutAnswers(response.data.length);
+    } catch (error) {
+      console.error("Failed to fetch questions without answers:", error);
+      setQuestionsWithoutAnswers(0);
+    }
+  }, [judges]);
+
+  // Fetch questions without scores for all judges
+  const fetchQuestionsWithoutScores = useCallback(async (snapshotId: number) => {
+    try {
+      const counts: Record<number, number> = {};
+
+      for (const judge of judges) {
+        const response = await questionApi.listApprovedWithoutScores(snapshotId, judge.id);
+        counts[judge.id] = response.data.length;
+      }
+      setQuestionsWithoutScores(counts);
+    } catch (error) {
+      console.error("Failed to fetch questions without scores:", error);
+      setQuestionsWithoutScores({});
+    }
+  }, [judges]);
+
   // Check judge job statuses
   const checkJudgeJobStatuses = useCallback(
     async (snapshotId: number) => {
@@ -192,6 +229,7 @@ export default function ScoringPage() {
             delete pollingRefs.current[judgeId];
           }
           await fetchResults(snapshotId);
+          await fetchQuestionsWithoutScores(snapshotId);
         }
       };
 
@@ -200,7 +238,7 @@ export default function ScoringPage() {
       const intervalId = window.setInterval(runPoll, 5000);
       pollingRefs.current[judgeId] = intervalId;
     },
-    [checkJudgeJobStatuses, fetchResults]
+    [checkJudgeJobStatuses, fetchResults, fetchQuestionsWithoutScores]
   );
 
   // Initial data fetch
@@ -214,12 +252,16 @@ export default function ScoringPage() {
     setAnnotationStatus(null);
     setResults([]);
     setJudgeJobs({});
+    setQuestionsWithoutAnswers(0);
+    setQuestionsWithoutScores({});
 
     if (selectedSnapshotId) {
       checkAnnotationCompletion(selectedSnapshotId);
       checkJudgeJobStatuses(selectedSnapshotId);
+      fetchQuestionsWithoutAnswers(selectedSnapshotId);
+      fetchQuestionsWithoutScores(selectedSnapshotId);
     }
-  }, [selectedSnapshotId, checkAnnotationCompletion, checkJudgeJobStatuses]);
+  }, [selectedSnapshotId, checkAnnotationCompletion, checkJudgeJobStatuses, fetchQuestionsWithoutAnswers, fetchQuestionsWithoutScores]);
 
   // Fetch results when annotations are complete
   useEffect(() => {
@@ -263,21 +305,19 @@ export default function ScoringPage() {
     }
 
     try {
-      // Get only approved questions (matching annotation flow)
-      const questionsResponse = await questionApi.listByTarget(targetId);
-      const approvedQuestionIds = questionsResponse.data
-        .filter((q) => q.status === "approved")
-        .map((q) => q.id);
+      // Get only questions without scores for this judge
+      const questionsResponse = await questionApi.listApprovedWithoutScores(selectedSnapshotId, judgeId);
+      const questionIdsToScore = questionsResponse.data.map((q) => q.id);
 
       // Start judge job
-      if (approvedQuestionIds.length === 0) {
-        setError("No approved questions available to score. Approve questions first.");
+      if (questionIdsToScore.length === 0) {
+        setError("All questions already scored for this judge.");
         return;
       }
 
       const response = await qaJobApi.start(selectedSnapshotId, {
         judge_id: judgeId,
-        question_ids: approvedQuestionIds,
+        question_ids: questionIdsToScore,
         is_scoring: true, // Because this is scoring page
       });
 
@@ -286,11 +326,12 @@ export default function ScoringPage() {
       setJudgeJobs((prev) => ({
         ...prev,
         [judgeId]: jobs,
-      })); 
+      }));
 
       // Refresh current job statuses and scoring results once run kicks off
       await checkJudgeJobStatuses(selectedSnapshotId);
       await fetchResults(selectedSnapshotId);
+      await fetchQuestionsWithoutScores(selectedSnapshotId);
       startJudgePolling(judgeId, selectedSnapshotId);
 
     } catch (error) {
@@ -422,19 +463,28 @@ export default function ScoringPage() {
               </Box>
             </Box>
 
+            {/* Alert for questions without answers */}
+            {questionsWithoutAnswers > 0 && (
+              <Alert severity="warning" sx={{ mb: 2 }}>
+                {questionsWithoutAnswers} new question{questionsWithoutAnswers > 1 ? "s" : ""} found. Run baseline judge in Annotations tab first.
+              </Alert>
+            )}
+
             {/* Judge Cards */}
             <JudgeCards
               judges={judges}
               snapshotId={selectedSnapshotId}
               judgeJobs={judgeJobs}
               scrollContainerRef={judgeCardsRef}
+              questionsWithoutScores={questionsWithoutScores}
+              hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
               onRunJudge={handleRunJudge}
               onEditJudge={(judge) => handleOpenDialog("edit", judge)}
               onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
               onDeleteJudge={handleDeleteJudge}
             />
 
-            <Divider />
+            <Divider sx={{ pt: 2 }}/>
 
             {/* Results Table */}
             {resultsLoading ? (

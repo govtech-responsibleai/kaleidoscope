@@ -149,6 +149,16 @@ export const questionApi = {
 
   findSimilar: (data: import("./types").SimilarQuestionsRequest) =>
     api.post<import("./types").SimilarQuestionsResponse>("/questions/similar", data),
+
+  listApprovedWithoutAnswers: (snapshotId: number, judgeId: number) =>
+    api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-answers`, {
+      params: { judge_id: judgeId },
+    }),
+
+  listApprovedWithoutScores: (snapshotId: number, judgeId: number) =>
+    api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-scores`, {
+      params: { judge_id: judgeId },
+    }),
 };
 
 // KB Document endpoints

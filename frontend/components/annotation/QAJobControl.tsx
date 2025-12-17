@@ -29,12 +29,11 @@ import {
   QAMap, 
   QARecord
 } from "@/lib/types";
-import { answerApi, qaJobApi } from "@/lib/api";
+import { answerApi, qaJobApi, questionApi } from "@/lib/api";
 
 interface QAJobControlProps {
   snapshotId: number | null;
   baselineJudgeId: number | null;
-  questionIds: number[];
   qaJobs: QAJob[];
   setQaJobs: React.Dispatch<React.SetStateAction<QAJob[]>>;
   qaMap: QAMap;
@@ -64,7 +63,6 @@ const getStageLabel = (stage: QAJobStageEnum): string => {
 export default function QAJobControl({
   snapshotId,
   baselineJudgeId,
-  questionIds,
   qaJobs,
   setQaJobs,
   qaMap,
@@ -118,19 +116,8 @@ export default function QAJobControl({
   const failedCount = statusGroups[JobStatus.FAILED] ?? 0;
   const pausedCount = statusGroups[JobStatus.PAUSED] ?? 0;
 
-  // Detect unevaluated questions (questions not yet in qaJobs)
-  const unevaluatedQuestions = useMemo(() => {
-    const evaluatedQuestionIds = new Set(qaJobs.map((job) => job.question_id));
-    const unevaluated = questionIds.filter((qid) => !evaluatedQuestionIds.has(qid));
-
-    if (unevaluated.length > 0) {
-      console.log(`QAJobControl: Detected ${unevaluated.length} new questions not yet evaluated:`, unevaluated);
-    } else {
-      console.log("QAJobControl: No new questions to evaluate.");
-    }
-
-    return unevaluated;
-  }, [qaJobs, questionIds]);
+  // Track questions without answers (fetched from backend)
+  const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number[]>([]);
 
   // Update counts of the STAGEs each QAJob is in
   const stageGroups = useMemo(() => {
@@ -327,6 +314,42 @@ export default function QAJobControl({
     };
   }, [snapshotId, baselineJudgeId, setQaJobs, setQaMap, notifyError]);
 
+  // Fetch questions without answers when snapshot or judge changes
+  useEffect(() => {
+    if (!snapshotId || !baselineJudgeId) {
+      setQuestionsWithoutAnswers([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchQuestionsWithoutAnswers = async () => {
+      try {
+        const response = await questionApi.listApprovedWithoutAnswers(snapshotId, baselineJudgeId);
+        if (!cancelled) {
+          const questionIds = response.data.map((q) => q.id);
+          setQuestionsWithoutAnswers(questionIds);
+          if (questionIds.length > 0) {
+            console.log(`QAJobControl: Detected ${questionIds.length} questions without answers:`, questionIds);
+          } else {
+            console.log("QAJobControl: No new questions to evaluate.");
+          }
+        }
+      } catch (err) {
+        console.error("Failed to fetch questions without answers:", err);
+        if (!cancelled) {
+          setQuestionsWithoutAnswers([]);
+        }
+      }
+    };
+
+    fetchQuestionsWithoutAnswers();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [snapshotId, baselineJudgeId, qaJobs]);
+
   // Update QA data as jobs progress depending on their STAGE
   useEffect(() => {
     if (!snapshotId) {
@@ -417,9 +440,7 @@ export default function QAJobControl({
 
     if (answers.length === 0) return;
 
-    // Wait until all answers for the selected questions are ready
-    if (answers.length < questionIds.length) return;
-
+    // Check if any answer is already selected
     const hasSelection = answers.some((answer) => answer.is_selected_for_annotation);
     if (hasSelection) {
       defaultSelectionAttemptedRef.current.add(snapshotId);
@@ -478,7 +499,7 @@ export default function QAJobControl({
   // UI chips to display the STATUS and STAGE of the QA job.
   const getStatusChip = () => {
 
-    if (!snapshotId || !baselineJudgeId || questionIds.length === 0) {
+    if (!snapshotId || !baselineJudgeId) {
       return <Chip label="Select a snapshot" size="small" />;
     }
 
@@ -517,10 +538,10 @@ export default function QAJobControl({
     }
 
     if (completedCount === totalJobs) {
-      if (unevaluatedQuestions.length > 0) {
+      if (questionsWithoutAnswers.length > 0) {
         return (
           <Chip
-            label={`Pending, (${unevaluatedQuestions.length}) new questions detected`}
+            label={`Pending: (${questionsWithoutAnswers.length}) new questions found.`}
             color="warning"
             size="small"
           />
@@ -554,7 +575,7 @@ export default function QAJobControl({
   };
 
   const controlState: ControlState = (() => {
-    if (!snapshotId || !baselineJudgeId || questionIds.length === 0 ) {
+    if (!snapshotId || !baselineJudgeId) {
       return "disabled";
     }
 
@@ -592,17 +613,17 @@ export default function QAJobControl({
 
   const controlIcon = controlState === "pause" ? <PauseIcon /> : <PlayArrowIcon />;
   const controlColor = controlState === "disabled" ? "default" : "primary";
-  const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && unevaluatedQuestions.length === 0;
+  const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && questionsWithoutAnswers.length === 0;
 
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {
-    if (!snapshotId || !baselineJudgeId || questionIds.length === 0) return;
+    if (!snapshotId || !baselineJudgeId || questionsWithoutAnswers.length === 0) return;
 
     setJobInAction(true);
     try {
       const response = await qaJobApi.start(snapshotId, {
         judge_id: baselineJudgeId,
-        question_ids: questionIds,
+        question_ids: questionsWithoutAnswers,
         is_scoring: false,
       });
       setQaJobs(response.data);
