@@ -37,7 +37,7 @@ class SnapshotRepository:
         return (
             db.query(Snapshot)
             .filter(Snapshot.target_id == target_id)
-            .order_by(Snapshot.created_at.desc())
+            .order_by(Snapshot.created_at.asc()) # Different from other repos that do .desc()
             .offset(skip)
             .limit(limit)
             .all()

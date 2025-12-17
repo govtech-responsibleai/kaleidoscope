@@ -8,7 +8,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.repositories import SnapshotRepository, JudgeRepository
+from src.common.database.repositories import SnapshotRepository, JudgeRepository, TargetRepository
 from src.scoring.services.metrics_service import MetricsService
 
 router = APIRouter()
@@ -206,3 +206,80 @@ def export_results(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.get("/targets/{target_id}/snapshot-metrics")
+def get_target_snapshot_metrics(
+    target_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get aggregated metrics for all snapshots of a target.
+
+    Returns summary metrics for each snapshot including aggregated accuracy
+    and judge alignment ranges for visualization and reporting.
+
+    Args:
+        target_id: Target ID
+        db: Database session
+
+    Returns:
+        Dict with list of snapshot metrics:
+        {
+            "snapshots": [
+                {
+                    "snapshot_id": 1,
+                    "snapshot_name": "Snapshot 1",
+                    "created_at": "2024-01-15T10:30:00Z",
+                    "aggregated_accuracy": 0.73,
+                    "total_answers": 100,
+                    "judge_alignment_range": {"min": 0.50, "max": 0.85},
+                    "has_aligned_judges": true
+                }
+            ]
+        }
+
+    Raises:
+        HTTPException: If target not found
+    """
+    # Verify target exists
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target {target_id} not found"
+        )
+
+    # Get all snapshots for the target
+    snapshots = SnapshotRepository.get_by_target(db, target_id)
+
+    # Calculate metrics for each snapshot
+    metrics_service = MetricsService(db)
+    snapshot_metrics = []
+
+    for snapshot in snapshots:
+        try:
+            summary = metrics_service.calculate_snapshot_summary(snapshot.id)
+            snapshot_metrics.append({
+                "snapshot_id": snapshot.id,
+                "snapshot_name": snapshot.name,
+                "created_at": snapshot.created_at.isoformat(),
+                "aggregated_accuracy": summary["aggregated_accuracy"],
+                "total_answers": summary["total_answers"],
+                "judge_alignment_range": summary["judge_alignment_range"],
+                "has_aligned_judges": summary["has_aligned_judges"],
+                "reliable_judge_count": summary["reliable_judge_count"]
+            })
+        except ValueError:
+            # No answers for this snapshot, skip it
+            continue
+        except Exception:
+            # Log but don't fail the entire request
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception(f"Failed to calculate metrics for snapshot {snapshot.id}")
+            continue
+
+    return {
+        "snapshots": snapshot_metrics
+    }
