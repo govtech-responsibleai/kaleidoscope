@@ -25,16 +25,23 @@ logger = logging.getLogger(__name__)
 class PersonaGenerator:
     """Service for generating personas using LLM."""
 
-    def __init__(self, db: Session, job_id: int):
+    def __init__(
+        self,
+        db: Session,
+        job_id: int,
+        sample_personas: Optional[List[str]] = None
+    ):
         """
         Initialize persona generator.
 
         Args:
             db: Database session
             job_id: Job ID for this generation run
+            sample_personas: Optional list of example persona descriptions
         """
         self.db = db
         self.job_id = job_id
+        self.sample_personas = sample_personas or []
         self.cost_tracker = CostTracker(job_id=job_id)
 
         # Load job
@@ -128,17 +135,6 @@ class PersonaGenerator:
             for p in existing_personas
         ]
 
-        # TODO: Get these from target metadata or user input
-        sample_personas = [
-            "Non-technical public officer exploring AI risks",
-            "Technical public officer searching for best practices",
-            "Management officer seeking high-level overview"
-        ]
-        sample_questions = [
-            "What are some risks associated with AI systems?",
-            "How do we define unsafe content for government chatbots?"
-        ]
-
         # Render template
         prompt = render_template(
             "persona_generation.md",
@@ -146,8 +142,7 @@ class PersonaGenerator:
             purpose=self.target.purpose or "Not specified",
             target_users=self.target.target_users or "General users",
             agency=self.target.agency or "Not specified",
-            sample_personas=sample_personas,
-            sample_questions=sample_questions,
+            sample_personas=self.sample_personas,
             target_persona_count=self.job.count_requested,
             approved_personas=existing_personas_data if existing_personas_data else None
         )
@@ -207,16 +202,25 @@ class PersonaGenerator:
         logger.info(f"Updated job {self.job_id} status to {status.value}")
 
 
-def generate_personas_for_job(db: Session, job_id: int) -> List[Dict[str, Any]]:
+def generate_personas_for_job(
+    db: Session,
+    job_id: int,
+    sample_personas: Optional[List[str]] = None
+) -> List[Dict[str, Any]]:
     """
     Generate personas for a job (convenience function).
 
     Args:
         db: Database session
         job_id: Job ID
+        sample_personas: Optional list of example persona descriptions
 
     Returns:
         List of generated persona dictionaries
     """
-    generator = PersonaGenerator(db, job_id)
+    generator = PersonaGenerator(
+        db,
+        job_id,
+        sample_personas=sample_personas
+    )
     return generator.generate()

@@ -27,6 +27,8 @@ class JobCreate(BaseModel):
     count_requested: int = Field(..., description="Number of items to generate", gt=0)
     model_used: Optional[str] = Field(None, description="LLM model to use. If not specified, uses the configured default model.")
     persona_ids: Optional[List[int]] = Field(None, description="List of persona IDs (for question generation only). If not provided, generates for all approved personas.")
+    sample_personas: Optional[List[str]] = Field(None, description="Optional list of example persona descriptions (for persona generation only)")
+    sample_questions: Optional[List[str]] = Field(None, description="Optional list of example questions (for question generation only)")
 
 
 class JobResponse(BaseModel):

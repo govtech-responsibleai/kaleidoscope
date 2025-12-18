@@ -28,20 +28,30 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
-def run_question_generation_background(job_id: int, persona_ids: Optional[List[int]] = None):
+def run_question_generation_background(
+    job_id: int,
+    persona_ids: Optional[List[int]] = None,
+    sample_questions: Optional[List[str]] = None
+):
     """
     Background task for running question generation asynchronously.
 
     Args:
         job_id: Job ID for the generation task
         persona_ids: Optional list of persona IDs to generate for
+        sample_questions: Optional list of example questions
     """
     # Create a new database session for the background task
     from src.common.database.connection import SessionLocal
     db = SessionLocal()
 
     try:
-        generate_questions_for_job(db, job_id, persona_ids=persona_ids)
+        generate_questions_for_job(
+            db,
+            job_id,
+            persona_ids=persona_ids,
+            sample_questions=sample_questions
+        )
         logger.info(f"Background task completed question generation for job {job_id}")
     except Exception as e:
         logger.error(f"Background question generation failed for job {job_id}: {e}", exc_info=True)
@@ -98,7 +108,11 @@ def create_persona_generation_job(
 
     # Run persona generation synchronously
     try:
-        generate_personas_for_job(db, job_id)
+        generate_personas_for_job(
+            db,
+            job_id,
+            sample_personas=job_request.sample_personas
+        )
         logger.info(f"Completed persona generation for job {job_id}")
     except Exception as e:
         logger.error(f"Persona generation failed for job {job_id}: {e}")
@@ -189,7 +203,8 @@ def create_question_generation_job_for_target(
     background_tasks.add_task(
         run_question_generation_background,
         job.id,
-        job_request.persona_ids
+        job_request.persona_ids,
+        job_request.sample_questions
     )
 
     logger.info(f"Created question generation job {job.id}, running in background")
