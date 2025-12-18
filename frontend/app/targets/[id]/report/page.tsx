@@ -125,8 +125,8 @@ export default function TargetReport() {
     return null;
   }
 
-  const totalPersonas = Object.values(stats.personas).reduce((a, b) => a + b, 0);
-  const totalQuestions = Object.values(stats.questions).reduce((a, b) => a + b, 0);
+  const approvedPersonas = stats.personas.approved || 0;
+  const approvedQuestions = stats.questions.approved || 0;
 
   return (
     <Box>
@@ -203,11 +203,11 @@ export default function TargetReport() {
                 <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
                   <PersonIcon fontSize="small" sx={{ opacity: 0.5 }}/>
                   <Typography variant="subtitle2" color="text.secondary">
-                    Personas
+                    Approved Personas
                   </Typography>
                 </Stack>
                 <Typography variant="h4" fontWeight={600}>
-                  {totalPersonas}
+                  {approvedPersonas}
                 </Typography>
               </CardContent>
             </Card>
@@ -217,11 +217,11 @@ export default function TargetReport() {
                 <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
                   <QuestionMarkIcon fontSize="small" sx={{ opacity: 0.5 }}/>
                   <Typography variant="subtitle2" color="text.secondary">
-                    Questions
+                    Approved Questions
                   </Typography>
                 </Stack>
                 <Typography variant="h4" fontWeight={600}>
-                  {totalQuestions}
+                  {approvedQuestions}
                 </Typography>
               </CardContent>
             </Card>
