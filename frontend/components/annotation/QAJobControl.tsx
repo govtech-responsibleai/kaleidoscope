@@ -617,22 +617,45 @@ export default function QAJobControl({
 
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {
-    if (!snapshotId || !baselineJudgeId || questionsWithoutAnswers.length === 0) return;
+    if (!snapshotId || !baselineJudgeId) return;
 
-    setJobInAction(true);
-    try {
-      const response = await qaJobApi.start(snapshotId, {
-        judge_id: baselineJudgeId,
-        question_ids: questionsWithoutAnswers,
-        is_scoring: false,
-      });
-      setQaJobs(response.data);
-      startPolling();
-    } catch (err) {
-      console.error("Failed to start QA jobs:", err);
-      notifyError("Failed to start QA jobs.");
-    } finally {
-      setJobInAction(false);
+    // Check for failed jobs that need restarting
+    const failedJobs = qaJobs.filter((job) => job.status === JobStatus.FAILED);
+
+    // If there are failed jobs, restart them; otherwise start new jobs for questions without answers
+    if (failedJobs.length > 0) {
+      setJobInAction(true);
+      try {
+        const response = await qaJobApi.start(snapshotId, {
+          judge_id: baselineJudgeId,
+          question_ids: failedJobs.map((job) => job.question_id),
+          job_ids: failedJobs.map((job) => job.id),
+          is_scoring: false,
+        });
+        setQaJobs(response.data);
+        startPolling();
+      } catch (err) {
+        console.error("Failed to restart failed QA jobs:", err);
+        notifyError("Failed to restart failed QA jobs.");
+      } finally {
+        setJobInAction(false);
+      }
+    } else if (questionsWithoutAnswers.length > 0) {
+      setJobInAction(true);
+      try {
+        const response = await qaJobApi.start(snapshotId, {
+          judge_id: baselineJudgeId,
+          question_ids: questionsWithoutAnswers,
+          is_scoring: false,
+        });
+        setQaJobs(response.data);
+        startPolling();
+      } catch (err) {
+        console.error("Failed to start QA jobs:", err);
+        notifyError("Failed to start QA jobs.");
+      } finally {
+        setJobInAction(false);
+      }
     }
   };
 
