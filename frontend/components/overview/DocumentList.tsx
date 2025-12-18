@@ -161,9 +161,9 @@ export default function DocumentList({
         maxHeight: maxHeight || "none"
       }}>
         {documents.length === 0 ? (
-          <Paper sx={{ p: 4, textAlign: "center" }}>
+          <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
             <FileIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
-            <Typography variant="body1" color="text.secondary" gutterBottom>
+            <Typography variant="body1" color="text.secondary"  sx={{ mb: 1 }}>
               No documents uploaded yet
             </Typography>
             <Typography variant="body2" color="text.secondary">

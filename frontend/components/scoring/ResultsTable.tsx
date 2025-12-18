@@ -18,6 +18,7 @@ import {
   TablePagination,
   TableRow,
   Typography,
+  useTheme,
 } from "@mui/material";
 import { Download as DownloadIcon } from "@mui/icons-material";
 import { ResultRow } from "@/lib/types";
@@ -55,6 +56,7 @@ export default function ResultsTable({
   results,
   snapshotId,
 }: ResultsTableProps) {
+  const theme = useTheme();
   const [page, setPage] = useState(0);
   const [showDisagreementsOnly, setShowDisagreementsOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -127,6 +129,7 @@ export default function ResultsTable({
           startIcon={<DownloadIcon />}
           onClick={handleExport}
           disabled={exporting}
+          sx={{ bgcolor: theme.palette.secondary.main }}
         >
           {exporting ? "Exporting..." : "Export CSV"}
         </Button>

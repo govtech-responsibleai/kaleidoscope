@@ -30,7 +30,6 @@ interface QAListProps {
   qaJobs: QAJob[];
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
-  onQuestionIdsChange?: (ids: number[]) => void;
 }
 
 export default function QAList({
@@ -39,7 +38,6 @@ export default function QAList({
   qaJobs,
   qaMap,
   setQaMap,
-  onQuestionIdsChange,
 }: QAListProps) {
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
   const [questionsLoading, setQuestionsLoading] = useState(false);
@@ -61,7 +59,6 @@ export default function QAList({
         if (cancelled) return;
         const approvedQuestions = response.data.filter((question) => question.status === "approved");
         setApprovedQuestions(approvedQuestions);
-        onQuestionIdsChange?.(approvedQuestions.map((q) => q.id));
         setActiveQuestionId(approvedQuestions[0]?.id ?? null);
       } catch (err) {
         if (!cancelled) {
@@ -80,7 +77,7 @@ export default function QAList({
     return () => {
       cancelled = true;
     };
-  }, [targetId, onQuestionIdsChange]);
+  }, [targetId]);
 
   // Get saved selections from qaMap
   useEffect(() => {

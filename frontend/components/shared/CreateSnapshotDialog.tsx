@@ -18,6 +18,7 @@ import { Snapshot } from "@/lib/types";
 interface CreateSnapshotDialogProps {
   open: boolean;
   targetId: number;
+  existingSnapshots: Snapshot[];
   onClose: () => void;
   onSuccess: (snapshot: Snapshot) => void;
 }
@@ -25,6 +26,7 @@ interface CreateSnapshotDialogProps {
 export default function CreateSnapshotDialog({
   open,
   targetId,
+  existingSnapshots,
   onClose,
   onSuccess,
 }: CreateSnapshotDialogProps) {
@@ -42,8 +44,20 @@ export default function CreateSnapshotDialog({
   }, [open]);
 
   const handleSubmit = async () => {
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+
+    if (!trimmedName) {
       setError("Snapshot name is required");
+      return;
+    }
+
+    // Check for duplicate names (case-insensitive)
+    const isDuplicate = existingSnapshots.some(
+      (snapshot) => snapshot.name.toLowerCase() === trimmedName.toLowerCase()
+    );
+
+    if (isDuplicate) {
+      setError("A snapshot with this name already exists. Please choose a different name.");
       return;
     }
 
@@ -53,7 +67,7 @@ export default function CreateSnapshotDialog({
     try {
       const response = await snapshotApi.create({
         target_id: targetId,
-        name: name.trim(),
+        name: trimmedName,
         description: description.trim() || undefined,
       });
       onSuccess(response.data);

@@ -325,6 +325,8 @@ The frontend integrates with the Kaleidoscope backend API:
 - `PUT /snapshots/:id` - Update snapshot
 - `DELETE /snapshots/:id` - Delete snapshot
 - `GET /snapshots/:id/stats` - Get snapshot statistics
+- `GET /snapshots/:id/questions/approved/without-answers` - Get approved questions without answers for judge
+- `GET /snapshots/:id/questions/approved/without-scores` - Get approved questions without scores for judge
 
 ### Answer Endpoints
 - `POST /answers` - Generate answer for a question
