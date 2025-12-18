@@ -29,7 +29,13 @@ logger = logging.getLogger(__name__)
 class QuestionGenerator:
     """Service for generating questions using LLM."""
 
-    def __init__(self, db: Session, job_id: int, persona_ids: Optional[List[int]] = None):
+    def __init__(
+        self,
+        db: Session,
+        job_id: int,
+        persona_ids: Optional[List[int]] = None,
+        sample_questions: Optional[List[str]] = None
+    ):
         """
         Initialize question generator.
 
@@ -37,10 +43,12 @@ class QuestionGenerator:
             db: Database session
             job_id: Job ID for this generation run
             persona_ids: Optional list of persona IDs to generate for (overrides job config)
+            sample_questions: Optional list of example questions
         """
         self.db = db
         self.job_id = job_id
         self.persona_ids = persona_ids  # Store for later use
+        self.sample_questions = sample_questions or []
         self.cost_tracker = CostTracker(job_id=job_id)
 
         # Load job
@@ -102,6 +110,10 @@ class QuestionGenerator:
 
             all_questions_data = []
 
+            # Get compiled KB text once (more efficient than retrieving per combination)
+            kb_text = KBDocumentRepository.get_compiled_text(self.db, self.target.id)
+            has_kb_content = kb_text is not None and kb_text.strip() != ""
+
             # Define all combinations of type and scope
             question_combinations = [
                 ("typical", "in_kb"),
@@ -109,6 +121,14 @@ class QuestionGenerator:
                 ("edge", "in_kb"),
                 ("edge", "out_kb")
             ]
+
+            # Filter out in_kb questions if there's no KB content
+            if not has_kb_content:
+                question_combinations = [
+                    (q_type, q_scope) for q_type, q_scope in question_combinations
+                    if q_scope != "in_kb"
+                ]
+                logger.info("No KB content available, skipping in_kb questions")
 
             # Generate questions for each persona
             for persona in personas:
@@ -128,6 +148,7 @@ class QuestionGenerator:
                     prompt = self._render_prompt(
                         persona,
                         approved_questions,
+                        kb_text,
                         question_type=question_type,
                         question_scope=question_scope
                     )
@@ -165,6 +186,7 @@ class QuestionGenerator:
         self,
         persona: Any,
         approved_questions: List[Any],
+        kb_text: Optional[str],
         question_type: str,
         question_scope: str
     ) -> str:
@@ -174,6 +196,7 @@ class QuestionGenerator:
         Args:
             persona: Persona to generate questions for
             approved_questions: List of approved questions to avoid duplicates
+            kb_text: Compiled KB text from documents (retrieved once in generate())
             question_type: Type of questions ("typical" or "edge")
             question_scope: Scope of questions ("in_kb" or "out_kb")
 
@@ -182,12 +205,6 @@ class QuestionGenerator:
         """
         # Prepare approved questions for template
         approved_questions_text = [q.text for q in approved_questions]
-
-        # TODO: Get these from target metadata or user input
-        sample_questions = [
-            "What are some risks associated with AI systems?",
-            "How do we define unsafe content for government chatbots?"
-        ]
 
         # Calculate how many questions to generate per combination
         # Since we have 4 combinations, divide count_requested by 4
@@ -202,9 +219,6 @@ class QuestionGenerator:
             )
             total_combinations = len(approved_personas) * 4
             questions_to_generate = max(1, self.job.count_requested // total_combinations)
-
-        # Get compiled KB text from documents
-        kb_text = KBDocumentRepository.get_compiled_text(self.db, self.target.id)
 
         # Render template
         prompt = render_template(
@@ -222,7 +236,7 @@ class QuestionGenerator:
             question_type=question_type,
             question_scope=question_scope,
             kb_text=kb_text,
-            sample_questions=sample_questions,
+            sample_questions=self.sample_questions,
             approved_questions=approved_questions_text if approved_questions_text else None,
             questions_to_generate=questions_to_generate
         )
@@ -286,7 +300,8 @@ class QuestionGenerator:
 def generate_questions_for_job(
     db: Session,
     job_id: int,
-    persona_ids: Optional[List[int]] = None
+    persona_ids: Optional[List[int]] = None,
+    sample_questions: Optional[List[str]] = None
 ) -> List[Dict[str, Any]]:
     """
     Generate questions for a job (convenience function).
@@ -295,11 +310,17 @@ def generate_questions_for_job(
         db: Database session
         job_id: Job ID
         persona_ids: Optional list of persona IDs to generate for (overrides job config)
+        sample_questions: Optional list of example questions
 
     Returns:
         List of generated question dictionaries
     """
-    generator = QuestionGenerator(db, job_id, persona_ids=persona_ids)
+    generator = QuestionGenerator(
+        db,
+        job_id,
+        persona_ids=persona_ids,
+        sample_questions=sample_questions
+    )
     return generator.generate()
 
 

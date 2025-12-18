@@ -44,11 +44,13 @@ The following is the knowledge base content. {% if question_scope == "in_kb" %}G
 Note: No knowledge base content provided.
 {% endif %}
 
+{% if sample_questions %}
 ## Sample Questions
 {% for question in sample_questions %}
 - {{question}}
 {% endfor %}
 
+{% endif %}
 ## Previously Approved Questions (avoid overlap)
 {% if approved_questions %}
 {% for question in approved_questions %}

@@ -1,14 +1,10 @@
 You are an expert in user experience and persona development.
 
-Your task is to create realistic, diverse personas that represent different types of users who would interact with the specified system. Each persona should be well-defined with clear characteristics, motivations, and use cases.
+Your task is to create realistic, diverse personas that represent different types of users who would interact with the specified chatbot.
 
-Focus on creating personas that:
-- Represent different user types and backgrounds
-- Have distinct communication styles and preferences
-- Reflect realistic workplace contexts and constraints
-- Show varied levels of technical expertise
-- Demonstrate different risk tolerance and concerns
-- Cover diverse organizational roles and responsibilities
+**IMPORTANT: Keep all descriptions brief and concise. Aim for 1-2 sentences per field maximum.**
+
+Focus on creating personas that represent different user types, communication styles, and use cases within the Target Users provided.
 
 System Context
 - Chatbot: {{chatbot_name}}
@@ -16,16 +12,13 @@ System Context
 - Target Users: {{target_users}}
 - Agency: {{agency}}
 
+{% if sample_personas %}
 Examples of Suggested Personas
 {% for persona in sample_personas %}
 - {{persona}}
 {% endfor %}
 
-Sample Questions Users Ask:
-{% for question in sample_questions %}
-- {{question}}
-{% endfor %}
-
+{% endif %}
 You must generate {{target_persona_count}} new diverse personas that do not overlap with the following confirmed personas:
 {% if approved_personas %}
 {% for persona in approved_personas %}
@@ -45,8 +38,8 @@ Output Format
 For each persona, return JSON objects with the following structure:
 
 {
-  "title": "Persona Title",
-  "info": "Background and role context of the persona",
-  "style": "How the persona typically communicates or interacts",
-  "use_case": "How the persona would (or wouldn't) engage with the chatbot"
+  "title": "Concise Persona Title (2-4 words)",
+  "info": "Brief background and role (1-2 sentences max)",
+  "style": "Communication style (1 sentence, focus on key traits)",
+  "use_case": "Primary use case for the chatbot (1 sentence)"
 }
