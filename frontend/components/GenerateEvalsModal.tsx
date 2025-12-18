@@ -12,20 +12,19 @@ import {
   Card,
   CardContent,
   CardActions,
-  Grid,
   CircularProgress,
   IconButton,
   Alert,
-  Stepper,
-  Step,
-  StepLabel,
+  TextField,
 } from "@mui/material";
 import {
   Close as CloseIcon,
   Refresh as RefreshIcon,
+  Edit as EditIcon,
+  Save as SaveIcon,
 } from "@mui/icons-material";
 import { jobApi, personaApi } from "@/lib/api";
-import { PersonaResponse, JobStatus } from "@/lib/types";
+import { PersonaResponse, JobStatus, PersonaUpdate } from "@/lib/types";
 import { DEFAULT_PERSONA_COUNT, JOB_POLLING_INTERVAL } from "@/lib/constants";
 
 interface GenerateEvalsModalProps {
@@ -43,23 +42,23 @@ export default function GenerateEvalsModal({
   onSuccess,
   onJobLaunched,
 }: GenerateEvalsModalProps) {
-  const [step, setStep] = useState(0); // 0: Generate Personas, 1: Confirm & Generate Questions
+  const [step, setStep] = useState(-1); // -1: Initial, 0: Select Personas, 1: Generate Questions
   const [personas, setPersonas] = useState<PersonaResponse[]>([]);
   const [rejectedPersonaIds, setRejectedPersonaIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [generatingQuestions, setGeneratingQuestions] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const steps = ["Select Personas", "Generate Questions"];
-
-  // Generate initial personas when modal opens
-  useEffect(() => {
-    if (open && personas.length === 0) {
-      generatePersonas();
-    }
-  }, [open]);
+  // Edit mode state
+  const [editingPersonaId, setEditingPersonaId] = useState<number | null>(null);
+  const [editedTitle, setEditedTitle] = useState("");
+  const [editedInfo, setEditedInfo] = useState("");
+  const [editedStyle, setEditedStyle] = useState("");
+  const [editedUseCase, setEditedUseCase] = useState("");
+  const [savingPersonaId, setSavingPersonaId] = useState<number | null>(null);
 
   const generatePersonas = async (count = DEFAULT_PERSONA_COUNT) => {
+    setStep(0); // Move to step 0 when starting generation
     setLoading(true);
     setError(null);
     try {
@@ -103,6 +102,63 @@ export default function GenerateEvalsModal({
     });
   };
 
+  const handleStartEdit = (persona: PersonaResponse) => {
+    setEditingPersonaId(persona.id);
+    setEditedTitle(persona.title);
+    setEditedInfo(persona.info || "");
+    setEditedStyle(persona.style || "");
+    setEditedUseCase(persona.use_case || "");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingPersonaId(null);
+    setEditedTitle("");
+    setEditedInfo("");
+    setEditedStyle("");
+    setEditedUseCase("");
+  };
+
+  const handleSaveEdit = async (personaId: number) => {
+    setSavingPersonaId(personaId);
+    try {
+      const persona = personas.find(p => p.id === personaId);
+      if (!persona) return;
+
+      const updates: PersonaUpdate = {};
+
+      // Only include fields that have changed
+      if (editedTitle !== persona.title) {
+        updates.title = editedTitle;
+      }
+      if (editedInfo !== (persona.info || "")) {
+        updates.info = editedInfo;
+      }
+      if (editedStyle !== (persona.style || "")) {
+        updates.style = editedStyle;
+      }
+      if (editedUseCase !== (persona.use_case || "")) {
+        updates.use_case = editedUseCase;
+      }
+
+      // Only call API if there are actual changes
+      if (Object.keys(updates).length > 0) {
+        const response = await personaApi.update(personaId, updates);
+
+        // Update the persona in the local state
+        setPersonas(personas.map(p =>
+          p.id === personaId ? response.data : p
+        ));
+      }
+
+      handleCancelEdit();
+    } catch (error) {
+      console.error("Failed to update persona:", error);
+      setError("Failed to update persona. Please try again.");
+    } finally {
+      setSavingPersonaId(null);
+    }
+  };
+
   const handleGenerateQuestions = async () => {
     const selectedPersonaIds = personas
       .filter(p => !rejectedPersonaIds.has(p.id))
@@ -141,12 +197,13 @@ export default function GenerateEvalsModal({
   };
 
   const handleClose = () => {
-    setStep(0);
+    setStep(-1);
     setPersonas([]);
     setRejectedPersonaIds(new Set());
     setLoading(false);
     setGeneratingQuestions(false);
     setError(null);
+    handleCancelEdit();
     onClose();
   };
 
@@ -163,14 +220,6 @@ export default function GenerateEvalsModal({
         </Box>
       </DialogTitle>
 
-      <Stepper activeStep={step} sx={{ px: 3, pb: 2 }}>
-        {steps.map((label) => (
-          <Step key={label}>
-            <StepLabel>{label}</StepLabel>
-          </Step>
-        ))}
-      </Stepper>
-
       <DialogContent>
         {error && (
           <Alert severity="error" sx={{ mb: 2 }}>
@@ -178,20 +227,54 @@ export default function GenerateEvalsModal({
           </Alert>
         )}
 
+        {step === -1 && (
+          <Box
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            py={6}
+            gap={3}
+          >
+            <Typography variant="h5" fontWeight={600} textAlign="center">
+              Generate Personas
+            </Typography>
+            <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ maxWidth: 500 }}>
+              Personas represent different types of users who might interact with your system.
+              Generate personas first to create targeted evaluation questions.
+            </Typography>
+            <Button
+              variant="contained"
+              size="large"
+              onClick={() => generatePersonas()}
+              sx={{ mt: 2 }}
+            >
+              Generate
+            </Button>
+          </Box>
+        )}
+
         {step === 0 && (
           <>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-              <Typography variant="body2" color="text.secondary">
-                Select personas to generate questions for ({selectedCount} selected)
+            <Box mb={3}>
+              <Typography variant="h6" fontWeight={600} gutterBottom>
+                Select Personas
               </Typography>
-              <Button
-                startIcon={<RefreshIcon />}
-                onClick={() => generatePersonas()}
-                disabled={loading}
-                size="small"
-              >
-                Generate More
-              </Button>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                Review the generated personas below and select those that best represent your target users.
+                You can edit personas to better match your needs, or reject ones that don't apply.
+              </Typography>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
+                <Button
+                  startIcon={<RefreshIcon />}
+                  onClick={() => generatePersonas()}
+                  disabled={loading}
+                  size="small"
+                  variant="outlined"
+                >
+                  Generate More
+                </Button>
+              </Box>
             </Box>
 
             {loading && personas.length === 0 ? (
@@ -202,46 +285,126 @@ export default function GenerateEvalsModal({
                 </Typography>
               </Box>
             ) : (
-              <Grid container spacing={2}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gridTemplateColumns: {
+                    xs: "1fr",
+                    sm: "repeat(2, 1fr)",
+                  },
+                  gap: 2,
+                }}
+              >
                 {personas.map((persona) => {
                   const isRejected = rejectedPersonaIds.has(persona.id);
+                  const isEditing = editingPersonaId === persona.id;
                   return (
-                    <Grid item xs={12} sm={6} key={persona.id}>
-                      <Card
-                        sx={{
-                          border: isRejected ? "2px solid #f44336" : "2px solid #4caf50",
-                          opacity: isRejected ? 0.5 : 1,
-                          transition: "all 0.2s",
-                        }}
-                      >
-                        <CardContent>
-                          <Typography variant="h6" gutterBottom>
-                            {persona.title}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary" gutterBottom>
-                            {persona.info}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            <strong>Style:</strong> {persona.style}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            <strong>Use Case:</strong> {persona.use_case}
-                          </Typography>
-                        </CardContent>
-                        <CardActions>
-                          <Button
-                            size="small"
-                            color={isRejected ? "success" : "error"}
-                            onClick={() => handleRejectPersona(persona.id)}
-                          >
-                            {isRejected ? "Include" : "Reject"}
-                          </Button>
-                        </CardActions>
-                      </Card>
-                    </Grid>
+                    <Card
+                      key={persona.id}
+                      sx={{
+                        border: isRejected ? "2px solid #f44336" : "2px solid #4caf50",
+                        opacity: isRejected ? 0.5 : 1,
+                        transition: "all 0.2s",
+                      }}
+                    >
+                      <CardContent>
+                        {isEditing ? (
+                          <Box display="flex" flexDirection="column" gap={2}>
+                            <TextField
+                              label="Title"
+                              value={editedTitle}
+                              onChange={(e) => setEditedTitle(e.target.value)}
+                              fullWidth
+                              required
+                              size="small"
+                            />
+                            <TextField
+                              label="Info"
+                              value={editedInfo}
+                              onChange={(e) => setEditedInfo(e.target.value)}
+                              fullWidth
+                              multiline
+                              rows={2}
+                              size="small"
+                            />
+                            <TextField
+                              label="Style"
+                              value={editedStyle}
+                              onChange={(e) => setEditedStyle(e.target.value)}
+                              fullWidth
+                              size="small"
+                            />
+                            <TextField
+                              label="Use Case"
+                              value={editedUseCase}
+                              onChange={(e) => setEditedUseCase(e.target.value)}
+                              fullWidth
+                              size="small"
+                            />
+                          </Box>
+                        ) : (
+                          <>
+                            <Typography variant="h6" gutterBottom>
+                              {persona.title}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                              {persona.info}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              <strong>Style:</strong> {persona.style}
+                            </Typography>
+                            <Typography variant="body2" color="text.secondary">
+                              <strong>Use Case:</strong> {persona.use_case}
+                            </Typography>
+                          </>
+                        )}
+                      </CardContent>
+                      <CardActions>
+                        {isEditing ? (
+                          <>
+                            <Button
+                              size="small"
+                              color="primary"
+                              startIcon={<SaveIcon />}
+                              onClick={() => handleSaveEdit(persona.id)}
+                              disabled={savingPersonaId === persona.id || !editedTitle.trim()}
+                            >
+                              {savingPersonaId === persona.id ? <CircularProgress size={16} /> : "Save"}
+                            </Button>
+                            <Button
+                              size="small"
+                              onClick={handleCancelEdit}
+                              disabled={savingPersonaId === persona.id}
+                            >
+                              Cancel
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              size="small"
+                              color="primary"
+                              startIcon={<EditIcon />}
+                              onClick={() => handleStartEdit(persona)}
+                              disabled={savingPersonaId !== null || loading}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              size="small"
+                              color={isRejected ? "success" : "error"}
+                              onClick={() => handleRejectPersona(persona.id)}
+                              disabled={savingPersonaId !== null}
+                            >
+                              {isRejected ? "Include" : "Reject"}
+                            </Button>
+                          </>
+                        )}
+                      </CardActions>
+                    </Card>
                   );
                 })}
-              </Grid>
+              </Box>
             )}
           </>
         )}

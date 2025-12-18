@@ -302,8 +302,8 @@ export default function QAJobControl({
           normalizedAnswers.forEach((answer) => {
             const existing = initial[answer.question_id];
             initial[answer.question_id] = {
-              questionId: answer.question_id,
               ...existing,
+              questionId: answer.question_id,
               answer,
             };
           });

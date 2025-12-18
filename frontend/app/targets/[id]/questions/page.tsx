@@ -26,6 +26,7 @@ import {
   CardContent,
   Divider,
   Alert,
+  TextField,
 } from "@mui/material";
 import {
   FilterList as FilterIcon,
@@ -33,10 +34,12 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Delete as DeleteIcon,
+  Edit as EditIcon,
+  Save as SaveIcon,
 } from "@mui/icons-material";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
-import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus } from "@/lib/types";
+import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, QuestionUpdate } from "@/lib/types";
 import { JOB_POLLING_INTERVAL } from "@/lib/constants";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 
@@ -54,6 +57,12 @@ export default function QuestionsPage() {
   const [newQuestions, setNewQuestions] = useState<QuestionResponse[]>([]);
   const [similarQuestionsMap, setSimilarQuestionsMap] = useState<Record<number, QuestionResponse[]>>({});
   const [processingQuestionId, setProcessingQuestionId] = useState<number | null>(null);
+
+  // Edit mode state
+  const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
+  const [editedText, setEditedText] = useState("");
+  const [editedType, setEditedType] = useState<QuestionType>(QuestionType.TYPICAL);
+  const [editedScope, setEditedScope] = useState<QuestionScope>(QuestionScope.IN_KB);
 
   // Filter states
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<number[]>([]);
@@ -219,6 +228,60 @@ export default function QuestionsPage() {
     }
   };
 
+  const handleStartEdit = (question: QuestionResponse) => {
+    setEditingQuestionId(question.id);
+    setEditedText(question.text);
+    setEditedType(question.type);
+    setEditedScope(question.scope);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingQuestionId(null);
+    setEditedText("");
+    setEditedType(QuestionType.TYPICAL);
+    setEditedScope(QuestionScope.IN_KB);
+  };
+
+  const handleSaveEdit = async (questionId: number) => {
+    setProcessingQuestionId(questionId);
+    try {
+      const question = newQuestions.find(q => q.id === questionId);
+      if (!question) return;
+
+      const updates: QuestionUpdate = {};
+
+      // Only include fields that have changed
+      if (editedText !== question.text) {
+        updates.text = editedText;
+      }
+      if (editedType !== question.type) {
+        updates.type = editedType;
+      }
+      if (editedScope !== question.scope) {
+        updates.scope = editedScope;
+      }
+
+      // Only call API if there are actual changes
+      if (Object.keys(updates).length > 0) {
+        await questionApi.update(questionId, updates);
+
+        // Update the question in the local state
+        setNewQuestions(newQuestions.map(q =>
+          q.id === questionId
+            ? { ...q, ...updates }
+            : q
+        ));
+      }
+
+      handleCancelEdit();
+    } catch (error) {
+      console.error("Failed to update question:", error);
+      alert("Failed to update question. Please try again.");
+    } finally {
+      setProcessingQuestionId(null);
+    }
+  };
+
   const handleJobLaunched = (jobId: number) => {
     setActiveJobId(jobId);
     setJobStatus("running");
@@ -279,7 +342,9 @@ export default function QuestionsPage() {
                   Questions generated. Scroll down to accept or reject.
                 </Alert>
 
-                {newQuestions.map((newQ) => (
+                {newQuestions.map((newQ) => {
+                  const isEditing = editingQuestionId === newQ.id;
+                  return (
                   <Card key={newQ.id} sx={{ mb: 2, border: "2px solid #1976d2" }}>
                     <CardContent>
                       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
@@ -287,34 +352,109 @@ export default function QuestionsPage() {
                           <Typography variant="subtitle1" fontWeight={600} sx={{mb: 2}}>
                             New Question
                           </Typography>
-                          <Typography variant="body1" sx={{mb: 2}}>
-                            {newQ.text}
-                          </Typography>
-                          <Box display="flex" gap={1} mt={1}>
-                            <Chip label={getPersonaTitle(newQ.persona_id)} size="small" />
-                            <Chip label={newQ.type} size="small" color={newQ.type === "edge" ? "warning" : "default"} />
-                            <Chip label={newQ.scope === "in_kb" ? "In KB" : "Out KB"} size="small" color={newQ.scope === "in_kb" ? "success" : "info"} />
-                          </Box>
+
+                          {isEditing ? (
+                            <Box display="flex" flexDirection="column" gap={2} sx={{mb: 2}}>
+                              <TextField
+                                label="Question Text"
+                                value={editedText}
+                                onChange={(e) => setEditedText(e.target.value)}
+                                multiline
+                                rows={3}
+                                fullWidth
+                                required
+                              />
+                              <Box display="flex" gap={2}>
+                                <FormControl sx={{ minWidth: 150 }}>
+                                  <InputLabel id={`edit-type-${newQ.id}`}>Type</InputLabel>
+                                  <Select
+                                    labelId={`edit-type-${newQ.id}`}
+                                    value={editedType}
+                                    onChange={(e) => setEditedType(e.target.value as QuestionType)}
+                                    label="Type"
+                                  >
+                                    <MenuItem value={QuestionType.TYPICAL}>Typical</MenuItem>
+                                    <MenuItem value={QuestionType.EDGE}>Edge</MenuItem>
+                                  </Select>
+                                </FormControl>
+                                <FormControl sx={{ minWidth: 150 }}>
+                                  <InputLabel id={`edit-scope-${newQ.id}`}>Scope</InputLabel>
+                                  <Select
+                                    labelId={`edit-scope-${newQ.id}`}
+                                    value={editedScope}
+                                    onChange={(e) => setEditedScope(e.target.value as QuestionScope)}
+                                    label="Scope"
+                                  >
+                                    <MenuItem value={QuestionScope.IN_KB}>In KB</MenuItem>
+                                    <MenuItem value={QuestionScope.OUT_KB}>Out KB</MenuItem>
+                                  </Select>
+                                </FormControl>
+                              </Box>
+                            </Box>
+                          ) : (
+                            <>
+                              <Typography variant="body1" sx={{mb: 2}}>
+                                {newQ.text}
+                              </Typography>
+                              <Box display="flex" gap={1} mt={1}>
+                                <Chip label={getPersonaTitle(newQ.persona_id)} size="small" />
+                                <Chip label={newQ.type} size="small" color={newQ.type === "edge" ? "warning" : "default"} />
+                                <Chip label={newQ.scope === "in_kb" ? "In KB" : "Out KB"} size="small" color={newQ.scope === "in_kb" ? "success" : "info"} />
+                              </Box>
+                            </>
+                          )}
                         </Box>
                         <Box display="flex" gap={1}>
-                          <Button
-                            variant="contained"
-                            color="success"
-                            startIcon={<CheckCircleIcon />}
-                            onClick={() => handleApproveNewQuestion(newQ.id)}
-                            disabled={processingQuestionId === newQ.id}
-                          >
-                            {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Approve"}
-                          </Button>
-                          <Button
-                            variant="outlined"
-                            color="error"
-                            startIcon={<CancelIcon />}
-                            onClick={() => handleRejectNewQuestion(newQ.id)}
-                            disabled={processingQuestionId === newQ.id}
-                          >
-                            Reject
-                          </Button>
+                          {isEditing ? (
+                            <>
+                              <Button
+                                variant="contained"
+                                color="primary"
+                                startIcon={<SaveIcon />}
+                                onClick={() => handleSaveEdit(newQ.id)}
+                                disabled={processingQuestionId === newQ.id || !editedText.trim()}
+                              >
+                                {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Save"}
+                              </Button>
+                              <Button
+                                variant="outlined"
+                                onClick={handleCancelEdit}
+                                disabled={processingQuestionId === newQ.id}
+                              >
+                                Cancel
+                              </Button>
+                            </>
+                          ) : (
+                            <>
+                              <Button
+                                variant="outlined"
+                                color="primary"
+                                startIcon={<EditIcon />}
+                                onClick={() => handleStartEdit(newQ)}
+                                disabled={processingQuestionId !== null}
+                              >
+                                Edit
+                              </Button>
+                              <Button
+                                variant="contained"
+                                color="success"
+                                startIcon={<CheckCircleIcon />}
+                                onClick={() => handleApproveNewQuestion(newQ.id)}
+                                disabled={processingQuestionId !== null}
+                              >
+                                {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Approve"}
+                              </Button>
+                              <Button
+                                variant="outlined"
+                                color="error"
+                                startIcon={<CancelIcon />}
+                                onClick={() => handleRejectNewQuestion(newQ.id)}
+                                disabled={processingQuestionId !== null}
+                              >
+                                Reject
+                              </Button>
+                            </>
+                          )}
                         </Box>
                       </Box>
 
@@ -340,7 +480,8 @@ export default function QuestionsPage() {
                       )}
                     </CardContent>
                   </Card>
-                ))}
+                  );
+                })}
 
                 {newQuestions.length === 0 && (
                   <Typography variant="body1" color="text.secondary">
@@ -376,7 +517,7 @@ export default function QuestionsPage() {
       ) : (
         <>
           {/* Generate More Button */}
-          <Box display="flex" justifyContent="flex-end" mb={2}>
+          <Box display="flex" justifyContent="flex-start" mb={2}>
             <Button
               variant="outlined"
               onClick={() => setGenerateModalOpen(true)}

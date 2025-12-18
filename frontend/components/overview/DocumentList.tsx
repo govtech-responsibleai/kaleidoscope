@@ -139,7 +139,7 @@ export default function DocumentList({
         {!hideUploadButton && (
           <Button
             component="label"
-            variant="contained"
+            variant="outlined"
             startIcon={<UploadIcon />}
             disabled={uploading}
           >
