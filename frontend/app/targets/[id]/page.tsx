@@ -243,8 +243,9 @@ export default function TargetOverview() {
             <DocumentList
               key={documentRefreshKey}
               targetId={targetId}
-              hideUploadButton={true}
+              hideUploadButton={false}
               maxHeight="260px"
+              onUploadEnd={fetchData}
             />
           </CardContent>
         </Card>
