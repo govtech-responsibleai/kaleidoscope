@@ -38,6 +38,7 @@ class AggregatedAnswerScore:
             "method": self.method,
             "label": self.label,
             "metadata": self.metadata,
+            "reliable_judge_count": len(self.accepted_scores),
         }
 
 
@@ -376,35 +377,20 @@ class MetricsService:
                     "min": 0.50,
                     "max": 0.85
                 },
-                "has_aligned_judges": True          # any F1 > 0.5
+                "has_aligned_judges": True,         # any F1 > 0.5
+                "reliable_judge_count": 3
             }
 
         Raises:
             ValueError: If no answers found for snapshot
         """
         # Get aggregated results for all answers
+        # Part of the response contains a list of QAs with its aggregated score.
         aggregated_results = self.get_aggregated_results(snapshot_id)
 
-        # Count accurate vs pending answers
-        total_answers = len(aggregated_results)
-        accurate_count = 0
-        pending_count = 0
+        print("Aggregated results:", [{"aggregated_accuracy": x["aggregated_accuracy"]} for x in aggregated_results])
 
-        for result in aggregated_results:
-            aggregated_accuracy = result.get("aggregated_accuracy", {})
-            label = aggregated_accuracy.get("label")
-            method = aggregated_accuracy.get("method")
-
-            if method == "majority" and label is True:
-                accurate_count += 1
-            else:
-                # Includes: label=False (inaccurate), label=None (tied), or no_aligned_judge
-                pending_count += 1
-
-        # Calculate overall aggregated accuracy
-        aggregated_accuracy = accurate_count / total_answers if total_answers > 0 else 0.0
-
-        # Get judge reliability scores
+        # Get judge reliability scores and calculate reliable judge count early
         reliability_map = self._calculate_judge_reliability_map(snapshot_id)
 
         # Calculate judge alignment range and check for aligned judges
@@ -424,6 +410,32 @@ class MetricsService:
             judge_alignment_range = None
             reliable_judge_count = 0
             has_aligned_judges = False
+
+        # Filter out QAs with no reliable judges or incomplete judge coverage
+        filtered_results = [
+            r for r in aggregated_results
+            if r.get("aggregated_accuracy", {}).get("method") != "no_aligned_judge"
+            and r.get("aggregated_accuracy", {}).get("reliable_judge_count", 0) == reliable_judge_count
+        ]
+
+        # Count accurate vs pending answers (using filtered results)
+        total_answers = len(filtered_results)
+        accurate_count = 0
+        pending_count = 0
+
+        for result in filtered_results:
+            aggregated_accuracy = result.get("aggregated_accuracy", {})
+            label = aggregated_accuracy.get("label")
+            method = aggregated_accuracy.get("method")
+
+            if method == "majority" and label is True:
+                accurate_count += 1
+            else:
+                # Includes: label=False (inaccurate), label=None (tied)
+                pending_count += 1
+
+        # Calculate overall aggregated accuracy
+        aggregated_accuracy = accurate_count / total_answers if total_answers > 0 else 0.0
 
         logger.info(
             f"Snapshot {snapshot_id} summary: "
