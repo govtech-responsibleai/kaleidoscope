@@ -28,7 +28,11 @@ export default function AnnotationPage() {
       const response = await snapshotApi.list(targetId);
       setSnapshots(response.data);
       if (!selectedSnapshotId && response.data.length > 0) {
-        setSelectedSnapshotId(response.data[0].id);
+        // Select the most recent snapshot (sort by created_at descending)
+        const mostRecent = [...response.data].sort((a, b) =>
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        )[0];
+        setSelectedSnapshotId(mostRecent.id);
       }
     } catch (err) {
       console.error("Failed to load snapshots:", err);

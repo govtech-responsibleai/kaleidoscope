@@ -269,7 +269,7 @@ export default function TargetReport() {
             />
 
             <LatestSnapshotMetricsCard
-              latestSnapshot={snapshotMetrics[0] || null}
+              latestSnapshot={snapshotMetrics[snapshotMetrics.length - 1] || null}
               loading={metricsLoading}
             />
           </Stack>
