@@ -181,8 +181,8 @@ class AnswerGenerator:
 
         # Extract RAG chunks
         rag_obj = api_response.get("rag", {})
-        chunks = rag_obj.get("chunks", [])
-        rag_citations = [{"id": chunk.get("id"), "chunk": chunk.get("chunk")} for chunk in chunks if chunk.get("chunk")]
+        rag_citations = rag_obj.get("chunks", [])
+        # rag_citations = [{"id": chunk.get("id"), "chunk": chunk.get("chunk")} for chunk in chunks if chunk.get("chunk")]
 
         # Extract model
         model = api_response.get("model")

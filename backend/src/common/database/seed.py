@@ -28,10 +28,10 @@ def _load_baseline_prompt() -> str:
 BASELINE_PROMPT_TEMPLATE = _load_baseline_prompt()
 
 AVAILABLE_MODELS = [
-    {"value": "gemini/gemini-2.0-flash-lite-001", "label": "Gemini 2.0 Flash Lite"},
-    {"value": "gemini/gemini-2.0-flash-001", "label": "Gemini 2.0 Flash"},
     {"value": "gemini/gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite"},
     {"value": "gemini/gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+    {"value": "gemini/gemini-3-pro-preview", "label": "Gemini 3 Pro Preview"},
+    {"value": "gemini/gemini-3-flash-preview", "label": "Gemini 3 Flash Preview"},
     {"value": "azure/gpt-5-nano-2025-08-07", "label": "GPT-5 nano"},
     {"value": "azure/gpt-5-mini-2025-08-07", "label": "GPT-5 mini"},
     {"value": "azure/gpt-5-2025-08-07", "label": "GPT-5"},
@@ -53,14 +53,14 @@ def _require_model(value: str) -> str:
 DEFAULT_JUDGES = [
     {
         "name": "Baseline Evaluator 1",
-        "model_name": _require_model("gemini/gemini-2.0-flash-lite-001"),
+        "model_name": _require_model("gemini/gemini-2.5-flash-lite"),
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": True,
         "is_editable": False,
     },
     {
         "name": "Baseline Evaluator 2",
-        "model_name": _require_model("gemini/gemini-2.0-flash-001"),
+        "model_name": _require_model("gemini/gemini-2.5-flash"),
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": False,
         "is_editable": False,

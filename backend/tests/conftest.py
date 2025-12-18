@@ -279,7 +279,7 @@ def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
     # Create a judge first
     judge = Judge(
         name="Test Judge",
-        model_name="gemini/gemini-2.0-flash-lite",
+        model_name="gemini/gemini-2.5-flash-lite",
         prompt_template="Test template",
         params={},
         judge_type=JudgeTypeEnum.claim_based,
@@ -310,7 +310,7 @@ def sample_judge_claim_based(test_db):
     """Create a claim-based judge for testing."""
     judge = Judge(
         name="Claim-Based Judge",
-        model_name="gemini/gemini-2.0-flash-lite",
+        model_name="gemini/gemini-2.5-flash-lite",
         prompt_template="Test prompt template",
         params={"temperature": 0.7},
         judge_type=JudgeTypeEnum.claim_based,
@@ -328,7 +328,7 @@ def sample_judge_response_level(test_db):
     """Create a response-level judge for testing."""
     judge = Judge(
         name="Response-Level Judge",
-        model_name="gemini/gemini-2.0-flash-lite",
+        model_name="gemini/gemini-2.5-flash-lite",
         prompt_template="Test prompt template",
         params={"temperature": 0.5},
         judge_type=JudgeTypeEnum.response_level,

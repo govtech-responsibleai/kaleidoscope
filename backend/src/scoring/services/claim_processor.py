@@ -53,7 +53,7 @@ class ClaimProcessor:
             raise ValueError(f"QAJob {job_id} not found")
 
         # Lazily initialize LLM client so tests can override after instantiation
-        self._llm_model_name = "gemini/gemini-2.0-flash-lite"
+        self._llm_model_name = "gemini/gemini-2.5-flash-lite"
         self.llm_client = None
 
     async def process(self) -> None:
@@ -127,6 +127,9 @@ class ClaimProcessor:
             raise ImportError("nltk is required for claim extraction. Install nltk to run claim processing.")
         sentences = nltk.sent_tokenize(answer.answer_content)
 
+        # Postprocess claims to fix edge cases
+        sentences = self._postprocess_claims(sentences)
+
         # Create AnswerClaim records
         claims = []
         current_time = datetime.utcnow()
@@ -175,9 +178,22 @@ class ClaimProcessor:
         """
         Check if a single claim is checkworthy using LLM.
 
+        Claims shorter than 20 characters are automatically marked as not checkworthy
+        without calling the LLM (sanity check to filter out very short claims).
+
         Args:
             claim: AnswerClaim to check
         """
+        MIN_CLAIM_LENGTH = 20
+
+        # Skip LLM check for very short claims (sanity check)
+        if len(claim.claim_text) < MIN_CLAIM_LENGTH:
+            claim.checkworthy = False
+            claim.checked_at = datetime.utcnow()
+            self.db.commit()
+            logger.debug(f"Claim {claim.id} marked as not checkworthy (too short: {len(claim.claim_text)} chars)")
+            return
+
         # Render prompt
         prompt = render_template(
             "checkworthy.md",
@@ -223,6 +239,116 @@ class ClaimProcessor:
         )
 
         logger.info(f"Updated QAJob {self.job_id} costs: ${summary['total_cost']:.4f}")
+
+    def _postprocess_claims(self, claims: List[str]) -> List[str]:
+        """
+        Postprocess extracted claims to handle shortcomings of NLTK.
+
+        This function applies two transformations in order:
+        1. Split claims containing newlines, keeping the newline with the first part
+        2. Shift leading complete bracket groups from claims to the previous claim
+
+        Args:
+            claims: List of claim strings from NLTK sentence tokenizer
+
+        Returns:
+            List of postprocessed claim strings
+
+        Raises:
+            ValueError: If postprocessing loses or adds characters from input claims
+        """
+        # Save original input for validation
+        original_joined = "".join(claims)
+
+        # STEP 1: Split by line breaks
+        result = []
+        for claim in claims:
+            if "\n" in claim:
+                parts = claim.split("\n")
+                # Add newline to all parts except the last
+                for i, part in enumerate(parts[:-1]):
+                    result.append(part + "\n")
+                # Add last part without newline
+                if parts[-1]:  # Only add if not empty
+                    result.append(parts[-1])
+            else:
+                result.append(claim)
+        claims = result
+
+        # STEP 2: Shift complete bracket groups
+        for i in range(1, len(claims)):  # Start at index 1 (skip first claim)
+            current_claim = claims[i]
+
+            # Find all complete bracket groups at start
+            bracket_content = self._find_complete_bracket_groups(current_claim)
+
+            if bracket_content:
+                # Shift to previous claim
+                claims[i - 1] = claims[i - 1] + bracket_content
+                claims[i] = current_claim[len(bracket_content):]
+
+        # STEP 3: Validation - ensure no characters were lost or added during postprocessing
+        joined = "".join(claims)
+        if joined != original_joined:
+            logger.error(
+                f"Postprocessing validation failed. "
+                f"Expected {len(original_joined)} chars, got {len(joined)}. "
+                f"Original: {original_joined!r}, Joined: {joined!r}"
+            )
+            raise ValueError("Postprocessing validation failed: character mismatch")
+
+        return claims
+
+    def _find_complete_bracket_groups(self, text: str) -> str:
+        """
+        Find all consecutive complete bracket groups at the start of text.
+
+        A bracket group is complete if it has an opening bracket and any closing bracket.
+        Handles nested brackets by tracking depth. Stops at first incomplete group.
+
+        Args:
+            text: Input text to check for leading bracket groups
+
+        Returns:
+            The bracket content to shift (e.g., "(first) (second) "), or empty string if none.
+
+        Examples:
+            "(a) (b) rest" -> "(a) (b) "
+            "(nested (inner) end)" -> "(nested (inner) end)"
+            "(incomplete" -> ""
+        """
+        OPENING_BRACKETS = frozenset('([{<')
+        CLOSING_BRACKETS = frozenset(')]}>')
+
+        pos = 0
+        shifted_content = ""
+
+        while pos < len(text):
+            # Check if current position starts with opening bracket
+            if pos >= len(text) or text[pos] not in OPENING_BRACKETS:
+                break  # No more bracket groups at start
+
+            # Find the matching closing bracket (any type)
+            depth = 0
+            start = pos
+            found_closing = False
+
+            for i in range(pos, len(text)):
+                if text[i] in OPENING_BRACKETS:
+                    depth += 1
+                elif text[i] in CLOSING_BRACKETS:
+                    depth -= 1
+                    if depth == 0:
+                        # Found complete bracket group
+                        shifted_content += text[start:i+1]
+                        pos = i + 1
+                        found_closing = True
+                        break
+
+            if not found_closing:
+                break  # Incomplete bracket group, stop
+
+        return shifted_content
 
     def _get_llm_client(self):
         """Create or return the cached LLM client."""

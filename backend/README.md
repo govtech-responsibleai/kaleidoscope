@@ -83,11 +83,11 @@ API will be available at:
 
 ## LLM Configuration
 
-The API uses **Google Gemini 2.0 Flash** by default (`gemini/gemini-2.0-flash-lite`) via LiteLLM for text generation, and **Gemini Text Embedding 004** (`gemini/text-embedding-004`) for semantic similarity.
+The API uses **Google Gemini 2.5 Flash Lite** by default (`gemini/gemini-2.5-flash-lite`) via LiteLLM for text generation, and **Gemini Text Embedding 004** (`gemini/text-embedding-004`) for semantic similarity.
 
 ### Default Model
 
-The default model is defined in `src/common/config.py` and set to `gemini/gemini-2.0-flash-lite`.
+The default model is defined in `src/common/config.py` and set to `gemini/gemini-2.5-flash-lite`.
 
 ### Overriding the Default Model
 
@@ -123,10 +123,10 @@ environment:
 ### Supported Models (via LiteLLM)
 
 - **Gemini (requires `GEMINI_API_KEY`):**
-  - `gemini/gemini-2.0-flash-lite` (default)
-  - `gemini/gemini-2.0-flash`
-  - `gemini/gemini-2.5-flash-lite`
-  - `gemini/gemini-2.0-flash`
+  - `gemini/gemini-2.5-flash-lite` (default)
+  - `gemini/gemini-2.5-flash`
+  - `gemini/gemini-3-flash-preview`
+  - `gemini/gemini-3-pro-preview`
 
 - **OpenAI (requires `OPENAI_API_KEY`):**
   - `gpt-5-nano`
@@ -230,12 +230,14 @@ PUT    /api/v1/snapshots/{snapshot_id}answers/select-default     - Bulk update a
 Snapshots are versioned evaluation runs that capture answer sets for analysis. Snapshot responses include computed fields for tracking annotation progress: `answer_count`, `selected_for_annotation_count`, and `annotated_count`.
 
 ```
-POST   /api/v1/snapshots                              - Create snapshot
-GET    /api/v1/targets/{target_id}/snapshots          - List snapshots for target
-GET    /api/v1/snapshots/{snapshot_id}                - Get snapshot details (includes computed counts)
-PUT    /api/v1/snapshots/{snapshot_id}                - Update snapshot name/description
-DELETE /api/v1/snapshots/{snapshot_id}                - Delete snapshot
-GET    /api/v1/snapshots/{snapshot_id}/stats          - Get snapshot statistics
+POST   /api/v1/snapshots                                                - Create snapshot
+GET    /api/v1/targets/{target_id}/snapshots                            - List snapshots for target
+GET    /api/v1/snapshots/{snapshot_id}                                  - Get snapshot details (includes computed counts)
+PUT    /api/v1/snapshots/{snapshot_id}                                  - Update snapshot name/description
+DELETE /api/v1/snapshots/{snapshot_id}                                  - Delete snapshot
+GET    /api/v1/snapshots/{snapshot_id}/stats                            - Get snapshot statistics
+GET    /api/v1/snapshots/{snapshot_id}/questions/approved/without-answers  - Get approved questions without answers for judge
+GET    /api/v1/snapshots/{snapshot_id}/questions/approved/without-scores   - Get approved questions without scores for judge
 ```
 
 ### Judges
@@ -364,7 +366,7 @@ curl -X POST http://localhost:8000/api/v1/jobs/personas \
   -d '{
     "target_id": 1,
     "count_requested": 5,
-    "model_used": "gemini/gemini-2.0-flash-lite"
+    "model_used": "gemini/gemini-2.5-flash-lite"
   }' | jq
 ```
 
@@ -409,7 +411,7 @@ curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -d '{
     "target_id": 1,
     "count_requested": 1,
-    "model_used": "gemini/gemini-2.0-flash"
+    "model_used": "gemini/gemini-2.5-flash-lite"
   }' | jq
 # Returns immediately with status="running" and job_id
 
@@ -419,7 +421,7 @@ curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -d '{
     "target_id": 1,
     "count_requested": 10,
-    "model_used": "gemini/gemini-2.0-flash",
+    "model_used": "gemini/gemini-2.5-flash-lite",
     "persona_ids": [1, 3, 5]
   }' | jq
 ```

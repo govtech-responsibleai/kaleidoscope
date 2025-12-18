@@ -57,7 +57,7 @@ class TestClaimProcessor:
             "prompt_tokens": 50,
             "completion_tokens": 20,
             "total_tokens": 70,
-            "model": "gemini/gemini-2.0-flash-lite",
+            "model": "gemini/gemini-2.5-flash-lite",
             "cost": 0.0001
         }
         mock_llm_instance.generate_structured_async = AsyncMock(
@@ -97,7 +97,7 @@ class TestClaimProcessor:
                     "prompt_tokens": 100,
                     "completion_tokens": 50,
                     "total_tokens": 150,
-                    "model": "gemini/gemini-2.0-flash-lite",
+                    "model": "gemini/gemini-2.5-flash-lite",
                     "cost": 0.0002
                 }
             )
@@ -114,14 +114,17 @@ class TestClaimProcessor:
         claims = AnswerClaimRepository.get_by_answer(test_db, sample_answer.id)
         assert len(claims) == 3
 
-        # Verify LLM was called 3 times (once per claim)
-        assert mock_llm_instance.generate_structured_async.call_count == 3
+        # Verify LLM was called only 2 times (1 claim is < 20 chars and skipped)
+        # "AI poses privacy risks." = 23 chars (checked)
+        # "Bias is a concern." = 19 chars (skipped - too short)
+        # "Transparency is important." = 28 chars (checked)
+        assert mock_llm_instance.generate_structured_async.call_count == 2
 
-        # Verify job costs updated (3 calls * 0.0002 = 0.0006)
+        # Verify job costs updated (2 calls * 0.0002 = 0.0004)
         test_db.refresh(sample_qa_job)
-        assert sample_qa_job.prompt_tokens == 300  # 3 calls * 100
-        assert sample_qa_job.completion_tokens == 150  # 3 calls * 50
-        assert sample_qa_job.total_cost == pytest.approx(0.0006, rel=1e-6)
+        assert sample_qa_job.prompt_tokens == 200  # 2 calls * 100
+        assert sample_qa_job.completion_tokens == 100  # 2 calls * 50
+        assert sample_qa_job.total_cost == pytest.approx(0.0004, rel=1e-6)
 
         # Verify next stage called
         mock_score_answer.assert_awaited_once_with(test_db, sample_qa_job.id)
@@ -141,3 +144,36 @@ class TestClaimProcessor:
         from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
         claims = AnswerClaimRepository.get_by_answer(test_db, sample_answer.id)
         assert len(claims) == 0
+
+    def test_postprocess_claims_comprehensive(self, test_db, sample_qa_job):
+        """Test all postprocessing rules and validate no character loss."""
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+
+        # Test data covering: line breaks, brackets, nesting
+        # This simulates what NLTK might produce from a complex answer
+        input_claims = [
+            "First claim is long.\n(Second claim) text ",  # Space at end
+            "[Third is (nested) long enough]"
+        ]
+
+        # Save original for validation
+        original_joined = "".join(input_claims)
+
+        # Run postprocessing
+        result = processor._postprocess_claims(input_claims)
+
+        # CRITICAL: Verify no character loss
+        assert "".join(result) == original_joined, "Postprocessed claims must preserve all characters"
+
+        # Expected behavior:
+        # 1. Split by \n: ["First claim is long.\n", "(Second claim) text ", "[Third...]"]
+        # 2. Shift brackets:
+        #    - "(Second claim)" shifts to previous: ["First claim is long.\n(Second claim)", " text ", "[Third...]"]
+        #    - "[Third is (nested) long enough]" shifts to previous: [..., " text [Third...]", ""]
+        # Final result should have 3 claims (including empty string from bracket shift)
+        assert len(result) == 3
+
+        # Verify the claims are correct
+        assert result[0] == "First claim is long.\n(Second claim)"
+        assert result[1] == " text [Third is (nested) long enough]"
+        assert result[2] == ""  # Empty after bracket shift

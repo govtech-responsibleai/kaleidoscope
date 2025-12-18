@@ -16,7 +16,7 @@ class JudgeType(str, Enum):
 class JudgeCreate(BaseModel):
     """Request model for creating a judge."""
     name: str = Field(..., description="Name of the judge (e.g., 'Baseline Judge', 'GPT-4 Judge')")
-    model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-2.0-flash-lite')")
+    model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-2.5-flash-lite')")
     prompt_template: str = Field(..., description="Jinja2 prompt template for the judge")
     params: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters (temperature, etc.)")
     judge_type: JudgeType = Field(..., description="Type of judging (claim_based or response_level)")

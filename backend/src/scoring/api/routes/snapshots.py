@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.repositories import SnapshotRepository, TargetRepository
+from src.common.database.repositories import SnapshotRepository, TargetRepository, QuestionRepository
 from src.common.models import (
     SnapshotCreate,
     SnapshotUpdate,
-    SnapshotResponse
+    SnapshotResponse,
+    QuestionResponse
 )
 
 router = APIRouter()
@@ -192,3 +193,89 @@ def get_snapshot_stats(
         "total_answers": stats_data["total_answers"],
         "selected_for_annotation": stats_data["selected_for_annotation"]
     }
+
+
+@router.get("/snapshots/{snapshot_id}/questions/approved/without-answers", response_model=List[QuestionResponse])
+def get_approved_questions_without_answers(
+    snapshot_id: int,
+    judge_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Get approved questions that don't have QA jobs for this snapshot/judge.
+
+    Args:
+        snapshot_id: Snapshot ID
+        judge_id: Judge ID to check for QA jobs
+        skip: Pagination offset
+        limit: Pagination limit
+        db: Database session
+
+    Returns:
+        List of approved questions without QA jobs
+
+    Raises:
+        HTTPException: If snapshot not found
+    """
+    # Verify snapshot exists
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    questions = QuestionRepository.get_approved_questions_without_answers(
+        db,
+        target_id=snapshot.target_id,
+        snapshot_id=snapshot_id,
+        judge_id=judge_id,
+        skip=skip,
+        limit=limit
+    )
+    return questions
+
+
+@router.get("/snapshots/{snapshot_id}/questions/approved/without-scores", response_model=List[QuestionResponse])
+def get_approved_questions_without_scores(
+    snapshot_id: int,
+    judge_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Get approved questions that have answers but no scores for this snapshot/judge.
+
+    Args:
+        snapshot_id: Snapshot ID
+        judge_id: Judge ID to check for scores
+        skip: Pagination offset
+        limit: Pagination limit
+        db: Database session
+
+    Returns:
+        List of approved questions with answers but no scores
+
+    Raises:
+        HTTPException: If snapshot not found
+    """
+    # Verify snapshot exists
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    questions = QuestionRepository.get_approved_questions_without_scores(
+        db,
+        target_id=snapshot.target_id,
+        snapshot_id=snapshot_id,
+        judge_id=judge_id,
+        skip=skip,
+        limit=limit
+    )
+    return questions

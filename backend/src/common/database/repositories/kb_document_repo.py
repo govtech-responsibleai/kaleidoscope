@@ -50,7 +50,7 @@ class KBDocumentRepository:
         # Concatenate all document texts with separators
         compiled_parts = []
         for doc in documents:
-            compiled_parts.append(f"=== Document: {doc.filename} ===\n")
+            compiled_parts.append(f"=== Source Document: {doc.filename} ===\n")
             compiled_parts.append(doc.processed_text)
             compiled_parts.append("\n\n")
 
