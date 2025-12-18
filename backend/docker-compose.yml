@@ -35,7 +35,7 @@ services:
       DATABASE_ECHO: "False"
 
       # LLM Settings
-      # DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-}  # Optional - defaults to gemini/gemini-2.0-flash
+      # DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-}  # Optional - defaults to gemini/gemini-2.5-flash-lite
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}

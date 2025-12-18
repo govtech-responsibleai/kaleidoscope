@@ -57,7 +57,7 @@ class TestClaimProcessor:
             "prompt_tokens": 50,
             "completion_tokens": 20,
             "total_tokens": 70,
-            "model": "gemini/gemini-2.0-flash-lite",
+            "model": "gemini/gemini-2.5-flash-lite",
             "cost": 0.0001
         }
         mock_llm_instance.generate_structured_async = AsyncMock(
@@ -97,7 +97,7 @@ class TestClaimProcessor:
                     "prompt_tokens": 100,
                     "completion_tokens": 50,
                     "total_tokens": 150,
-                    "model": "gemini/gemini-2.0-flash-lite",
+                    "model": "gemini/gemini-2.5-flash-lite",
                     "cost": 0.0002
                 }
             )

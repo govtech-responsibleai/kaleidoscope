@@ -39,7 +39,7 @@ class TestAnswerJudge:
                     "prompt_tokens": 100,
                     "completion_tokens": 50,
                     "total_tokens": 150,
-                    "model": "gemini/gemini-2.0-flash-lite",
+                    "model": "gemini/gemini-2.5-flash-lite",
                     "cost": 0.0002
                 }
             )
@@ -117,7 +117,7 @@ class TestAnswerJudge:
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
                 "total_tokens": 150,
-                "model": "gemini/gemini-2.0-flash-lite",
+                "model": "gemini/gemini-2.5-flash-lite",
                 "cost": 0.0002
             }
             return result, metadata
@@ -162,7 +162,7 @@ class TestAnswerJudge:
                     "prompt_tokens": 150,
                     "completion_tokens": 75,
                     "total_tokens": 225,
-                    "model": "gemini/gemini-2.0-flash-lite",
+                    "model": "gemini/gemini-2.5-flash-lite",
                     "cost": 0.0003
                 }
             )
@@ -212,7 +212,7 @@ class TestAnswerJudge:
                     "prompt_tokens": 150,
                     "completion_tokens": 75,
                     "total_tokens": 225,
-                    "model": "gemini/gemini-2.0-flash-lite",
+                    "model": "gemini/gemini-2.5-flash-lite",
                     "cost": 0.0003
                 }
             )
@@ -257,7 +257,7 @@ class TestAnswerJudge:
                     "prompt_tokens": 200,
                     "completion_tokens": 100,
                     "total_tokens": 300,
-                    "model": "gemini/gemini-2.0-flash-lite",
+                    "model": "gemini/gemini-2.5-flash-lite",
                     "cost": 0.0005
                 }
             )

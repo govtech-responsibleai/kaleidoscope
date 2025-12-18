@@ -53,7 +53,7 @@ class ClaimProcessor:
             raise ValueError(f"QAJob {job_id} not found")
 
         # Lazily initialize LLM client so tests can override after instantiation
-        self._llm_model_name = "gemini/gemini-2.0-flash-lite"
+        self._llm_model_name = "gemini/gemini-2.5-flash-lite"
         self.llm_client = None
 
     async def process(self) -> None:
