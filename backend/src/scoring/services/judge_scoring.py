@@ -125,7 +125,7 @@ class AnswerJudge:
         elif self.answer.rag_citations:
             # Priority 2: Use RAG citations from answer
             rag_chunks = [
-                f"=== RAG Chunk {i+1} (ID: {chunk['id']}) ===\n{chunk['chunk']}"
+                f"=== Source Document: {chunk['source']} (Chunk {chunk['id']}) ===\n{chunk['chunk']}"
                 for i, chunk in enumerate(self.answer.rag_citations)
             ]
             kb_text = "\n\n".join(rag_chunks)
