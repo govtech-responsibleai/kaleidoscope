@@ -36,6 +36,9 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
     if (pathname.includes("/scoring")) {
       return "scoring";
     }
+    if (pathname.includes("/report")) {
+      return "report";
+    }
     if (pathname.includes("/questions")) {
       return "questions";
     }
@@ -72,6 +75,8 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
       router.push(`/targets/${targetId}/annotation`);
     } else if (newValue === "scoring") {
       router.push(`/targets/${targetId}/scoring`);
+    } else if (newValue === "report") {
+      router.push(`/targets/${targetId}/report`);
     }
   };
 
@@ -84,6 +89,8 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
       case "annotation":
         return { label: "Next: Score", path: `/targets/${targetId}/scoring` };
       case "scoring":
+        return { label: "Next: View Report", path: `/targets/${targetId}/report` };
+      case "report":
         return null; // Last step
       default:
         return null;
@@ -120,13 +127,13 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
           <Tab label="Questions" value="questions" />
           <Tab label="Annotations" value="annotation" />
           <Tab label="Scoring" value="scoring" />
+          <Tab label="Report" value="report" />
         </Tabs>
         {nextStepInfo && (
           <Button
             variant="contained"
             endIcon={<ArrowForwardIcon />}
             onClick={() => router.push(nextStepInfo.path)}
-            sx={{ mb: -1 }}
           >
             {nextStepInfo.label}
           </Button>
