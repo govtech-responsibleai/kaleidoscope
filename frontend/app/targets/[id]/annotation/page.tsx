@@ -2,8 +2,9 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Alert, Box, CircularProgress } from "@mui/material";
+import { Alert, Box, CircularProgress, Typography, Button } from "@mui/material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
+import CreateSnapshotDialog from "@/components/shared/CreateSnapshotDialog";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
 import { Snapshot, QAJob, QAMap } from "@/lib/types";
@@ -21,6 +22,7 @@ export default function AnnotationPage() {
   const [qaJobs, setQaJobs] = useState<QAJob[]>([]);
   const [qaMap, setQaMap] = useState<QAMap>({});
   const [error, setError] = useState<string | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
   const fetchSnapshots = useCallback(async () => {
     setSnapshotsLoading(true);
@@ -66,6 +68,7 @@ export default function AnnotationPage() {
   const handleSnapshotCreated = useCallback((snapshot: Snapshot) => {
     setSelectedSnapshotId(snapshot.id);
     fetchSnapshots();
+    setCreateDialogOpen(false);
     router.refresh();
   }, [fetchSnapshots, router]);
 
@@ -73,6 +76,46 @@ export default function AnnotationPage() {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
         <CircularProgress />
+      </Box>
+    );
+  }
+
+  // Show empty state if no snapshots exist
+  if (snapshots.length === 0) {
+    return (
+      <Box>
+        <Box
+          display="flex"
+          flexDirection="column"
+          alignItems="center"
+          justifyContent="center"
+          minHeight="40vh"
+          gap={2}
+          sx={{ maxWidth: 600, mx: "auto", textAlign: "center" }}
+        >
+          <Typography variant="h5" fontWeight={600}>
+            Generate a snapshot of answers for review
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
+            A snapshot captures your chatbot's answers to a set of questions at a specific point in time.
+            Create one to begin the annotation process and review your chatbot's responses.
+          </Typography>
+          <Button
+            variant="contained"
+            size="large"
+            onClick={() => setCreateDialogOpen(true)}
+          >
+            Create Snapshot
+          </Button>
+        </Box>
+
+        <CreateSnapshotDialog
+          open={createDialogOpen}
+          targetId={targetId}
+          existingSnapshots={snapshots}
+          onClose={() => setCreateDialogOpen(false)}
+          onSuccess={handleSnapshotCreated}
+        />
       </Box>
     );
   }

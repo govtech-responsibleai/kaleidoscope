@@ -8,6 +8,7 @@ import React, {
   useState,
 } from "react";
 import {
+  Alert,
   Box,
   Chip,
   CircularProgress,
@@ -601,7 +602,7 @@ export default function QAJobControl({
   const controlTooltip = (() => {
     switch (controlState) {
       case "start":
-        return "Start judge evaluation";
+        return "Generate chatbot answers and evaluate";
       case "pause":
         return "Pause judge evaluation";
       case "resume":
@@ -710,8 +711,15 @@ export default function QAJobControl({
     }
   };
 
+  const showHelperAlert = totalJobs === 0 && snapshotId && baselineJudgeId && !loadingInitialData;
+
   return (
     <Box sx={{ mb: 2 }}>
+      {showHelperAlert && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          Click the play button to generate chatbot answers for your questions
+        </Alert>
+      )}
       <Stack direction="row" spacing={2} alignItems="center">
         <Typography variant="body2" fontWeight={600}>
           Scoring status:
