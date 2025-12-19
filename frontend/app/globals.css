@@ -10,7 +10,11 @@
   }
 }
 
-html,
+html {
+  max-width: 100vw;
+  overflow-y: scroll; /* Always reserve space for scrollbar to prevent layout shift */
+}
+
 body {
   max-width: 100vw;
   overflow-x: hidden;

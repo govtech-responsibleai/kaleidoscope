@@ -43,6 +43,7 @@ import {
   ResultRow,
   SnapshotResultsResponse,
   SnapshotMetricsResponse,
+  ConfusionMatrix,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -330,6 +331,11 @@ export const metricsApi = {
 
   getSnapshotMetrics: (targetId: number) =>
     api.get<SnapshotMetricsResponse>(`/targets/${targetId}/snapshot-metrics`),
+
+  getConfusionMatrix: (targetId: number, snapshotId?: number) =>
+    api.get<ConfusionMatrix>(`/targets/${targetId}/confusion-matrix`, {
+      params: snapshotId ? { snapshot_id: snapshotId } : undefined,
+    }),
 };
 
 export default api;

@@ -463,6 +463,17 @@ export interface SnapshotMetricsResponse {
   snapshots: SnapshotMetric[];
 }
 
+export interface ConfusionMatrix {
+  matrix: {
+    typical_in_kb: number;
+    typical_out_kb: number;
+    edge_in_kb: number;
+    edge_out_kb: number;
+  };
+  total_inaccurate: number;
+  snapshot_id: number;
+}
+
 // Additional types for frontend use
 /**
  * Aggregated QA data keyed by question id.
