@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
   Box,
@@ -40,11 +40,16 @@ import {
 
 export default function ScoringPage() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const targetId = Number(params.id);
 
-  // Snapshot state
+  // Snapshot state - initialize from URL if available
+  const snapshotIdFromUrl = searchParams.get("snapshot");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(null);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
+    snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null
+  );
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
 
   // Judges state
@@ -88,6 +93,10 @@ export default function ScoringPage() {
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )[0];
         setSelectedSnapshotId(mostRecent.id);
+        // Update URL with default selection
+        const newSearchParams = new URLSearchParams(searchParams.toString());
+        newSearchParams.set("snapshot", mostRecent.id.toString());
+        router.push(`/targets/${targetId}/scoring?${newSearchParams.toString()}`, { scroll: false });
       }
     } catch (error) {
       console.error("Failed to fetch snapshots:", error);
@@ -95,7 +104,7 @@ export default function ScoringPage() {
     } finally {
       setSnapshotsLoading(false);
     }
-  }, [targetId, selectedSnapshotId]);
+  }, [targetId, selectedSnapshotId, searchParams, router]);
 
   // Fetch judges
   const fetchJudges = useCallback(async () => {
@@ -286,6 +295,10 @@ export default function ScoringPage() {
   // Handle snapshot selection
   const handleSnapshotSelect = (snapshotId: number) => {
     setSelectedSnapshotId(snapshotId);
+    // Update URL to persist selection across tab switches
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    newSearchParams.set("snapshot", snapshotId.toString());
+    router.push(`/targets/${targetId}/scoring?${newSearchParams.toString()}`, { scroll: false });
   };
 
   const handleScrollJudgeCards = (direction: "left" | "right") => {
@@ -427,12 +440,13 @@ export default function ScoringPage() {
       ) : (
           <Stack spacing={1.5}>
             {/* Judge Controls */}
-            <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
-              <Typography variant="h5">
-                Evaluators
-              </Typography>
+            <Box>
+              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+                <Typography variant="h5">
+                  Evaluators
+                </Typography>
 
-              <Box sx={{ display: "flex", gap: 1 }}>
+                <Box sx={{ display: "flex", gap: 1 }}>
                 <Tooltip title="Add Judge">
                   <IconButton
                     color="primary"
@@ -464,7 +478,12 @@ export default function ScoringPage() {
                   <ArrowForwardIosIcon fontSize="small" />
                 </IconButton>
               </span>
+                </Box>
               </Box>
+
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                Test different AI evaluators to measure your chatbot's accuracy. More reliable evaluators (those that align with your annotations) give you more confidence in the accuracy score.
+              </Typography>
             </Box>
 
             {/* Alert for questions without answers */}
@@ -499,6 +518,7 @@ export default function ScoringPage() {
               <ResultsTable
                 results={results}
                 snapshotId={selectedSnapshotId}
+                judges={judges}
               />
             )}
           </Stack>

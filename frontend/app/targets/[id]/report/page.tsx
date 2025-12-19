@@ -21,7 +21,7 @@ import {
   SmartToy as SmartToyIcon,
   Download as DownloadIcon
 } from "@mui/icons-material";
-import { useParams } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { targetApi, snapshotApi, judgeApi, metricsApi } from "@/lib/api";
 import { TargetResponse, TargetStats, SnapshotMetric, ConfusionMatrix, Snapshot } from "@/lib/types";
 import SnapshotAccuracyChart from "@/components/overview/SnapshotAccuracyChart";
@@ -33,15 +33,21 @@ import jsPDF from "jspdf";
 
 export default function TargetReport() {
   const params = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const theme = useTheme();
   const targetId = parseInt(params.id as string);
   const [metric, setMetric] = useState<string>("accuracy");
 
+  // Initialize from URL if available
+  const snapshotIdFromUrl = searchParams.get("snapshot");
   const [target, setTarget] = useState<TargetResponse | null>(null);
   const [stats, setStats] = useState<TargetStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(null);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
+    snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null
+  );
   const [judgeCount, setJudgeCount] = useState(0);
   const [snapshotMetrics, setSnapshotMetrics] = useState<SnapshotMetric[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(true);
@@ -70,6 +76,10 @@ export default function TargetReport() {
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )[0];
         setSelectedSnapshotId(mostRecent.id);
+        // Update URL with default selection
+        const newSearchParams = new URLSearchParams(searchParams.toString());
+        newSearchParams.set("snapshot", mostRecent.id.toString());
+        router.push(`/targets/${targetId}/report?${newSearchParams.toString()}`, { scroll: false });
       }
     } catch (error) {
       console.error("Failed to fetch target data:", error);
@@ -104,6 +114,10 @@ export default function TargetReport() {
 
   const handleSelectSnapshot = (snapshotId: number) => {
     setSelectedSnapshotId(snapshotId);
+    // Update URL to persist selection across tab switches
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    newSearchParams.set("snapshot", snapshotId.toString());
+    router.push(`/targets/${targetId}/report?${newSearchParams.toString()}`, { scroll: false });
   };
 
   const handleSnapshotCreated = async () => {

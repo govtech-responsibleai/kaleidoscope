@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Alert, Box, CircularProgress, Typography, Button } from "@mui/material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import CreateSnapshotDialog from "@/components/shared/CreateSnapshotDialog";
@@ -13,10 +13,15 @@ import { snapshotApi, judgeApi } from "@/lib/api";
 export default function AnnotationPage() {
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const targetId = Number(params.id);
 
+  // Initialize from URL if available
+  const snapshotIdFromUrl = searchParams.get("snapshot");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(null);
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
+    snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null
+  );
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
   const [baselineJudgeId, setBaselineJudgeId] = useState<number | null>(null);
   const [qaJobs, setQaJobs] = useState<QAJob[]>([]);
@@ -35,6 +40,10 @@ export default function AnnotationPage() {
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
         )[0];
         setSelectedSnapshotId(mostRecent.id);
+        // Update URL with default selection
+        const newSearchParams = new URLSearchParams(searchParams.toString());
+        newSearchParams.set("snapshot", mostRecent.id.toString());
+        router.push(`/targets/${targetId}/annotation?${newSearchParams.toString()}`, { scroll: false });
       }
     } catch (err) {
       console.error("Failed to load snapshots:", err);
@@ -42,7 +51,7 @@ export default function AnnotationPage() {
     } finally {
       setSnapshotsLoading(false);
     }
-  }, [targetId]);
+  }, [targetId, selectedSnapshotId, searchParams, router]);
 
   const fetchBaselineJudge = useCallback(async () => {
     try {
@@ -63,14 +72,21 @@ export default function AnnotationPage() {
     setSelectedSnapshotId(snapshotId);
     setQaJobs([]);
     setQaMap({});
-  }, []);
+    // Update URL to persist selection across tab switches
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    newSearchParams.set("snapshot", snapshotId.toString());
+    router.push(`/targets/${targetId}/annotation?${newSearchParams.toString()}`, { scroll: false });
+  }, [searchParams, router, targetId]);
 
   const handleSnapshotCreated = useCallback((snapshot: Snapshot) => {
     setSelectedSnapshotId(snapshot.id);
     fetchSnapshots();
     setCreateDialogOpen(false);
-    router.refresh();
-  }, [fetchSnapshots, router]);
+    // Update URL with newly created snapshot
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    newSearchParams.set("snapshot", snapshot.id.toString());
+    router.push(`/targets/${targetId}/annotation?${newSearchParams.toString()}`, { scroll: false });
+  }, [fetchSnapshots, searchParams, router, targetId]);
 
   if (snapshotsLoading) {
     return (
