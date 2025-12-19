@@ -27,6 +27,11 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
     return null;
   }
 
+  // Hide the progress box when job is completed
+  if (job.status === JobStatus.COMPLETED) {
+    return null;
+  }
+
   // This page only displays the progress of a single QAJob!!!
 
   const getStageLabel = (stage: QAJobStageEnum): string => {
@@ -141,12 +146,6 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
         {isFailed && (
           <Alert severity="error" sx={{ py: 0.5 }}>
             Job failed at stage: `{getStageLabel(job.stage)}`. Try running again.
-          </Alert>
-        )}
-
-        {job.status === JobStatus.COMPLETED && (
-          <Alert severity="success" sx={{ py: 0.5 }}>
-            Answer generation and scoring completed successfully.
           </Alert>
         )}
 
