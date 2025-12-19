@@ -429,7 +429,7 @@ export default function ScoringPage() {
             {/* Judge Controls */}
             <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
               <Typography variant="h5">
-                Evaluator List
+                Evaluators
               </Typography>
 
               <Box sx={{ display: "flex", gap: 1 }}>
