@@ -2,8 +2,8 @@
 API routes for Metrics calculation and export.
 """
 
-from typing import Dict, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Dict, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -283,3 +283,57 @@ def get_target_snapshot_metrics(
     return {
         "snapshots": snapshot_metrics
     }
+
+
+@router.get("/targets/{target_id}/confusion-matrix")
+def get_confusion_matrix(
+    target_id: int,
+    snapshot_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Get confusion matrix for question types/scopes vs inaccurate responses.
+
+    Shows the distribution of inaccurate responses across:
+    - Question type: typical, edge
+    - Question scope: in_kb, out_kb
+
+    Args:
+        target_id: Target ID
+        snapshot_id: Optional snapshot ID (uses latest if not provided)
+        db: Database session
+
+    Returns:
+        Dict with confusion matrix:
+        {
+            "matrix": {
+                "typical_in_kb": 5,
+                "typical_out_kb": 3,
+                "edge_in_kb": 2,
+                "edge_out_kb": 7
+            },
+            "total_inaccurate": 17,
+            "snapshot_id": 1
+        }
+
+    Raises:
+        HTTPException: If target not found or no snapshots available
+    """
+    # Verify target exists
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target {target_id} not found"
+        )
+
+    # Calculate confusion matrix
+    try:
+        metrics_service = MetricsService(db)
+        confusion_matrix = metrics_service.calculate_confusion_matrix(target_id, snapshot_id)
+        return confusion_matrix
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
