@@ -26,7 +26,6 @@ export default function SnapshotAccuracyChart({
 }: SnapshotAccuracyChartProps) {
   const theme = useTheme();
   const svgRef = useRef<SVGSVGElement>(null);
-  const [metric, setMetric] = useState<string>("accuracy");
 
   useEffect(() => {
     if (!svgRef.current || data.length === 0 || loading) return;
@@ -37,7 +36,7 @@ export default function SnapshotAccuracyChart({
     // Chart dimensions
     const margin = { top: 20, right: 30, bottom: 60, left: 60 };
     const containerWidth = svgRef.current.clientWidth || 600;
-    const containerHeight = 250;
+    const containerHeight = 400;
     const width = containerWidth - margin.left - margin.right;
     const height = containerHeight - margin.top - margin.bottom;
 
@@ -147,22 +146,12 @@ export default function SnapshotAccuracyChart({
   }, [data, loading]);
 
   return (
-    <Card variant="outlined" sx={{ width: "65%", height: "100%" }}>
+    <Card variant="outlined" sx={{ width: "65%" }}>
       <CardContent>
         <Stack direction="row" alignContent="center" justifyContent="space-between">
           <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
             Target Performance over Snapshots
           </Typography>
-          <Select
-            value={metric}
-            onChange={(e) => {
-              setMetric(e.target.value);
-            }}
-            size="small"
-            disabled={data.length === 0}
-          >
-            <MenuItem value={"accuracy"}>Accuracy</MenuItem>
-          </Select>
         </Stack>
 
         {loading ? (
@@ -186,7 +175,7 @@ export default function SnapshotAccuracyChart({
             </Typography>
           </Box>
         ) : (
-          <svg ref={svgRef} style={{ width: "100%" }} />
+          <svg ref={svgRef} style={{ width: "100%", height: "100%" }} />
         )}
       </CardContent>
     </Card>
