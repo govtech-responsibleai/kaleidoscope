@@ -453,6 +453,97 @@ class MetricsService:
             "reliable_judge_count": reliable_judge_count
         }
 
+    def calculate_confusion_matrix(self, target_id: int, snapshot_id: Optional[int] = None) -> Dict:
+        """
+        Calculate confusion matrix for question types/scopes vs inaccurate responses.
+
+        Shows distribution of inaccurate responses across question type (typical/edge)
+        and scope (in_kb/out_kb) combinations.
+
+        Args:
+            target_id: Target ID
+            snapshot_id: Optional snapshot ID (if None, uses latest snapshot)
+
+        Returns:
+            Dict with confusion matrix data:
+            {
+                "matrix": {
+                    "typical_in_kb": 5,
+                    "typical_out_kb": 3,
+                    "edge_in_kb": 2,
+                    "edge_out_kb": 7
+                },
+                "total_inaccurate": 17,
+                "snapshot_id": 1
+            }
+
+        Raises:
+            ValueError: If no snapshot found or no answers available
+        """
+        from src.common.database.repositories import SnapshotRepository, TargetRepository
+
+        # Verify target exists
+        target = TargetRepository.get_by_id(self.db, target_id)
+        if not target:
+            raise ValueError(f"Target {target_id} not found")
+
+        # Get snapshot (latest if not specified)
+        if snapshot_id is None:
+            snapshots = SnapshotRepository.get_by_target(self.db, target_id)
+            if not snapshots:
+                raise ValueError(f"No snapshots found for target {target_id}")
+            # Sort by created_at descending and take the first one
+            snapshot = sorted(snapshots, key=lambda s: s.created_at, reverse=True)[0]
+            snapshot_id = snapshot.id
+        else:
+            snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
+            if not snapshot:
+                raise ValueError(f"Snapshot {snapshot_id} not found")
+
+        # Get aggregated results for the snapshot
+        try:
+            aggregated_results = self.get_aggregated_results(snapshot_id)
+        except ValueError as e:
+            raise ValueError(f"Failed to get aggregated results: {str(e)}")
+
+        # Initialize confusion matrix counters
+        matrix = {
+            "typical_in_kb": 0,
+            "typical_out_kb": 0,
+            "edge_in_kb": 0,
+            "edge_out_kb": 0,
+        }
+
+        # Count inaccurate responses by question type and scope
+        for result in aggregated_results:
+            aggregated_accuracy = result.get("aggregated_accuracy", {})
+            label = aggregated_accuracy.get("label")
+            method = aggregated_accuracy.get("method")
+
+            # Only count answers that have been evaluated and are inaccurate
+            if method == "majority" and label is False:
+                # Get question details from the answer
+                answer = AnswerRepository.get_by_id(self.db, result["answer_id"])
+                if answer and answer.question:
+                    q_type = answer.question.type.value  # "typical" or "edge"
+                    q_scope = answer.question.scope.value  # "in_kb" or "out_kb"
+                    key = f"{q_type}_{q_scope}"
+                    if key in matrix:
+                        matrix[key] += 1
+
+        total_inaccurate = sum(matrix.values())
+
+        logger.info(
+            f"Confusion matrix for target {target_id}, snapshot {snapshot_id}: "
+            f"Total inaccurate={total_inaccurate}"
+        )
+
+        return {
+            "matrix": matrix,
+            "total_inaccurate": total_inaccurate,
+            "snapshot_id": snapshot_id,
+        }
+
 
 def calculate_judge_alignment(db: Session, snapshot_id: int, judge_id: int) -> Dict:
     """
