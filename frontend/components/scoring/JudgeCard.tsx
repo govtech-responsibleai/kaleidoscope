@@ -120,26 +120,6 @@ export default function JudgeCard({
         </Stack>
 
         <Stack spacing={1} sx={{ mt: 2, flexGrow: 1 }}>
-          <Box>
-            <Typography variant="caption" color="text.secondary">
-              Chatbot Accuracy
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="h4">{accuracy ? `${(accuracy.accuracy*100).toFixed(1)}%` : "--"}</Typography>
-              <Tooltip
-                title={
-                  accuracy
-                    ? `Judge evaluated ${accuracy.accurate_count} / ${accuracy.total_answers} responses as "Accurate".`
-                    : "Waiting for judge evaluations"
-                }
-              >
-                <InfoOutlinedIcon fontSize="small" color="action" />
-              </Tooltip>
-            </Stack>
-          </Box>
-
-          <Divider />
-
           {/* Judge Alignment */}
           <Box>
             <Typography variant="caption" color="text.secondary">
@@ -151,7 +131,27 @@ export default function JudgeCard({
               <Tooltip
                 title={
                   alignment
-                    ? `Calculated from ${alignment.sample_count} annotations`
+                    ? `Measures how well this evaluator's judgments match your annotations, balanced across both accurate and inaccurate responses (macro F1 score). Calculated from ${alignment.sample_count} annotations.`
+                    : "Waiting for judge evaluations"
+                }
+              >
+                <InfoOutlinedIcon fontSize="small" color="action" />
+              </Tooltip>
+            </Stack>
+          </Box>
+
+          <Divider />
+
+          <Box>
+            <Typography variant="caption" color="text.secondary">
+              Chatbot Accuracy
+            </Typography>
+            <Stack direction="row" spacing={1} alignItems="center">
+              <Typography variant="h4">{accuracy ? `${(accuracy.accuracy*100).toFixed(1)}%` : "--"}</Typography>
+              <Tooltip
+                title={
+                  accuracy
+                    ? `Evaluator evaluated ${accuracy.accurate_count} / ${accuracy.total_answers} responses as "Accurate".`
                     : "Waiting for judge evaluations"
                 }
               >

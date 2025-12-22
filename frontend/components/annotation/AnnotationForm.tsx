@@ -27,6 +27,8 @@ interface AnnotationFormProps {
   prevDisabled: boolean;
   nextDisabled: boolean;
   onAnnotationSaved: () => void;
+  showHelperAlert?: boolean;
+  onDismissHelperAlert?: () => void;
 }
 
 export default function AnnotationForm({
@@ -36,12 +38,15 @@ export default function AnnotationForm({
   prevDisabled,
   nextDisabled,
   onAnnotationSaved,
+  showHelperAlert = false,
+  onDismissHelperAlert,
 }: AnnotationFormProps) {
   const [label, setLabel] = useState<boolean | null>(null);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
   const [existingAnnotation, setExistingAnnotation] = useState<Annotation | null>(null);
   const [loadingAnnotation, setLoadingAnnotation] = useState(false);
+  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
 
   // Fetch existing annotation when answer changes
   useEffect(() => {
@@ -49,11 +54,13 @@ export default function AnnotationForm({
       setLabel(null);
       setNotes("");
       setExistingAnnotation(null);
+      setShowSaveSuccess(false);
       return;
     }
 
     const fetchAnnotation = async () => {
       setLoadingAnnotation(true);
+      setShowSaveSuccess(false);
       try {
         const response = await annotationApi.getByAnswer(answer.id);
         const annotation = response.data;
@@ -94,6 +101,12 @@ export default function AnnotationForm({
         });
       }
       onAnnotationSaved();
+
+      // Show success message briefly
+      setShowSaveSuccess(true);
+      setTimeout(() => {
+        setShowSaveSuccess(false);
+      }, 3000);
     } catch (error) {
       console.error("Failed to save annotation:", error);
     } finally {
@@ -109,6 +122,21 @@ export default function AnnotationForm({
       setLabel(null);
       setNotes("");
     }
+    setShowSaveSuccess(false);
+  };
+
+  // Check if current form state has changes compared to saved annotation
+  const hasUnsavedChanges = () => {
+    if (!existingAnnotation) {
+      // No existing annotation, so any selection is a change
+      return label !== null;
+    }
+
+    // Compare current state with existing annotation
+    const labelChanged = label !== existingAnnotation.label;
+    const notesChanged = (notes.trim() || "") !== (existingAnnotation.notes || "");
+
+    return labelChanged || notesChanged;
   };
 
   if (!answer) {
@@ -156,11 +184,23 @@ export default function AnnotationForm({
       <Stack spacing={2} sx={{ flex: 1 }}>
         <Typography variant="h6">Your Annotations</Typography>
 
+        {showHelperAlert && (
+          <Alert
+            severity="info"
+            onClose={onDismissHelperAlert}
+          >
+            Ready to annotate! Select whether the answer is accurate, then click Save. You may hover over the highlighted text and review the baseline judge's evaluation below for assistance.
+          </Alert>
+        )}
+
         <Box>
           <RadioGroup
             row
             value={label === null ? "" : label ? "accurate" : "inaccurate"}
-            onChange={(event) => setLabel(event.target.value === "accurate")}
+            onChange={(event) => {
+              setLabel(event.target.value === "accurate");
+              setShowSaveSuccess(false);
+            }}
           >
             <FormControlLabel value="accurate" control={<Radio />} label="Accurate" />
             <FormControlLabel value="inaccurate" control={<Radio />} label="Inaccurate" />
@@ -169,7 +209,10 @@ export default function AnnotationForm({
           <TextField
             label="Notes"
             value={notes}
-            onChange={(event) => setNotes(event.target.value)}
+            onChange={(event) => {
+              setNotes(event.target.value);
+              setShowSaveSuccess(false);
+            }}
             multiline
             minRows={3}
             fullWidth
@@ -187,13 +230,22 @@ export default function AnnotationForm({
               sx={{ "& .MuiButton-startIcon": { margin: "0px" }, minWidth: 0 }}
             />
 
-            <Stack direction="row" spacing={2}>
-              <Button variant="contained" onClick={handleSave} disabled={label === null || saving || loadingAnnotation}>
+            <Stack direction="row" spacing={2} alignItems="center">
+              <Button
+                variant="contained"
+                onClick={handleSave}
+                disabled={label === null || saving || loadingAnnotation || !hasUnsavedChanges()}
+              >
                 {saving ? "Saving..." : "Save Annotation"}
               </Button>
               <Button variant="text" onClick={handleReset} disabled={saving || loadingAnnotation}>
                 Reset
               </Button>
+              {showSaveSuccess && (
+                <Typography variant="body2" color="success.main" sx={{ fontWeight: 600 }}>
+                  ✓ Saved!
+                </Typography>
+              )}
             </Stack>
 
             <Button

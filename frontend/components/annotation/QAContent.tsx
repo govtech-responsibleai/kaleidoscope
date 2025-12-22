@@ -14,7 +14,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
 } from "@mui/icons-material";
-import { QAJob, QuestionResponse, QARecord } from "@/lib/types";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum } from "@/lib/types";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
@@ -48,12 +48,23 @@ export default function QAContent({
   const answerScore = qaEntry?.answerScore ?? null;
 
   if (!answer) {
+    // Determine message based on job stage
+    let message = "Waiting for chatbot answer to be generated before running baseline judge.";
+
+    if (job) {
+      if (job.stage === QAJobStageEnum.STARTING || job.stage === QAJobStageEnum.GENERATING_ANSWERS) {
+        message = "Chatbot is generating an answer for this question.";
+      } else if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS || job.stage === QAJobStageEnum.SCORING_ANSWERS) {
+        message = "Baseline judge is generating an evaluation for the chatbot answer.";
+      }
+    }
+
     return (
       <Stack spacing={3}>
         <QAJobProgress job={job} />
         <Paper variant="outlined" sx={{ p: 3 }}>
           <Typography variant="body1" color="text.secondary">
-            Baseline judge is still generating a response for this question.
+            {message}
           </Typography>
         </Paper>
       </Stack>

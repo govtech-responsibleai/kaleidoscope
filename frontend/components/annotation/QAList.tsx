@@ -16,7 +16,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Answer, QAJob, QuestionResponse, QAMap } from "@/lib/types";
+import { Answer, QAJob, QuestionResponse, QAMap, JobStatus } from "@/lib/types";
 import { answerApi, questionApi } from "@/lib/api";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
@@ -48,6 +48,7 @@ export default function QAList({
   const [savedSelections, setSavedSelections] = useState<Set<number>>(new Set()); // Saved set of selections
   const [draftSelections, setDraftSelections] = useState<Set<number>>(new Set()); // Draft set of selections
   const [selectionDirty, setSelectionDirty] = useState(false); // Whether there is mismatch between Saved and Draft selections
+  const [helperAlertDismissed, setHelperAlertDismissed] = useState(false); // Track if user dismissed helper alert
 
   // Load questions
   useEffect(() => {
@@ -300,6 +301,19 @@ export default function QAList({
     return Object.values(qaMap).filter((entry) => entry.answer?.has_annotation).length;
   }, [qaMap]);
 
+  // Check if all jobs are completed
+  const allJobsCompleted = useMemo(() => {
+    if (qaJobs.length === 0) return false;
+    return qaJobs.every((job) => job.status === JobStatus.COMPLETED);
+  }, [qaJobs]);
+
+  // Show helper alert when baseline is done but no annotations yet, and active answer is selected for annotation
+  const showHelperAlert =
+    allJobsCompleted &&
+    annotatedCount === 0 &&
+    savedSelections.size > 0 &&
+    !helperAlertDismissed &&
+    activeAnswer?.is_selected_for_annotation === true;
 
   const handleFilterChange = (
     _event: React.MouseEvent<HTMLElement>,
@@ -345,7 +359,7 @@ export default function QAList({
           alignItems="center"
           sx={{ mt:1, mb: 1 }}
         >
-          <Typography variant="h6">Questions & Responses</Typography>
+          <Typography variant="h6">Questions & Answers</Typography>
           <Tooltip title="Toggle between all answers or selected only">
             <ToggleButtonGroup
               size="small"
@@ -382,27 +396,33 @@ export default function QAList({
           </Tooltip>
         </Stack>
 
-        <Stack direction="row" alignItems="center" justifyContent={"space-between"} spacing={1} sx={{ mt: 2, mb: 2 }}>
-          <Typography variant="caption" color="text.secondary">
-            Annotated: {annotatedCount} / {savedSelections.size}
-          </Typography>
+        <Stack spacing={1} sx={{ mt: 2, mb: 2 }}>
+          <Stack direction="row" alignItems="center" justifyContent={"space-between"} spacing={1}>
+            <Typography variant="caption" color="text.secondary">
+              Annotated: {annotatedCount} / {savedSelections.size}
+            </Typography>
 
-          <Divider flexItem orientation="vertical" sx={{ mx: 1 }} />
-          
-          <Typography variant="caption" color="text.secondary">
-            Selected: {draftSelections.size}
-          </Typography>
+            <Divider flexItem orientation="vertical" sx={{ mx: 1 }} />
 
-          <Divider flexItem orientation="vertical" sx={{ mx: 1 }} />
-          
-          <Button
-            variant="outlined"
-            size="small"
-            disabled={!selectionDirty}
-            onClick={handleSaveSelection}
-          >
-            Save Selection
-          </Button>
+            <Typography variant="caption" color="text.secondary">
+              Selected: {draftSelections.size}
+            </Typography>
+
+            <Divider flexItem orientation="vertical" sx={{ mx: 1 }} />
+
+            <Button
+              variant="outlined"
+              size="small"
+              disabled={!selectionDirty}
+              onClick={handleSaveSelection}
+            >
+              Save Selection
+            </Button>
+          </Stack>
+
+          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
+            You don't need to annotate all - just a representative sample
+          </Typography>
         </Stack>
 
 
@@ -460,6 +480,8 @@ export default function QAList({
             prevDisabled={prevDisabled}
             nextDisabled={nextDisabled}
             onAnnotationSaved={handleAnnotationSaved}
+            showHelperAlert={showHelperAlert}
+            onDismissHelperAlert={() => setHelperAlertDismissed(true)}
           />
           <QAContent
             question={activeQuestion}

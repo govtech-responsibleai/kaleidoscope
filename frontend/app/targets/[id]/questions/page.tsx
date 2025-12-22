@@ -502,16 +502,20 @@ export default function QuestionsPage() {
           justifyContent="center"
           minHeight="30vh"
           gap={2}
+          sx={{ maxWidth: 600, mx: "auto", textAlign: "center" }}
         >
-          <Typography variant="h6" color="text.secondary">
-            No evaluation questions generated yet
+          <Typography variant="h5" fontWeight={600}>
+            Start by generating evaluation questions
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
+            Evaluation questions are used to systematically test how your chatbot responds across different scenarios. Generate them automatically, and edit them later.
           </Typography>
           <Button
             variant="contained"
             size="large"
             onClick={() => setGenerateModalOpen(true)}
           >
-            Generate Evals
+            Generate Questions
           </Button>
         </Box>
       ) : (
