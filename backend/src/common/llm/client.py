@@ -39,6 +39,40 @@ class LLMClient:
         # Semaphore to limit concurrent async requests (prevents rate limiting)
         self._semaphore = asyncio.Semaphore(settings.llm_max_concurrent)
 
+    @staticmethod
+    def _sanitize_json_for_validation(data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Sanitize JSON data before Pydantic validation.
+
+        Handles common LLM output issues:
+        - Converts string "True"/"False" to boolean true/false
+        - Recursively processes nested dictionaries and lists
+
+        Args:
+            data: Parsed JSON dictionary
+
+        Returns:
+            Sanitized dictionary ready for Pydantic validation
+        """
+        def sanitize_value(value: Any) -> Any:
+            # Handle string boolean conversion
+            if isinstance(value, str):
+                if value == "True":
+                    return True
+                elif value == "False":
+                    return False
+                return value
+            # Recursively handle nested dictionaries
+            elif isinstance(value, dict):
+                return {k: sanitize_value(v) for k, v in value.items()}
+            # Recursively handle lists
+            elif isinstance(value, list):
+                return [sanitize_value(item) for item in value]
+            # Return other types as-is
+            return value
+
+        return {k: sanitize_value(v) for k, v in data.items()}
+
     def generate(
         self,
         prompt: str,
@@ -209,6 +243,8 @@ class LLMClient:
         try:
             import json
             content_json = json.loads(response["content"])
+            # Sanitize JSON before validation (handles string "True"/"False" etc.)
+            content_json = self._sanitize_json_for_validation(content_json)
             parsed_model = response_model.model_validate(content_json)
 
             # Return model instance and metadata separately
@@ -309,6 +345,8 @@ class LLMClient:
             # Parse and validate response against Pydantic model
             import json
             content_json = json.loads(content)
+            # Sanitize JSON before validation (handles string "True"/"False" etc.)
+            content_json = self._sanitize_json_for_validation(content_json)
             parsed_model = response_model.model_validate(content_json)
 
             # Return model instance and metadata separately
