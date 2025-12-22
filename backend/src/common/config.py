@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = None
     anthropic_api_key: Optional[str] = None
     gemini_api_key: Optional[str] = None  # For Gemini models and Vertex AI
-    azure_ai_api_key: Optional[str] = None
-    azure_ai_api_base: Optional[str] = None
+    azure_api_key: Optional[str] = None
+    azure_api_base: Optional[str] = None
 
     # LLM Retry and Rate Limiting
     llm_num_retries: int = 3  # Number of retries for 429/503/timeout errors
