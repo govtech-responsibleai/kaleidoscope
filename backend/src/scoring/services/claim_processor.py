@@ -221,7 +221,11 @@ class ClaimProcessor:
 
         except Exception as e:
             logger.error(f"Failed to check claim {claim.id}: {e}", exc_info=True)
-            raise
+            # Mark as checkworthy=True by default
+            claim.checkworthy = True
+            claim.checked_at = datetime.utcnow()
+            self.db.commit()
+            logger.warning(f"Claim {claim.id} marked as checkworthy=True due to error (will be judged)")
 
     def _update_job_status(self) -> None:
         """Update job costs in database."""
