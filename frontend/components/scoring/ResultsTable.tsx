@@ -10,7 +10,6 @@ import {
   ChipProps,
   Collapse,
   Divider,
-  FormControlLabel,
   IconButton,
   Paper,
   Stack,
@@ -35,7 +34,8 @@ import {
 import { ResultRow, JudgeConfig, QuestionResponse, PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
 import { metricsApi, questionApi, personaApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
-import { QAFilter, JudgeFilter, LabelFilter, LabelFilterValue } from "./filters";
+import { QAFilter, JudgeFilter } from "./filters";
+import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 
 interface ResultsTableProps {
   results: ResultRow[];
@@ -108,7 +108,7 @@ export default function ResultsTable({
 }: ResultsTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
-  const [labelFilter, setLabelFilter] = useState<LabelFilterValue>("all");
+  const [selectedLabels, setSelectedLabels] = useState<string[]>(["accurate", "inaccurate"]);
   const [showDisagreementsOnly, setShowDisagreementsOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -197,18 +197,19 @@ export default function ResultsTable({
     }
 
     // Filter by label
-    if (labelFilter !== "all") {
+    if (selectedLabels.length < 2) {
       filtered = filtered.filter((result) => {
         const metadata = result.aggregated_accuracy?.metadata ?? [];
         const labels = extractReliableLabels(metadata);
         const inaccurateCount = labels.filter((l) => l === false).length;
         const accurateCount = labels.filter((l) => l === true).length;
 
-        if (labelFilter === "inaccurate") {
+        if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) {
           return inaccurateCount > accurateCount;
-        } else {
+        } else if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) {
           return accurateCount > inaccurateCount;
         }
+        return true;
       });
     }
 
@@ -223,11 +224,16 @@ export default function ResultsTable({
     }
 
     return filtered;
-  }, [results, labelFilter, showDisagreementsOnly, questionsMap, selectedTypes, selectedScopes, selectedPersonaIds]);
+  }, [results, selectedLabels, showDisagreementsOnly, questionsMap, selectedTypes, selectedScopes, selectedPersonaIds]);
 
   const paginatedResults = useMemo(() => {
     return filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   }, [filteredResults, page]);
+
+  const labelFilterOptions: FilterOption<string>[] = useMemo(() => [
+    { value: "accurate", label: "Accurate" },
+    { value: "inaccurate", label: "Inaccurate" },
+  ], []);
 
   // Extract all evaluators and determine which are reliable based on metadata
   const { reliableJudges, excludedJudges } = useMemo(() => {
@@ -382,12 +388,15 @@ export default function ResultsTable({
               <TableCell sx={{ width: "35%" }}>Question</TableCell>
               <TableCell sx={{ width: "35%" }}>Answer</TableCell>
               <TableCell sx={{ width: "100px" }}>
-                <LabelFilter
-                  value={labelFilter}
-                  onChange={(value) => {
-                    setLabelFilter(value);
+                <TableHeaderFilter
+                  label="Label"
+                  options={labelFilterOptions}
+                  value={selectedLabels}
+                  onChange={(labels) => {
+                    setSelectedLabels(labels);
                     setPage(0);
                   }}
+                  allSelectedLabel="All Labels"
                 />
               </TableCell>
               {reliableJudges
