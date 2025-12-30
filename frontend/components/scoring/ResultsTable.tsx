@@ -32,7 +32,7 @@ import {
   KeyboardArrowUp as KeyboardArrowUpIcon,
 } from "@mui/icons-material";
 import { ResultRow, JudgeConfig, QuestionResponse, PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
-import { metricsApi, questionApi, personaApi } from "@/lib/api";
+import { questionApi, personaApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
 import { QAFilter, JudgeFilter } from "./filters";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
@@ -280,17 +280,84 @@ export default function ResultsTable({
     setSelectedJudges(new Set(reliableJudges.map((j) => j.id)));
   }, [reliableJudges]);
 
-  const handleExport = async () => {
+  const handleExport = () => {
     setExporting(true);
     try {
-      const response = await metricsApi.exportCSV(snapshotId);
+      // Get selected judge names for columns
+      const selectedJudgeNames = reliableJudges
+        .filter((judge) => selectedJudges.has(judge.id))
+        .map((judge) => judge.name);
+
+      // CSV header
+      const headers = [
+        "Question ID",
+        "Question",
+        "Answer ID",
+        "Answer",
+        "Aggregated Label",
+        ...selectedJudgeNames,
+      ];
+
+      // CSV rows from filtered results
+      const rows = filteredResults.map((result) => {
+        const metadata = result.aggregated_accuracy?.metadata ?? [];
+        const evaluatorLabels = parseEvaluatorData(metadata);
+        const evaluatorMap = new Map(evaluatorLabels.map((e) => [e.name, e.label]));
+
+        // Calculate aggregated label based on selected judges
+        const selectedLabelsForRow: boolean[] = [];
+        reliableJudges.forEach((judge) => {
+          if (selectedJudges.has(judge.id)) {
+            const label = evaluatorMap.get(judge.name);
+            if (label !== null && label !== undefined) {
+              selectedLabelsForRow.push(label);
+            }
+          }
+        });
+
+        let aggregatedLabel = "No data";
+        if (selectedLabelsForRow.length > 0) {
+          const accurateCount = selectedLabelsForRow.filter((l) => l === true).length;
+          const inaccurateCount = selectedLabelsForRow.filter((l) => l === false).length;
+          if (accurateCount > inaccurateCount) {
+            aggregatedLabel = "Accurate";
+          } else if (inaccurateCount > accurateCount) {
+            aggregatedLabel = "Inaccurate";
+          } else {
+            aggregatedLabel = "Tie";
+          }
+        }
+
+        // Get individual judge labels
+        const judgeLabels = selectedJudgeNames.map((name) => {
+          const label = evaluatorMap.get(name);
+          if (label === true) return "Accurate";
+          if (label === false) return "Inaccurate";
+          return "";
+        });
+
+        return [
+          result.question_id,
+          `"${result.question_text.replace(/"/g, '""')}"`,
+          result.answer_id,
+          `"${result.answer_content.replace(/"/g, '""')}"`,
+          aggregatedLabel,
+          ...judgeLabels,
+        ];
+      });
+
+      // Combine headers and rows
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.join(",")),
+      ].join("\n");
 
       // Create download link
-      const blob = new Blob([response.data], { type: "text/csv" });
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `snapshot_${snapshotId}_aggregated_results.csv`;
+      link.download = `snapshot_${snapshotId}_filtered_results.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
