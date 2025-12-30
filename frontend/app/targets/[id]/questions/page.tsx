@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   Box,
   Typography,
@@ -18,9 +18,6 @@ import {
   InputLabel,
   Select,
   MenuItem,
-  OutlinedInput,
-  Checkbox,
-  ListItemText,
   IconButton,
   Card,
   CardContent,
@@ -29,14 +26,13 @@ import {
   TextField,
 } from "@mui/material";
 import {
-  FilterList as FilterIcon,
-  Close as CloseIcon,
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Delete as DeleteIcon,
   Edit as EditIcon,
   Save as SaveIcon,
 } from "@mui/icons-material";
+import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
 import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, QuestionUpdate } from "@/lib/types";
@@ -182,6 +178,20 @@ export default function QuestionsPage() {
     });
   }, [approvedQuestions, selectedPersonaIds, selectedTypes, selectedScopes]);
 
+  // Filter options for table header filters
+  const personaFilterOptions: FilterOption<number>[] = useMemo(() => {
+    return personas.map((p) => ({ value: p.id, label: p.title }));
+  }, [personas]);
+
+  const typeFilterOptions: FilterOption<string>[] = useMemo(() => [
+    { value: "typical", label: "Typical" },
+    { value: "edge", label: "Edge" },
+  ], []);
+
+  const scopeFilterOptions: FilterOption<string>[] = useMemo(() => [
+    { value: "in_kb", label: "In KB" },
+    { value: "out_kb", label: "Out KB" },
+  ], []);
 
   const handleApproveNewQuestion = async (questionId: number) => {
     setProcessingQuestionId(questionId);
@@ -530,106 +540,38 @@ export default function QuestionsPage() {
             </Button>
           </Box>
 
-          {/* Filter Controls */}
-          <Paper sx={{ p: 2, mb: 2 }} variant="outlined">
-            <Box display="flex" alignItems="center" gap={2} flexWrap="wrap">
-              <Box display="flex" alignItems="center" gap={1}>
-                <FilterIcon color="action" />
-                <Typography variant="subtitle2" color="text.secondary">
-                  Filters:
-                </Typography>
-              </Box>
-
-              {/* Persona Filter */}
-              <FormControl size="small" sx={{ minWidth: 200 }}>
-                <InputLabel id="persona-filter-label">Personas</InputLabel>
-                <Select
-                  labelId="persona-filter-label"
-                  id="persona-filter"
-                  multiple
-                  value={selectedPersonaIds}
-                  onChange={(e) => setSelectedPersonaIds(e.target.value as number[])}
-                  input={<OutlinedInput label="Personas" />}
-                  renderValue={(selected) =>
-                    selected.length === personas.length
-                      ? "All Personas"
-                      : `${selected.length} selected`
-                  }
-                >
-                  {personas.map((persona) => (
-                    <MenuItem key={persona.id} value={persona.id}>
-                      <Checkbox checked={selectedPersonaIds.includes(persona.id)} />
-                      <ListItemText primary={persona.title} />
-                    </MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-
-              {/* Type Filter */}
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel id="type-filter-label">Type</InputLabel>
-                <Select
-                  labelId="type-filter-label"
-                  id="type-filter"
-                  multiple
-                  value={selectedTypes}
-                  onChange={(e) => setSelectedTypes(e.target.value as string[])}
-                  input={<OutlinedInput label="Type" />}
-                  renderValue={(selected) =>
-                    selected.length === 2 ? "All Types" : selected.join(", ")
-                  }
-                >
-                  <MenuItem value="typical">
-                    <Checkbox checked={selectedTypes.includes("typical")} />
-                    <ListItemText primary="Typical" />
-                  </MenuItem>
-                  <MenuItem value="edge">
-                    <Checkbox checked={selectedTypes.includes("edge")} />
-                    <ListItemText primary="Edge" />
-                  </MenuItem>
-                </Select>
-              </FormControl>
-
-              {/* Scope Filter */}
-              <FormControl size="small" sx={{ minWidth: 150 }}>
-                <InputLabel id="scope-filter-label">Scope</InputLabel>
-                <Select
-                  labelId="scope-filter-label"
-                  id="scope-filter"
-                  multiple
-                  value={selectedScopes}
-                  onChange={(e) => setSelectedScopes(e.target.value as string[])}
-                  input={<OutlinedInput label="Scope" />}
-                  renderValue={(selected) =>
-                    selected.length === 2 ? "All Scopes" : selected.map(s => s === "in_kb" ? "In KB" : "Out KB").join(", ")
-                  }
-                >
-                  <MenuItem value="in_kb">
-                    <Checkbox checked={selectedScopes.includes("in_kb")} />
-                    <ListItemText primary="In KB" />
-                  </MenuItem>
-                  <MenuItem value="out_kb">
-                    <Checkbox checked={selectedScopes.includes("out_kb")} />
-                    <ListItemText primary="Out KB" />
-                  </MenuItem>
-                </Select>
-              </FormControl>
-
-              {/* Result Count */}
-              <Typography variant="body2" color="text.secondary" sx={{ ml: "auto" }}>
-                Showing {filteredQuestions.length} of {approvedQuestions.length} questions
-              </Typography>
-            </Box>
-          </Paper>
-
           <TableContainer component={Paper} variant="outlined">
             <Table>
               <TableHead>
                 <TableRow>
                   <TableCell>Question</TableCell>
-                  <TableCell align="center">Persona</TableCell>
-                  <TableCell align="center">Type</TableCell>
-                  <TableCell align="center">Scope</TableCell>
+                  <TableCell align="center" sx={{ width: 160 }}>
+                    <TableHeaderFilter
+                      label="Persona"
+                      options={personaFilterOptions}
+                      value={selectedPersonaIds}
+                      onChange={setSelectedPersonaIds}
+                      allSelectedLabel="All Personas"
+                    />
+                  </TableCell>
+                  <TableCell align="center" sx={{ width: 120 }}>
+                    <TableHeaderFilter
+                      label="Type"
+                      options={typeFilterOptions}
+                      value={selectedTypes}
+                      onChange={setSelectedTypes}
+                      allSelectedLabel="All Types"
+                    />
+                  </TableCell>
+                  <TableCell align="center" sx={{ width: 120 }}>
+                    <TableHeaderFilter
+                      label="Scope"
+                      options={scopeFilterOptions}
+                      value={selectedScopes}
+                      onChange={setSelectedScopes}
+                      allSelectedLabel="All Scopes"
+                    />
+                  </TableCell>
                   <TableCell align="center" width={50}></TableCell>
                 </TableRow>
               </TableHead>
