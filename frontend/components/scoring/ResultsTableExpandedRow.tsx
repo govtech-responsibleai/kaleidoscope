@@ -1,15 +1,16 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Alert,
   Box,
+  Chip,
   CircularProgress,
   Stack,
   Typography,
 } from "@mui/material";
-import { ResultRow, JudgeConfig, AnswerClaim, AnswerClaimScore } from "@/lib/types";
-import { answerApi } from "@/lib/api";
+import { ResultRow, JudgeConfig, AnswerClaim, AnswerClaimScore, QuestionResponse, PersonaResponse } from "@/lib/types";
+import { answerApi, questionApi, personaApi } from "@/lib/api";
 import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
 
 interface ResultsTableExpandedRowProps {
@@ -31,6 +32,8 @@ export default function ResultsTableExpandedRow({
   const [claimsData, setClaimsData] = useState<ClaimsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [question, setQuestion] = useState<QuestionResponse | null>(null);
+  const [persona, setPersona] = useState<PersonaResponse | null>(null);
 
   // Filter for claim-based judges only (response-level judges don't have claim scores)
   const claimBasedJudges = useMemo(
@@ -43,6 +46,23 @@ export default function ResultsTableExpandedRow({
     () => selectedJudgeIds.filter((id) => claimBasedJudges.some((j) => j.id === id)),
     [selectedJudgeIds, claimBasedJudges]
   );
+
+  // Fetch question and persona details
+  useEffect(() => {
+    const fetchQuestionAndPersona = async () => {
+      try {
+        const questionRes = await questionApi.get(result.question_id);
+        setQuestion(questionRes.data);
+
+        const personaRes = await personaApi.get(questionRes.data.persona_id);
+        setPersona(personaRes.data);
+      } catch (err) {
+        console.error("Failed to fetch question/persona:", err);
+      }
+    };
+
+    fetchQuestionAndPersona();
+  }, [result.question_id]);
 
   // Fetch claims from all claim-based judges when component mounts
   useEffect(() => {
@@ -106,6 +126,31 @@ export default function ResultsTableExpandedRow({
   return (
     <Box sx={{ py: 3, px: 4, bgcolor: "rgba(0, 0, 0, 0.02)" }}>
       <Stack spacing={2}>
+        {/* Question Metadata */}
+        {(question || persona) && (
+          <Box display="flex" gap={1} alignItems="center">
+            {persona && (
+              <Chip label={persona.title} size="small" />
+            )}
+            {question && (
+              <>
+                <Chip
+                  label={question.type}
+                  size="small"
+                  color={question.type === "edge" ? "warning" : "default"}
+                  variant={question.type === "edge" ? "filled" : "outlined"}
+                />
+                <Chip
+                  label={question.scope === "in_kb" ? "In KB" : "Out KB"}
+                  size="small"
+                  color={question.scope === "in_kb" ? "success" : "info"}
+                  variant="outlined"
+                />
+              </>
+            )}
+          </Box>
+        )}
+
         {/* Full Question */}
         <Box>
           <Typography variant="caption" fontWeight={600} color="text.secondary">

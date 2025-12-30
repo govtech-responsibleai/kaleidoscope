@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Alert,
   Box,
@@ -12,12 +12,7 @@ import {
   Divider,
   FormControlLabel,
   IconButton,
-  ListItemIcon,
-  Menu,
-  MenuItem,
   Paper,
-  Select,
-  SelectChangeEvent,
   Stack,
   Table,
   TableBody,
@@ -36,11 +31,11 @@ import {
   Download as DownloadIcon,
   KeyboardArrowDown as KeyboardArrowDownIcon,
   KeyboardArrowUp as KeyboardArrowUpIcon,
-  FilterList as FilterListIcon,
 } from "@mui/icons-material";
-import { ResultRow, JudgeConfig } from "@/lib/types";
-import { metricsApi } from "@/lib/api";
+import { ResultRow, JudgeConfig, QuestionResponse, PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
+import { metricsApi, questionApi, personaApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
+import { QAFilter, JudgeFilter, LabelFilter, LabelFilterValue } from "./filters";
 
 interface ResultsTableProps {
   results: ResultRow[];
@@ -113,12 +108,18 @@ export default function ResultsTable({
 }: ResultsTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
-  const [labelFilter, setLabelFilter] = useState<"all" | "accurate" | "inaccurate">("all");
-  const [labelFilterAnchor, setLabelFilterAnchor] = useState<HTMLElement | null>(null);
+  const [labelFilter, setLabelFilter] = useState<LabelFilterValue>("all");
   const [showDisagreementsOnly, setShowDisagreementsOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [selectedJudges, setSelectedJudges] = useState<Set<number>>(new Set());
+
+  // Question filter state
+  const [questionsMap, setQuestionsMap] = useState<Map<number, QuestionResponse>>(new Map());
+  const [personasMap, setPersonasMap] = useState<Map<number, PersonaResponse>>(new Map());
+  const [selectedTypes, setSelectedTypes] = useState<QuestionType[]>([QuestionType.TYPICAL, QuestionType.EDGE]);
+  const [selectedScopes, setSelectedScopes] = useState<QuestionScope[]>([QuestionScope.IN_KB, QuestionScope.OUT_KB]);
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState<number[]>([]);
 
   const rowsPerPage = 10;
 
@@ -134,9 +135,66 @@ export default function ResultsTable({
     });
   };
 
+  // Fetch questions and personas for filtering
+  useEffect(() => {
+    const fetchQuestionsAndPersonas = async () => {
+      if (results.length === 0) return;
+
+      const uniqueQuestionIds = [...new Set(results.map((r) => r.question_id))];
+
+      try {
+        // Fetch all questions
+        const questionPromises = uniqueQuestionIds.map((id) => questionApi.get(id));
+        const questionResponses = await Promise.all(questionPromises);
+
+        const newQuestionsMap = new Map<number, QuestionResponse>();
+        const personaIdsToFetch = new Set<number>();
+
+        questionResponses.forEach((res) => {
+          newQuestionsMap.set(res.data.id, res.data);
+          personaIdsToFetch.add(res.data.persona_id);
+        });
+
+        setQuestionsMap(newQuestionsMap);
+
+        // Fetch all personas
+        const personaPromises = [...personaIdsToFetch].map((id) => personaApi.get(id));
+        const personaResponses = await Promise.all(personaPromises);
+
+        const newPersonasMap = new Map<number, PersonaResponse>();
+        personaResponses.forEach((res) => {
+          newPersonasMap.set(res.data.id, res.data);
+        });
+
+        setPersonasMap(newPersonasMap);
+
+        // Initialize selectedPersonaIds with all personas
+        setSelectedPersonaIds([...personaIdsToFetch]);
+      } catch (err) {
+        console.error("Failed to fetch questions/personas:", err);
+      }
+    };
+
+    fetchQuestionsAndPersonas();
+  }, [results]);
+
   // Filter results based on selected filters
   const filteredResults = useMemo(() => {
     let filtered = results;
+
+    // Filter by question type, scope, and persona
+    if (questionsMap.size > 0) {
+      filtered = filtered.filter((result) => {
+        const question = questionsMap.get(result.question_id);
+        if (!question) return true; // Keep if question not loaded yet
+
+        const typeMatch = selectedTypes.includes(question.type);
+        const scopeMatch = selectedScopes.includes(question.scope);
+        const personaMatch = selectedPersonaIds.length === 0 || selectedPersonaIds.includes(question.persona_id);
+
+        return typeMatch && scopeMatch && personaMatch;
+      });
+    }
 
     // Filter by label
     if (labelFilter !== "all") {
@@ -165,7 +223,7 @@ export default function ResultsTable({
     }
 
     return filtered;
-  }, [results, labelFilter, showDisagreementsOnly]);
+  }, [results, labelFilter, showDisagreementsOnly, questionsMap, selectedTypes, selectedScopes, selectedPersonaIds]);
 
   const paginatedResults = useMemo(() => {
     return filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -239,16 +297,6 @@ export default function ResultsTable({
     }
   };
 
-  const handleJudgeSelectionChange = (event: SelectChangeEvent<number[]>) => {
-    const value = event.target.value;
-    setSelectedJudges(new Set(typeof value === "string" ? [] : value));
-  };
-
-  // Get display text for selected judges
-  const getSelectedJudgesDisplay = () => {
-    return `Evaluators (${selectedJudges.size}/${reliableJudges.length})`;
-  };
-
   return (
     <Box>
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
@@ -256,68 +304,55 @@ export default function ResultsTable({
 
         <Box sx={{ flexGrow: 1 }} />
 
-        <Box
-          sx={{
-            border: 1,
-            borderColor: "rgba(0, 0, 0, 0.23)",
-            borderRadius: 1,
-            pr: 1.5,
-            display: "flex",
-            alignItems: "center",
+        <QAFilter
+          selectedTypes={selectedTypes}
+          selectedScopes={selectedScopes}
+          selectedPersonaIds={selectedPersonaIds}
+          personas={[...personasMap.values()]}
+          onTypesChange={(types) => {
+            setSelectedTypes(types);
+            setPage(0);
           }}
-        >
-          <FormControlLabel
-            control={
-              <Checkbox
-                size="small"
-                checked={showDisagreementsOnly}
-                onChange={(event) => {
-                  setPage(0);
-                  setShowDisagreementsOnly(event.target.checked);
-                }}
-              />
-            }
-            label={<Typography variant="body2">Show only disagreements</Typography>}
-            sx={{ m: 0 }}
-          />
-        </Box>
+          onScopesChange={(scopes) => {
+            setSelectedScopes(scopes);
+            setPage(0);
+          }}
+          onPersonaIdsChange={(ids) => {
+            setSelectedPersonaIds(ids);
+            setPage(0);
+          }}
+        />
 
-        <Select
-          multiple
-          value={Array.from(selectedJudges)}
-          onChange={handleJudgeSelectionChange}
-          displayEmpty
-          renderValue={() => getSelectedJudgesDisplay()}
-          sx={{
-            minWidth: 160,
-          }}
+        <JudgeFilter
+          reliableJudges={reliableJudges}
+          selectedJudgeIds={selectedJudges}
+          onSelectionChange={setSelectedJudges}
+        />
+
+        <Button
+          variant="outlined"
           size="small"
+          color="inherit"
+          disableRipple
+          sx={{ 
+            pr: 1.5, 
+            height: "40px", 
+            fontWeight: 400, 
+            borderColor: "rgba(0, 0, 0, 0.2)"
+          }}
         >
-          {reliableJudges.map((judge) => (
-            <MenuItem key={judge.id} value={judge.id}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={selectedJudges.has(judge.id)}
-                    onChange={(event) => {
-                      setSelectedJudges((prev) => {
-                        const next = new Set(prev);
-                        if (event.target.checked) {
-                          next.add(judge.id);
-                        } else {
-                          next.delete(judge.id);
-                        }
-                        return next;
-                      });
-                    }}
-                  />
-                }
-                label={judge.name}
-              />
-            </MenuItem>
-          ))}
-        </Select>
+          <Checkbox
+            size="small"
+            checked={showDisagreementsOnly}
+            onChange={(event) => {
+              setPage(0);
+              setShowDisagreementsOnly(event.target.checked);
+            }}
 
+          />
+          Show only disagreements
+        </Button>
+        
         <Divider orientation="vertical" flexItem />
 
         <Button
@@ -347,21 +382,13 @@ export default function ResultsTable({
               <TableCell sx={{ width: "35%" }}>Question</TableCell>
               <TableCell sx={{ width: "35%" }}>Answer</TableCell>
               <TableCell sx={{ width: "100px" }}>
-                <Stack direction="row" alignItems="center" spacing={0.5}>
-                  <Typography variant="body2" fontWeight={600}>
-                    Label
-                  </Typography>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => setLabelFilterAnchor(e.currentTarget)}
-                    sx={{
-                      p: 0.25,
-                      color: labelFilter !== "all" ? "primary.main" : "action.active",
-                    }}
-                  >
-                    <FilterListIcon fontSize="small" />
-                  </IconButton>
-                </Stack>
+                <LabelFilter
+                  value={labelFilter}
+                  onChange={(value) => {
+                    setLabelFilter(value);
+                    setPage(0);
+                  }}
+                />
               </TableCell>
               {reliableJudges
                 .filter((judge) => selectedJudges.has(judge.id))
@@ -440,8 +467,6 @@ export default function ResultsTable({
                 }
               }
 
-              const isQuestionTruncated = result.question_text.length > 160;
-              const isAnswerTruncated = result.answer_content.length > 160;
               const isExpanded = expandedRows.has(result.answer_id);
 
               return (
@@ -527,50 +552,6 @@ export default function ResultsTable({
         page={page}
         onPageChange={(_event, newPage) => setPage(newPage)}
       />
-
-      {/* Label filter menu */}
-      <Menu
-        anchorEl={labelFilterAnchor}
-        open={Boolean(labelFilterAnchor)}
-        onClose={() => setLabelFilterAnchor(null)}
-      >
-        <MenuItem
-          selected={labelFilter === "all"}
-          onClick={() => {
-            setLabelFilter("all");
-            setPage(0);
-            setLabelFilterAnchor(null);
-          }}
-        >
-          All
-        </MenuItem>
-        <MenuItem
-          selected={labelFilter === "accurate"}
-          onClick={() => {
-            setLabelFilter("accurate");
-            setPage(0);
-            setLabelFilterAnchor(null);
-          }}
-        >
-          <ListItemIcon>
-            <CheckCircleIcon fontSize="small" color="success" />
-          </ListItemIcon>
-          Accurate
-        </MenuItem>
-        <MenuItem
-          selected={labelFilter === "inaccurate"}
-          onClick={() => {
-            setLabelFilter("inaccurate");
-            setPage(0);
-            setLabelFilterAnchor(null);
-          }}
-        >
-          <ListItemIcon>
-            <CancelIcon fontSize="small" color="error" />
-          </ListItemIcon>
-          Inaccurate
-        </MenuItem>
-      </Menu>
     </Box>
   );
 }
