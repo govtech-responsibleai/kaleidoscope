@@ -24,6 +24,13 @@ export const theme = createTheme({
     ].join(","),
   },
   components: {
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          textTransform: "none",
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
