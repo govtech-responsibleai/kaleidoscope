@@ -93,12 +93,5 @@ export const theme = createTheme({
         },
       },
     },
-    MuiInputBase: {
-      styleOverrides: {
-        root: {
-          order: 2,
-        },
-      },
-    },
   },
 });

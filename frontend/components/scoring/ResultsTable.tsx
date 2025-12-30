@@ -9,11 +9,15 @@ import {
   Chip,
   ChipProps,
   Collapse,
+  Divider,
   FormControlLabel,
-  FormGroup,
   IconButton,
+  ListItemIcon,
+  Menu,
+  MenuItem,
   Paper,
-  Popover,
+  Select,
+  SelectChangeEvent,
   Stack,
   Table,
   TableBody,
@@ -36,6 +40,7 @@ import {
 } from "@mui/icons-material";
 import { ResultRow, JudgeConfig } from "@/lib/types";
 import { metricsApi } from "@/lib/api";
+import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
 
 interface ResultsTableProps {
   results: ResultRow[];
@@ -50,12 +55,13 @@ const extractReliableLabels = (metadata: string[]) => {
     if (lower.includes("excluded")) {
       return;
     }
-    if (lower.includes("accurate")) {
-      labels.push(true);
-      return;
-    }
+    // Check "inaccurate" BEFORE "accurate" since "inaccurate" contains "accurate"
     if (lower.includes("inaccurate")) {
       labels.push(false);
+      return;
+    }
+    if (lower.includes("accurate")) {
+      labels.push(true);
     }
   });
   return labels;
@@ -107,10 +113,11 @@ export default function ResultsTable({
 }: ResultsTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
+  const [labelFilter, setLabelFilter] = useState<"all" | "accurate" | "inaccurate">("all");
+  const [labelFilterAnchor, setLabelFilterAnchor] = useState<HTMLElement | null>(null);
   const [showDisagreementsOnly, setShowDisagreementsOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
-  const [labelPopoverAnchor, setLabelPopoverAnchor] = useState<HTMLElement | null>(null);
   const [selectedJudges, setSelectedJudges] = useState<Set<number>>(new Set());
 
   const rowsPerPage = 10;
@@ -127,19 +134,38 @@ export default function ResultsTable({
     });
   };
 
-  // Filter results for disagreements
+  // Filter results based on selected filters
   const filteredResults = useMemo(() => {
-    if (!showDisagreementsOnly) {
-      return results;
+    let filtered = results;
+
+    // Filter by label
+    if (labelFilter !== "all") {
+      filtered = filtered.filter((result) => {
+        const metadata = result.aggregated_accuracy?.metadata ?? [];
+        const labels = extractReliableLabels(metadata);
+        const inaccurateCount = labels.filter((l) => l === false).length;
+        const accurateCount = labels.filter((l) => l === true).length;
+
+        if (labelFilter === "inaccurate") {
+          return inaccurateCount > accurateCount;
+        } else {
+          return accurateCount > inaccurateCount;
+        }
+      });
     }
 
-    return results.filter((result) => {
-      const metadata = result.aggregated_accuracy?.metadata ?? [];
-      const labels = extractReliableLabels(metadata);
-      const unique = new Set(labels);
-      return unique.size > 1;
-    });
-  }, [results, showDisagreementsOnly]);
+    // Filter for disagreements only
+    if (showDisagreementsOnly) {
+      filtered = filtered.filter((result) => {
+        const metadata = result.aggregated_accuracy?.metadata ?? [];
+        const labels = extractReliableLabels(metadata);
+        const unique = new Set(labels);
+        return unique.size > 1;
+      });
+    }
+
+    return filtered;
+  }, [results, labelFilter, showDisagreementsOnly]);
 
   const paginatedResults = useMemo(() => {
     return filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
@@ -212,25 +238,87 @@ export default function ResultsTable({
       setExporting(false);
     }
   };
-  
+
+  const handleJudgeSelectionChange = (event: SelectChangeEvent<number[]>) => {
+    const value = event.target.value;
+    setSelectedJudges(new Set(typeof value === "string" ? [] : value));
+  };
+
+  // Get display text for selected judges
+  const getSelectedJudgesDisplay = () => {
+    return `Evaluators (${selectedJudges.size}/${reliableJudges.length})`;
+  };
+
   return (
     <Box>
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
         <Typography variant="h5">All Questions & Answers</Typography>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={showDisagreementsOnly}
-              onChange={(event) => {
-                setPage(0);
-                setShowDisagreementsOnly(event.target.checked);
-              }}
-            />
-          }
-          label="Show only disagreements"
-        />
 
         <Box sx={{ flexGrow: 1 }} />
+
+        <Box
+          sx={{
+            border: 1,
+            borderColor: "rgba(0, 0, 0, 0.23)",
+            borderRadius: 1,
+            pr: 1.5,
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <FormControlLabel
+            control={
+              <Checkbox
+                size="small"
+                checked={showDisagreementsOnly}
+                onChange={(event) => {
+                  setPage(0);
+                  setShowDisagreementsOnly(event.target.checked);
+                }}
+              />
+            }
+            label={<Typography variant="body2">Show only disagreements</Typography>}
+            sx={{ m: 0 }}
+          />
+        </Box>
+
+        <Select
+          multiple
+          value={Array.from(selectedJudges)}
+          onChange={handleJudgeSelectionChange}
+          displayEmpty
+          renderValue={() => getSelectedJudgesDisplay()}
+          sx={{
+            minWidth: 160,
+          }}
+          size="small"
+        >
+          {reliableJudges.map((judge) => (
+            <MenuItem key={judge.id} value={judge.id}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={selectedJudges.has(judge.id)}
+                    onChange={(event) => {
+                      setSelectedJudges((prev) => {
+                        const next = new Set(prev);
+                        if (event.target.checked) {
+                          next.add(judge.id);
+                        } else {
+                          next.delete(judge.id);
+                        }
+                        return next;
+                      });
+                    }}
+                  />
+                }
+                label={judge.name}
+              />
+            </MenuItem>
+          ))}
+        </Select>
+
+        <Divider orientation="vertical" flexItem />
 
         <Button
           variant="contained"
@@ -241,6 +329,7 @@ export default function ResultsTable({
         >
           {exporting ? "Exporting..." : "Export CSV"}
         </Button>
+
       </Stack>
 
       {excludedJudges.length > 0 && (
@@ -254,27 +343,29 @@ export default function ResultsTable({
 
           <TableHead>
             <TableRow>
-              <TableCell sx={{ width: "50px" }} />
+              <TableCell sx={{ width: "5%" }} />
               <TableCell sx={{ width: "35%" }}>Question</TableCell>
               <TableCell sx={{ width: "35%" }}>Answer</TableCell>
               <TableCell sx={{ width: "100px" }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 0.5,
-                    cursor: "pointer",
-                    "&:hover": { opacity: 0.7 },
-                  }}
-                  onClick={(event) => setLabelPopoverAnchor(event.currentTarget)}
-                >
+                <Stack direction="row" alignItems="center" spacing={0.5}>
                   <Typography variant="body2" fontWeight={600}>
                     Label
                   </Typography>
-                  <FilterListIcon fontSize="small" />
-                </Box>
+                  <IconButton
+                    size="small"
+                    onClick={(e) => setLabelFilterAnchor(e.currentTarget)}
+                    sx={{
+                      p: 0.25,
+                      color: labelFilter !== "all" ? "primary.main" : "action.active",
+                    }}
+                  >
+                    <FilterListIcon fontSize="small" />
+                  </IconButton>
+                </Stack>
               </TableCell>
-              {reliableJudges.map((judge) => (
+              {reliableJudges
+                .filter((judge) => selectedJudges.has(judge.id))
+                .map((judge) => (
                 <TableCell
                   key={judge.id}
                   sx={{
@@ -389,7 +480,9 @@ export default function ResultsTable({
                       </Stack>
                     </TableCell>
 
-                    {reliableJudges.map((judge) => {
+                    {reliableJudges
+                      .filter((judge) => selectedJudges.has(judge.id))
+                      .map((judge) => {
                       const label = evaluatorMap.get(judge.name);
 
                       return (
@@ -409,28 +502,13 @@ export default function ResultsTable({
                   </TableRow>
 
                   <TableRow>
-                    <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={4 + reliableJudges.length}>
+                    <TableCell style={{ padding: 0 }} colSpan={4 + selectedJudges.size}>
                       <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                        <Box sx={{ py: 2, px: 1 }}>
-                          <Stack spacing={2}>
-                            <Box>
-                              <Typography variant="caption" fontWeight={600} color="text.secondary">
-                                Full Question:
-                              </Typography>
-                              <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}>
-                                {result.question_text}
-                              </Typography>
-                            </Box>
-                            <Box>
-                              <Typography variant="caption" fontWeight={600} color="text.secondary">
-                                Full Answer:
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}>
-                                {result.answer_content}
-                              </Typography>
-                            </Box>
-                          </Stack>
-                        </Box>
+                        <ResultsTableExpandedRow
+                          result={result}
+                          reliableJudges={reliableJudges}
+                          selectedJudgeIds={Array.from(selectedJudges)}
+                        />
                       </Collapse>
                     </TableCell>
                   </TableRow>
@@ -450,46 +528,49 @@ export default function ResultsTable({
         onPageChange={(_event, newPage) => setPage(newPage)}
       />
 
-      {/* Label calculation popover */}
-      <Popover
-        open={Boolean(labelPopoverAnchor)}
-        anchorEl={labelPopoverAnchor}
-        onClose={() => setLabelPopoverAnchor(null)}
-        anchorOrigin={{
-          vertical: "bottom",
-          horizontal: "left",
-        }}
+      {/* Label filter menu */}
+      <Menu
+        anchorEl={labelFilterAnchor}
+        open={Boolean(labelFilterAnchor)}
+        onClose={() => setLabelFilterAnchor(null)}
       >
-        <Box sx={{ p: 2 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Select evaluators for majority vote:
-          </Typography>
-          <FormGroup>
-            {reliableJudges.map((judge) => (
-              <FormControlLabel
-                key={judge.id}
-                control={
-                  <Checkbox
-                    checked={selectedJudges.has(judge.id)}
-                    onChange={(event) => {
-                      setSelectedJudges((prev) => {
-                        const next = new Set(prev);
-                        if (event.target.checked) {
-                          next.add(judge.id);
-                        } else {
-                          next.delete(judge.id);
-                        }
-                        return next;
-                      });
-                    }}
-                  />
-                }
-                label={judge.name}
-              />
-            ))}
-          </FormGroup>
-        </Box>
-      </Popover>
+        <MenuItem
+          selected={labelFilter === "all"}
+          onClick={() => {
+            setLabelFilter("all");
+            setPage(0);
+            setLabelFilterAnchor(null);
+          }}
+        >
+          All
+        </MenuItem>
+        <MenuItem
+          selected={labelFilter === "accurate"}
+          onClick={() => {
+            setLabelFilter("accurate");
+            setPage(0);
+            setLabelFilterAnchor(null);
+          }}
+        >
+          <ListItemIcon>
+            <CheckCircleIcon fontSize="small" color="success" />
+          </ListItemIcon>
+          Accurate
+        </MenuItem>
+        <MenuItem
+          selected={labelFilter === "inaccurate"}
+          onClick={() => {
+            setLabelFilter("inaccurate");
+            setPage(0);
+            setLabelFilterAnchor(null);
+          }}
+        >
+          <ListItemIcon>
+            <CancelIcon fontSize="small" color="error" />
+          </ListItemIcon>
+          Inaccurate
+        </MenuItem>
+      </Menu>
     </Box>
   );
 }
