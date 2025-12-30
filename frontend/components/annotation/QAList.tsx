@@ -355,12 +355,9 @@ export default function QAList({
         alignItems: "stretch",
       }}
     >
-      <Paper
-        variant="outlined"
+      <Box
         sx={{
-          px: 3,
-          py: 2,
-          flexBasis: { md: "30%" },
+          flexBasis: { md: "25%" },
           display: "flex",
           flexDirection: "column",
         }}
@@ -371,7 +368,7 @@ export default function QAList({
           alignItems="center"
           sx={{ mt:1, mb: 1 }}
         >
-          <Typography variant="h6">Questions & Answers</Typography>
+          <Typography variant="h5">Question List</Typography>
           <Tooltip title="Toggle between all answers or selected only">
             <ToggleButtonGroup
               size="small"
@@ -475,33 +472,38 @@ export default function QAList({
             </List>
           )}
         </Box>
+      </Box>
+
+      <Paper
+        variant="outlined"
+        sx={{
+          flexBasis: { md: "52%" },
+          bgcolor: "rgb(0, 0, 0, 0.01)" 
+        }}
+      >
+        <QAContent
+          question={activeQuestion}
+          persona={activePersona}
+          qaEntry={activeEntry}
+          job={activeJob}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          prevDisabled={prevDisabled}
+          nextDisabled={nextDisabled}
+        />
       </Paper>
 
       <Box
         sx={{
-          flexBasis: { md: "70%" },
-          flexGrow: 1,
-          minWidth: 0,
+          flexBasis: { md: "23%" },
         }}
       >
-        <Stack spacing={3}>
-          <AnnotationForm
-            answer={activeAnswer}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            prevDisabled={prevDisabled}
-            nextDisabled={nextDisabled}
-            onAnnotationSaved={handleAnnotationSaved}
-            showHelperAlert={showHelperAlert}
-            onDismissHelperAlert={() => setHelperAlertDismissed(true)}
-          />
-          <QAContent
-            question={activeQuestion}
-            persona={activePersona}
-            qaEntry={activeEntry}
-            job={activeJob}
-          />
-        </Stack>
+        <AnnotationForm
+          answer={activeAnswer}
+          onAnnotationSaved={handleAnnotationSaved}
+          showHelperAlert={showHelperAlert}
+          onDismissHelperAlert={() => setHelperAlertDismissed(true)}
+        />
       </Box>
     </Box>
   );

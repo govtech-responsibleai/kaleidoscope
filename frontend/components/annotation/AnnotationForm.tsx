@@ -6,26 +6,17 @@ import {
   Box,
   Button,
   FormControlLabel,
-  Paper,
   Radio,
   RadioGroup,
   Stack,
   TextField,
   Typography,
 } from "@mui/material";
-import {
-  ArrowBack as ArrowBackIcon,
-  ArrowForward as ArrowForwardIcon,
-} from "@mui/icons-material";
 import { Answer, Annotation } from "@/lib/types";
 import { annotationApi } from "@/lib/api";
 
 interface AnnotationFormProps {
   answer: Answer | null;
-  onPrev: () => void;
-  onNext: () => void;
-  prevDisabled: boolean;
-  nextDisabled: boolean;
   onAnnotationSaved: () => void;
   showHelperAlert?: boolean;
   onDismissHelperAlert?: () => void;
@@ -33,10 +24,6 @@ interface AnnotationFormProps {
 
 export default function AnnotationForm({
   answer,
-  onPrev,
-  onNext,
-  prevDisabled,
-  nextDisabled,
   onAnnotationSaved,
   showHelperAlert = false,
   onDismissHelperAlert,
@@ -141,33 +128,33 @@ export default function AnnotationForm({
 
   if (!answer) {
     return (
-      <Paper variant="outlined" sx={{ px: 3, py: 2, height: "100%", display: "flex", flexDirection: "column" }}>
+      <Box sx={{ px: 3, py: 2, height: "100%", display: "flex", flexDirection: "column" }}>
         <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <Typography variant="body1" color="text.secondary" align="center">
             Select a response to annotate.
           </Typography>
         </Box>
-      </Paper>
+      </Box>
     );
   }
 
   // Check if answer is not yet generated or not selected for annotation
   if (!answer.answer_content) {
     return (
-      <Paper variant="outlined" sx={{ px: 3, py: 2, height: "100%", display: "flex", flexDirection: "column" }}>
+      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
         <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
           <Typography variant="body1" color="text.secondary" align="center">
             Answer generation in progress. Check back later.
           </Typography>
         </Box>
-      </Paper>
+      </Box>
     );
   }
 
   if (!answer.is_selected_for_annotation) {
     return (
-      <Paper variant="outlined" sx={{ px: 3, py: 2, height: "100%", display: "flex", flexDirection: "column" }}>
-        <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
+        <Box sx={{ flex: 1, display: "flex", flexDirection: "column" }}>
           {/* <Typography variant="body1" color="text.secondary" align="center">
             Add this response to the annotation set to enable labeling.
           </Typography> */}
@@ -175,14 +162,14 @@ export default function AnnotationForm({
             Add this response to the annotation set to enable labeling.
           </Alert>
         </Box>
-      </Paper>
+      </Box>
     );
   }
 
   return (
-    <Paper variant="outlined" sx={{ px: 3, py: 2, height: "100%", display: "flex", flexDirection: "column" }}>
+    <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Stack spacing={2} sx={{ flex: 1 }}>
-        <Typography variant="h6">Your Annotations</Typography>
+        <Typography variant="h5">Your Annotations</Typography>
 
         {showHelperAlert && (
           <Alert
@@ -220,45 +207,25 @@ export default function AnnotationForm({
             placeholder="Optional notes about your annotation"
           />
 
-          <Stack direction="row" sx={{ mt: 2 }} justifyContent="space-between">
+          <Stack direction="row" spacing={2} alignItems="center" justifyContent="center" sx={{ mt: 2 }}>
             <Button
-              startIcon={<ArrowBackIcon fontSize="small" />}
-              onClick={onPrev}
-              disabled={prevDisabled}
-              variant="outlined"
-              size="small"
-              sx={{ "& .MuiButton-startIcon": { margin: "0px" }, minWidth: 0 }}
-            />
-
-            <Stack direction="row" spacing={2} alignItems="center">
-              <Button
-                variant="contained"
-                onClick={handleSave}
-                disabled={label === null || saving || loadingAnnotation || !hasUnsavedChanges()}
-              >
-                {saving ? "Saving..." : "Save Annotation"}
-              </Button>
-              <Button variant="text" onClick={handleReset} disabled={saving || loadingAnnotation}>
-                Reset
-              </Button>
-              {showSaveSuccess && (
-                <Typography variant="body2" color="success.main" sx={{ fontWeight: 600 }}>
-                  ✓ Saved!
-                </Typography>
-              )}
-            </Stack>
-
-            <Button
-              endIcon={<ArrowForwardIcon fontSize="small" />}
-              onClick={onNext}
-              disabled={nextDisabled}
-              variant="outlined"
-              size="small"
-              sx={{ "& .MuiButton-endIcon": { margin: "0px" }, minWidth: 0 }}
-            />
+              variant="contained"
+              onClick={handleSave}
+              disabled={label === null || saving || loadingAnnotation || !hasUnsavedChanges()}
+            >
+              {saving ? "Saving..." : "Save Annotation"}
+            </Button>
+            <Button variant="text" onClick={handleReset} disabled={saving || loadingAnnotation}>
+              Reset
+            </Button>
+            {showSaveSuccess && (
+              <Typography variant="body2" color="success.main" sx={{ fontWeight: 600 }}>
+                Saved
+              </Typography>
+            )}
           </Stack>
         </Box>
       </Stack>
-    </Paper>
+    </Box>
   );
 }
