@@ -124,87 +124,101 @@ export default function ResultsTableExpandedRow({
   }, [result.answer_id, claimBasedJudges]);
 
   return (
-    <Box sx={{ py: 3, px: 4, bgcolor: "rgba(0, 0, 0, 0.02)" }}>
+    <Box sx={{ py: 3, px: 4 }}>
       <Stack spacing={2}>
-        {/* Question Metadata */}
-        {(question || persona) && (
-          <Box display="flex" gap={1} alignItems="center">
-            {persona && (
-              <Chip label={persona.title} size="small" />
-            )}
-            {question && (
-              <>
-                <Chip
-                  label={question.type}
-                  size="small"
-                  color={question.type === "edge" ? "warning" : "default"}
-                  variant={question.type === "edge" ? "filled" : "outlined"}
-                />
-                <Chip
-                  label={question.scope === "in_kb" ? "In KB" : "Out KB"}
-                  size="small"
-                  color={question.scope === "in_kb" ? "success" : "info"}
-                  variant="outlined"
-                />
-              </>
-            )}
-          </Box>
-        )}
-
-        {/* Full Question */}
-        <Box>
-          <Typography variant="caption" fontWeight={600} color="text.secondary">
-            Full Question:
-          </Typography>
-          <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}>
-            {result.question_text}
-          </Typography>
-        </Box>
-
-        {/* Claims with Highlights */}
-        <Box>
-          <Typography variant="caption" fontWeight={600} color="text.secondary">
-            Full Answer:
-          </Typography>
-
-          {loading && (
-            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 1 }}>
-              <CircularProgress size={20} />
-              <Typography variant="body2" color="text.secondary">
-                Loading claims...
-              </Typography>
-            </Box>
-          )}
-
-          {error && (
-            <Alert severity="error" sx={{ mt: 1 }}>
-              {error}
-            </Alert>
-          )}
-
-          {!loading && claimsData && claimsData.claims.length > 0 && (
-            <Box sx={{ mt: 0.5 }}>
-              <ClaimHighlighter
-                answerContent={result.answer_content}
-                claims={claimsData.claims}
-                multiJudgeScores={claimsData.judgeScores}
-                judges={claimBasedJudges}
-                selectedJudgeIds={selectedClaimBasedJudgeIds}
-              />
-            </Box>
-          )}
-
-          {/* Fallback: show plain answer when no claims or no claim-based judges */}
-          {!loading && !error && (!claimsData || claimsData.claims.length === 0) && (
-            <Typography
-              variant="body2"
-              color="text.secondary"
-              sx={{ mt: 1, whiteSpace: "pre-wrap" }}
+        {/* Question & Answer Chat Bubbles */}
+        <Stack spacing={2}>
+          {/* Question - Right aligned */}
+          <Box display="flex" justifyContent="flex-end">
+            <Box
+              sx={{
+                maxWidth: { xs: "100%", sm: "75%" },
+                bgcolor: "grey.100",
+                color: "text.primary",
+                px: 3,
+                py: 1.5,
+                borderRadius: "30px 30px 0 30px",
+              }}
             >
-              {result.answer_content}
-            </Typography>
-          )}
-        </Box>
+              <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                {result.question_text}
+              </Typography>
+              {/* Question Metadata Chips */}
+              {(question || persona) && (
+                <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1.5 }}>
+                  {persona && (
+                    <Chip label={persona.title} size="small" />
+                  )}
+                  {question && (
+                    <>
+                      <Chip
+                        label={question.type}
+                        size="small"
+                        color={question.type === "edge" ? "warning" : "default"}
+                        variant={question.type === "edge" ? "filled" : "outlined"}
+                      />
+                      <Chip
+                        label={question.scope === "in_kb" ? "In KB" : "Out KB"}
+                        size="small"
+                        color={question.scope === "in_kb" ? "success" : "info"}
+                        variant="outlined"
+                      />
+                    </>
+                  )}
+                </Box>
+              )}
+            </Box>
+          </Box>
+
+          {/* Answer - Left aligned */}
+          <Box display="flex" justifyContent="flex-start">
+            <Box
+              sx={{
+                maxWidth: { xs: "100%", sm: "85%" },
+                px: 1,
+                py: 0.5,
+                borderRadius: "30px 30px 30px 0",
+                border: (theme) => `1px solid ${theme.palette.divider}`,
+              }}
+            >
+              {loading && (
+                <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 2 }}>
+                  <CircularProgress size={20} />
+                  <Typography variant="body2" color="text.secondary">
+                    Loading claims...
+                  </Typography>
+                </Box>
+              )}
+
+              {error && (
+                <Alert severity="error" sx={{ m: 1 }}>
+                  {error}
+                </Alert>
+              )}
+
+              {!loading && !error && claimsData && claimsData.claims.length > 0 && (
+                <ClaimHighlighter
+                  answerContent={result.answer_content}
+                  claims={claimsData.claims}
+                  multiJudgeScores={claimsData.judgeScores}
+                  judges={claimBasedJudges}
+                  selectedJudgeIds={selectedClaimBasedJudgeIds}
+                />
+              )}
+
+              {/* Fallback: show plain answer when no claims or no claim-based judges */}
+              {!loading && !error && (!claimsData || claimsData.claims.length === 0) && (
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ p: 2, whiteSpace: "pre-wrap" }}
+                >
+                  {result.answer_content}
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        </Stack>
       </Stack>
     </Box>
   );

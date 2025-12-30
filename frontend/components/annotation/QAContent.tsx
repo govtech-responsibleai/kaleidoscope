@@ -14,18 +14,20 @@ import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
 } from "@mui/icons-material";
-import { QAJob, QuestionResponse, QARecord, QAJobStageEnum } from "@/lib/types";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse } from "@/lib/types";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
 interface QAContentProps {
   question: QuestionResponse | null;
+  persona: PersonaResponse | null;
   qaEntry?: QARecord;
   job: QAJob | null;
 }
 
 export default function QAContent({
   question,
+  persona,
   qaEntry,
   job,
 }: QAContentProps) {
@@ -117,6 +119,24 @@ export default function QAContent({
                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
                   {question.text}
                 </Typography>
+                {/* Question Metadata Chips */}
+                <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1.5 }}>
+                  {persona && (
+                    <Chip label={persona.title} size="small" />
+                  )}
+                  <Chip
+                    label={question.type}
+                    size="small"
+                    color={question.type === "edge" ? "warning" : "default"}
+                    variant={question.type === "edge" ? "filled" : "outlined"}
+                  />
+                  <Chip
+                    label={question.scope === "in_kb" ? "In KB" : "Out KB"}
+                    size="small"
+                    color={question.scope === "in_kb" ? "success" : "info"}
+                    variant="outlined"
+                  />
+                </Box>
               </Box>
             </Box>
 
