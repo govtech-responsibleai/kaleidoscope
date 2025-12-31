@@ -8,6 +8,7 @@ import {
   CircularProgress,
   Divider,
   IconButton,
+  Paper,
   Stack,
   Tooltip,
   Typography,
@@ -21,13 +22,15 @@ import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import JudgeCards from "@/components/scoring/JudgeCards";
 import CreateJudgeDialog from "@/components/scoring/CreateJudgeDialog";
 import ResultsTable from "@/components/scoring/ResultsTable";
+import AggregatedAccuracyCard from "@/components/scoring/AggregatedAccuracyCard";
 import {
   Snapshot,
   JudgeConfig,
   ResultRow,
   JobStatus,
   AnnotationCompletionStatus,
-  QAJob
+  QAJob,
+  SnapshotMetric,
 } from "@/lib/types";
 import {
   snapshotApi,
@@ -73,6 +76,10 @@ export default function ScoringPage() {
   // Questions status state
   const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number>(0);
   const [questionsWithoutScores, setQuestionsWithoutScores] = useState<Record<number, number>>({});
+
+  // Aggregated metrics state
+  const [snapshotMetric, setSnapshotMetric] = useState<SnapshotMetric | null>(null);
+  const [snapshotMetricLoading, setSnapshotMetricLoading] = useState(false);
 
   // UI state
   const [error, setError] = useState<string | null>(null);
@@ -152,6 +159,23 @@ export default function ScoringPage() {
       setResultsLoading(false);
     }
   }, []);
+
+  // Fetch snapshot metrics (aggregated accuracy)
+  const fetchSnapshotMetrics = useCallback(async () => {
+    setSnapshotMetricLoading(true);
+    try {
+      const response = await metricsApi.getSnapshotMetrics(targetId);
+      const metrics = response.data.snapshots;
+      // Find the metric for the selected snapshot
+      const currentMetric = metrics.find((m) => m.snapshot_id === selectedSnapshotId) || null;
+      setSnapshotMetric(currentMetric);
+    } catch (error) {
+      console.error("Failed to fetch snapshot metrics:", error);
+      setSnapshotMetric(null);
+    } finally {
+      setSnapshotMetricLoading(false);
+    }
+  }, [targetId, selectedSnapshotId]);
 
   // Fetch questions without answers (using baseline judge)
   const fetchQuestionsWithoutAnswers = useCallback(async (snapshotId: number) => {
@@ -243,6 +267,7 @@ export default function ScoringPage() {
           }
           await fetchResults(snapshotId);
           await fetchQuestionsWithoutScores(snapshotId);
+          await fetchSnapshotMetrics();
         }
       };
 
@@ -251,7 +276,7 @@ export default function ScoringPage() {
       const intervalId = window.setInterval(runPoll, 5000);
       pollingRefs.current[judgeId] = intervalId;
     },
-    [checkJudgeJobStatuses, fetchResults, fetchQuestionsWithoutScores]
+    [checkJudgeJobStatuses, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics]
   );
 
   // Initial data fetch
@@ -267,6 +292,7 @@ export default function ScoringPage() {
     setJudgeJobs({});
     setQuestionsWithoutAnswers(0);
     setQuestionsWithoutScores({});
+    setSnapshotMetric(null);
 
     if (selectedSnapshotId) {
       checkAnnotationCompletion(selectedSnapshotId);
@@ -276,12 +302,13 @@ export default function ScoringPage() {
     }
   }, [selectedSnapshotId, checkAnnotationCompletion, checkJudgeJobStatuses, fetchQuestionsWithoutAnswers, fetchQuestionsWithoutScores]);
 
-  // Fetch results when annotations are complete
+  // Fetch results and metrics when annotations are complete
   useEffect(() => {
     if (selectedSnapshotId && annotationStatus?.is_complete) {
       fetchResults(selectedSnapshotId);
+      fetchSnapshotMetrics();
     }
-  }, [selectedSnapshotId, annotationStatus, fetchResults]);
+  }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics]);
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -439,73 +466,95 @@ export default function ScoringPage() {
         </Alert>
       ) : (
           <Stack spacing={1.5}>
-            {/* Judge Controls */}
-            <Box>
-              <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
-                <Typography variant="h5">
-                  Evaluators
-                </Typography>
-
-                <Box sx={{ display: "flex", gap: 1 }}>
-                <Tooltip title="Add Judge">
-                  <IconButton
-                    color="primary"
-                    sx={{ border: 1, borderColor: "divider" }}
-                    aria-label="add judge"
-                    onClick={() => handleOpenDialog("create")}
-                  >
-                    <AddIcon />
-                  </IconButton>
-                </Tooltip>
-
-              <span>
-                <IconButton
-                  sx={{ border: 1, borderColor: "divider" }}
-                  aria-label="scroll judges left"
-                  onClick={() => handleScrollJudgeCards("left")}
-                  disabled={judges.length === 0}
-                >
-                  <ArrowBackIosNewIcon fontSize="small" />
-                </IconButton>
-              </span>
-              <span>
-                <IconButton
-                  sx={{ border: 1, borderColor: "divider" }}
-                  aria-label="scroll judges right"
-                  onClick={() => handleScrollJudgeCards("right")}
-                  disabled={judges.length === 0}
-                >
-                  <ArrowForwardIosIcon fontSize="small" />
-                </IconButton>
-              </span>
-                </Box>
-              </Box>
-
-              <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                Test different AI evaluators to measure your chatbot's accuracy. More reliable evaluators (those that align with your annotations) give you more confidence in the accuracy score.
-              </Typography>
-            </Box>
-
             {/* Alert for questions without answers */}
             {questionsWithoutAnswers > 0 && (
-              <Alert severity="warning" sx={{ mb: 2 }}>
+              <Alert severity="warning">
                 {questionsWithoutAnswers} new question{questionsWithoutAnswers > 1 ? "s" : ""} found. Run baseline judge in Annotations tab first.
               </Alert>
             )}
 
-            {/* Judge Cards */}
-            <JudgeCards
-              judges={judges}
-              snapshotId={selectedSnapshotId}
-              judgeJobs={judgeJobs}
-              scrollContainerRef={judgeCardsRef}
-              questionsWithoutScores={questionsWithoutScores}
-              hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
-              onRunJudge={handleRunJudge}
-              onEditJudge={(judge) => handleOpenDialog("edit", judge)}
-              onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
-              onDeleteJudge={handleDeleteJudge}
-            />
+            {/* Aggregated Accuracy Card + Evaluators Section */}
+            <Stack direction="row" spacing={3} alignItems="stretch">
+              {/* Aggregated Accuracy Card - Fixed on left */}
+              <AggregatedAccuracyCard
+                snapshotMetric={snapshotMetric}
+                loading={snapshotMetricLoading}
+              />
+
+              {/* Evaluators Header + Carousel */}
+              <Paper 
+                variant="outlined" 
+                sx={{ 
+                  flex: 1, 
+                  minWidth: 0,
+                  bgcolor: "rgb(0, 0, 0, 0.01)",
+                  p: 2
+                }}
+              >
+                {/* Header */}
+                <Box sx={{ mb: 2 }}>
+                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
+                    <Typography variant="h5">
+                      Your Evaluator List
+                    </Typography>
+
+                    <Box sx={{ display: "flex", gap: 1 }}>
+                      <Tooltip title="Add Judge">
+                        <IconButton
+                          color="primary"
+                          sx={{ border: 1, borderColor: "divider" }}
+                          aria-label="add judge"
+                          onClick={() => handleOpenDialog("create")}
+                        >
+                          <AddIcon />
+                        </IconButton>
+                      </Tooltip>
+
+                      <span>
+                        <IconButton
+                          sx={{ border: 1, borderColor: "divider" }}
+                          aria-label="scroll judges left"
+                          onClick={() => handleScrollJudgeCards("left")}
+                          disabled={judges.length === 0}
+                        >
+                          <ArrowBackIosNewIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                      <span>
+                        <IconButton
+                          sx={{ border: 1, borderColor: "divider" }}
+                          aria-label="scroll judges right"
+                          onClick={() => handleScrollJudgeCards("right")}
+                          disabled={judges.length === 0}
+                        >
+                          <ArrowForwardIosIcon fontSize="small" />
+                        </IconButton>
+                      </span>
+                    </Box>
+                  </Box>
+
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                    Accuracy is aggregated from the following evaluators. Test multiple AI evaluators to measure your chatbot&apos;s accuracy! 
+                    <br/>
+                    More reliable evaluators (those that align with your annotations) give you more confidence in the accuracy score.
+                  </Typography>
+                </Box>
+
+                {/* Judge Cards Carousel */}
+                <JudgeCards
+                  judges={judges}
+                  snapshotId={selectedSnapshotId}
+                  judgeJobs={judgeJobs}
+                  scrollContainerRef={judgeCardsRef}
+                  questionsWithoutScores={questionsWithoutScores}
+                  hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
+                  onRunJudge={handleRunJudge}
+                  onEditJudge={(judge) => handleOpenDialog("edit", judge)}
+                  onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
+                  onDeleteJudge={handleDeleteJudge}
+                />
+              </Paper>
+            </Stack>
 
             <Divider sx={{ pt: 2 }}/>
 

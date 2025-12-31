@@ -2,13 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  Alert,
   Box,
   Button,
   Card,
   CardContent,
   CircularProgress,
-  Divider,
   IconButton,
   Menu,
   MenuItem,
@@ -101,14 +99,14 @@ export default function JudgeCard({
   };
 
   return (
-    <Card variant="outlined" sx={{ flex: "0 0 31%" , height: "100%" }}>
+    <Card variant="outlined" sx={{ flex: "0 0 30%" , height: "100%" }}>
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="h6" noWrap sx={{ textOverflow: "ellipsis" }}>
               {judge.name}
             </Typography>
-            <Typography variant="body2" color="text.secondary" noWrap sx={{ textOverflow: "ellipsis" }}>
+            <Typography variant="caption" color="text.secondary" noWrap sx={{ textOverflow: "ellipsis" }}>
               {judge.model_name}
             </Typography>
           </Box>
@@ -120,56 +118,59 @@ export default function JudgeCard({
         </Stack>
 
         <Stack spacing={1} sx={{ mt: 2, flexGrow: 1 }}>
-          {/* Judge Alignment */}
+          {/* Accuracy Statement - same structure for consistent height */}
           <Box>
-            <Typography variant="caption" color="text.secondary">
-              Evaluator Reliability
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+              {accuracy
+                ? "This evaluator rates your target at"
+                : (isRunning ? `Running: ${completedCount}/${totalJobs} questions` : "Run this evaluator to see accuracy")}
             </Typography>
-
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="h4">{alignment ? `${(alignment.f1*100).toFixed(1)}%` : "--"}</Typography>
-              <Tooltip
-                title={
-                  alignment
-                    ? `Measures how well this evaluator's judgments match your annotations, balanced across both accurate and inaccurate responses (macro F1 score). Calculated from ${alignment.sample_count} annotations.`
-                    : "Waiting for judge evaluations"
-                }
-              >
-                <InfoOutlinedIcon fontSize="small" color="action" />
-              </Tooltip>
+            <Stack direction="row" spacing={0.5} alignItems="baseline">
+              <Typography variant="h4" fontWeight={700} color={accuracy ? "primary.main" : "text.disabled"}>
+                {accuracy ? `${(accuracy.accuracy * 100).toFixed(1)}%` : "--%"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                accuracy
+              </Typography>
             </Stack>
-          </Box>
 
-          <Divider />
-
-          <Box>
-            <Typography variant="caption" color="text.secondary">
-              Chatbot Accuracy
-            </Typography>
-            <Stack direction="row" spacing={1} alignItems="center">
-              <Typography variant="h4">{accuracy ? `${(accuracy.accuracy*100).toFixed(1)}%` : "--"}</Typography>
-              <Tooltip
-                title={
-                  accuracy
-                    ? `Evaluator evaluated ${accuracy.accurate_count} / ${accuracy.total_answers} responses as "Accurate".`
-                    : "Waiting for judge evaluations"
-                }
+            {/* Reliability - minimalistic text */}
+            {alignment ? (
+              <Stack
+                direction="row"
+                spacing={0.5}
+                alignItems="center"
+                sx={{
+                  mt: 1,
+                  color: alignment.f1 >= 0.5 ? "success.main" : "error.main"
+                }}
               >
-                <InfoOutlinedIcon fontSize="small" color="action" />
-              </Tooltip>
-            </Stack>
+                <Typography
+                  variant="body2"
+                  sx={{
+                    fontWeight: 500,
+                  }}
+                >
+                  {alignment.f1 >= 0.5 ? "✓" : "✗"} {(alignment.f1 * 100).toFixed(0)}% reliability
+                </Typography>
+                <Tooltip
+                  title={`Measures how well this evaluator's judgments match your annotations (F1 score from ${alignment.sample_count} annotations). ≥50% is considered reliable.`}
+                >
+                  <InfoOutlinedIcon
+                    sx={{
+                      fontSize: 16,
+                      cursor: "help",
+                    }}
+                  />
+                </Tooltip>
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
+                --% reliability
+              </Typography>
+            )}
           </Box>
         </Stack>
-
-        <Alert severity="info" sx={{ mt: 2 }}>
-          {isCompleted
-            ? "This judge has completed."
-            : isRunning
-            ? `Running: ${completedCount}/${totalJobs} questions completed`
-            : !alignment && !accuracy
-            ? "Run this judge to view metrics."
-            : "Metrics are being calculated."}
-        </Alert>
 
         <Button
           variant="contained"

@@ -52,7 +52,7 @@ export default function JudgeCards({
         },
       }}
     >
-      <Stack direction="row" spacing={2} justifyContent="flex-start">
+      <Stack direction="row" spacing={2} justifyContent="flex-start" sx={{ mb: 2}}>
         {judges.map((judge) => (
           <JudgeCard
             key={judge.id}
