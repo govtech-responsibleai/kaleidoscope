@@ -17,6 +17,7 @@ import {
 import { InfoOutlined as InfoOutlinedIcon, MoreVert as MoreVertIcon } from "@mui/icons-material";
 import { JudgeConfig, JudgeAlignment, JudgeAccuracy, JobStatus, QAJob } from "@/lib/types";
 import { metricsApi } from "@/lib/api";
+import { getModelIcon } from "@/lib/modelIcons";
 
 interface JudgeCardProps {
   judge: JudgeConfig;
@@ -106,9 +107,19 @@ export default function JudgeCard({
             <Typography variant="h6" noWrap sx={{ textOverflow: "ellipsis" }}>
               {judge.name}
             </Typography>
-            <Typography variant="caption" color="text.secondary" noWrap sx={{ textOverflow: "ellipsis" }}>
-              {judge.model_name}
-            </Typography>
+            <Stack direction="row" spacing={0.5} alignItems="center">
+              {getModelIcon(judge.model_name) && (
+                <Box
+                  component="img"
+                  src={getModelIcon(judge.model_name)!}
+                  alt=""
+                  sx={{ width: 14, height: 14 }}
+                />
+              )}
+              <Typography variant="caption" color="text.secondary" noWrap sx={{ textOverflow: "ellipsis" }}>
+                {judge.model_name}
+              </Typography>
+            </Stack>
           </Box>
           {!judge.is_baseline && judge.is_editable && (
             <IconButton size="small" onClick={handleMenuOpen}>
