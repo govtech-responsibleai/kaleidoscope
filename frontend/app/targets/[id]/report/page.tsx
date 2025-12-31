@@ -191,6 +191,8 @@ export default function TargetReport() {
   const approvedPersonas = stats.personas.approved || 0;
   const approvedQuestions = stats.questions.approved || 0;
 
+  const cardBorderColor = "rgba(0, 0, 0, 0.23)";
+
   return (
     <Box>
       {/* Header with Download Report Button */}
@@ -211,10 +213,10 @@ export default function TargetReport() {
         {/* Stats Cards (2x2) and Target Details Side by Side */}
         <Box sx={{ display: "flex", gap: 3, mb: 3, flexDirection: { xs: "column", md: "row" } }}>
           {/* Target Details */}
-          <Card variant="outlined" sx={{ flex: { md: "0 0 calc(45% - 24px)" }, height: "300px" }}>
+          <Card variant="outlined" sx={{ flex: { md: "0 0 calc(45% - 24px)" }, minHeight: "fit-content", borderColor: cardBorderColor }}>
             <CardContent>
               <Box sx={{ mb: 2 }}>
-                <Typography variant="h6" fontWeight={600}>
+                <Typography variant="h5" fontWeight={600}>
                   Target Details
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
@@ -261,59 +263,67 @@ export default function TargetReport() {
               flex: { md: "0 0 55%" },
             }}
           >
-            <Card variant="outlined">
-              <CardContent>
-                <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-                  <PersonIcon fontSize="small" sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle2" color="text.secondary">
+            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
+              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                  <PersonIcon sx={{ opacity: 0.5 }}/>
+                  <Typography variant="subtitle1" color="text.secondary">
                     Approved Personas
                   </Typography>
                 </Stack>
-                <Typography variant="h4" fontWeight={600}>
-                  {approvedPersonas}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
+                  <Typography variant="h4" fontWeight={600}>
+                    {approvedPersonas}
+                  </Typography>
+                </Box>
               </CardContent>
             </Card>
 
-            <Card variant="outlined">
-              <CardContent>
-                <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-                  <QuestionMarkIcon fontSize="small" sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle2" color="text.secondary">
+            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
+              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                  <QuestionMarkIcon sx={{ opacity: 0.5 }}/>
+                  <Typography variant="subtitle1" color="text.secondary">
                     Approved Questions
                   </Typography>
                 </Stack>
-                <Typography variant="h4" fontWeight={600}>
-                  {approvedQuestions}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
+                  <Typography variant="h4" fontWeight={600}>
+                    {approvedQuestions}
+                  </Typography>
+                </Box>
               </CardContent>
             </Card>
 
-            <Card variant="outlined">
-              <CardContent>
-                <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-                  <ScreenshotMonitorIcon fontSize="small" sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle2" color="text.secondary">
+            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
+              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                  <ScreenshotMonitorIcon sx={{ opacity: 0.5 }}/>
+                  <Typography variant="subtitle1" color="text.secondary">
                     Snapshots
                   </Typography>
                 </Stack>
-                <Typography variant="h4" fontWeight={600}>
-                  {snapshots.length}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
+                  <Typography variant="h4" fontWeight={600}>
+                    {snapshots.length}
+                  </Typography>
+                </Box>
               </CardContent>
             </Card>
 
-            <Card variant="outlined">
-              <CardContent>
-                <Stack direction="row" spacing={1} sx={{ mb: 1 }}>
-                  <SmartToyIcon fontSize="small" sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle2" color="text.secondary">
+            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
+              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
+                  <SmartToyIcon sx={{ opacity: 0.5 }}/>
+                  <Typography variant="subtitle1" color="text.secondary">
                     Judges
                   </Typography>
                 </Stack>
-                <Typography variant="h4" fontWeight={600}>
-                  {judgeCount}
-                </Typography>
+                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
+                  <Typography variant="h4" fontWeight={600}>
+                    {judgeCount}
+                  </Typography>
+                </Box>
               </CardContent>
             </Card>
           </Box>
@@ -341,7 +351,7 @@ export default function TargetReport() {
             />
 
             {/* Snapshot Details Section */}
-            <Card variant="outlined" sx={{ width: "35%" }}>
+            <Card variant="outlined" sx={{ width: "35%", borderColor: cardBorderColor }}>
               <CardContent>
                 {/* Snapshot Selection Header */}
                 <Stack direction={"row"} gap={2}>

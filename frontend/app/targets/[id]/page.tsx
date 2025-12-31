@@ -119,7 +119,7 @@ export default function TargetOverview() {
               <TextField
                 fullWidth
                 multiline
-                rows={3}
+                rows={5}
                 value={editForm.purpose || ""}
                 onChange={(e) => handleFormChange("purpose", e.target.value)}
                 size="small"
