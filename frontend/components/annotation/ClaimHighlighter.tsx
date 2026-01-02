@@ -1,25 +1,164 @@
 "use client";
 
-import React, { useEffect, useMemo } from "react";
-import { Box, Tooltip, Typography } from "@mui/material";
-import { AnswerClaim, AnswerClaimScore } from "@/lib/types";
+import React, { useMemo } from "react";
+import { Box, Stack, Tooltip, Typography } from "@mui/material";
+import { Warning as WarningIcon } from "@mui/icons-material";
+import { AnswerClaim, AnswerClaimScore, JudgeConfig } from "@/lib/types";
+
+type ClaimStatus = "accurate" | "inaccurate" | "disagree" | "no-data";
+
+// Centralized color configuration for claim highlighting
+const CLAIM_COLORS: Record<ClaimStatus, { baseBg: string; hoverBg: string; textColor: string }> = {
+  accurate: {
+    baseBg: "rgba(99, 199, 125, 0.2)",
+    hoverBg: "rgba(99, 199, 125, 0.7)",
+    textColor: "inherit",
+  },
+  inaccurate: {
+    baseBg: "rgba(255, 99, 99, 0.2)",
+    hoverBg: "rgba(255, 99, 99, 0.7)",
+    textColor: "inherit",
+  },
+  disagree: {
+    baseBg: "rgba(255, 165, 0, 0.2)",
+    hoverBg: "rgba(255, 165, 0, 0.7)",
+    textColor: "inherit",
+  },
+  "no-data": {
+    baseBg: "rgba(0, 0, 0, 0.06)",
+    hoverBg: "rgba(0, 0, 0, 0.12)",
+    textColor: "text.secondary",
+  },
+};
+
+interface ClaimAgreement {
+  status: ClaimStatus;
+  scores: { judge: JudgeConfig; score: AnswerClaimScore }[];
+}
 
 interface ClaimHighlighterProps {
   answerContent: string;
   claims: AnswerClaim[];
+  // Single judge mode (existing)
   claimScores?: AnswerClaimScore[];
+  // Multi-judge mode (new)
+  multiJudgeScores?: Map<number, AnswerClaimScore[]>; // judgeId -> scores
+  judges?: JudgeConfig[];
+  selectedJudgeIds?: number[]; // which judges to consider
+}
+
+// Helper function to determine agreement status for a claim across multiple judges
+function determineClaimAgreement(
+  claimId: number,
+  multiJudgeScores: Map<number, AnswerClaimScore[]>,
+  judges: JudgeConfig[],
+  selectedJudgeIds: number[]
+): ClaimAgreement {
+  const scores: { judge: JudgeConfig; score: AnswerClaimScore }[] = [];
+
+  for (const judgeId of selectedJudgeIds) {
+    const judge = judges.find((j) => j.id === judgeId);
+    if (!judge) continue;
+
+    const judgeScores = multiJudgeScores.get(judgeId) || [];
+    const score = judgeScores.find((s) => s.claim_id === claimId);
+    if (score) {
+      scores.push({ judge, score });
+    }
+  }
+
+  if (scores.length === 0) {
+    return { status: "no-data", scores: [] };
+  }
+
+  const allAccurate = scores.every((s) => s.score.label === true);
+  const allInaccurate = scores.every((s) => s.score.label === false);
+
+  if (allAccurate) {
+    return { status: "accurate", scores };
+  } else if (allInaccurate) {
+    return { status: "inaccurate", scores };
+  } else {
+    return { status: "disagree", scores };
+  }
+}
+
+// Helper to get claim status from a single score
+function getClaimStatus(label: boolean | null): ClaimStatus {
+  if (label === true) return "accurate";
+  if (label === false) return "inaccurate";
+  return "no-data";
+}
+
+// Enhanced tooltip content for multi-judge mode
+function MultiJudgeTooltipContent({
+  agreement,
+}: {
+  agreement: ClaimAgreement;
+}) {
+  if (agreement.scores.length === 0) {
+    return <Typography variant="body2">No judge scores available</Typography>;
+  }
+
+  return (
+    <Stack spacing={1}>
+      {agreement.status === "disagree" && (
+        <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 0.5 }}>
+          <WarningIcon fontSize="small" sx={{ color: "rgb(255, 194, 133)" }} />
+          <Typography variant="body2" fontWeight={600} sx={{ color: "rgb(255, 194, 133)" }}>
+            Disagreement found
+          </Typography>
+        </Stack>
+      )}
+      {agreement.scores.map(({ judge, score }) => (
+        <Box
+          key={judge.id}
+          sx={{
+            p: 1,
+            borderRadius: 1,
+            bgcolor: score.label
+              ? "rgba(99, 199, 125, 0.15)"
+              : "rgba(255, 99, 99, 0.15)",
+            borderLeft: 3,
+            borderColor: score.label ? "success.main" : "error.main",
+          }}
+        >
+          <Typography
+            variant="caption"
+            fontWeight={600}
+            sx={{ color: score.label ? "rgba(144, 238, 144, 1)" : "rgba(255, 182, 182, 1)" }}
+          >
+            {judge.name}: {score.label ? "Accurate" : "Inaccurate"}
+          </Typography>
+          {score.explanation && (
+            <Typography variant="body2" sx={{ mt: 0.5, fontSize: "0.75rem" }}>
+              {score.explanation}
+            </Typography>
+          )}
+        </Box>
+      ))}
+    </Stack>
+  );
 }
 
 export default function ClaimHighlighter({
   answerContent,
   claims,
   claimScores = [],
+  multiJudgeScores,
+  judges = [],
+  selectedJudgeIds,
 }: ClaimHighlighterProps) {
-  // Create a map of claim_id to score for fast lookup
+  // Determine if we're in multi-judge mode
+  const isMultiJudgeMode = multiJudgeScores !== undefined && judges.length > 0;
+
+  // For multi-judge mode, default to all judges if no selection provided
+  const effectiveSelectedJudgeIds = selectedJudgeIds ?? judges.map((j) => j.id);
+
+  // Create a map of claim_id to score for fast lookup (single judge mode)
   const claimScoreMap = useMemo(() => {
     const map = new Map<number, AnswerClaimScore>();
     claimScores.forEach((score) => {
-      // console.log("SCORE", score)
       map.set(score.claim_id, score);
     });
     return map;
@@ -29,7 +168,7 @@ export default function ClaimHighlighter({
   const sortedClaims = useMemo(() => {
     return [...claims]
       .filter((claim) => claim.checkworthy)
-      .sort((a, b) => a.sequence_order - b.sequence_order);
+      .sort((a, b) => (a.sequence_order ?? 0) - (b.sequence_order ?? 0));
   }, [claims]);
 
   // Build segments highlighting claims in the answer
@@ -38,33 +177,35 @@ export default function ClaimHighlighter({
     let cursor = 0;
 
     sortedClaims.forEach((claim) => {
-      const claimScore = claimScoreMap.get(claim.id);
-      const accurate = claimScore ? claimScore.label : null;
+      let status: ClaimStatus;
+      let tooltipContent: React.ReactNode;
 
-      // Determine background color based on score
-        const baseBg =
-          accurate === true
-            ? "rgba(99, 199, 125, 0.2)" // Green for accurate
-            : accurate === false
-            ? "rgba(255, 99, 99, 0.2)" // Red for inaccurate
-            : "rgba(0, 0, 0, 0.06)"; // Gray for pending
-        
-        const hoverBg =
-          accurate === true
-            ? "rgba(99, 199, 125, 0.4)" // Green for accurate
-            : accurate === false
-            ? "rgba(255, 99, 99, 0.4)" // Red for inaccurate
-            : "rgba(0, 0, 0, 0.2)"; // Gray for pending
+      if (isMultiJudgeMode && multiJudgeScores) {
+        // Multi-judge mode: determine agreement across judges
+        const agreement = determineClaimAgreement(
+          claim.id,
+          multiJudgeScores,
+          judges,
+          effectiveSelectedJudgeIds
+        );
+        status = agreement.status;
+        tooltipContent = <MultiJudgeTooltipContent agreement={agreement} />;
+      } else {
+        // Single judge mode
+        const claimScore = claimScoreMap.get(claim.id);
+        const label = claimScore ? claimScore.label : null;
+        status = getClaimStatus(label);
 
-      const textColor = accurate !== null ? "inherit" : "text.secondary";
+        tooltipContent =
+          claimScore?.explanation ||
+          (claimScore
+            ? label
+              ? "Marked accurate by judge"
+              : "Marked inaccurate by judge"
+            : "No judge score yet");
+      }
 
-      const tooltip =
-        claimScore?.explanation ||
-        (claimScore
-          ? accurate
-            ? "Marked accurate by judge"
-            : "Marked inaccurate by judge"
-          : "No judge score yet");
+      const { baseBg, hoverBg, textColor } = CLAIM_COLORS[status];
 
       // Find the claim text in the answer
       const claimText = claim.claim_text;
@@ -86,7 +227,7 @@ export default function ClaimHighlighter({
       result.push(
         <Tooltip
           key={`claim-${claim.id}`}
-          title={tooltip}
+          title={tooltipContent}
           placement="top"
           arrow
           slotProps={{
@@ -94,7 +235,8 @@ export default function ClaimHighlighter({
               sx: {
                 fontSize: "0.8rem",
                 px: 1.5,
-                maxWidth: 420,
+                py: 1,
+                maxWidth: 480,
               },
             },
             arrow: {
@@ -130,7 +272,7 @@ export default function ClaimHighlighter({
     }
 
     return result;
-  }, [answerContent, sortedClaims, claimScoreMap]);
+  }, [answerContent, sortedClaims, claimScoreMap, isMultiJudgeMode, multiJudgeScores, judges, effectiveSelectedJudgeIds]);
 
   // If no claims or no matches, show raw text
   if (segments.length === 0) {

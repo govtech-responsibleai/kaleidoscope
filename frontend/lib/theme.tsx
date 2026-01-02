@@ -1,14 +1,15 @@
 "use client";
 
-import { createTheme } from "@mui/material/styles";
+import { createTheme, alpha } from "@mui/material/styles";
 
 export const theme = createTheme({
   palette: {
     primary: {
-      main: "#1d2766",
+      main: "#1d2766", // rgb(29, 39, 102)
+      light: "#4861b6" // rgb(72, 97, 182)
     },
     secondary: {
-      main: "#dc004e",
+      main: "#dc004e", // rgb(220, 0, 78)
     },
   },
   typography: {
@@ -23,18 +24,28 @@ export const theme = createTheme({
     ].join(","),
   },
   components: {
+    MuiTab: {
+      styleOverrides: {
+        root: {
+          textTransform: "none",
+        },
+      },
+    },
     MuiButton: {
       styleOverrides: {
         root: {
+          borderRadius: 5,
           boxShadow: "none",
           "&:hover": { boxShadow: "none" },
+          textTransform: "none",
+          fontWeight: "bold"
         },
       },
     },
     MuiCard: {
       styleOverrides: {
         root: {
-          borderRadius: 8
+          borderRadius: 5
         },
       },
       variants: [
@@ -42,11 +53,13 @@ export const theme = createTheme({
           props: { variant: "outlined" },
           style: {
             border: "1px solid rgb(180, 180, 180)",
-            borderRadius: 8
+            borderRadius: 5
           },
         },
       ],
     },
+
+    // Form/TextField global styles
     MuiFormControl: {
       styleOverrides: {
         root: {
@@ -79,9 +92,11 @@ export const theme = createTheme({
           "& legend": { display: "none" },
           "& .MuiOutlinedInput-notchedOutline legend": { display: "none" },
           "& .MuiOutlinedInput-notchedOutline": { padding: 0 },
+          borderRadius: 5,
         },
         input: {
-          paddingTop: "5px" 
+          padding: "10px 15px",
+
         },
       },
     },
@@ -93,10 +108,102 @@ export const theme = createTheme({
         },
       },
     },
-    MuiInputBase: {
+    // Dropdown/Select global styles
+    MuiSelect: {
       styleOverrides: {
         root: {
-          order: 2,
+          borderRadius: 5,
+          "&.Mui-focused .MuiOutlinedInput-notchedOutline": {
+            borderColor: "#1d2766",
+            borderWidth: 2,
+          },
+        },
+        select: {
+          borderRadius: 5,
+        },
+      },
+    },
+    MuiMenu: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 5,
+          marginTop: 4,
+        },
+        list: {
+          padding: "8px",
+        },
+      },
+    },
+    MuiMenuItem: {
+      styleOverrides: {
+        root: ({ theme }) => ({
+          borderRadius: 5,
+          margin: "2px 0",
+          padding: "10px 12px",
+          "&:hover": {
+            backgroundColor: alpha(theme.palette.primary.light, 0.05),
+          },
+          "&.Mui-selected": {
+            backgroundColor: alpha(theme.palette.primary.light, 0.1),
+            "&:hover": {
+              backgroundColor: alpha(theme.palette.primary.light, 0.1),
+            },
+          },
+          "&.Mui-focusVisible": {
+            backgroundColor: alpha(theme.palette.primary.light, 0.05),
+          },
+        }),
+      },
+    },
+    MuiAutocomplete: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 5,
+          marginTop: 4, 
+        },
+        listbox: ({ theme }) => ({
+          padding: "8px",
+          "& .MuiAutocomplete-option": {
+            borderRadius: 5,
+            margin: "2px 0",
+            padding: "10px 12px",
+            "&:hover": {
+              backgroundColor: alpha(theme.palette.primary.light, 0.05),
+            },
+            "&[aria-selected='true']": {
+              backgroundColor: alpha(theme.palette.primary.light, 0.1),
+              "&:hover": {
+                backgroundColor: alpha(theme.palette.primary.light, 0.1),
+              },
+            },
+            "&.Mui-focused": {
+              backgroundColor: alpha(theme.palette.primary.light, 0.05),
+            },
+          },
+        }),
+        inputRoot: {
+          borderRadius: 5,
+        },
+      },
+    },
+    MuiPopover: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 5,
+        },
+      },
+    },
+    MuiCheckbox: {
+      styleOverrides: {
+        root: {
+          padding: "0 9px 0 0",
+        },
+      },
+    },
+    MuiListItemText: {
+      styleOverrides: {
+        primary: {
+          fontSize: "0.875rem",
         },
       },
     },

@@ -22,6 +22,7 @@ import {
   JudgeType,
 } from "@/lib/types";
 import { judgeApi } from "@/lib/api";
+import { getModelIcon } from "@/lib/modelIcons";
 
 const resolveTemperatureValue = (value: unknown): number | null => {
   if (typeof value === "number" && !isNaN(value)) {
@@ -286,6 +287,28 @@ export default function CreateJudgeDialog({
             value={modelName}
             onChange={(e) => setModelName(e.target.value)}
             disabled={loading || modelsLoading || availableModels.length === 0}
+            slotProps={{
+              select: {
+                renderValue: (value) => {
+                  const strValue = value as string;
+                  const model = availableModels.find((m) => m.value === strValue);
+                  const icon = getModelIcon(strValue);
+                  return (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                      {icon && (
+                        <Box
+                          component="img"
+                          src={icon}
+                          alt=""
+                          sx={{ width: 16, height: 16 }}
+                        />
+                      )}
+                      {model?.label || strValue}
+                    </Box>
+                  );
+                },
+              },
+            }}
           >
             {availableModels.length === 0 ? (
               <MenuItem value="" disabled>
@@ -295,7 +318,15 @@ export default function CreateJudgeDialog({
               </MenuItem>
             ) : (
               availableModels.map((model) => (
-                <MenuItem key={model.value} value={model.value}>
+                <MenuItem key={model.value} value={model.value} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  {getModelIcon(model.value) && (
+                    <Box
+                      component="img"
+                      src={getModelIcon(model.value)!}
+                      alt=""
+                      sx={{ width: 16, height: 16 }}
+                    />
+                  )}
                   {model.label}
                 </MenuItem>
               ))

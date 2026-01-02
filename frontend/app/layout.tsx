@@ -9,6 +9,9 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "Kaleidoscope - LLM Evaluation Platform",
   description: "Evaluate your LLM applications with ease",
+  icons: {
+    icon: "/icon.png",
+  },
 };
 
 export default function RootLayout({

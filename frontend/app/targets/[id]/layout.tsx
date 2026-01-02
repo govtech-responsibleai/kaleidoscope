@@ -117,17 +117,25 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
 
   return (
     <Box>
-      <Typography variant="h4" component="h1" fontWeight={600} gutterBottom mb={1}>
+      <Typography variant="subtitle2" fontWeight={400} gutterBottom mb={1}>
+        <Box component="span" sx={{ color: "text.secondary" }}>Targets</Box>
+        <Box component="span" sx={{ color: "text.secondary", mx: 2 }}>/</Box>
+        {target.name}
+      </Typography>
+
+      <Box sx={{ my: 4 }}/>
+
+      <Typography variant="h4" fontWeight={600} gutterBottom mb={1}>
         {target.name}
       </Typography>
 
       <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 3, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <Tabs value={activeTab} onChange={handleTabChange}>
-          <Tab label="Overview" value="overview" />
-          <Tab label="Questions" value="questions" />
-          <Tab label="Annotations" value="annotation" />
-          <Tab label="Scoring" value="scoring" />
-          <Tab label="Report" value="report" />
+          <Tab disableRipple label="Overview" value="overview" />
+          <Tab disableRipple label="Questions" value="questions" />
+          <Tab disableRipple label="Annotations" value="annotation" />
+          <Tab disableRipple label="Scoring" value="scoring" />
+          <Tab disableRipple label="Report" value="report" />
         </Tabs>
         {nextStepInfo && (
           <Button

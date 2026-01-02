@@ -132,24 +132,24 @@ export default function SnapshotAccuracyChart({
           .style("left", event.pageX + 10 + "px")
           .style("top", event.pageY - 28 + "px");
 
-        d3.select(event.currentTarget).attr("fill", "#1565c0");
+        d3.select(event.currentTarget).attr("fill", theme.palette.primary.dark);
       })
       .on("mouseout", (event) => {
         tooltip.transition().duration(200).style("opacity", 0);
-        d3.select(event.currentTarget).attr("fill", "#1976d2");
+        d3.select(event.currentTarget).attr("fill", theme.palette.primary.main);
       });
 
     // Cleanup tooltip on component unmount
     return () => {
       tooltip.remove();
     };
-  }, [data, loading]);
+  }, [data, loading, theme]);
 
   return (
-    <Card variant="outlined" sx={{ width: "65%" }}>
+    <Card variant="outlined" sx={{ width: "65%", borderColor: "rgb(0, 0, 0, 0.23)"}}>
       <CardContent>
         <Stack direction="row" alignContent="center" justifyContent="space-between">
-          <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
+          <Typography variant="h5" fontWeight={600} sx={{ mb: 2 }}>
             Target Performance over Snapshots
           </Typography>
         </Stack>

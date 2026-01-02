@@ -1,9 +1,9 @@
 "use client";
 
-import React, { use, useEffect } from "react";
+import React from "react";
 import {
-  Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
   Paper,
@@ -13,21 +13,33 @@ import {
 import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
+  ArrowBack as ArrowBackIcon,
+  ArrowForward as ArrowForwardIcon,
 } from "@mui/icons-material";
-import { QAJob, QuestionResponse, QARecord, QAJobStageEnum } from "@/lib/types";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse } from "@/lib/types";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
 interface QAContentProps {
   question: QuestionResponse | null;
+  persona: PersonaResponse | null;
   qaEntry?: QARecord;
   job: QAJob | null;
+  onPrev: () => void;
+  onNext: () => void;
+  prevDisabled: boolean;
+  nextDisabled: boolean;
 }
 
 export default function QAContent({
   question,
+  persona,
   qaEntry,
   job,
+  onPrev,
+  onNext,
+  prevDisabled,
+  nextDisabled,
 }: QAContentProps) {
   if (!question) {
     return (
@@ -73,35 +85,65 @@ export default function QAContent({
 
   return (
     <Stack spacing={3}>
+      {/* Top bar with question ID, navigation, and baseline evaluation */}
+      <Stack
+        direction="row"
+        spacing={2} 
+        alignItems="center"
+        justifyContent="space-between"
+        sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider" }}
+      >
+        <Typography variant="body2" color="text.secondary">
+          Q{question.id}
+        </Typography>
+
+        <Box sx={{ flexGrow: 1 }} />
+
+        {answerScore ? (
+          <Chip
+            icon={
+              answerScore.overall_label ? (
+                <CheckCircleIcon fontSize="small" />
+              ) : (
+                <CancelIcon fontSize="small" />
+              )
+            }
+            label={`Baseline Evaluation: ${answerScore.overall_label ? "Accurate" : "Inaccurate"}`}
+            color={answerScore.overall_label ? "success" : "error"}
+            size="small"
+          />
+        ) : (
+          <Chip
+            icon={<CircularProgress size={12} />}
+            label="Baseline pending"
+            size="small"
+          />
+        )}
+
+        <Stack direction="row" spacing={1} alignItems="center">
+          <Button
+            startIcon={<ArrowBackIcon fontSize="small" />}
+            onClick={onPrev}
+            disabled={prevDisabled}
+            variant="outlined"
+            size="small"
+            sx={{ "& .MuiButton-startIcon": { margin: "0px", padding: "3px 0" }, minWidth: 0 }}
+          />
+          <Button
+            endIcon={<ArrowForwardIcon fontSize="small" />}
+            onClick={onNext}
+            disabled={nextDisabled}
+            variant="outlined"
+            size="small"
+            sx={{ "& .MuiButton-endIcon": { margin: "0px", padding: "3px 0" }, minWidth: 0 }}
+          />
+        </Stack>
+      </Stack>
+
       <QAJobProgress job={job} />
 
-      <Paper variant="outlined" sx={{ p: 3 }}>
+      <Box sx={{ p: 3 }}>
         <Stack spacing={3}>
-          <Stack direction="row" spacing={1}>
-            {answerScore ? (
-              <Chip
-                icon={
-                  answerScore.overall_label ? (
-                    <CheckCircleIcon fontSize="small" />
-                  ) : (
-                    <CancelIcon fontSize="small" />
-                  )
-                }
-                label={`Baseline: ${
-                  answerScore.overall_label ? "Accurate" : "Inaccurate"
-                }`}
-                color={answerScore.overall_label ? "success" : "error"}
-                size="small"
-              />
-            ) : (
-              <Chip
-                icon={<CircularProgress size={12} />}
-                label="Judge label pending"
-                size="small"
-              />
-            )}
-          </Stack>
-
           <Stack spacing={2}>
             <Box display="flex" justifyContent="flex-end">
               <Box
@@ -117,6 +159,24 @@ export default function QAContent({
                 <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
                   {question.text}
                 </Typography>
+                {/* Question Metadata Chips */}
+                <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1.5 }}>
+                  {persona && (
+                    <Chip label={persona.title} size="small" />
+                  )}
+                  <Chip
+                    label={question.type}
+                    size="small"
+                    color={question.type === "edge" ? "warning" : "default"}
+                    variant={question.type === "edge" ? "filled" : "outlined"}
+                  />
+                  <Chip
+                    label={question.scope === "in_kb" ? "In KB" : "Out KB"}
+                    size="small"
+                    color={question.scope === "in_kb" ? "success" : "info"}
+                    variant="outlined"
+                  />
+                </Box>
               </Box>
             </Box>
 
@@ -148,7 +208,7 @@ export default function QAContent({
             </Box>
           </Stack>
         </Stack>
-      </Paper>
+      </Box>
     </Stack>
   );
 }

@@ -1,29 +1,27 @@
 "use client";
 
+import React from "react";
 import {
-  Typography,
   Box,
   CircularProgress,
   Stack,
+  Typography,
 } from "@mui/material";
-import {
-  Warning as WarningIcon,
-} from "@mui/icons-material";
 import { SnapshotMetric } from "@/lib/types";
 import AccuracyGauge from "@/components/shared/AccuracyGauge";
 
-interface SelectedSnapshotMetricsCardProps {
-  latestSnapshot: SnapshotMetric | null;
+interface AggregatedAccuracyCardProps {
+  snapshotMetric: SnapshotMetric | null;
   loading: boolean;
 }
 
-export default function SelectedSnapshotMetricsCard({
-  latestSnapshot,
+export default function AggregatedAccuracyCard({
+  snapshotMetric,
   loading,
-}: SelectedSnapshotMetricsCardProps) {
+}: AggregatedAccuracyCardProps) {
   if (loading) {
     return (
-      <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+      <Box sx={{ minWidth: 400, p: 2, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
         <Box
           display="flex"
           justifyContent="center"
@@ -36,9 +34,9 @@ export default function SelectedSnapshotMetricsCard({
     );
   }
 
-  if (!latestSnapshot) {
+  if (!snapshotMetric) {
     return (
-      <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+      <Box sx={{ minWidth: 400, p: 2, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
         <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
           Overall Accuracy
         </Typography>
@@ -46,24 +44,24 @@ export default function SelectedSnapshotMetricsCard({
           --%
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-          No snapshots yet
+          Run evaluators to see results
         </Typography>
       </Box>
     );
   }
 
-  const hasReliableJudges = latestSnapshot.has_aligned_judges;
-  const reliableJudgeCount = latestSnapshot.reliable_judge_count;
-  const alignmentRange = latestSnapshot.judge_alignment_range;
+  const hasReliableJudges = snapshotMetric.has_aligned_judges;
+  const reliableJudgeCount = snapshotMetric.reliable_judge_count;
+  const alignmentRange = snapshotMetric.judge_alignment_range;
 
   return (
-    <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+    <Box sx={{ minWidth: 400, p: 2, display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
       <Typography variant="h6" sx={{ mb: 1 }}>
         Overall Accuracy
       </Typography>
 
       <AccuracyGauge
-        value={latestSnapshot.aggregated_accuracy}
+        value={snapshotMetric.aggregated_accuracy}
         size={300}
         label="Aggregated Accuracy Score"
       />
@@ -80,28 +78,9 @@ export default function SelectedSnapshotMetricsCard({
             </Box>
           </Typography>
         ) : (
-          <Box
-            sx={{
-              display: "flex",
-              alignItems: "center",
-              gap: 1,
-              px: 2,
-              py: 1,
-              border: "1px solid",
-              borderColor: "warning.main",
-              borderRadius: 2,
-            }}
-          >
-            <WarningIcon color="warning" fontSize="small" />
-            <Box>
-              <Typography variant="body2" fontWeight={500}>
-                Evaluation to be improved
-              </Typography>
-              <Typography variant="caption" color="text.secondary">
-                No aligned judges found
-              </Typography>
-            </Box>
-          </Box>
+          <Typography variant="body2" color="text.secondary">
+            No reliable evaluators yet
+          </Typography>
         )}
       </Stack>
     </Box>

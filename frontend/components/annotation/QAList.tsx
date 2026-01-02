@@ -16,8 +16,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Answer, QAJob, QuestionResponse, QAMap, JobStatus } from "@/lib/types";
-import { answerApi, questionApi } from "@/lib/api";
+import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse } from "@/lib/types";
+import { answerApi, questionApi, personaApi } from "@/lib/api";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
 import AnnotationForm from "./AnnotationForm";
@@ -40,6 +40,7 @@ export default function QAList({
   setQaMap,
 }: QAListProps) {
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
+  const [personaMap, setPersonaMap] = useState<Record<number, PersonaResponse>>({});
   const [questionsLoading, setQuestionsLoading] = useState(false);
   const [questionError, setQuestionError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
@@ -50,17 +51,27 @@ export default function QAList({
   const [selectionDirty, setSelectionDirty] = useState(false); // Whether there is mismatch between Saved and Draft selections
   const [helperAlertDismissed, setHelperAlertDismissed] = useState(false); // Track if user dismissed helper alert
 
-  // Load questions
+  // Load questions and personas
   useEffect(() => {
     let cancelled = false;
-    const loadQuestions = async () => {
+    const loadQuestionsAndPersonas = async () => {
       setQuestionsLoading(true);
       try {
-        const response = await questionApi.listByTarget(targetId);
+        const [questionsRes, personasRes] = await Promise.all([
+          questionApi.listByTarget(targetId),
+          personaApi.list(targetId),
+        ]);
         if (cancelled) return;
-        const approvedQuestions = response.data.filter((question) => question.status === "approved");
+        const approvedQuestions = questionsRes.data.filter((question: QuestionResponse) => question.status === "approved");
         setApprovedQuestions(approvedQuestions);
         setActiveQuestionId(approvedQuestions[0]?.id ?? null);
+
+        // Build persona map
+        const pMap: Record<number, PersonaResponse> = {};
+        personasRes.data.forEach((persona: PersonaResponse) => {
+          pMap[persona.id] = persona;
+        });
+        setPersonaMap(pMap);
       } catch (err) {
         if (!cancelled) {
           console.error("Failed to load questions:", err);
@@ -73,7 +84,7 @@ export default function QAList({
       }
     };
 
-    loadQuestions();
+    loadQuestionsAndPersonas();
 
     return () => {
       cancelled = true;
@@ -291,6 +302,7 @@ export default function QAList({
   };
 
   const activeQuestion = approvedQuestions.find((q) => q.id === activeQuestionId) || null;
+  const activePersona = activeQuestion ? personaMap[activeQuestion.persona_id] ?? null : null;
   const activeAnswer = activeQuestion
     ? questionAnswerMap[activeQuestion.id] ?? null
     : null;
@@ -343,12 +355,9 @@ export default function QAList({
         alignItems: "stretch",
       }}
     >
-      <Paper
-        variant="outlined"
+      <Box
         sx={{
-          px: 3,
-          py: 2,
-          flexBasis: { md: "30%" },
+          flexBasis: { md: "25%" },
           display: "flex",
           flexDirection: "column",
         }}
@@ -359,7 +368,7 @@ export default function QAList({
           alignItems="center"
           sx={{ mt:1, mb: 1 }}
         >
-          <Typography variant="h6">Questions & Answers</Typography>
+          <Typography variant="h5">Question List</Typography>
           <Tooltip title="Toggle between all answers or selected only">
             <ToggleButtonGroup
               size="small"
@@ -463,32 +472,38 @@ export default function QAList({
             </List>
           )}
         </Box>
+      </Box>
+
+      <Paper
+        variant="outlined"
+        sx={{
+          flexBasis: { md: "52%" },
+          bgcolor: "rgb(0, 0, 0, 0.01)" 
+        }}
+      >
+        <QAContent
+          question={activeQuestion}
+          persona={activePersona}
+          qaEntry={activeEntry}
+          job={activeJob}
+          onPrev={handlePrev}
+          onNext={handleNext}
+          prevDisabled={prevDisabled}
+          nextDisabled={nextDisabled}
+        />
       </Paper>
 
       <Box
         sx={{
-          flexBasis: { md: "70%" },
-          flexGrow: 1,
-          minWidth: 0,
+          flexBasis: { md: "23%" },
         }}
       >
-        <Stack spacing={3}>
-          <AnnotationForm
-            answer={activeAnswer}
-            onPrev={handlePrev}
-            onNext={handleNext}
-            prevDisabled={prevDisabled}
-            nextDisabled={nextDisabled}
-            onAnnotationSaved={handleAnnotationSaved}
-            showHelperAlert={showHelperAlert}
-            onDismissHelperAlert={() => setHelperAlertDismissed(true)}
-          />
-          <QAContent
-            question={activeQuestion}
-            qaEntry={activeEntry}
-            job={activeJob}
-          />
-        </Stack>
+        <AnnotationForm
+          answer={activeAnswer}
+          onAnnotationSaved={handleAnnotationSaved}
+          showHelperAlert={showHelperAlert}
+          onDismissHelperAlert={() => setHelperAlertDismissed(true)}
+        />
       </Box>
     </Box>
   );

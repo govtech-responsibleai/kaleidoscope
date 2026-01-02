@@ -1,0 +1,127 @@
+"use client";
+
+import { Box, Typography, useTheme } from "@mui/material";
+
+interface AccuracyGaugeProps {
+  value: number; // 0 to 1
+  size?: number;
+  label?: string;
+}
+
+export default function AccuracyGauge({
+  value,
+  size = 180,
+  label = "Aggregated Accuracy",
+}: AccuracyGaugeProps) {
+  const theme = useTheme();
+  const percentage = (value * 100).toFixed(1);
+
+  // SVG parameters for semi-circle gauge
+  const strokeWidth = 20;
+  const radius = (size - strokeWidth) / 2;
+  const circumference = Math.PI * radius; // Half circle
+  const progress = value * circumference;
+
+  // Center point
+  const cy = size / 2 + 10; // Slight offset down for semi-circle
+
+  // Color based on value
+  const getColor = (val: number) => {
+    if (val >= 0.7) return theme.palette.success.main;
+    if (val >= 0.5) return theme.palette.warning.main;
+    return theme.palette.error.main;
+  };
+
+  const gaugeColor = getColor(value);
+
+  return (
+    <Box
+      sx={{
+        position: "relative",
+        width: size,
+        height: size * 0.65,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <svg
+        width={size}
+        height={size * 0.6}
+        style={{ overflow: "visible" }}
+      >
+        {/* Background arc */}
+        <path
+          d={`M ${strokeWidth / 2} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
+          fill="none"
+          stroke={theme.palette.grey[200]}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+        />
+
+        {/* Progress arc */}
+        <path
+          d={`M ${strokeWidth / 2} ${cy} A ${radius} ${radius} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
+          fill="none"
+          stroke={gaugeColor}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference - progress}
+          style={{
+            transition: "stroke-dashoffset 0.5s ease-in-out",
+          }}
+        />
+
+        {/* Gradient overlay for depth effect */}
+        <defs>
+          <linearGradient id="gaugeGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stopColor={gaugeColor} stopOpacity="0.8" />
+            <stop offset="100%" stopColor={gaugeColor} stopOpacity="1" />
+          </linearGradient>
+        </defs>
+      </svg>
+
+      {/* Percentage text in center */}
+      <Box
+        sx={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -20%)",
+          textAlign: "center",
+        }}
+      >
+        <Typography
+          variant="h2"
+          fontWeight={700}
+          sx={{ color: gaugeColor, lineHeight: 1 }}
+        >
+          {percentage}
+          <Typography
+            component="span"
+            variant="h5"
+            fontWeight={700}
+            sx={{ color: gaugeColor }}
+          >
+            %
+          </Typography>
+        </Typography>
+      </Box>
+
+      {/* Label below */}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        sx={{
+          position: "absolute",
+          bottom: 0,
+          textAlign: "center",
+        }}
+      >
+        {label}
+      </Typography>
+    </Box>
+  );
+}

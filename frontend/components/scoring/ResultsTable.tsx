@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import {
   Alert,
   Box,
@@ -9,11 +9,9 @@ import {
   Chip,
   ChipProps,
   Collapse,
-  FormControlLabel,
-  FormGroup,
+  Divider,
   IconButton,
   Paper,
-  Popover,
   Stack,
   Table,
   TableBody,
@@ -32,10 +30,12 @@ import {
   Download as DownloadIcon,
   KeyboardArrowDown as KeyboardArrowDownIcon,
   KeyboardArrowUp as KeyboardArrowUpIcon,
-  FilterList as FilterListIcon,
 } from "@mui/icons-material";
-import { ResultRow, JudgeConfig } from "@/lib/types";
-import { metricsApi } from "@/lib/api";
+import { ResultRow, JudgeConfig, QuestionResponse, PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
+import { questionApi, personaApi } from "@/lib/api";
+import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
+import { QAFilter, JudgeFilter } from "./filters";
+import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 
 interface ResultsTableProps {
   results: ResultRow[];
@@ -50,12 +50,13 @@ const extractReliableLabels = (metadata: string[]) => {
     if (lower.includes("excluded")) {
       return;
     }
-    if (lower.includes("accurate")) {
-      labels.push(true);
-      return;
-    }
+    // Check "inaccurate" BEFORE "accurate" since "inaccurate" contains "accurate"
     if (lower.includes("inaccurate")) {
       labels.push(false);
+      return;
+    }
+    if (lower.includes("accurate")) {
+      labels.push(true);
     }
   });
   return labels;
@@ -107,11 +108,18 @@ export default function ResultsTable({
 }: ResultsTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>(["accurate", "inaccurate"]);
   const [showDisagreementsOnly, setShowDisagreementsOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
-  const [labelPopoverAnchor, setLabelPopoverAnchor] = useState<HTMLElement | null>(null);
   const [selectedJudges, setSelectedJudges] = useState<Set<number>>(new Set());
+
+  // Question filter state
+  const [questionsMap, setQuestionsMap] = useState<Map<number, QuestionResponse>>(new Map());
+  const [personasMap, setPersonasMap] = useState<Map<number, PersonaResponse>>(new Map());
+  const [selectedTypes, setSelectedTypes] = useState<QuestionType[]>([QuestionType.TYPICAL, QuestionType.EDGE]);
+  const [selectedScopes, setSelectedScopes] = useState<QuestionScope[]>([QuestionScope.IN_KB, QuestionScope.OUT_KB]);
+  const [selectedPersonaIds, setSelectedPersonaIds] = useState<number[]>([]);
 
   const rowsPerPage = 10;
 
@@ -127,23 +135,105 @@ export default function ResultsTable({
     });
   };
 
-  // Filter results for disagreements
+  // Fetch questions and personas for filtering
+  useEffect(() => {
+    const fetchQuestionsAndPersonas = async () => {
+      if (results.length === 0) return;
+
+      const uniqueQuestionIds = [...new Set(results.map((r) => r.question_id))];
+
+      try {
+        // Fetch all questions
+        const questionPromises = uniqueQuestionIds.map((id) => questionApi.get(id));
+        const questionResponses = await Promise.all(questionPromises);
+
+        const newQuestionsMap = new Map<number, QuestionResponse>();
+        const personaIdsToFetch = new Set<number>();
+
+        questionResponses.forEach((res) => {
+          newQuestionsMap.set(res.data.id, res.data);
+          personaIdsToFetch.add(res.data.persona_id);
+        });
+
+        setQuestionsMap(newQuestionsMap);
+
+        // Fetch all personas
+        const personaPromises = [...personaIdsToFetch].map((id) => personaApi.get(id));
+        const personaResponses = await Promise.all(personaPromises);
+
+        const newPersonasMap = new Map<number, PersonaResponse>();
+        personaResponses.forEach((res) => {
+          newPersonasMap.set(res.data.id, res.data);
+        });
+
+        setPersonasMap(newPersonasMap);
+
+        // Initialize selectedPersonaIds with all personas
+        setSelectedPersonaIds([...personaIdsToFetch]);
+      } catch (err) {
+        console.error("Failed to fetch questions/personas:", err);
+      }
+    };
+
+    fetchQuestionsAndPersonas();
+  }, [results]);
+
+  // Filter results based on selected filters
   const filteredResults = useMemo(() => {
-    if (!showDisagreementsOnly) {
-      return results;
+    let filtered = results;
+
+    // Filter by question type, scope, and persona
+    if (questionsMap.size > 0) {
+      filtered = filtered.filter((result) => {
+        const question = questionsMap.get(result.question_id);
+        if (!question) return true; // Keep if question not loaded yet
+
+        const typeMatch = selectedTypes.includes(question.type);
+        const scopeMatch = selectedScopes.includes(question.scope);
+        const personaMatch = selectedPersonaIds.length === 0 || selectedPersonaIds.includes(question.persona_id);
+
+        return typeMatch && scopeMatch && personaMatch;
+      });
     }
 
-    return results.filter((result) => {
-      const metadata = result.aggregated_accuracy?.metadata ?? [];
-      const labels = extractReliableLabels(metadata);
-      const unique = new Set(labels);
-      return unique.size > 1;
-    });
-  }, [results, showDisagreementsOnly]);
+    // Filter by label
+    if (selectedLabels.length < 2) {
+      filtered = filtered.filter((result) => {
+        const metadata = result.aggregated_accuracy?.metadata ?? [];
+        const labels = extractReliableLabels(metadata);
+        const inaccurateCount = labels.filter((l) => l === false).length;
+        const accurateCount = labels.filter((l) => l === true).length;
+
+        if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) {
+          return inaccurateCount > accurateCount;
+        } else if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) {
+          return accurateCount > inaccurateCount;
+        }
+        return true;
+      });
+    }
+
+    // Filter for disagreements only
+    if (showDisagreementsOnly) {
+      filtered = filtered.filter((result) => {
+        const metadata = result.aggregated_accuracy?.metadata ?? [];
+        const labels = extractReliableLabels(metadata);
+        const unique = new Set(labels);
+        return unique.size > 1;
+      });
+    }
+
+    return filtered;
+  }, [results, selectedLabels, showDisagreementsOnly, questionsMap, selectedTypes, selectedScopes, selectedPersonaIds]);
 
   const paginatedResults = useMemo(() => {
     return filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
   }, [filteredResults, page]);
+
+  const labelFilterOptions: FilterOption<string>[] = useMemo(() => [
+    { value: "accurate", label: "Accurate" },
+    { value: "inaccurate", label: "Inaccurate" },
+  ], []);
 
   // Extract all evaluators and determine which are reliable based on metadata
   const { reliableJudges, excludedJudges } = useMemo(() => {
@@ -190,17 +280,84 @@ export default function ResultsTable({
     setSelectedJudges(new Set(reliableJudges.map((j) => j.id)));
   }, [reliableJudges]);
 
-  const handleExport = async () => {
+  const handleExport = () => {
     setExporting(true);
     try {
-      const response = await metricsApi.exportCSV(snapshotId);
+      // Get selected judge names for columns
+      const selectedJudgeNames = reliableJudges
+        .filter((judge) => selectedJudges.has(judge.id))
+        .map((judge) => judge.name);
+
+      // CSV header
+      const headers = [
+        "Question ID",
+        "Question",
+        "Answer ID",
+        "Answer",
+        "Aggregated Label",
+        ...selectedJudgeNames,
+      ];
+
+      // CSV rows from filtered results
+      const rows = filteredResults.map((result) => {
+        const metadata = result.aggregated_accuracy?.metadata ?? [];
+        const evaluatorLabels = parseEvaluatorData(metadata);
+        const evaluatorMap = new Map(evaluatorLabels.map((e) => [e.name, e.label]));
+
+        // Calculate aggregated label based on selected judges
+        const selectedLabelsForRow: boolean[] = [];
+        reliableJudges.forEach((judge) => {
+          if (selectedJudges.has(judge.id)) {
+            const label = evaluatorMap.get(judge.name);
+            if (label !== null && label !== undefined) {
+              selectedLabelsForRow.push(label);
+            }
+          }
+        });
+
+        let aggregatedLabel = "No data";
+        if (selectedLabelsForRow.length > 0) {
+          const accurateCount = selectedLabelsForRow.filter((l) => l === true).length;
+          const inaccurateCount = selectedLabelsForRow.filter((l) => l === false).length;
+          if (accurateCount > inaccurateCount) {
+            aggregatedLabel = "Accurate";
+          } else if (inaccurateCount > accurateCount) {
+            aggregatedLabel = "Inaccurate";
+          } else {
+            aggregatedLabel = "Tie";
+          }
+        }
+
+        // Get individual judge labels
+        const judgeLabels = selectedJudgeNames.map((name) => {
+          const label = evaluatorMap.get(name);
+          if (label === true) return "Accurate";
+          if (label === false) return "Inaccurate";
+          return "";
+        });
+
+        return [
+          result.question_id,
+          `"${result.question_text.replace(/"/g, '""')}"`,
+          result.answer_id,
+          `"${result.answer_content.replace(/"/g, '""')}"`,
+          aggregatedLabel,
+          ...judgeLabels,
+        ];
+      });
+
+      // Combine headers and rows
+      const csvContent = [
+        headers.join(","),
+        ...rows.map((row) => row.join(",")),
+      ].join("\n");
 
       // Create download link
-      const blob = new Blob([response.data], { type: "text/csv" });
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.download = `snapshot_${snapshotId}_aggregated_results.csv`;
+      link.download = `snapshot_${snapshotId}_filtered_results.csv`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -212,25 +369,64 @@ export default function ResultsTable({
       setExporting(false);
     }
   };
-  
+
   return (
     <Box>
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
         <Typography variant="h5">All Questions & Answers</Typography>
-        <FormControlLabel
-          control={
-            <Checkbox
-              checked={showDisagreementsOnly}
-              onChange={(event) => {
-                setPage(0);
-                setShowDisagreementsOnly(event.target.checked);
-              }}
-            />
-          }
-          label="Show only disagreements"
-        />
 
         <Box sx={{ flexGrow: 1 }} />
+
+        <QAFilter
+          selectedTypes={selectedTypes}
+          selectedScopes={selectedScopes}
+          selectedPersonaIds={selectedPersonaIds}
+          personas={[...personasMap.values()]}
+          onTypesChange={(types) => {
+            setSelectedTypes(types);
+            setPage(0);
+          }}
+          onScopesChange={(scopes) => {
+            setSelectedScopes(scopes);
+            setPage(0);
+          }}
+          onPersonaIdsChange={(ids) => {
+            setSelectedPersonaIds(ids);
+            setPage(0);
+          }}
+        />
+
+        <JudgeFilter
+          reliableJudges={reliableJudges}
+          selectedJudgeIds={selectedJudges}
+          onSelectionChange={setSelectedJudges}
+        />
+
+        <Button
+          variant="outlined"
+          size="small"
+          color="inherit"
+          disableRipple
+          sx={{ 
+            pr: 1.5, 
+            height: "40px", 
+            fontWeight: 400, 
+            borderColor: "rgba(0, 0, 0, 0.2)"
+          }}
+        >
+          <Checkbox
+            size="small"
+            checked={showDisagreementsOnly}
+            onChange={(event) => {
+              setPage(0);
+              setShowDisagreementsOnly(event.target.checked);
+            }}
+
+          />
+          Show only disagreements
+        </Button>
+        
+        <Divider orientation="vertical" flexItem />
 
         <Button
           variant="contained"
@@ -241,6 +437,7 @@ export default function ResultsTable({
         >
           {exporting ? "Exporting..." : "Export CSV"}
         </Button>
+
       </Stack>
 
       {excludedJudges.length > 0 && (
@@ -254,27 +451,24 @@ export default function ResultsTable({
 
           <TableHead>
             <TableRow>
-              <TableCell sx={{ width: "50px" }} />
+              <TableCell sx={{ width: "5%" }} />
               <TableCell sx={{ width: "35%" }}>Question</TableCell>
               <TableCell sx={{ width: "35%" }}>Answer</TableCell>
               <TableCell sx={{ width: "100px" }}>
-                <Box
-                  sx={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 0.5,
-                    cursor: "pointer",
-                    "&:hover": { opacity: 0.7 },
+                <TableHeaderFilter
+                  label="Label"
+                  options={labelFilterOptions}
+                  value={selectedLabels}
+                  onChange={(labels) => {
+                    setSelectedLabels(labels);
+                    setPage(0);
                   }}
-                  onClick={(event) => setLabelPopoverAnchor(event.currentTarget)}
-                >
-                  <Typography variant="body2" fontWeight={600}>
-                    Label
-                  </Typography>
-                  <FilterListIcon fontSize="small" />
-                </Box>
+                  allSelectedLabel="All Labels"
+                />
               </TableCell>
-              {reliableJudges.map((judge) => (
+              {reliableJudges
+                .filter((judge) => selectedJudges.has(judge.id))
+                .map((judge) => (
                 <TableCell
                   key={judge.id}
                   sx={{
@@ -349,8 +543,6 @@ export default function ResultsTable({
                 }
               }
 
-              const isQuestionTruncated = result.question_text.length > 160;
-              const isAnswerTruncated = result.answer_content.length > 160;
               const isExpanded = expandedRows.has(result.answer_id);
 
               return (
@@ -389,7 +581,9 @@ export default function ResultsTable({
                       </Stack>
                     </TableCell>
 
-                    {reliableJudges.map((judge) => {
+                    {reliableJudges
+                      .filter((judge) => selectedJudges.has(judge.id))
+                      .map((judge) => {
                       const label = evaluatorMap.get(judge.name);
 
                       return (
@@ -409,28 +603,13 @@ export default function ResultsTable({
                   </TableRow>
 
                   <TableRow>
-                    <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={4 + reliableJudges.length}>
+                    <TableCell style={{ padding: 0 }} colSpan={4 + selectedJudges.size}>
                       <Collapse in={isExpanded} timeout="auto" unmountOnExit>
-                        <Box sx={{ py: 2, px: 1 }}>
-                          <Stack spacing={2}>
-                            <Box>
-                              <Typography variant="caption" fontWeight={600} color="text.secondary">
-                                Full Question:
-                              </Typography>
-                              <Typography variant="body2" sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}>
-                                {result.question_text}
-                              </Typography>
-                            </Box>
-                            <Box>
-                              <Typography variant="caption" fontWeight={600} color="text.secondary">
-                                Full Answer:
-                              </Typography>
-                              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}>
-                                {result.answer_content}
-                              </Typography>
-                            </Box>
-                          </Stack>
-                        </Box>
+                        <ResultsTableExpandedRow
+                          result={result}
+                          reliableJudges={reliableJudges}
+                          selectedJudgeIds={Array.from(selectedJudges)}
+                        />
                       </Collapse>
                     </TableCell>
                   </TableRow>
@@ -449,47 +628,6 @@ export default function ResultsTable({
         page={page}
         onPageChange={(_event, newPage) => setPage(newPage)}
       />
-
-      {/* Label calculation popover */}
-      <Popover
-        open={Boolean(labelPopoverAnchor)}
-        anchorEl={labelPopoverAnchor}
-        onClose={() => setLabelPopoverAnchor(null)}
-        anchorOrigin={{
-          vertical: "bottom",
-          horizontal: "left",
-        }}
-      >
-        <Box sx={{ p: 2 }}>
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Select evaluators for majority vote:
-          </Typography>
-          <FormGroup>
-            {reliableJudges.map((judge) => (
-              <FormControlLabel
-                key={judge.id}
-                control={
-                  <Checkbox
-                    checked={selectedJudges.has(judge.id)}
-                    onChange={(event) => {
-                      setSelectedJudges((prev) => {
-                        const next = new Set(prev);
-                        if (event.target.checked) {
-                          next.add(judge.id);
-                        } else {
-                          next.delete(judge.id);
-                        }
-                        return next;
-                      });
-                    }}
-                  />
-                }
-                label={judge.name}
-              />
-            ))}
-          </FormGroup>
-        </Box>
-      </Popover>
     </Box>
   );
 }

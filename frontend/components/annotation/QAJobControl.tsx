@@ -10,17 +10,14 @@ import React, {
 import {
   Alert,
   Box,
+  Button,
   Chip,
   CircularProgress,
-  IconButton,
   Stack,
-  Tooltip,
-  Typography,
 } from "@mui/material";
 import {
   PlayArrow as PlayArrowIcon,
   Pause as PauseIcon,
-  Update as UpdateIcon,
 } from "@mui/icons-material";
 import {
   Answer,
@@ -530,7 +527,7 @@ export default function QAJobControl({
 
       return (
         <Chip
-          icon={<UpdateIcon />}
+          icon={<CircularProgress size={14} />}
           label={`${getStageLabel(dominantStage)} • ${completedCount}/${totalJobs}`}
           color="warning"
           size="small"
@@ -564,7 +561,6 @@ export default function QAJobControl({
     if (pausedCount > 0) {
       return (
         <Chip
-          icon={<PauseIcon />}
           label={`Paused: ${completedCount}/${totalJobs}`}
           color="default"
           size="small"
@@ -599,21 +595,23 @@ export default function QAJobControl({
     return "start";
   })();
 
-  const controlTooltip = (() => {
+  const controlButtonText = (() => {
     switch (controlState) {
       case "start":
-        return "Generate chatbot answers and evaluate";
+        // If there are already completed jobs but new questions found, show different text
+        if (completedCount > 0 && questionsWithoutAnswers.length > 0) {
+          return "Evaluate New Questions";
+        }
+        return "Evaluate All Questions";
       case "pause":
-        return "Pause judge evaluation";
+        return "Pause Evaluation";
       case "resume":
-        return "Resume judge evaluation";
+        return "Resume Evaluation";
       default:
-        return "Select a snapshot to control scoring";
+        return "Select a Snapshot";
     }
   })();
 
-  const controlIcon = controlState === "pause" ? <PauseIcon /> : <PlayArrowIcon />;
-  const controlColor = controlState === "disabled" ? "default" : "primary";
   const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && questionsWithoutAnswers.length === 0;
 
   // Functions to start, pause, and resume the QA jobs
@@ -711,42 +709,32 @@ export default function QAJobControl({
     }
   };
 
-  const showHelperAlert = totalJobs === 0 && snapshotId && baselineJudgeId && !loadingInitialData;
-
   return (
     <Box sx={{ mb: 2 }}>
-      {showHelperAlert && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          Click the play button to generate chatbot answers for your questions
-        </Alert>
-      )}
       <Stack direction="row" spacing={2} alignItems="center">
-        <Typography variant="body2" fontWeight={600}>
-          Scoring status:
-        </Typography>
+        <Button
+          variant="outlined"
+          onClick={handleControlClick}
+          disabled={
+            controlState === "disabled" ||
+            jobInAction ||
+            loadingInitialData ||
+            isScoringComplete
+          }
+          startIcon={
+            jobInAction ? (
+              <CircularProgress size={16} />
+            ) : controlState === "pause" ? (
+              <PauseIcon />
+            ) : (
+              <PlayArrowIcon />
+            )
+          }
+        >
+          {controlButtonText}
+        </Button>
 
         {getStatusChip()}
-
-        <Tooltip title={controlTooltip} placement="top">
-          <span>
-            <IconButton
-              size="small"
-              color={controlColor}
-              onClick={handleControlClick}
-              disabled={
-                controlState === "disabled" ||
-                jobInAction ||
-                loadingInitialData ||
-                isScoringComplete
-              }
-              aria-label={controlTooltip}
-              sx = {{border:1}}
-            >
-              {jobInAction ? <CircularProgress size={18} /> : controlIcon}
-            </IconButton>
-          </span>
-        </Tooltip>
-
       </Stack>
     </Box>
   );
