@@ -730,6 +730,39 @@ alembic upgrade head
 alembic downgrade -1
 ```
 
+## Airbase Deployment
+
+### Prerequisites
+- [Airbase CLI](https://console.v2.airbase.sg/docs/get-started/installation) installed and configured
+
+### Setup
+
+1. Build and deploy:
+```bash
+export TEAM_HANDLE=<your-team-handle>
+export API_PROJECT_HANDLE=<your-project-handle>
+export FE_PROJECT_HANDLE=<your-project-handle>
+
+# Build the Docker image
+docker build --platform linux/amd64 -f Dockerfile-airbase -t airbase-kaleidoscope-api .
+
+# Deploy to Airbase
+airbase container deploy \
+--project $TEAM_HANDLE/$API_PROJECT_HANDLE \
+--image airbase-kaleidoscope-api 
+```
+
+2. Create `.env.default` with your secrets (same variables as `.env`):
+```env
+DATABASE_URL=<your-database-url>
+GEMINI_API_KEY=<your-api-key>
+# ... other secrets from .env
+```
+
+To get `DATABASE_URL`: Login via TechPass to [dbslicer](https://dbslicer.app.tc1.airbase.sg) and copy your database connection strings (e.g. `DATABASE_URL`, `DATABASE_HOST`, etc.).
+
+For help, join the `#airbase-v2` Slack channel.
+
 ## Next Steps
 
 - [x] Implement persona generation service logic
