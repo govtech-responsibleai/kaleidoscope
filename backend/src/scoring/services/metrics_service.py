@@ -257,7 +257,7 @@ class MetricsService:
             for score in answer_scores:
                 judge_name = judge_map.get(score.judge_id, "Unknown")
                 reliability = reliability_map.get(score.judge_id, 0.0)
-                if reliability > 0.5:
+                if reliability >= 0.5:
                     reliable_scores.append(score)
                     metadata.append(f"- {judge_name}: {_format_label(score.overall_label)}")
                 else:
@@ -377,7 +377,7 @@ class MetricsService:
                     "min": 0.50,
                     "max": 0.85
                 },
-                "has_aligned_judges": True,         # any F1 > 0.5
+                "has_aligned_judges": True,         # any F1 >= 0.5
                 "reliable_judge_count": 3
             }
 
