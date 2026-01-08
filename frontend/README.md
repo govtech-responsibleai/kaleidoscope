@@ -50,7 +50,9 @@ npm install
 Create a `.env.local` file in the root directory:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+NEXT_PUBLIC_API_DOMAIN=http://localhost:8000
+NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_DOMAIN}/api/v1
+
 ```
 
 ### 3. Start Development Server
@@ -505,7 +507,7 @@ npm run lint         # Run ESLint
 
 1. Create a `.env.local` file in the root directory:
 ```env
-NEXT_PUBLIC_API_URL=<your-public-api-url>
+NEXT_PUBLIC_API_DOMAIN=<your-public-api-url>
 ```
 
 2. Build and deploy:
@@ -523,7 +525,7 @@ airbase container deploy \
 --image airbase-kaleidoscope-frontend 
 ```
 
-To switch back to local development, set `NEXT_PUBLIC_API_URL` back to `http://localhost:8000/api/v1`.
+To switch back to local development, set `NEXT_PUBLIC_API_DOMAIN` back to `http://localhost:8000`.
 
 ### Notes
 - `middleware.ts` configures CSP (Content Security Policy) headers for Next.js. 
