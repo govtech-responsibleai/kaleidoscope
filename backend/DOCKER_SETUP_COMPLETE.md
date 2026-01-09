@@ -38,15 +38,18 @@
 ```bash
 # 1. Set up environment
 cp .env.example .env
-# Edit .env: Add your OPENAI_API_KEY
+# Edit .env: Add your API keys + JWT_SECRET_KEY (see README.md for auth setup)
 
 # 2. Start services
 docker-compose up -d
 
-# 3. Check status
+# 3. Create a user (after services are running)
+docker-compose exec api python scripts/create_user.py <username> <password>
+
+# 4. Check status
 docker-compose ps
 
-# 4. View logs
+# 5. View logs
 docker-compose logs -f api
 ```
 

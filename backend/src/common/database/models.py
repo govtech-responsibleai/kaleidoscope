@@ -69,6 +69,22 @@ class JudgeTypeEnum(enum.Enum):
     response_level = "response_level"  # Evaluates entire response holistically
 
 
+##### AUTH #####
+
+class User(Base):
+    """User for authentication."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}')>"
+
+
 ##### GENERAL #####
 
 class Target(Base):

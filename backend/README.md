@@ -27,6 +27,60 @@ src/
     └── services/              # Business logic
 ```
 
+## Authentication
+
+The API uses JWT (JSON Web Token) authentication:
+
+1. User logs in with username/password → receives a token
+2. Token is sent with every request in the `Authorization: Bearer <token>` header
+3. Server validates the token using `JWT_SECRET_KEY`
+4. Token expires after 3 days → user must log in again
+
+All endpoints (except `/auth/login`, `/health`, `/docs`) require a valid token.
+
+### User Management
+
+Only developers with the `ADMIN_API_KEY` can create users via the `/auth/admin/create-user` endpoint. This is separate from user authentication — regular users cannot create other users.
+
+| Key | Purpose |
+|-----|---------|
+| `JWT_SECRET_KEY` | Signs and validates user tokens (never leaves server) |
+| `ADMIN_API_KEY` | Authorizes user creation via API (sent over the network in `X-Admin-Key` header) |
+
+### Setup
+
+1. **Generate secrets** (developers only, pre-deployment):
+```bash
+python scripts/generate_secret.py  # Run twice, once for each key
+# Add to .env:
+# JWT_SECRET_KEY=<generated-key>
+# ADMIN_API_KEY=<another-generated-key>
+```
+
+2. **Create users** (developers only):
+```bash
+curl -X POST https://your-api/api/v1/auth/admin/create-user \
+  -H "X-Admin-Key: <your-admin-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "alice", "password": "pass123"}'
+```
+
+### Using the API
+
+```bash
+# 1. Login to get token
+curl -sX POST http://localhost:8000/api/v1/auth/login \
+  -d "username=<user>&password=<pass>"
+
+# 2. Use token in requests
+curl http://localhost:8000/api/v1/targets \
+  -H "Authorization: Bearer <token>"
+```
+
+Tokens expire after 3 days.
+
+---
+
 ## Setup
 
 ### Option 1: Docker (Recommended)
