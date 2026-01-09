@@ -56,6 +56,45 @@ const api = axios.create({
   },
 });
 
+// Add auth token to all requests
+api.interceptors.request.use((config) => {
+  const token = typeof window !== "undefined" ? localStorage.getItem("token") : null;
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+// Auth endpoints
+export const authApi = {
+  login: async (username: string, password: string) => {
+    const formData = new URLSearchParams();
+    formData.append("username", username);
+    formData.append("password", password);
+    const response = await api.post<{ access_token: string; token_type: string }>(
+      "/auth/login",
+      formData,
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+    );
+    localStorage.setItem("token", response.data.access_token);
+    localStorage.setItem("username", username);
+    return response.data;
+  },
+
+  logout: () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+  },
+
+  isLoggedIn: () => {
+    return typeof window !== "undefined" && !!localStorage.getItem("token");
+  },
+
+  getUsername: () => {
+    return typeof window !== "undefined" ? localStorage.getItem("username") : null;
+  },
+};
+
 // Target endpoints
 export const targetApi = {
   create: (data: TargetCreate) =>
