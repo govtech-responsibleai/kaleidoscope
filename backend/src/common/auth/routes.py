@@ -24,6 +24,7 @@ class CreateUserRequest(BaseModel):
     """Request model for creating a user."""
     username: str
     password: str
+    is_admin: bool = False
 
 
 class CreateUserResponse(BaseModel):
@@ -89,9 +90,9 @@ def create_user(
             detail="Username already exists"
         )
 
-    user = UserRepository.create(db, request.username, hash_password(request.password))
+    user = UserRepository.create(db, request.username, hash_password(request.password), request.is_admin)
     return CreateUserResponse(
-        message=f"User '{user.username}' created successfully",
+        message=f"User '{user.username}' created successfully{' (admin)' if request.is_admin else ''}",
         username=user.username
     )
 

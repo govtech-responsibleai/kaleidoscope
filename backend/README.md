@@ -47,6 +47,14 @@ Only developers with the `ADMIN_API_KEY` can create users via the `/auth/admin/c
 | `JWT_SECRET_KEY` | Signs and validates user tokens (never leaves server) |
 | `ADMIN_API_KEY` | Authorizes user creation via API (sent over the network in `X-Admin-Key` header) |
 
+Data is automatically scoped by user:
+
+| User Type | Targets | Judges |
+|-----------|---------|--------|
+| **Admin** (`is_admin=true`) | Sees all targets | Sees all judges |
+| **Regular User** | Only their own targets | Baseline judges + user's custom judges |
+
+
 ### Setup
 
 1. **Generate secrets** (developers only, pre-deployment):
@@ -62,7 +70,16 @@ python scripts/generate_secret.py  # Run twice, once for each key
 curl -X POST https://your-api/api/v1/auth/admin/create-user \
   -H "X-Admin-Key: <your-admin-api-key>" \
   -H "Content-Type: application/json" \
-  -d '{"username": "alice", "password": "pass123"}'
+  -d '{"username": "alice", "password": "pass123", "is_admin": false}'
+```
+
+To create admins: 
+
+```bash
+curl -X POST https://your-api/api/v1/auth/admin/create-user \
+  -H "X-Admin-Key: <your-admin-api-key>" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "admin", "password": "pass123", "is_admin": true}'
 ```
 
 ### Using the API

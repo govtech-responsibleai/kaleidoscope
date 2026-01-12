@@ -14,7 +14,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.common.config import get_settings
-from src.common.auth import auth_router, get_current_user
+from src.common.auth import auth_router, get_scoped_db
 from src.common.database.connection import init_db, SessionLocal, engine
 from src.common.database.seed import seed_default_judges
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
@@ -90,20 +90,20 @@ app.add_middleware(
 # Auth router (no auth required - users need to log in)
 app.include_router(auth_router, prefix=f"{settings.api_prefix}/auth", tags=["Auth"])
 
-# Include routers from query generation service (all require auth)
-app.include_router(targets.router, prefix=f"{settings.api_prefix}/targets", tags=["Targets"], dependencies=[Depends(get_current_user)])
-app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", tags=["Personas"], dependencies=[Depends(get_current_user)])
-app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"], dependencies=[Depends(get_current_user)])
-app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"], dependencies=[Depends(get_current_user)])
-app.include_router(kb_documents.router, prefix=settings.api_prefix, tags=["Knowledge Base"], dependencies=[Depends(get_current_user)])
-app.include_router(answers.router, prefix=f"{settings.api_prefix}", tags=["Answers"], dependencies=[Depends(get_current_user)])
+# Include routers from query generation service (all require auth + user scoping)
+app.include_router(targets.router, prefix=f"{settings.api_prefix}/targets", tags=["Targets"], dependencies=[Depends(get_scoped_db)])
+app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", tags=["Personas"], dependencies=[Depends(get_scoped_db)])
+app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"], dependencies=[Depends(get_scoped_db)])
+app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"], dependencies=[Depends(get_scoped_db)])
+app.include_router(kb_documents.router, prefix=settings.api_prefix, tags=["Knowledge Base"], dependencies=[Depends(get_scoped_db)])
+app.include_router(answers.router, prefix=f"{settings.api_prefix}", tags=["Answers"], dependencies=[Depends(get_scoped_db)])
 
-# Include routers from scoring service (all require auth)
-app.include_router(snapshots.router, prefix=f"{settings.api_prefix}", tags=["Snapshots"], dependencies=[Depends(get_current_user)])
-app.include_router(judges.router, prefix=f"{settings.api_prefix}", tags=["Judges"], dependencies=[Depends(get_current_user)])
-app.include_router(qa_jobs.router, prefix=f"{settings.api_prefix}", tags=["QA Jobs"], dependencies=[Depends(get_current_user)])
-app.include_router(annotations.router, prefix=f"{settings.api_prefix}", tags=["Annotations"], dependencies=[Depends(get_current_user)])
-app.include_router(metrics.router, prefix=f"{settings.api_prefix}", tags=["Metrics"], dependencies=[Depends(get_current_user)])
+# Include routers from scoring service (all require auth + user scoping)
+app.include_router(snapshots.router, prefix=f"{settings.api_prefix}", tags=["Snapshots"], dependencies=[Depends(get_scoped_db)])
+app.include_router(judges.router, prefix=f"{settings.api_prefix}", tags=["Judges"], dependencies=[Depends(get_scoped_db)])
+app.include_router(qa_jobs.router, prefix=f"{settings.api_prefix}", tags=["QA Jobs"], dependencies=[Depends(get_scoped_db)])
+app.include_router(annotations.router, prefix=f"{settings.api_prefix}", tags=["Annotations"], dependencies=[Depends(get_scoped_db)])
+app.include_router(metrics.router, prefix=f"{settings.api_prefix}", tags=["Metrics"], dependencies=[Depends(get_scoped_db)])
 
 
 @app.get("/")

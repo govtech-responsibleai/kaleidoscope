@@ -12,9 +12,9 @@ class UserRepository:
     """Repository for User CRUD operations."""
 
     @staticmethod
-    def create(db: Session, username: str, hashed_password: str) -> User:
+    def create(db: Session, username: str, hashed_password: str, is_admin: bool = False) -> User:
         """Create a new user."""
-        user = User(username=username, hashed_password=hashed_password)
+        user = User(username=username, hashed_password=hashed_password, is_admin=is_admin)
         db.add(user)
         db.commit()
         db.refresh(user)
