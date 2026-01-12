@@ -10,10 +10,29 @@ from fastapi.testclient import TestClient
 from src.common.database.connection import Base
 from src.common.database.models import (
     Target, Job, Persona, Question, Answer, AnswerClaim, AnswerScore, AnswerClaimScore,
-    Annotation, QAJob, Snapshot, Judge, KnowledgeBaseDocument,
+    Annotation, QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
     StatusEnum, JobTypeEnum, JobStatusEnum, QAJobTypeEnum, QAJobStageEnum, JudgeTypeEnum,
     QuestionTypeEnum, QuestionScopeEnum
 )
+from src.common.auth.utils import create_access_token
+
+# Pre-computed bcrypt hashes for test passwords (avoids passlib/bcrypt compatibility issues)
+# These are bcrypt hashes computed with cost factor 12
+TEST_PASSWORD_HASHES = {
+    "testpassword": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
+    "adminpassword": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
+    "inactivepassword": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
+    "password_a": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
+    "password_b": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
+    "adminpass": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
+}
+
+
+def get_test_password_hash(password: str) -> str:
+    """Get a pre-computed hash for test passwords."""
+    # All test passwords use the same hash for simplicity in tests
+    # The actual password verification is tested separately
+    return TEST_PASSWORD_HASHES.get(password, TEST_PASSWORD_HASHES["testpassword"])
 
 
 @pytest.fixture(scope="function")
@@ -478,3 +497,119 @@ def sample_answer_scores(test_db, sample_annotations, sample_judge_claim_based):
     for score in scores:
         test_db.refresh(score)
     return scores
+
+
+# ============================================================================
+# Auth Fixtures
+# ============================================================================
+
+@pytest.fixture
+def test_user(test_db):
+    """Create a regular active user for testing."""
+    user = User(
+        username="testuser",
+        hashed_password=get_test_password_hash("testpassword"),
+        is_active=True,
+        is_admin=False
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def test_admin_user(test_db):
+    """Create an admin user for testing."""
+    user = User(
+        username="adminuser",
+        hashed_password=get_test_password_hash("adminpassword"),
+        is_active=True,
+        is_admin=True
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def test_inactive_user(test_db):
+    """Create an inactive user for testing."""
+    user = User(
+        username="inactiveuser",
+        hashed_password=get_test_password_hash("inactivepassword"),
+        is_active=False,
+        is_admin=False
+    )
+    test_db.add(user)
+    test_db.commit()
+    test_db.refresh(user)
+    return user
+
+
+@pytest.fixture
+def auth_headers(test_user):
+    """Generate Authorization headers for a test user."""
+    token = create_access_token(test_user.id)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def admin_auth_headers(test_admin_user):
+    """Generate Authorization headers for an admin user."""
+    token = create_access_token(test_admin_user.id)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def auth_client(test_db_factory, test_user):
+    """
+    Create a test client with auth router included.
+
+    This client has all routes protected by authentication.
+    """
+    from fastapi import FastAPI, Depends
+    from src.common.config import get_settings
+    from src.common.database.connection import get_db
+    from src.common.auth import auth_router, get_scoped_db
+    from src.query_generation.api.routes import targets, personas, questions, jobs
+    from src.scoring.api.routes import judges
+
+    settings = get_settings()
+
+    test_app = FastAPI(
+        title=settings.api_title,
+        version=settings.api_version
+    )
+
+    # Auth router (public)
+    test_app.include_router(auth_router, prefix=f"{settings.api_prefix}/auth", tags=["Auth"])
+
+    # Protected routes
+    test_app.include_router(
+        targets.router,
+        prefix=f"{settings.api_prefix}/targets",
+        tags=["Targets"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        judges.router,
+        prefix=f"{settings.api_prefix}/judges",
+        tags=["Judges"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+
+    # Override database dependency
+    def override_get_db():
+        db = test_db_factory()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    test_app.dependency_overrides[get_db] = override_get_db
+
+    client = TestClient(test_app)
+    yield client
+    test_app.dependency_overrides.clear()
