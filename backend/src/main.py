@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.common.config import get_settings
-from src.common.database.connection import init_db, SessionLocal
+from src.common.database.connection import init_db, SessionLocal, engine
 from src.common.database.seed import seed_default_judges
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
 
@@ -66,6 +66,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     logger.info("👋 Shutting down Kaleidoscope API...")
+    engine.dispose()
+    logger.info("✓ Database connections closed")
 
 
 # Create FastAPI app
