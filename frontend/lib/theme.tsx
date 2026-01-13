@@ -94,10 +94,6 @@ export const theme = createTheme({
           "& .MuiOutlinedInput-notchedOutline": { padding: 0 },
           borderRadius: 5,
         },
-        input: {
-          padding: "10px 15px",
-
-        },
       },
     },
     MuiFormHelperText: {

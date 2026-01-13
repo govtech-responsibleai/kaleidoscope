@@ -50,7 +50,9 @@ npm install
 Create a `.env.local` file in the root directory:
 
 ```env
-NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
+NEXT_PUBLIC_API_DOMAIN=http://localhost:8000
+NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_DOMAIN}/api/v1
+
 ```
 
 ### 3. Start Development Server
@@ -495,6 +497,38 @@ npm start            # Start production server
 # Linting
 npm run lint         # Run ESLint
 ```
+
+## Airbase Deployment
+
+### Prerequisites
+- [Airbase CLI](https://console.v2.airbase.sg/docs/get-started/installation) installed and configured
+
+### Setup
+
+1. Create a `.env.local` file in the root directory:
+```env
+NEXT_PUBLIC_API_DOMAIN=<your-public-api-url>
+```
+
+2. Build and deploy:
+```bash
+export TEAM_HANDLE=<your-team-handle>
+export API_PROJECT_HANDLE=<your-project-handle>
+export FE_PROJECT_HANDLE=<your-project-handle>
+
+# Build the Docker image
+docker build --platform linux/amd64 -f Dockerfile-airbase -t airbase-kaleidoscope-frontend .
+
+# Deploy to Airbase
+airbase container deploy \
+--project $TEAM_HANDLE/$FE_PROJECT_HANDLE \
+--image airbase-kaleidoscope-frontend 
+```
+
+To switch back to local development, set `NEXT_PUBLIC_API_DOMAIN` back to `http://localhost:8000`.
+
+### Notes
+- `middleware.ts` configures CSP (Content Security Policy) headers for Next.js. 
 
 ## Future Enhancements
 
