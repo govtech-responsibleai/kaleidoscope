@@ -22,7 +22,7 @@ import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import JudgeCards from "@/components/scoring/JudgeCards";
 import CreateJudgeDialog from "@/components/scoring/CreateJudgeDialog";
 import ResultsTable from "@/components/scoring/ResultsTable";
-import AggregatedAccuracyCard from "@/components/scoring/AggregatedAccuracyCard";
+import SnapshotAccuracyCard from "@/components/shared/SnapshotAccuracyCard";
 import {
   Snapshot,
   JudgeConfig,
@@ -486,9 +486,11 @@ export default function ScoringPage() {
             {/* Aggregated Accuracy Card + Evaluators Section */}
             <Stack direction="row" spacing={3} alignItems="stretch">
               {/* Aggregated Accuracy Card - Fixed on left */}
-              <AggregatedAccuracyCard
+              <SnapshotAccuracyCard
                 snapshotMetric={snapshotMetric}
                 loading={snapshotMetricLoading}
+                emptyMessage="Run evaluators to see results"
+                showExplanatoryText
               />
 
               {/* Evaluators Header + Carousel */}
