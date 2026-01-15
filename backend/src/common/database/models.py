@@ -454,3 +454,20 @@ class Annotation(Base):
 
     # Relationships
     answer = relationship("Answer", back_populates="annotation")
+
+
+class AnswerLabelOverride(Base):
+    """
+    User override for aggregated accuracy label at answer level.
+    Allows users to manually correct the majority-vote label.
+    """
+    __tablename__ = "answer_label_overrides"
+
+    id = Column(Integer, primary_key=True, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    metric_name = Column(String(50), nullable=False, default="accuracy")
+    edited_label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate
+    edited_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    answer = relationship("Answer")

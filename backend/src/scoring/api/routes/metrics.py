@@ -266,6 +266,7 @@ def get_target_snapshot_metrics(
                 "created_at": snapshot.created_at.isoformat(),
                 "aggregated_accuracy": summary["aggregated_accuracy"],
                 "total_answers": summary["total_answers"],
+                "edited_count": summary["edited_count"],
                 "judge_alignment_range": summary["judge_alignment_range"],
                 "has_aligned_judges": summary["has_aligned_judges"],
                 "reliable_judge_count": summary["reliable_judge_count"]
