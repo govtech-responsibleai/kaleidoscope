@@ -2,6 +2,7 @@
 
 import React from "react";
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -59,6 +60,34 @@ export default function QAContent({
   const claimScores = qaEntry?.claimScores ?? [];
   const answerScore = qaEntry?.answerScore ?? null;
 
+  const claimScoreSummary = React.useMemo(() => {
+    const checkworthyIds = new Set(
+      claims.filter((claim) => claim.checkworthy).map((claim) => claim.id)
+    );
+
+    let scored = 0;
+    let inaccurate = 0;
+
+    claimScores.forEach((score) => {
+      if (!checkworthyIds.has(score.claim_id)) {
+        return;
+      }
+      if (score.label === null || score.label === undefined) {
+        return;
+      }
+      scored += 1;
+      if (score.label === false) {
+        inaccurate += 1;
+      }
+    });
+
+    return {
+      totalCheckworthy: checkworthyIds.size,
+      scored,
+      inaccurate,
+    };
+  }, [claims, claimScores]);
+
   if (!answer) {
     // Determine message based on job stage
     let message = "Waiting for chatbot answer to be generated before running baseline judge.";
@@ -84,7 +113,7 @@ export default function QAContent({
   }
 
   return (
-    <Stack spacing={3}>
+    <Stack>
       {/* Top bar with question ID, navigation, and baseline evaluation */}
       <Stack
         direction="row"
@@ -98,27 +127,6 @@ export default function QAContent({
         </Typography>
 
         <Box sx={{ flexGrow: 1 }} />
-
-        {answerScore ? (
-          <Chip
-            icon={
-              answerScore.overall_label ? (
-                <CheckCircleIcon fontSize="small" />
-              ) : (
-                <CancelIcon fontSize="small" />
-              )
-            }
-            label={`Baseline Evaluation: ${answerScore.overall_label ? "Accurate" : "Inaccurate"}`}
-            color={answerScore.overall_label ? "success" : "error"}
-            size="small"
-          />
-        ) : (
-          <Chip
-            icon={<CircularProgress size={12} />}
-            label="Baseline pending"
-            size="small"
-          />
-        )}
 
         <Stack direction="row" spacing={1} alignItems="center">
           <Button
@@ -141,6 +149,52 @@ export default function QAContent({
       </Stack>
 
       <QAJobProgress job={job} />
+
+      {answerScore && (
+        <Stack
+          direction="row" 
+          spacing={2} 
+          alignItems="center"
+          sx={{
+            p: 2,
+            borderBottom: 1, 
+            borderColor: "divider",
+            bgcolor: "grey.50",
+          }}
+        >
+          <Chip
+            icon={
+              answerScore.overall_label ? (
+                <CheckCircleIcon fontSize="small" />
+              ) : (
+                <CancelIcon fontSize="small" />
+              )
+            }
+            label={`Baseline Evaluation: ${answerScore.overall_label ? "Accurate" : "Inaccurate"}`}
+            color={answerScore.overall_label ? "success" : "error"}
+            size="small"
+          />
+          <Alert
+            severity="info"
+            sx={{
+              flex: 1,
+              "& .MuiAlert-message": { width: "100%" },
+              py: 0.5,
+              px: 1.5,
+            }}
+          >
+            <Typography variant="body2" color="info.dark">
+              {claimScoreSummary.totalCheckworthy === 0
+                ? "No claims found, answer defaults to accurate."
+                : claimScoreSummary.scored === 0
+                  ? "Claims are still waiting on judge scores."
+                  : claimScoreSummary.inaccurate > 0
+                    ? `The response contains ${claimScoreSummary.inaccurate}/${claimScoreSummary.scored} unsupported claim(s) and is therefore marked as inaccurate.`
+                    : `All ${claimScoreSummary.scored} extracted claims are supported, the response is therefore marked as accurate.`}
+            </Typography>
+          </Alert>
+        </Stack>
+      )}
 
       <Box sx={{ p: 3 }}>
         <Stack spacing={3}>
