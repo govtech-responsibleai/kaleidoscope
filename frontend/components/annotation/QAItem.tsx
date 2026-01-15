@@ -133,12 +133,23 @@ export default function QAItem({
                 : "Question not found."}
               </Typography>
               <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: "wrap" }}>
-                <Chip
-                  size="small"
-                  label={getStageLabel(job)}
-                  color={getStageColor(job)}
-                  variant="outlined"
-                />
+                {job?.error_message ? (
+                  <Tooltip title={job.error_message}>
+                    <Chip
+                      size="small"
+                      label={getStageLabel(job)}
+                      color={getStageColor(job)}
+                      variant="outlined"
+                    />
+                  </Tooltip>
+                ) : (
+                  <Chip
+                    size="small"
+                    label={getStageLabel(job)}
+                    color={getStageColor(job)}
+                    variant="outlined"
+                  />
+                )}
                 {answer?.is_selected_for_annotation && (
                   <Chip
                     size="small"

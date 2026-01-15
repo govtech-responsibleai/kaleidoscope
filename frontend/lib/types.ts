@@ -266,6 +266,7 @@ export interface QAJob {
   type: string;
   status: JobStatus;
   stage: QAJobStageEnum;
+  error_message: string | null;
   prompt_tokens: number;
   completion_tokens: number;
   total_cost: number;

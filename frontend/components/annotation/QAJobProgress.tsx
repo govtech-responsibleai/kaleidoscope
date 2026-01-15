@@ -145,7 +145,9 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
 
         {isFailed && (
           <Alert severity="error" sx={{ py: 0.5 }}>
-            Job failed at stage: `{getStageLabel(job.stage)}`. Try running again.
+            {job.error_message
+              ? job.error_message
+              : `Job failed at stage: ${getStageLabel(job.stage)}. Try running again.`}
           </Alert>
         )}
 
