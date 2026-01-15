@@ -377,6 +377,7 @@ export interface JudgeConfig {
   target_id: number;
   name: string;
   model_name: string;
+  model_label?: string;
   temperature?: number;
   judge_type: JudgeType;
   is_baseline: boolean;
@@ -391,6 +392,7 @@ export interface JudgeCreate {
   target_id: number;
   name: string;
   model_name: string;
+  model_label?: string;
   judge_type: JudgeType;
   params?: Record<string, any>;
   prompt_template?: string;
@@ -399,6 +401,7 @@ export interface JudgeCreate {
 export interface JudgeUpdate {
   name?: string;
   model_name?: string;
+  model_label?: string;
   judge_type?: JudgeType;
   params?: Record<string, any>;
   prompt_template?: string;

@@ -226,7 +226,7 @@ export default function JudgeCard({
                 />
               )}
               <Typography variant="caption" color="text.secondary" noWrap sx={{ textOverflow: "ellipsis" }}>
-                {judge.model_name}
+                {judge.model_label || judge.model_name}
               </Typography>
             </Stack>
           </Box>
