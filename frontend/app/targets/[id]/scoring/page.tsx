@@ -27,7 +27,6 @@ import {
   Snapshot,
   JudgeConfig,
   ResultRow,
-  JobStatus,
   AnnotationCompletionStatus,
   QAJob,
   SnapshotMetric,
@@ -58,7 +57,6 @@ export default function ScoringPage() {
   // Judges state
   const [judges, setJudges] = useState<JudgeConfig[]>([]);
   const [judgesLoading, setJudgesLoading] = useState(true);
-  const [judgeJobs, setJudgeJobs] = useState<Record<number, QAJob[]>>({});
 
   // Dialog state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -84,9 +82,6 @@ export default function ScoringPage() {
   // UI state
   const [error, setError] = useState<string | null>(null);
   const judgeCardsRef = useRef<HTMLDivElement | null>(null);
-
-  // Polling refs
-  const pollingRefs = useRef<Record<number, number>>({});
 
   // Fetch snapshots
   const fetchSnapshots = useCallback(async () => {
@@ -209,75 +204,6 @@ export default function ScoringPage() {
     }
   }, [judges]);
 
-  // Check judge job statuses
-  const checkJudgeJobStatuses = useCallback(
-    async (snapshotId: number) => {
-      try {
-        const response = await qaJobApi.list(snapshotId);
-        const jobs = response.data;
-
-        // Group jobs by judge_id
-        const jobsByJudge: Record<number, QAJob[]> = {};
-        jobs.forEach((job) => {
-          if (!jobsByJudge[job.judge_id]) {
-            jobsByJudge[job.judge_id] = [];
-          }
-          jobsByJudge[job.judge_id].push(job);
-        });
-
-        setJudgeJobs(jobsByJudge);
-        return jobsByJudge;
-      } catch (error) {
-        console.error("Failed to check judge job statuses:", error);
-        return null;
-      }
-    },
-    []
-  );
-
-  const startJudgePolling = useCallback(
-    (judgeId: number, snapshotId: number) => {
-      if (!snapshotId) {
-        return;
-      }
-
-      const existingInterval = pollingRefs.current[judgeId];
-      if (existingInterval) {
-        window.clearInterval(existingInterval);
-        delete pollingRefs.current[judgeId];
-      }
-
-      const runPoll = async () => {
-        const jobsByJudge = await checkJudgeJobStatuses(snapshotId);
-        if (!jobsByJudge) {
-          return;
-        }
-
-        const jobsForJudge = jobsByJudge[judgeId] || [];
-        const allCompleted =
-          jobsForJudge.length > 0 &&
-          jobsForJudge.every((job) => job.status === JobStatus.COMPLETED);
-
-        if (allCompleted) {
-          const activeInterval = pollingRefs.current[judgeId];
-          if (activeInterval) {
-            window.clearInterval(activeInterval);
-            delete pollingRefs.current[judgeId];
-          }
-          await fetchResults(snapshotId);
-          await fetchQuestionsWithoutScores(snapshotId);
-          await fetchSnapshotMetrics();
-        }
-      };
-
-      runPoll();
-
-      const intervalId = window.setInterval(runPoll, 5000);
-      pollingRefs.current[judgeId] = intervalId;
-    },
-    [checkJudgeJobStatuses, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics]
-  );
-
   // Initial data fetch
   useEffect(() => {
     fetchSnapshots();
@@ -288,18 +214,16 @@ export default function ScoringPage() {
   useEffect(() => {
     setAnnotationStatus(null);
     setResults([]);
-    setJudgeJobs({});
     setQuestionsWithoutAnswers(0);
     setQuestionsWithoutScores({});
     setSnapshotMetric(null);
 
     if (selectedSnapshotId) {
       checkAnnotationCompletion(selectedSnapshotId);
-      checkJudgeJobStatuses(selectedSnapshotId);
       fetchQuestionsWithoutAnswers(selectedSnapshotId);
       fetchQuestionsWithoutScores(selectedSnapshotId);
     }
-  }, [selectedSnapshotId, checkAnnotationCompletion, checkJudgeJobStatuses, fetchQuestionsWithoutAnswers, fetchQuestionsWithoutScores]);
+  }, [selectedSnapshotId, checkAnnotationCompletion, fetchQuestionsWithoutAnswers, fetchQuestionsWithoutScores]);
 
   // Fetch results and metrics when annotations are complete
   useEffect(() => {
@@ -308,15 +232,6 @@ export default function ScoringPage() {
       fetchSnapshotMetrics();
     }
   }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics]);
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      Object.values(pollingRefs.current).forEach((intervalId) =>
-        window.clearInterval(intervalId)
-      );
-    };
-  }, []);
 
   // Handle snapshot selection
   const handleSnapshotSelect = (snapshotId: number) => {
@@ -340,11 +255,11 @@ export default function ScoringPage() {
     });
   };
 
-  // Handle run judge
-  const handleRunJudge = async (judgeId: number) => {
+  // Handle job start - creates jobs and returns them for JudgeCard to manage
+  const handleJobStart = async (judgeId: number): Promise<QAJob[] | null> => {
     if (!selectedSnapshotId) {
       setError("Select a snapshot to run judges.");
-      return;
+      return null;
     }
 
     try {
@@ -352,36 +267,35 @@ export default function ScoringPage() {
       const questionsResponse = await questionApi.listApprovedWithoutScores(selectedSnapshotId, judgeId);
       const questionIdsToScore = questionsResponse.data.map((q) => q.id);
 
-      // Start judge job
       if (questionIdsToScore.length === 0) {
         setError("All questions already scored for this judge.");
-        return;
+        return null;
       }
 
       const response = await qaJobApi.start(selectedSnapshotId, {
         judge_id: judgeId,
         question_ids: questionIdsToScore,
-        is_scoring: true, // Because this is scoring page
+        is_scoring: true,
       });
 
-      // Store the returned jobs
-      const jobs = response.data;
-      setJudgeJobs((prev) => ({
-        ...prev,
-        [judgeId]: jobs,
-      }));
-
-      // Refresh current job statuses and scoring results once run kicks off
-      await checkJudgeJobStatuses(selectedSnapshotId);
-      await fetchResults(selectedSnapshotId);
-      await fetchQuestionsWithoutScores(selectedSnapshotId);
-      startJudgePolling(judgeId, selectedSnapshotId);
-
+      return response.data;
     } catch (error) {
       console.error("Failed to run judge:", error);
       setError("Unable to start judge run.");
+      return null;
     }
   };
+
+  // Handle job completion - refresh results and metrics
+  const handleJobComplete = useCallback(async () => {
+    if (!selectedSnapshotId) return;
+
+    await Promise.all([
+      fetchResults(selectedSnapshotId),
+      fetchQuestionsWithoutScores(selectedSnapshotId),
+      fetchSnapshotMetrics(),
+    ]);
+  }, [selectedSnapshotId, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics]);
 
   // Handle judge dialog
   const handleOpenDialog = (
@@ -494,10 +408,10 @@ export default function ScoringPage() {
               />
 
               {/* Evaluators Header + Carousel */}
-              <Paper 
-                variant="outlined" 
-                sx={{ 
-                  flex: 1, 
+              <Paper
+                variant="outlined"
+                sx={{
+                  flex: 1,
                   minWidth: 0,
                   bgcolor: "rgb(0, 0, 0, 0.01)",
                   p: 2
@@ -546,7 +460,7 @@ export default function ScoringPage() {
                   </Box>
 
                   <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    Accuracy is aggregated from the following evaluators. Test multiple AI evaluators to measure your chatbot&apos;s accuracy! 
+                    Accuracy is aggregated from the following evaluators. Test multiple AI evaluators to measure your chatbot&apos;s accuracy!
                     <br/>
                     More reliable evaluators (those that align with your annotations) give you more confidence in the accuracy score.
                   </Typography>
@@ -556,11 +470,11 @@ export default function ScoringPage() {
                 <JudgeCards
                   judges={judges}
                   snapshotId={selectedSnapshotId}
-                  judgeJobs={judgeJobs}
                   scrollContainerRef={judgeCardsRef}
                   questionsWithoutScores={questionsWithoutScores}
                   hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
-                  onRunJudge={handleRunJudge}
+                  onJobStart={handleJobStart}
+                  onJobComplete={handleJobComplete}
                   onEditJudge={(judge) => handleOpenDialog("edit", judge)}
                   onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
                   onDeleteJudge={handleDeleteJudge}

@@ -374,6 +374,9 @@ export const qaJobApi = {
   list: (snapshotId: number) =>
     api.get<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs`),
 
+  listByJudge: (snapshotId: number, judgeId: number) =>
+    api.get<QAJob[]>(`/snapshots/${snapshotId}/judges/${judgeId}/qa-jobs`),
+
   get: (jobId: number) =>
     api.get<QAJob>(`/qa-jobs/${jobId}`),
 };
