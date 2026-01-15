@@ -25,7 +25,7 @@ import {
   Delete as DeleteIcon,
   InsertDriveFile as FileIcon,
 } from "@mui/icons-material";
-import { targetApi, kbDocumentApi, judgeApi } from "@/lib/api";
+import { targetApi, kbDocumentApi } from "@/lib/api";
 import { TargetCreate, EndpointType } from "@/lib/types";
 
 interface CreateTargetModalProps {
@@ -112,13 +112,6 @@ export default function CreateTargetModal({
       // Create the target first
       const targetResponse = await targetApi.create(formData);
       const targetId = targetResponse.data.id;
-
-      try {
-        await judgeApi.seedDefaults();
-      } catch (seedError) {
-        // Seeding is idempotent and not critical to blocking target creation
-        console.error("Failed to seed default judges:", seedError);
-      }
 
       // Upload documents if any
       if (selectedFiles.length > 0) {

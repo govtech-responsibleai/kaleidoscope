@@ -36,6 +36,7 @@ The platform automates the creation of diverse evaluation questions across user 
 - Node.js 18+
 - npm or yarn
 - Backend API running (see [kaleidoscope-backend](../kaleidoscope-backend))
+- User account (created by admin via backend scripts)
 
 ## Getting Started
 
@@ -62,6 +63,8 @@ npm run dev
 ```
 
 The application will be available at [http://localhost:3000](http://localhost:3000)
+
+**Note:** You'll be redirected to `/login`. Get credentials from your admin (users are created via backend scripts).
 
 ### 4. Build for Production
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Drawer,
   List,
@@ -12,14 +12,17 @@ import {
   Box,
   Typography,
   IconButton,
+  Divider,
 } from "@mui/material";
 import {
   DashboardCustomizeOutlined as DashboardIcon,
   ChevronLeft as ChevronLeftIcon,
+  Logout as LogoutIcon,
 } from "@mui/icons-material";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { APP_NAME } from "@/lib/constants";
+import { authApi } from "@/lib/api";
 
 const DRAWER_WIDTH_OPEN = 240;
 const DRAWER_WIDTH_CLOSED = 64;
@@ -32,12 +35,28 @@ export default function Navigation({ children }: NavigationProps) {
   const router = useRouter();
   const pathname = usePathname();
   const [open, setOpen] = useState(true);
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    setUsername(authApi.getUsername());
+  }, [pathname]);
+
+  const handleSignOut = () => {
+    authApi.logout();
+    setUsername(null);
+    router.push("/login");
+  };
 
   const menuItems = [
     { label: "Targets", icon: <DashboardIcon />, path: "/" },
   ];
 
   const drawerWidth = open ? DRAWER_WIDTH_OPEN : DRAWER_WIDTH_CLOSED;
+
+  // Don't show navigation on login page
+  if (pathname === "/login") {
+    return <>{children}</>;
+  }
 
   return (
     <Box sx={{ display: "flex" }}>
@@ -59,6 +78,8 @@ export default function Navigation({ children }: NavigationProps) {
             overflowX: "hidden",
             overflowY: "hidden",
             border: "none",
+            display: "flex",
+            flexDirection: "column",
             transition: (theme) =>
               theme.transitions.create("width", {
                 easing: theme.transitions.easing.sharp,
@@ -93,7 +114,7 @@ export default function Navigation({ children }: NavigationProps) {
             </IconButton>
           )}
         </Toolbar>
-        <Box sx={{ overflow: "hidden" }}>
+        <Box sx={{ overflow: "hidden", flexGrow: 1 }}>
           <List>
             {menuItems.map((item) => (
               <ListItem key={item.path} disablePadding sx={{ display: "block" }}>
@@ -129,6 +150,36 @@ export default function Navigation({ children }: NavigationProps) {
               </ListItem>
             ))}
           </List>
+        </Box>
+
+        {/* User status at bottom */}
+        <Box sx={{ mt: "auto" }}>
+          <Divider />
+          <Box
+            sx={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: open ? "space-between" : "center",
+              p: 2,
+            }}
+          >
+            {open && (
+              <Typography
+                variant="body2"
+                color="text.secondary"
+                sx={{ overflow: "hidden", textOverflow: "ellipsis" }}
+              >
+                {username}
+              </Typography>
+            )}
+            <IconButton
+              onClick={handleSignOut}
+              size="small"
+              title="Sign out"
+            >
+              <LogoutIcon />
+            </IconButton>
+          </Box>
         </Box>
       </Drawer>
       <Box
