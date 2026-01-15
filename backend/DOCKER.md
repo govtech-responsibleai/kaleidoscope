@@ -12,7 +12,7 @@
 
 ```bash
 cp .env.example .env
-# Edit .env and add your OPENAI_API_KEY or ANTHROPIC_API_KEY
+# Edit .env and add your API keys + JWT_SECRET_KEY (see README.md for auth setup)
 ```
 
 ### 2. Start services

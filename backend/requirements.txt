@@ -12,6 +12,11 @@ alembic==1.14.0
 pydantic==2.9.2
 pydantic-settings==2.6.1
 
+# Auth
+python-jose==3.3.0
+passlib==1.7.4
+bcrypt==4.0.1
+
 # LLM
 litellm==1.80.9
 google-cloud-aiplatform>=1.38

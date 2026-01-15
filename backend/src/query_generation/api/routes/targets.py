@@ -10,6 +10,7 @@ from src.common.database.connection import get_db
 from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository
 from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse
 from src.common.database.models import StatusEnum
+from src.common.auth import get_current_user_id
 
 router = APIRouter()
 
@@ -17,6 +18,7 @@ router = APIRouter()
 @router.post("", response_model=TargetResponse, status_code=status.HTTP_201_CREATED)
 def create_target(
     target: TargetCreate,
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -24,12 +26,14 @@ def create_target(
 
     Args:
         target: Target creation data
+        user_id: Current user's ID (injected)
         db: Database session
 
     Returns:
         Created target
     """
     target_data = target.model_dump()
+    target_data["user_id"] = user_id
     created_target = TargetRepository.create(db, target_data)
     return created_target
 
