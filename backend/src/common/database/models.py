@@ -352,6 +352,7 @@ class Judge(Base):
     # Fields
     name = Column(String, nullable=False)
     model_name = Column(String, nullable=False)
+    model_label = Column(String, nullable=True)
     prompt_template = Column(Text, nullable=False)
     params = Column(JSON, nullable=False, default=dict)
     judge_type = Column(Enum(JudgeTypeEnum), nullable=False)

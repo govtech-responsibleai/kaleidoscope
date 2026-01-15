@@ -17,6 +17,7 @@ class JudgeCreate(BaseModel):
     """Request model for creating a judge."""
     name: str = Field(..., description="Name of the judge (e.g., 'Baseline Judge', 'GPT-4 Judge')")
     model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-2.5-flash-lite')")
+    model_label: Optional[str] = Field(None, description="Display label for the model")
     prompt_template: str = Field(..., description="Jinja2 prompt template for the judge")
     params: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters (temperature, etc.)")
     judge_type: JudgeType = Field(..., description="Type of judging (claim_based or response_level)")
@@ -28,6 +29,7 @@ class JudgeUpdate(BaseModel):
     """Request model for updating a judge."""
     name: Optional[str] = None
     model_name: Optional[str] = None
+    model_label: Optional[str] = None
     prompt_template: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     judge_type: Optional[JudgeType] = None
@@ -38,6 +40,7 @@ class JudgeResponse(BaseModel):
     id: int
     name: str
     model_name: str
+    model_label: Optional[str] = None
     prompt_template: str
     params: Dict[str, Any]
     judge_type: JudgeType

@@ -41,6 +41,8 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AZURE_API_KEY: ${AZURE_API_KEY}
       AZURE_API_BASE: ${AZURE_API_BASE}
+      LITELLM_PROXY_API_KEY: ${LITELLM_PROXY_API_KEY}
+      LITELLM_PROXY_API_BASE: ${LITELLM_PROXY_API_BASE}
 
       # Phoenix (optional - comment out API key if hosting on cloud)
       PHOENIX_COLLECTOR_ENDPOINT: http://host.docker.internal:6006

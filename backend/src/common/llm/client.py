@@ -40,6 +40,35 @@ class LLMClient:
         self._semaphore = asyncio.Semaphore(settings.llm_max_concurrent)
 
     @staticmethod
+    def _extract_json_string(content: str) -> str:
+        """
+        Extract JSON string from LLM response.
+
+        Handles common LLM output issues:
+        - Strips markdown code blocks (```json ... ``` or ``` ... ```)
+        - Extracts JSON object/array from surrounding text
+
+        Args:
+            content: Raw LLM response string
+
+        Returns:
+            Clean JSON string ready for parsing
+        """
+        import re
+
+        if not content or not content.strip():
+            raise ValueError("LLM returned empty content")
+
+        json_str = content.strip()
+
+        # Strip markdown code blocks if present
+        code_block_match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', json_str)
+        if code_block_match:
+            json_str = code_block_match.group(1).strip()
+
+        return json_str
+
+    @staticmethod
     def _sanitize_json_for_validation(data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Sanitize JSON data before Pydantic validation.
@@ -163,38 +192,6 @@ class LLMClient:
                 logger.error(f"LLM generation failed: {e}")
             raise
 
-    def generate_json(
-        self,
-        prompt: str,
-        system_prompt: Optional[str] = None,
-        temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        **kwargs
-    ) -> Dict[str, Any]:
-        """
-        Generate JSON completion from LLM.
-
-        Automatically sets response_format to JSON mode.
-
-        Args:
-            prompt: User prompt
-            system_prompt: System prompt
-            temperature: Sampling temperature
-            max_tokens: Maximum tokens to generate
-            **kwargs: Additional arguments
-
-        Returns:
-            Dict containing the response (same as generate())
-        """
-        return self.generate(
-            prompt=prompt,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-            **kwargs
-        )
-
     def generate_structured(
         self,
         prompt: str,
@@ -229,20 +226,30 @@ class LLMClient:
         # Add schema to prompt to guide the LLM
         schema_prompt = f"{prompt}\n\nRespond with JSON matching this schema:\n{response_model.model_json_schema()}"
 
-        # MOCK temporarily - uncomment below for real LLM calls
-        # Generate with JSON mode
-        response = self.generate_json(
+        # Build response_format with JSON schema for structured output
+        response_format = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": response_model.__name__,
+                "schema": response_model.model_json_schema(),
+            }
+        }
+
+        # Generate with structured output
+        response = self.generate(
             prompt=schema_prompt,
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            response_format=response_format,
             **kwargs
         )
 
         # Parse and validate response against Pydantic model
         try:
             import json
-            content_json = json.loads(response["content"])
+            json_str = self._extract_json_string(response["content"])
+            content_json = json.loads(json_str)
             # Sanitize JSON before validation (handles string "True"/"False" etc.)
             content_json = self._sanitize_json_for_validation(content_json)
             parsed_model = response_model.model_validate(content_json)
@@ -262,8 +269,6 @@ class LLMClient:
             logger.error(f"Failed to parse LLM response into {response_model.__name__}: {e}")
             logger.error(f"Response content: {response.get('content', '')[:500]}")
             raise ValueError(f"LLM response doesn't match expected schema: {e}")
-
-        return parsed_model, metadata
 
     async def generate_structured_async(
         self,
@@ -312,15 +317,23 @@ class LLMClient:
         try:
             logger.info(f"Calling {self.model} (async) with {len(schema_prompt)} char prompt")
 
-            # MOCK temporarily - uncomment below for real LLM calls
-            # Call async LLM with JSON mode (with semaphore to limit concurrency)
+            # Build response_format with JSON schema for structured output
+            response_format = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": response_model.__name__,
+                    "schema": response_model.model_json_schema(),
+                }
+            }
+
+            # Call async LLM with structured output (with semaphore to limit concurrency)
             async with self._semaphore:
                 response = await litellm.acompletion(
                     model=self.model,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,
-                    response_format={"type": "json_object"},
+                    response_format=response_format,
                     num_retries=settings.llm_num_retries,
                     timeout=600,
                     **kwargs
@@ -344,7 +357,10 @@ class LLMClient:
 
             # Parse and validate response against Pydantic model
             import json
-            content_json = json.loads(content)
+            logger.debug(f"Raw content type: {type(content)}, content: {content[:500] if content else 'None/Empty'}")
+            json_str = self._extract_json_string(content)
+            logger.debug(f"Extracted JSON string: {json_str[:500] if json_str else 'None/Empty'}")
+            content_json = json.loads(json_str)
             # Sanitize JSON before validation (handles string "True"/"False" etc.)
             content_json = self._sanitize_json_for_validation(content_json)
             parsed_model = response_model.model_validate(content_json)

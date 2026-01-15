@@ -28,16 +28,16 @@ def _load_baseline_prompt() -> str:
 BASELINE_PROMPT_TEMPLATE = _load_baseline_prompt()
 
 AVAILABLE_MODELS = [
-    {"value": "gemini/gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite"},
-    {"value": "gemini/gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
-    {"value": "gemini/gemini-3-pro-preview", "label": "Gemini 3 Pro Preview"},
-    {"value": "gemini/gemini-3-flash-preview", "label": "Gemini 3 Flash Preview"},
+    {"value": "litellm_proxy/gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite"},
+    {"value": "litellm_proxy/gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
+    {"value": "litellm_proxy/gemini-3-flash-preview", "label": "Gemini 3 Flash Preview"},
+    {"value": "litellm_proxy/gemini-3-pro-preview", "label": "Gemini 3 Pro Preview"},
     {"value": "azure/gpt-5-nano-2025-08-07", "label": "GPT-5 nano"},
     {"value": "azure/gpt-5-mini-2025-08-07", "label": "GPT-5 mini"},
     {"value": "azure/gpt-5-2025-08-07", "label": "GPT-5"},
-    {"value": "vertex_ai/claude-haiku-4-5", "label": "Haiku 4.5"},
-    {"value": "vertex_ai/claude-sonnet-4-5", "label": "Sonnet 4.5"},
-    {"value": "vertex_ai/claude-opus-4-5", "label": "Opus 4.5"},
+    {"value": "litellm_proxy/claude-haiku-4-5@20251001-global", "label": "Haiku 4.5"},
+    {"value": "litellm_proxy/claude-sonnet-4-5@20250929-asia-southeast1", "label": "Sonnet 4.5"},
+    {"value": "litellm_proxy/claude-opus-4-5@20251101-asia-southeast1", "label": "Opus 4.5"},
 ]
 
 AVAILABLE_MODEL_MAP: Dict[str, dict] = {model["value"]: model for model in AVAILABLE_MODELS}
@@ -49,25 +49,33 @@ def _require_model(value: str) -> str:
         raise RuntimeError(f"Model '{value}' is not defined in AVAILABLE_MODELS.")
     return value
 
+BASELINE_MODEL_MAP = {
+    0: "litellm_proxy/gemini-2.5-flash-lite", 
+    1: "litellm_proxy/gemini-3-flash-preview", 
+    2: "azure/gpt-5-nano-2025-08-07"
+}
 
 DEFAULT_JUDGES = [
     {
         "name": "Baseline Evaluator 1",
-        "model_name": _require_model("gemini/gemini-2.5-flash-lite"),
+        "model_name": _require_model(BASELINE_MODEL_MAP[0]),
+        "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[0]]['label'],
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": True,
         "is_editable": False,
     },
     {
         "name": "Baseline Evaluator 2",
-        "model_name": _require_model("gemini/gemini-2.5-flash"),
+        "model_name": _require_model(BASELINE_MODEL_MAP[1]),
+        "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": False,
         "is_editable": False,
     },
     {
         "name": "Baseline Evaluator 3",
-        "model_name": _require_model("azure/gpt-5-nano-2025-08-07"),
+        "model_name": _require_model(BASELINE_MODEL_MAP[2]),
+        "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[2]]['label'],
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": False,
         "is_editable": False,
