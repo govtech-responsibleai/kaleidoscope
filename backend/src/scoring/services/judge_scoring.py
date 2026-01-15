@@ -98,8 +98,14 @@ class AnswerJudge:
         except Exception as e:
             logger.error(f"Answer scoring failed for job {self.job_id}: {e}", exc_info=True)
 
-            # Update job with failure status
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.failed, self.job.stage)
+            # Update job with failure status and error message
+            QAJobRepository.update_status(
+                self.db,
+                self.job_id,
+                JobStatusEnum.failed,
+                self.job.stage,
+                error_message=str(e)
+            )
 
     async def _score_claim_based(self):
         """

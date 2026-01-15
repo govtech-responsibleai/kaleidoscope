@@ -5,7 +5,6 @@ Service for generating answers using AIBots API.
 import asyncio
 import logging
 import httpx
-import litellm 
 from typing import Dict, Any
 
 from sqlalchemy.orm import Session
@@ -22,6 +21,21 @@ from src.common.llm import CostTracker
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+class AnswerGenerationError(Exception):
+    """Base exception for answer generation errors."""
+    pass
+
+
+class APIConnectionError(AnswerGenerationError):
+    """Raised when unable to connect to the API endpoint (DNS failure, network unreachable, etc.)."""
+    pass
+
+
+class APIResponseError(AnswerGenerationError):
+    """Raised when API returns an error response (4xx, 5xx) or empty content."""
+    pass
 
 
 class AnswerGenerator:
@@ -96,9 +110,14 @@ class AnswerGenerator:
             # Extract and store answer
             answer = self._save_answer(question, chat_id, api_response, snapshot_id)
 
-        except: 
-            # MMOCK ANSWER, bring this back to run a simple LLM call as the mock chatbot
-            answer = self._mock_answer(question_id, snapshot_id)
+        except httpx.ConnectError as e:
+            raise APIConnectionError(f"Failed to connect to API at {base_url}: {e}")
+        except httpx.TimeoutException as e:
+            raise APIConnectionError(f"Connection to API timed out: {e}")
+        except httpx.HTTPStatusError as e:
+            raise APIResponseError(f"API returned error {e.response.status_code}: {e.response.text}")
+        except Exception as e:
+            raise APIResponseError(f"Unexpected error from API: {e}")
 
         return answer
 
@@ -209,53 +228,6 @@ class AnswerGenerator:
 
         return answer
 
-    def _mock_answer(self, question_id: int, snapshot_id: int) -> Answer:
-        # Get question
-        question = QuestionRepository.get_by_id(self.db, question_id)
-        # Get compiled KB text from documents
-        kb_text = KBDocumentRepository.get_compiled_text(self.db, question.target_id)
-
-        system_prompt = (
-            "You are a member of the Responsible AI team at an organisation. you are to reference the given knowledge base "
-            "and reply the user. It is important that you be straightforward, very concise, and clear. The knowledge base "
-            "will be provided along with the user input for your reference."
-        )
-        user_prompt = f"##Question:\n{question.text}\n\n##Knowledge Base\n{kb_text}"
-
-        print("START: Mocking answer for question", question_id)
-        response = litellm.completion(
-            model="gpt-5-nano",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=1.0,
-            num_retries=settings.llm_num_retries,
-            timeout=600,
-        )
-        print("DONE: Mocking answer for question", question_id)
-
-        content = response.choices[0].message.content
-        # Append disclaimer to response content 
-        content = f"Disclaimer: API endpoint failed to return content. Presenting a mocked response instead.\n\n" + content
-        answer_data = {
-            "snapshot_id": snapshot_id,
-            "question_id": question_id,
-            "chat_id": "mock-chat",
-            "message_id": question_id,
-            "answer_content": content,
-            "system_prompt": system_prompt,
-            "model": response.model,
-            "guardrails": {},
-            "rag_citations": [],
-            "raw_response": response.model_dump(),
-            "is_selected_for_annotation": False,
-        }
-
-        answer = AnswerRepository.create(self.db, answer_data)
-        logger.info("Cheap LLM mock answer %s for question %s", answer.id, question_id)
-        return answer
-
     ########################
     # Asynchronous methods #
     ########################
@@ -312,12 +284,13 @@ class AnswerGenerator:
         except Exception as e:
             logger.error(f"Answer generation failed for job {self.job_id}: {e}", exc_info=True)
 
-            # Mark job as failed (don't create failure Answer record)
+            # Mark job as failed with error message
             QAJobRepository.update_status(
                 self.db,
                 self.job_id,
                 JobStatusEnum.failed,
-                self.job.stage
+                self.job.stage,
+                error_message=str(e)
             )
 
     
@@ -361,9 +334,14 @@ class AnswerGenerator:
             # Extract and store answer
             answer = await self._save_answer_async(question, chat_id, api_response, snapshot_id)
 
-        except:
-            # MOCK ANSWER, runs a simple LLM call as the mock chatbot
-            answer = await self._mock_answer_async(question_id, snapshot_id)
+        except httpx.ConnectError as e:
+            raise APIConnectionError(f"Failed to connect to API at {base_url}: {e}")
+        except httpx.TimeoutException as e:
+            raise APIConnectionError(f"Connection to API timed out: {e}")
+        except httpx.HTTPStatusError as e:
+            raise APIResponseError(f"API returned error {e.response.status_code}: {e.response.text}")
+        except Exception as e:
+            raise APIResponseError(f"Unexpected error from API: {e}")
 
         return answer
     
@@ -423,53 +401,6 @@ class AnswerGenerator:
     ) -> Answer:
         """Async wrapper for _save_answer to maintain API symmetry."""
         return self._save_answer(question, chat_id, api_response, snapshot_id)
-    
-
-    async def _mock_answer_async(self, question_id: int, snapshot_id: int) -> Answer:
-        """Async version of the LiteLLM-backed mock answer."""
-        question = QuestionRepository.get_by_id(self.db, question_id)
-        kb_text = KBDocumentRepository.get_compiled_text(self.db, question.target_id)
-
-        system_prompt = (
-            "You are a member of the Responsible AI team at an organisation. you are to reference the given knowledge base "
-            "and reply the user. It is important that you be straightforward, very concise, and clear. The knowledge base "
-            "will be provided along with the user input for your reference."
-        )
-        user_prompt = f"##Question:\n{question.text}\n\n##Knowledge Base\n{kb_text}"
-
-        print("START: Async Mocking answer for question", question_id)
-        response = await litellm.acompletion(
-            model="gpt-5-nano",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=1.0,
-            num_retries=settings.llm_num_retries,
-            timeout=600,
-        )
-        print("DONE: Async Mocking answer for question", question_id)
-
-        content = response.choices[0].message.content
-        # Append disclaimer to response content 
-        content = f"Disclaimer: API endpoint failed to return content. Presenting a mocked response instead.\n\n" + content
-        answer_data = {
-            "snapshot_id": snapshot_id,
-            "question_id": question_id,
-            "chat_id": "mock-chat",
-            "message_id": question_id,
-            "answer_content": content,
-            "system_prompt": system_prompt,
-            "model": response.model,
-            "guardrails": {},
-            "rag_citations": [],
-            "raw_response": response.model_dump(),
-            "is_selected_for_annotation": False,
-        }
-
-        answer = AnswerRepository.create(self.db, answer_data)
-        logger.info("[async] Cheap LLM mock answer %s for question %s", answer.id, question_id)
-        return answer
 
     def _update_job(self, answer_id: int = None) -> None:
         """

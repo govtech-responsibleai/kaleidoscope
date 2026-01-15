@@ -318,6 +318,7 @@ class QAJob(Base):
     type = Column(Enum(QAJobTypeEnum), nullable=False, index=True)
     status = Column(Enum(JobStatusEnum), default=JobStatusEnum.running, nullable=False, index=True)
     stage = Column(Enum(QAJobStageEnum), default=QAJobStageEnum.starting, nullable=False, index=True)
+    error_message = Column(Text, nullable=True)  # Stores error details when job fails
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)
     total_cost = Column(Float, default=0.0)

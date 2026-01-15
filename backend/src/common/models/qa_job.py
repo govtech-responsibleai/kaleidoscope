@@ -66,6 +66,7 @@ class QAJobResponse(BaseModel):
     type: QAJobType
     status: JobStatus
     stage: QAJobStage
+    error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

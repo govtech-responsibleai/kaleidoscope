@@ -325,6 +325,69 @@ def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
 
 
 @pytest.fixture
+def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas):
+    """Create a QA job without an existing answer for testing API errors."""
+    # Create snapshot
+    snapshot = Snapshot(
+        target_id=sample_target.id,
+        name="error_test_snapshot",
+        description="Snapshot for error testing"
+    )
+    test_db.add(snapshot)
+    test_db.commit()
+    test_db.refresh(snapshot)
+
+    # Create question
+    question = Question(
+        job_id=sample_job.id,
+        persona_id=sample_personas[0].id,
+        target_id=sample_target.id,
+        text="Test question for error handling?",
+        type=QuestionTypeEnum.typical,
+        scope=QuestionScopeEnum.in_kb,
+        status=StatusEnum.approved
+    )
+    test_db.add(question)
+    test_db.commit()
+    test_db.refresh(question)
+
+    # Create judge
+    judge = Judge(
+        name="Error Test Judge",
+        model_name="gemini/gemini-2.5-flash-lite",
+        prompt_template="Test template",
+        params={},
+        judge_type=JudgeTypeEnum.claim_based,
+        is_baseline=True,
+        is_editable=False
+    )
+    test_db.add(judge)
+    test_db.commit()
+    test_db.refresh(judge)
+
+    # Create QA job WITHOUT answer_id
+    qa_job = QAJob(
+        snapshot_id=snapshot.id,
+        question_id=question.id,
+        judge_id=judge.id,
+        answer_id=None,  # No answer yet
+        type=QAJobTypeEnum.claim_scoring_full,
+        status=JobStatusEnum.running,
+        stage=QAJobStageEnum.starting
+    )
+    test_db.add(qa_job)
+    test_db.commit()
+    test_db.refresh(qa_job)
+
+    return {
+        "job": qa_job,
+        "question": question,
+        "snapshot": snapshot,
+        "target": sample_target
+    }
+
+
+@pytest.fixture
 def sample_judge_claim_based(test_db):
     """Create a claim-based judge for testing."""
     judge = Judge(

@@ -101,11 +101,14 @@ class ClaimProcessor:
         except Exception as e:
             logger.error(f"Claim processing failed for job {self.job_id}: {e}", exc_info=True)
 
-            # Mark job as failed but DON'T create a failure message record
-            # The natural indicator is claim.checked_at: if generate_structured_async fails,
-            # claim.checked_at is never updated and remains == created_at, which signals
-            # an unchecked claim. The retry logic in _trigger_pipeline_stage will detect this.
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.failed, self.job.stage)
+            # Mark job as failed with error message
+            QAJobRepository.update_status(
+                self.db,
+                self.job_id,
+                JobStatusEnum.failed,
+                self.job.stage,
+                error_message=str(e)
+            )
 
     def _extract_claims(self, answer_id: int) -> List[AnswerClaim]:
         """

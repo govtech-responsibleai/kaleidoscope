@@ -790,6 +790,20 @@ pytest tests/unit/test_question_generator.py -v
 
 ### Database Migrations
 
+**Manual Migration Scripts** (in `src/common/database/migrations/`):
+
+```bash
+# Run migrations inside Docker container (recommended)
+docker exec -it kaleidoscope-api python -m src.common.database.migrations.<migration_name>
+
+# Or if running locally with correct DATABASE_URL in .env
+python -m src.common.database.migrations.<migration_name>
+
+# Rollback a migration
+docker exec -it kaleidoscope-api python -m src.common.database.migrations.<migration_name> --downgrade
+```
+
+**Alembic (alternative)**:
 ```bash
 # Create new migration
 alembic revision --autogenerate -m "Description"

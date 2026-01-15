@@ -177,3 +177,59 @@ class TestClaimProcessor:
         assert result[0] == "First claim is long.\n(Second claim)"
         assert result[1] == " text [Third is (nested) long enough]"
         assert result[2] == ""  # Empty after bracket shift
+
+
+@pytest.mark.unit
+class TestClaimProcessorErrors:
+    """Tests for error handling in ClaimProcessor."""
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.claim_processor.LLMClient')
+    @patch('src.scoring.services.judge_scoring.score_answer', new_callable=AsyncMock)
+    async def test_checkworthy_llm_error_defaults_to_checkworthy_true(
+        self, mock_score_answer, mock_llm_class, test_db, sample_qa_job, sample_answer
+    ):
+        """Test that checkworthy LLM errors default claims to checkworthy=True."""
+        # Update answer to have longer sentences that will be checked
+        sample_answer.answer_content = "This is a very long claim about AI privacy risks that needs checking. This is another long claim about bias concerns in machine learning."
+        test_db.commit()
+
+        # Mock LLM to raise error
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(
+            side_effect=Exception("Checkworthy LLM API error")
+        )
+        mock_llm_class.return_value = mock_llm_instance
+
+        # Process
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        await processor.process()
+
+        # Verify claims were created and defaulted to checkworthy=True
+        from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
+        claims = AnswerClaimRepository.get_by_answer(test_db, sample_answer.id)
+
+        assert len(claims) == 2
+        # All should be checkworthy=True (default on error)
+        assert all(claim.checkworthy is True for claim in claims)
+
+        # Job should still be running (claim processor hands off to judge scoring)
+        test_db.refresh(sample_qa_job)
+        assert sample_qa_job.status == JobStatusEnum.running
+
+    @pytest.mark.asyncio
+    async def test_missing_answer_sets_job_failed_with_error_message(self, test_db, sample_qa_job):
+        """Test that missing answer sets job failed with error_message."""
+        # Set answer_id to non-existent answer
+        sample_qa_job.answer_id = 99999
+        test_db.commit()
+
+        # Process
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        await processor.process()
+
+        # Verify job marked as failed
+        test_db.refresh(sample_qa_job)
+        assert sample_qa_job.status == JobStatusEnum.failed
+        assert sample_qa_job.error_message is not None
+        assert "not found" in sample_qa_job.error_message.lower()
