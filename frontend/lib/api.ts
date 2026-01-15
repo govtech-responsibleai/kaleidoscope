@@ -44,6 +44,8 @@ import {
   SnapshotResultsResponse,
   SnapshotMetricsResponse,
   ConfusionMatrix,
+  AnswerLabelOverride,
+  AnswerLabelOverrideCreate,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -290,6 +292,16 @@ export const answerApi = {
 
   selectDefault: (snapshotId: number) =>
     api.post(`/snapshots/${snapshotId}/answers/select-default`),
+
+  // Label override methods
+  getLabelOverride: (answerId: number) =>
+    api.get<AnswerLabelOverride>(`/answers/${answerId}/label-override`),
+
+  updateLabelOverride: (answerId: number, data: AnswerLabelOverrideCreate) =>
+    api.put<AnswerLabelOverride>(`/answers/${answerId}/label-override`, data),
+
+  deleteLabelOverride: (answerId: number) =>
+    api.delete(`/answers/${answerId}/label-override`),
 };
 
 // Annotation endpoints

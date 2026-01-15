@@ -425,13 +425,28 @@ export interface JudgeAccuracy {
 export type AggregationMethod =
   | "majority"
   | "majority_tied"
-  | "no_aligned_judge";
+  | "no_aligned_judge"
+  | "override";
 
 export interface AggregatedAccuracy {
   answer_id: number;
   method: AggregationMethod;
   label: boolean | null;
+  is_edited: boolean;
   metadata: string[];
+}
+
+// Answer Label Override types
+export interface AnswerLabelOverride {
+  id: number;
+  answer_id: number;
+  metric_name: string;
+  edited_label: boolean;
+  edited_at: string;
+}
+
+export interface AnswerLabelOverrideCreate {
+  edited_label: boolean;
 }
 
 export interface ResultRow {
@@ -454,6 +469,7 @@ export interface SnapshotMetric {
   created_at: string;
   aggregated_accuracy: number;
   total_answers: number;
+  edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
   has_aligned_judges: boolean;
   reliable_judge_count: number;

@@ -82,7 +82,24 @@ export default function AggregatedAccuracyCard({
             No reliable evaluators yet
           </Typography>
         )}
+
+        {/* Show edited count if any labels were manually edited */}
+        {snapshotMetric.edited_count > 0 && (
+          <Typography variant="caption" color="info.main" sx={{ fontStyle: "italic", fontSize: "0.7rem" }}>
+            ({snapshotMetric.edited_count} of {snapshotMetric.total_answers} labels manually edited)
+          </Typography>
+        )}
       </Stack>
+
+      {/* Explanatory text */}
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        textAlign="center"
+        sx={{ mt: 2, maxWidth: 350 }}
+      >
+        Accuracy is calculated from the labels in the results table below. Labels are aggregated across reliable evaluators but can be manually edited.
+      </Typography>
     </Box>
   );
 }

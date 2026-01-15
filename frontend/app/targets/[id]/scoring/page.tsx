@@ -403,6 +403,17 @@ export default function ScoringPage() {
     handleCloseDialog();
   };
 
+  // Handle label change (refresh results and metrics)
+  const handleLabelChange = useCallback(async () => {
+    if (!selectedSnapshotId) return;
+
+    // Refresh both results and metrics to reflect the label change
+    await Promise.all([
+      fetchResults(selectedSnapshotId),
+      fetchSnapshotMetrics(),
+    ]);
+  }, [selectedSnapshotId, fetchResults, fetchSnapshotMetrics]);
+
   // Handle delete judge
   const handleDeleteJudge = async (judge: JudgeConfig) => {
     if (!judge.is_editable || judge.is_baseline) {
@@ -567,6 +578,7 @@ export default function ScoringPage() {
                 results={results}
                 snapshotId={selectedSnapshotId}
                 judges={judges}
+                onLabelChange={handleLabelChange}
               />
             )}
           </Stack>
