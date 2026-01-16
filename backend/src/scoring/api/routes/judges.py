@@ -14,6 +14,7 @@ from src.common.models import (
     JudgeUpdate,
     JudgeResponse
 )
+from src.common.auth import get_current_user_id
 
 router = APIRouter()
 
@@ -21,6 +22,7 @@ router = APIRouter()
 @router.post("/judges", response_model=JudgeResponse, status_code=status.HTTP_201_CREATED)
 def create_judge(
     judge: JudgeCreate,
+    user_id: int = Depends(get_current_user_id),
     db: Session = Depends(get_db)
 ):
     """
@@ -28,12 +30,14 @@ def create_judge(
 
     Args:
         judge: Judge creation data
+        user_id: Current user's ID (injected)
         db: Database session
 
     Returns:
         Created judge
     """
     judge_data = judge.model_dump()
+    judge_data["user_id"] = user_id
     created_judge = JudgeRepository.create(db, judge_data)
     return created_judge
 

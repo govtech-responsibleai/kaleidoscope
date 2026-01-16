@@ -38,6 +38,12 @@ class Settings(BaseSettings):
     phoenix_api_key: Optional[str] = None
     phoenix_collector_endpoint: Optional[str] = None
 
+    # Auth Settings
+    jwt_secret_key: str  # Required - set in .env
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 4320  # 3 days
+    admin_api_key: str  # Required - for creating users via API
+
     # Generation Defaults
     default_persona_count: int = 5
     default_question_count: int = 10

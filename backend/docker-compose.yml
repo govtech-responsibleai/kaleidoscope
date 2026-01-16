@@ -49,12 +49,17 @@ services:
       # API Settings
       API_TITLE: Kaleidoscope API
       API_VERSION: 1.0.0
+
+      # Auth
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ADMIN_API_KEY: ${ADMIN_API_KEY}
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./src:/app/src
       - ./tests:/app/tests
+      - ./scripts:/app/scripts
     networks:
       - kaleidoscope-network
     command: python -m uvicorn src.main:app --host 0.0.0.0 --port 8000

@@ -74,6 +74,27 @@ class JudgeTypeEnum(enum.Enum):
     response_level = "response_level"  # Evaluates entire response holistically
 
 
+##### AUTH #####
+
+class User(Base):
+    """User for authentication."""
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, unique=True, nullable=False, index=True)
+    hashed_password = Column(String, nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    is_admin = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    targets = relationship("Target", back_populates="owner")
+    judges = relationship("Judge", back_populates="owner")
+
+    def __repr__(self):
+        return f"<User(id={self.id}, username='{self.username}', is_admin={self.is_admin})>"
+
+
 ##### GENERAL #####
 
 class Target(Base):
@@ -81,6 +102,7 @@ class Target(Base):
     __tablename__ = "targets"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String, nullable=False, index=True)
     agency = Column(String, nullable=True)
     purpose = Column(Text, nullable=True)
@@ -92,6 +114,7 @@ class Target(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
+    owner = relationship("User", back_populates="targets")
     jobs = relationship("Job", back_populates="target", cascade="all, delete-orphan")
     personas = relationship("Persona", back_populates="target", cascade="all, delete-orphan")
     questions = relationship("Question", back_populates="target", cascade="all, delete-orphan")
@@ -99,7 +122,7 @@ class Target(Base):
     snapshots = relationship("Snapshot", back_populates="target", cascade="all, delete-orphan")
 
     def __repr__(self):
-        return f"<Target(id={self.id}, name='{self.name}')>"
+        return f"<Target(id={self.id}, name='{self.name}', user_id={self.user_id})>"
 
 
 ##### QUERY GENERATION #####
@@ -322,7 +345,9 @@ class Judge(Base):
 
     # PK
     id = Column(Integer, primary_key=True, index=True)
-    
+    # FK
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+
     # Fields
     name = Column(String, nullable=False)
     model_name = Column(String, nullable=False)
@@ -333,6 +358,7 @@ class Judge(Base):
     is_editable = Column(Boolean, default=True, nullable=False)
 
     # Relationships
+    owner = relationship("User", back_populates="judges")
     qa_jobs = relationship("QAJob", back_populates="judge")
     answer_scores = relationship("AnswerScore", back_populates="judge")
 

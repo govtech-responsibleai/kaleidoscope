@@ -20,6 +20,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY src/ ./src/
 
+# Fix permissions for app user
+RUN chmod -R 755 ./src/
+
 # Switch to non-root user (provided by Airbase base image)
 USER app
 

@@ -48,5 +48,5 @@ def init_db():
 
     Should be called on application startup.
     """
-    from src.common.database.models import Target, Job, Persona, Question
+    from src.common.database.models import Target, Job, Persona, Question, User
     Base.metadata.create_all(bind=engine)
