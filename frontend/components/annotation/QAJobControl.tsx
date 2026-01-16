@@ -234,6 +234,7 @@ export default function QAJobControl({
 
     const loadData = async () => {
       setLoadingInitialData(true);
+      console.log("Loading initial data...");
       try {
         const [jobsResponse, answersResponse] = await Promise.all([
           qaJobApi.list(snapshotId),
@@ -293,6 +294,7 @@ export default function QAJobControl({
           });
           return initial;
         });
+        console.log("Loaded initial data...");
       } catch (err) {
         console.error("Failed to load QA data:", err);
         notifyError("Failed to load QA data for this snapshot.");
@@ -326,7 +328,12 @@ export default function QAJobControl({
           const questionIds = response.data.map((q) => q.id);
           setQuestionsWithoutAnswers(questionIds);
           if (questionIds.length > 0) {
+            console.log(
+              `QAJobControl: Detected ${questionIds.length} questions without answers:`,
+              questionIds
+            );
           } else {
+            console.log("QAJobControl: No new questions to evaluate.");
           }
         }
       } catch (err) {
@@ -361,15 +368,18 @@ export default function QAJobControl({
 
         // Answer done, no claims/scores yet
         if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS) {
+          console.log("Hydrating job at stage:", job.stage);
           await ensureAnswerLoaded(job);
           
         // Answer/claims done, no scores yet
         } else if (job.stage === QAJobStageEnum.SCORING_ANSWERS) {
+          console.log("Hydrating job at stage:", job.stage);
           await ensureAnswerLoaded(job);
           await ensureClaimsLoaded(job);
         
         // Answer/claims/scores done
         } else if (job.stage === QAJobStageEnum.COMPLETED) {
+          console.log("Hydrating job at stage:", job.stage);
           await ensureAnswerLoaded(job);
           await ensureClaimsLoaded(job);
           await ensureScoreLoaded(job);
@@ -396,6 +406,7 @@ export default function QAJobControl({
     if (!snapshotId || !baselineJudgeId) return;
     try {
       const response = await qaJobApi.list(snapshotId);
+      console.log("Current job list...", response);
       const baselineJobs = response.data.filter(
         (job) => job.judge_id === baselineJudgeId
       );
@@ -417,6 +428,7 @@ export default function QAJobControl({
     if (pollingIntervalRef.current !== null) return; // Already polling
 
     pollingIntervalRef.current = window.setInterval(checkData, 2000);
+    console.log("Started polling...");
   }, [snapshotId, baselineJudgeId, stopPolling]);
 
   // Automatically trigger default selection once answers exist but none are selected.
@@ -610,6 +622,7 @@ export default function QAJobControl({
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {
     if (!snapshotId || !baselineJudgeId) return;
+    console.log("calling handleStart");
 
     // Check for failed jobs that need restarting
     const failedJobs = qaJobs.filter((job) => job.status === JobStatus.FAILED);
@@ -653,6 +666,7 @@ export default function QAJobControl({
 
   const handlePause = async () => {
     if (qaJobs.length === 0) return;
+    console.log("calling handlePause");
     setJobInAction(true);
     try {
       const response = await qaJobApi.pause(qaJobs.map((job) => job.id));
@@ -671,6 +685,7 @@ export default function QAJobControl({
     const pausedJobs = qaJobs.filter((job) => job.status === JobStatus.PAUSED);
     if (pausedJobs.length === 0) return;
 
+    console.log("calling handleResume");
     setJobInAction(true);
     try {
       const response = await qaJobApi.start(snapshotId, {
