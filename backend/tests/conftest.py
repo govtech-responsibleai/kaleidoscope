@@ -93,7 +93,8 @@ def test_client(test_db_factory):
     """
     from fastapi import FastAPI
     from src.common.config import get_settings
-    from src.query_generation.api.routes import targets, personas, questions, jobs
+    from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
+    from src.scoring.api.routes import snapshots, metrics
     from src.common.database.connection import get_db
 
     settings = get_settings()
@@ -110,6 +111,12 @@ def test_client(test_db_factory):
     test_app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"])
     # Jobs router has no prefix because routes define full paths (e.g., /targets/{id}/jobs/...)
     test_app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"])
+    # Snapshots and KB documents routers
+    test_app.include_router(snapshots.router, prefix=f"{settings.api_prefix}", tags=["Snapshots"])
+    test_app.include_router(kb_documents.router, prefix=f"{settings.api_prefix}", tags=["Knowledge Base"])
+    # Answers and metrics routers
+    test_app.include_router(answers.router, prefix=f"{settings.api_prefix}", tags=["Answers"])
+    test_app.include_router(metrics.router, prefix=f"{settings.api_prefix}", tags=["Metrics"])
 
     # Override database dependency to use test session factory
     def override_get_db():
@@ -143,6 +150,21 @@ def sample_target(test_db):
         target_users="Government officers",
         api_endpoint="https://api.test.com/chat",
         endpoint_type="aibots"
+    )
+    test_db.add(target)
+    test_db.commit()
+    test_db.refresh(target)
+    return target
+
+
+@pytest.fixture
+def other_target(test_db):
+    """Create a second target for cross-target tests."""
+    target = Target(
+        name="Other Bot",
+        agency="Other Agency",
+        purpose="Different purpose",
+        target_users="Different users"
     )
     test_db.add(target)
     test_db.commit()
@@ -426,31 +448,32 @@ def sample_judge_response_level(test_db):
 @pytest.fixture
 def sample_claims(test_db, sample_answer):
     """Create sample claims for testing."""
-    from datetime import datetime
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc)
     claims = [
         AnswerClaim(
             answer_id=sample_answer.id,
             claim_index=0,
             claim_text="AI poses privacy risks.",
             checkworthy=True,
-            created_at=datetime.utcnow(),
-            checked_at=datetime.utcnow()
+            created_at=now,
+            checked_at=now
         ),
         AnswerClaim(
             answer_id=sample_answer.id,
             claim_index=1,
             claim_text="Bias is a concern.",
             checkworthy=True,
-            created_at=datetime.utcnow(),
-            checked_at=datetime.utcnow()
+            created_at=now,
+            checked_at=now
         ),
         AnswerClaim(
             answer_id=sample_answer.id,
             claim_index=2,
             claim_text="Transparency is important.",
             checkworthy=True,
-            created_at=datetime.utcnow(),
-            checked_at=datetime.utcnow()
+            created_at=now,
+            checked_at=now
         )
     ]
     test_db.add_all(claims)
@@ -636,8 +659,8 @@ def auth_client(test_db_factory, test_user):
     from src.common.config import get_settings
     from src.common.database.connection import get_db
     from src.common.auth import auth_router, get_scoped_db
-    from src.query_generation.api.routes import targets, personas, questions, jobs
-    from src.scoring.api.routes import judges
+    from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents
+    from src.scoring.api.routes import judges, snapshots
 
     settings = get_settings()
 
@@ -658,8 +681,20 @@ def auth_client(test_db_factory, test_user):
     )
     test_app.include_router(
         judges.router,
-        prefix=f"{settings.api_prefix}/judges",
+        prefix=f"{settings.api_prefix}",
         tags=["Judges"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        snapshots.router,
+        prefix=f"{settings.api_prefix}",
+        tags=["Snapshots"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        kb_documents.router,
+        prefix=f"{settings.api_prefix}",
+        tags=["Knowledge Base"],
         dependencies=[Depends(get_scoped_db)]
     )
 
