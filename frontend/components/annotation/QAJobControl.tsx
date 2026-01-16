@@ -233,7 +233,6 @@ export default function QAJobControl({
     let cancelled = false;
 
     const loadData = async () => {
-      console.log("Loading initial data...")
       setLoadingInitialData(true);
       try {
         const [jobsResponse, answersResponse] = await Promise.all([
@@ -294,7 +293,6 @@ export default function QAJobControl({
           });
           return initial;
         });
-        console.log("Loaded initial data...")
       } catch (err) {
         console.error("Failed to load QA data:", err);
         notifyError("Failed to load QA data for this snapshot.");
@@ -328,9 +326,7 @@ export default function QAJobControl({
           const questionIds = response.data.map((q) => q.id);
           setQuestionsWithoutAnswers(questionIds);
           if (questionIds.length > 0) {
-            console.log(`QAJobControl: Detected ${questionIds.length} questions without answers:`, questionIds);
           } else {
-            console.log("QAJobControl: No new questions to evaluate.");
           }
         }
       } catch (err) {
@@ -363,7 +359,6 @@ export default function QAJobControl({
         // No answer yet
         if (!job.answer_id) continue;
 
-        console.log("Hydrating job at stage:", job.stage);
         // Answer done, no claims/scores yet
         if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS) {
           await ensureAnswerLoaded(job);
@@ -401,7 +396,6 @@ export default function QAJobControl({
     if (!snapshotId || !baselineJudgeId) return;
     try {
       const response = await qaJobApi.list(snapshotId);
-      console.log("Current job list...", response);
       const baselineJobs = response.data.filter(
         (job) => job.judge_id === baselineJudgeId
       );
@@ -420,7 +414,6 @@ export default function QAJobControl({
   };
 
   const startPolling = useCallback(() => {
-    console.log("Started polling...");
     if (pollingIntervalRef.current !== null) return; // Already polling
 
     pollingIntervalRef.current = window.setInterval(checkData, 2000);
@@ -698,13 +691,10 @@ export default function QAJobControl({
 
   const handleControlClick = () => {
     if (controlState === "start") {
-      console.log("calling handleStart")
       handleStart();
     } else if (controlState === "pause") {
-      console.log("calling handlePause")
       handlePause();
     } else if (controlState === "resume") {
-      console.log("calling handleResume")
       handleResume();
     }
   };

@@ -57,8 +57,8 @@ export default function QuestionsPage() {
   // Edit mode state
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
   const [editedText, setEditedText] = useState("");
-  const [editedType, setEditedType] = useState<QuestionType>(QuestionType.TYPICAL);
-  const [editedScope, setEditedScope] = useState<QuestionScope>(QuestionScope.IN_KB);
+  const [editedType, setEditedType] = useState<QuestionType | null>(QuestionType.TYPICAL);
+  const [editedScope, setEditedScope] = useState<QuestionScope | null>(QuestionScope.IN_KB);
 
   // Filter states
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<number[]>([]);
@@ -72,18 +72,67 @@ export default function QuestionsPage() {
         questionApi.listByTarget(targetId),
         personaApi.list(targetId),
       ]);
+
       setTarget(targetRes.data);
       setQuestions(questionsRes.data);
       setPersonas(personasRes.data);
+      return questionsRes.data; // Return the fresh questions data
     } catch (error) {
       console.error("Failed to fetch data:", error);
+      return [];
     } finally {
       setLoading(false);
     }
   };
 
+  // Load pending questions for review (from uploads)
+  // Takes the full questions list to avoid stale state issues
+  const loadPendingQuestionsForReview = async (allQuestions: QuestionResponse[]) => {
+    const pendingQuestions = allQuestions.filter(q => q.status === "pending");
+    if (pendingQuestions.length === 0) return;
+
+    setNewQuestions(pendingQuestions);
+    setJobStatus("finding_similar");
+
+    // Find similar questions for all pending questions
+    const similarMap: Record<number, QuestionResponse[]> = {};
+    try {
+      const similarRes = await questionApi.findSimilar({
+        target_id: targetId,
+        question_ids: pendingQuestions.map(q => q.id),
+        similarity_threshold: 0.7,
+      });
+
+      for (const result of similarRes.data.results) {
+        const similarQuestionIds = result.similar_questions.map(sq => sq.question_id);
+        const similarFullQuestions = allQuestions.filter(q =>
+          q.status === "approved" && similarQuestionIds.includes(q.id)
+        );
+        similarMap[result.query_question_id] = similarFullQuestions;
+      }
+    } catch (error) {
+      console.error("Failed to find similar questions:", error);
+      pendingQuestions.forEach(q => {
+        similarMap[q.id] = [];
+      });
+    }
+
+    setSimilarQuestionsMap(similarMap);
+    setJobStatus("ready_for_review");
+  };
+
   useEffect(() => {
-    fetchData();
+    const initialize = async () => {
+      const freshQuestions = await fetchData();
+      // On initial load, check for pending questions and load them for review
+      if (freshQuestions && freshQuestions.length > 0 && !activeJobId && !jobStatus) {
+        const pendingQuestions = freshQuestions.filter(q => q.status === "pending");
+        if (pendingQuestions.length > 0) {
+          await loadPendingQuestionsForReview(freshQuestions);
+        }
+      }
+    };
+    initialize();
   }, [targetId]);
 
   // Initialize persona filter when personas are loaded, and add new personas to selection
@@ -171,12 +220,18 @@ export default function QuestionsPage() {
   // Apply filters to approved questions
   const filteredQuestions = useMemo(() => {
     return approvedQuestions.filter((question) => {
-      const personaMatch = selectedPersonaIds.length === 0 || selectedPersonaIds.includes(question.persona_id);
-      const typeMatch = selectedTypes.includes(question.type);
-      const scopeMatch = selectedScopes.includes(question.scope);
+      // For persona filter: show questions with no persona when all personas are selected OR when no personas exist
+      const allPersonasSelected = selectedPersonaIds.length === personas.length;
+      const personaMatch =
+        selectedPersonaIds.length === 0 ||
+        allPersonasSelected ||
+        (question.persona_id !== null && selectedPersonaIds.includes(question.persona_id));
+
+      const typeMatch = question.type ? selectedTypes.includes(question.type) : selectedTypes.length === 2; // Show NA if both filters selected
+      const scopeMatch = question.scope ? selectedScopes.includes(question.scope) : selectedScopes.length === 2; // Show NA if both filters selected
       return personaMatch && typeMatch && scopeMatch;
     });
-  }, [approvedQuestions, selectedPersonaIds, selectedTypes, selectedScopes]);
+  }, [approvedQuestions, selectedPersonaIds, selectedTypes, selectedScopes, personas.length]);
 
   // Filter options for table header filters
   const personaFilterOptions: FilterOption<number>[] = useMemo(() => {
@@ -201,14 +256,14 @@ export default function QuestionsPage() {
       const updatedNewQuestions = newQuestions.filter(q => q.id !== questionId);
       setNewQuestions(updatedNewQuestions);
 
-      // If all questions reviewed, close the job section
+      // If all questions reviewed, close the job section and refresh
       if (updatedNewQuestions.length === 0) {
         setJobStatus(null);
         setSimilarQuestionsMap({});
+        // Only refresh when all questions are done
+        await fetchData();
       }
-
-      // Refresh main questions list to include the newly approved question
-      fetchData();
+      // Don't call fetchData() for individual approvals to avoid retriggering useEffect
     } catch (error) {
       console.error("Failed to approve question:", error);
       alert("Failed to approve question. Please try again.");
@@ -225,11 +280,14 @@ export default function QuestionsPage() {
       const updatedNewQuestions = newQuestions.filter(q => q.id !== questionId);
       setNewQuestions(updatedNewQuestions);
 
-      // If all questions reviewed, close the job section
+      // If all questions reviewed, close the job section and refresh
       if (updatedNewQuestions.length === 0) {
         setJobStatus(null);
         setSimilarQuestionsMap({});
+        // Only refresh when all questions are done
+        await fetchData();
       }
+      // Don't call fetchData() for individual rejections to avoid retriggering useEffect
     } catch (error) {
       console.error("Failed to reject question:", error);
       alert("Failed to reject question. Please try again.");
@@ -308,7 +366,8 @@ export default function QuestionsPage() {
     }
   };
 
-  const getPersonaTitle = (personaId: number) => {
+  const getPersonaTitle = (personaId: number | null) => {
+    if (personaId === null) return "NA";
     const persona = personas.find((p) => p.id === personaId);
     return persona?.title || "Unknown";
   };
@@ -379,10 +438,11 @@ export default function QuestionsPage() {
                                   <InputLabel id={`edit-type-${newQ.id}`}>Type</InputLabel>
                                   <Select
                                     labelId={`edit-type-${newQ.id}`}
-                                    value={editedType}
-                                    onChange={(e) => setEditedType(e.target.value as QuestionType)}
+                                    value={editedType ?? ""}
+                                    onChange={(e) => setEditedType(e.target.value === "" ? null : e.target.value as QuestionType)}
                                     label="Type"
                                   >
+                                    <MenuItem value="">NA</MenuItem>
                                     <MenuItem value={QuestionType.TYPICAL}>Typical</MenuItem>
                                     <MenuItem value={QuestionType.EDGE}>Edge</MenuItem>
                                   </Select>
@@ -391,10 +451,11 @@ export default function QuestionsPage() {
                                   <InputLabel id={`edit-scope-${newQ.id}`}>Scope</InputLabel>
                                   <Select
                                     labelId={`edit-scope-${newQ.id}`}
-                                    value={editedScope}
-                                    onChange={(e) => setEditedScope(e.target.value as QuestionScope)}
+                                    value={editedScope ?? ""}
+                                    onChange={(e) => setEditedScope(e.target.value === "" ? null : e.target.value as QuestionScope)}
                                     label="Scope"
                                   >
+                                    <MenuItem value="">NA</MenuItem>
                                     <MenuItem value={QuestionScope.IN_KB}>In KB</MenuItem>
                                     <MenuItem value={QuestionScope.OUT_KB}>Out KB</MenuItem>
                                   </Select>
@@ -408,8 +469,16 @@ export default function QuestionsPage() {
                               </Typography>
                               <Box display="flex" gap={1} mt={1}>
                                 <Chip label={getPersonaTitle(newQ.persona_id)} size="small" />
-                                <Chip label={newQ.type} size="small" color={newQ.type === "edge" ? "warning" : "default"} />
-                                <Chip label={newQ.scope === "in_kb" ? "In KB" : "Out KB"} size="small" color={newQ.scope === "in_kb" ? "success" : "info"} />
+                                <Chip
+                                  label={newQ.type || "NA"}
+                                  size="small"
+                                  color={newQ.type === "edge" ? "warning" : "default"}
+                                />
+                                <Chip
+                                  label={newQ.scope ? (newQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                                  size="small"
+                                  color={newQ.scope === "in_kb" ? "success" : newQ.scope === "out_kb" ? "info" : "default"}
+                                />
                               </Box>
                             </>
                           )}
@@ -481,8 +550,12 @@ export default function QuestionsPage() {
                               </Typography>
                               <Box display="flex" gap={1} mt={0.5}>
                                 <Chip label={getPersonaTitle(similarQ.persona_id)} size="small" variant="outlined" />
-                                <Chip label={similarQ.type} size="small" variant="outlined" />
-                                <Chip label={similarQ.scope === "in_kb" ? "In KB" : "Out KB"} size="small" variant="outlined" />
+                                <Chip label={similarQ.type || "NA"} size="small" variant="outlined" />
+                                <Chip
+                                  label={similarQ.scope ? (similarQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                                  size="small"
+                                  variant="outlined"
+                                />
                               </Box>
                             </Box>
                           ))}
@@ -588,7 +661,7 @@ export default function QuestionsPage() {
                     </TableCell>
                     <TableCell align="center">
                       <Chip
-                        label={question.type}
+                        label={question.type || "NA"}
                         size="small"
                         color={question.type === "edge" ? "warning" : "default"}
                         variant={question.type === "edge" ? "filled" : "outlined"}
@@ -596,9 +669,9 @@ export default function QuestionsPage() {
                     </TableCell>
                     <TableCell align="center">
                       <Chip
-                        label={question.scope === "in_kb" ? "In KB" : "Out KB"}
+                        label={question.scope ? (question.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
                         size="small"
-                        color={question.scope === "in_kb" ? "success" : "info"}
+                        color={question.scope === "in_kb" ? "success" : question.scope === "out_kb" ? "info" : "default"}
                         variant="outlined"
                       />
                     </TableCell>
@@ -625,6 +698,12 @@ export default function QuestionsPage() {
         targetId={targetId}
         onSuccess={fetchData}
         onJobLaunched={handleJobLaunched}
+        onQuestionsUploaded={async () => {
+          const freshQuestions = await fetchData();
+          if (freshQuestions) {
+            await loadPendingQuestionsForReview(freshQuestions);
+          }
+        }}
       />
     </Box>
   );

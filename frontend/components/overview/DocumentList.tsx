@@ -148,7 +148,7 @@ export default function DocumentList({
               type="file"
               hidden
               multiple
-              accept=".pdf,.docx,.txt,.md"
+              accept=".pdf,.docx,.md"
               onChange={handleFileUpload}
             />
           </Button>
@@ -167,7 +167,7 @@ export default function DocumentList({
               No documents uploaded yet
             </Typography>
             <Typography variant="body2" color="text.secondary">
-              Upload PDF, DOCX, TXT, or MD files to build your knowledge base
+              Upload PDF, DOCX, or MD files to build your knowledge base
             </Typography>
           </Paper>
         ) : (

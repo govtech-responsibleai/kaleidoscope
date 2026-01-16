@@ -151,7 +151,6 @@ export default function ScoringPage() {
     try {
       const response = await metricsApi.getResults(snapshotId);
       setResults(response.data.results ?? []);
-      // console.log("RESULTS", response.data.results);
     } catch (error) {
       console.error("Failed to fetch results:", error);
       setError("Failed to load results.");

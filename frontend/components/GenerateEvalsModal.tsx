@@ -22,8 +22,10 @@ import {
   Refresh as RefreshIcon,
   Edit as EditIcon,
   Save as SaveIcon,
+  Upload as UploadIcon,
+  AutoAwesome as AutoAwesomeIcon,
 } from "@mui/icons-material";
-import { jobApi, personaApi } from "@/lib/api";
+import { jobApi, personaApi, questionApi } from "@/lib/api";
 import { PersonaResponse, JobStatus, PersonaUpdate } from "@/lib/types";
 import { DEFAULT_PERSONA_COUNT, JOB_POLLING_INTERVAL } from "@/lib/constants";
 
@@ -33,6 +35,7 @@ interface GenerateEvalsModalProps {
   targetId: number;
   onSuccess: () => void;
   onJobLaunched?: (jobId: number) => void;
+  onQuestionsUploaded?: () => Promise<void>;
 }
 
 export default function GenerateEvalsModal({
@@ -41,13 +44,18 @@ export default function GenerateEvalsModal({
   targetId,
   onSuccess,
   onJobLaunched,
+  onQuestionsUploaded,
 }: GenerateEvalsModalProps) {
-  const [step, setStep] = useState(-1); // -1: Initial, 0: Select Personas, 1: Generate Questions
+  const [step, setStep] = useState(-2); // -2: Choose mode, -1: Generate personas, 0: Select Personas, 1: Generate Questions, 2: Upload file
   const [personas, setPersonas] = useState<PersonaResponse[]>([]);
   const [rejectedPersonaIds, setRejectedPersonaIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [generatingQuestions, setGeneratingQuestions] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Upload mode state
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   // Edit mode state
   const [editingPersonaId, setEditingPersonaId] = useState<number | null>(null);
@@ -196,13 +204,42 @@ export default function GenerateEvalsModal({
     }
   };
 
+  const handleFileUpload = async () => {
+    if (!uploadFile) return;
+
+    setUploading(true);
+    setError(null);
+
+    try {
+      // Upload the file - backend creates questions with status=pending
+      const uploadResponse = await questionApi.upload(targetId, uploadFile);
+
+      // Close the dialog first
+      handleClose();
+
+      // Notify parent to load pending questions for review
+      if (onQuestionsUploaded) {
+        await onQuestionsUploaded();
+      } else {
+        // Fallback to old behavior if callback not provided
+        onSuccess();
+      }
+    } catch (error) {
+      console.error("Failed to upload questions:", error);
+      setError("Failed to upload questions. Please check the file format and try again.");
+      setUploading(false);
+    }
+  };
+
   const handleClose = () => {
-    setStep(-1);
+    setStep(-2);
     setPersonas([]);
     setRejectedPersonaIds(new Set());
     setLoading(false);
     setGeneratingQuestions(false);
     setError(null);
+    setUploadFile(null);
+    setUploading(false);
     handleCancelEdit();
     onClose();
   };
@@ -225,6 +262,70 @@ export default function GenerateEvalsModal({
           <Alert severity="error" sx={{ mb: 2 }}>
             {error}
           </Alert>
+        )}
+
+        {step === -2 && (
+          <Box
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            py={4}
+            gap={3}
+          >
+            <Typography variant="h5" fontWeight={600} textAlign="center">
+              How would you like to add questions?
+            </Typography>
+            <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ maxWidth: 500 }}>
+              You can generate questions from scratch using AI, or upload a file with existing questions.
+            </Typography>
+            <Box display="flex" gap={3} mt={2}>
+              <Card
+                sx={{
+                  width: 250,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  "&:hover": {
+                    transform: "translateY(-4px)",
+                    boxShadow: 4,
+                  },
+                }}
+                onClick={() => setStep(-1)}
+              >
+                <CardContent sx={{ textAlign: "center", py: 4 }}>
+                  <AutoAwesomeIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
+                    Generate from Scratch
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    AI will create personas and generate targeted questions
+                  </Typography>
+                </CardContent>
+              </Card>
+              <Card
+                sx={{
+                  width: 250,
+                  cursor: "pointer",
+                  transition: "all 0.2s",
+                  "&:hover": {
+                    transform: "translateY(-4px)",
+                    boxShadow: 4,
+                  },
+                }}
+                onClick={() => setStep(2)}
+              >
+                <CardContent sx={{ textAlign: "center", py: 4 }}>
+                  <UploadIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
+                  <Typography variant="h6" fontWeight={600} gutterBottom>
+                    Upload File
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    Upload CSV, JSON, or Excel file with questions
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Box>
+          </Box>
         )}
 
         {step === -1 && (
@@ -419,6 +520,66 @@ export default function GenerateEvalsModal({
             </Typography>
           </Box>
         )}
+
+        {step === 2 && (
+          <Box py={3}>
+            <Typography variant="h6" fontWeight={600} gutterBottom>
+              Upload Questions File
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+              Upload a CSV, JSON, or Excel file containing your questions.
+              The file must have a "question" field. Optional fields: id, persona, type, scope.
+            </Typography>
+
+            <Box
+              sx={{
+                border: "2px dashed",
+                borderColor: uploadFile ? "primary.main" : "grey.300",
+                borderRadius: 2,
+                p: 4,
+                textAlign: "center",
+                backgroundColor: uploadFile ? "primary.50" : "grey.50",
+                cursor: "pointer",
+                transition: "all 0.2s",
+                "&:hover": {
+                  borderColor: "primary.main",
+                  backgroundColor: "primary.50",
+                },
+              }}
+              onClick={() => document.getElementById("file-upload-input")?.click()}
+            >
+              <input
+                id="file-upload-input"
+                type="file"
+                accept=".csv,.json,.xlsx,.xls"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) {
+                    setUploadFile(file);
+                    setError(null);
+                  }
+                }}
+              />
+              <UploadIcon sx={{ fontSize: 48, color: uploadFile ? "primary.main" : "grey.400", mb: 1 }} />
+              <Typography variant="body1" fontWeight={600} gutterBottom>
+                {uploadFile ? uploadFile.name : "Click to select a file"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Supported formats: CSV, JSON, Excel (.xlsx, .xls)
+              </Typography>
+            </Box>
+
+            {uploading && (
+              <Box display="flex" alignItems="center" justifyContent="center" gap={2} mt={3}>
+                <CircularProgress size={24} />
+                <Typography variant="body2" color="text.secondary">
+                  Uploading questions and checking for duplicates...
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
       </DialogContent>
 
       {step === 0 && (
@@ -432,6 +593,22 @@ export default function GenerateEvalsModal({
             disabled={loading || selectedCount === 0}
           >
             Generate Questions ({selectedCount} {selectedCount === 1 ? 'persona' : 'personas'})
+          </Button>
+        </DialogActions>
+      )}
+
+      {step === 2 && (
+        <DialogActions>
+          <Button onClick={() => setStep(-2)} disabled={uploading}>
+            Back
+          </Button>
+          <Button
+            onClick={handleFileUpload}
+            variant="contained"
+            disabled={!uploadFile || uploading}
+            startIcon={uploading ? <CircularProgress size={20} /> : <UploadIcon />}
+          >
+            {uploading ? "Uploading..." : "Upload"}
           </Button>
         </DialogActions>
       )}

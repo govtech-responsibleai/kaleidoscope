@@ -111,20 +111,20 @@ export enum QuestionScope {
 
 export interface QuestionBase {
   text: string;
-  type: QuestionType;
-  scope: QuestionScope;
+  type: QuestionType | null;
+  scope: QuestionScope | null;
 }
 
 export interface QuestionUpdate {
   text?: string;
-  type?: QuestionType;
-  scope?: QuestionScope;
+  type?: QuestionType | null;
+  scope?: QuestionScope | null;
 }
 
 export interface QuestionResponse extends QuestionBase {
   id: number;
-  job_id: number;
-  persona_id: number;
+  job_id: number | null;
+  persona_id: number | null;
   target_id: number;
   status: Status;
   created_at: string;

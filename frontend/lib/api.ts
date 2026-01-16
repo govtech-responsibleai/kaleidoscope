@@ -151,6 +151,20 @@ export const questionApi = {
   findSimilar: (data: import("./types").SimilarQuestionsRequest) =>
     api.post<import("./types").SimilarQuestionsResponse>("/questions/similar", data),
 
+  upload: (targetId: number, file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post<{ message: string; count: number; target_id: number }>(
+      `/questions/upload?target_id=${targetId}`,
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
+    );
+  },
+
   listApprovedWithoutAnswers: (snapshotId: number, judgeId: number) =>
     api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-answers`, {
       params: { judge_id: judgeId },

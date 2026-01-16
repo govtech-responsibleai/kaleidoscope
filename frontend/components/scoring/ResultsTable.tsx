@@ -152,7 +152,9 @@ export default function ResultsTable({
 
         questionResponses.forEach((res) => {
           newQuestionsMap.set(res.data.id, res.data);
-          personaIdsToFetch.add(res.data.persona_id);
+          if (res.data.persona_id !== null) {
+            personaIdsToFetch.add(res.data.persona_id);
+          }
         });
 
         setQuestionsMap(newQuestionsMap);
@@ -188,9 +190,12 @@ export default function ResultsTable({
         const question = questionsMap.get(result.question_id);
         if (!question) return true; // Keep if question not loaded yet
 
-        const typeMatch = selectedTypes.includes(question.type);
-        const scopeMatch = selectedScopes.includes(question.scope);
-        const personaMatch = selectedPersonaIds.length === 0 || selectedPersonaIds.includes(question.persona_id);
+        const typeMatch = question.type ? selectedTypes.includes(question.type) : true;
+        const scopeMatch = question.scope ? selectedScopes.includes(question.scope) : true;
+        const personaMatch =
+          question.persona_id === null ||
+          selectedPersonaIds.length === 0 ||
+          selectedPersonaIds.includes(question.persona_id);
 
         return typeMatch && scopeMatch && personaMatch;
       });

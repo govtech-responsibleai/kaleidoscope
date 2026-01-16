@@ -77,11 +77,11 @@ export default function CreateTargetModal({
       // Filter for supported file types
       const supportedFiles = fileArray.filter((file) => {
         const ext = file.name.split(".").pop()?.toLowerCase();
-        return ["pdf", "docx", "txt", "md"].includes(ext || "");
+        return ["pdf", "docx", "md"].includes(ext || "");
       });
 
       if (supportedFiles.length < fileArray.length) {
-        setError("Some files were skipped. Only PDF, DOCX, TXT, and MD files are supported.");
+        setError("Some files were skipped. Only PDF, DOCX, and MD files are supported.");
       } else {
         setError(null);
       }
@@ -232,7 +232,7 @@ export default function CreateTargetModal({
               Knowledge Base Documents (Optional)
             </Typography>
             <Typography variant="body2" color="text.secondary" gutterBottom>
-              Upload PDF, DOCX, TXT, or MD files
+              Upload PDF, DOCX, or MD files
             </Typography>
 
             <Button
@@ -248,7 +248,7 @@ export default function CreateTargetModal({
                 type="file"
                 hidden
                 multiple
-                accept=".pdf,.docx,.txt,.md"
+                accept=".pdf,.docx,.md"
                 onChange={handleFileSelect}
               />
             </Button>
