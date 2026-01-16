@@ -4,6 +4,7 @@ import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
 import { theme } from "@/lib/theme";
 import Navigation from "@/components/Navigation";
+import AuthCheck from "@/app/login/AuthCheck";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,7 +26,9 @@ export default async function RootLayout({
         <AppRouterCacheProvider>
           <ThemeProvider theme={theme}>
             <CssBaseline />
-            <Navigation>{children}</Navigation>
+            <AuthCheck>
+              <Navigation>{children}</Navigation>
+            </AuthCheck>
           </ThemeProvider>
         </AppRouterCacheProvider>
       </body>
