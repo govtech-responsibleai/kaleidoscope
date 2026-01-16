@@ -37,6 +37,14 @@ class PersonaRepository:
         return db.query(Persona).filter(Persona.id == persona_id).first()
 
     @staticmethod
+    def get_by_title(db: Session, target_id: int, title: str) -> Optional[Persona]:
+        """Get persona by title for a specific target."""
+        return db.query(Persona).filter(
+            Persona.target_id == target_id,
+            Persona.title == title
+        ).first()
+
+    @staticmethod
     def get_by_target(
         db: Session,
         target_id: int,

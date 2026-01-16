@@ -234,9 +234,11 @@ def list_questions_for_target(
     for question in questions:
         question_dict = {
             "id": question.id,
+            "source": question.source,
             "job_id": question.job_id,
             "persona_id": question.persona_id,
             "target_id": question.target_id,
+            "orig_id": question.orig_id,
             "text": question.text,
             "type": question.type,
             "scope": question.scope,

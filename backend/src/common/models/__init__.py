@@ -27,6 +27,9 @@ from src.common.models.persona import (
     PersonaBulkApprove
 )
 from src.common.models.question import (
+    QuestionType,
+    QuestionScope,
+    QuestionSource,
     QuestionBase,
     QuestionListOutput,
     QuestionUpdate,
@@ -117,6 +120,9 @@ __all__ = [
     "PersonaReject",
     "PersonaBulkApprove",
     # Question
+    "QuestionType",
+    "QuestionScope",
+    "QuestionSource",
     "QuestionBase",
     "QuestionListOutput",
     "QuestionUpdate",

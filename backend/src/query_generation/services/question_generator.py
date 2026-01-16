@@ -21,7 +21,7 @@ from src.common.database.repositories import (
     JobRepository,
     KBDocumentRepository
 )
-from src.common.database.models import JobStatusEnum
+from src.common.database.models import JobStatusEnum, QuestionSourceEnum
 
 logger = logging.getLogger(__name__)
 
@@ -258,6 +258,7 @@ class QuestionGenerator:
 
         for question in questions:
             questions_to_create.append({
+                "source": QuestionSourceEnum.job_generated,
                 "job_id": self.job_id,
                 "persona_id": persona_id,
                 "target_id": self.target.id,

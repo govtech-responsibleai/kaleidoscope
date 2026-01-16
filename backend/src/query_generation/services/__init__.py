@@ -12,6 +12,7 @@ from src.query_generation.services.question_generator import (
     find_similar_questions,
     find_similar_questions_batch
 )
+from src.query_generation.services.question_file_parser import QuestionFileParser
 
 __all__ = [
     "PersonaGenerator",
@@ -20,4 +21,5 @@ __all__ = [
     "generate_questions_for_job",
     "find_similar_questions",
     "find_similar_questions_batch",
+    "QuestionFileParser",
 ]

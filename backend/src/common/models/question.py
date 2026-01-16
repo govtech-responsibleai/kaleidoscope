@@ -21,11 +21,17 @@ class QuestionScope(str, Enum):
     out_kb = "out_kb"
 
 
+class QuestionSource(str, Enum):
+    """Source of question creation."""
+    job_generated = "job_generated"
+    uploaded = "uploaded"
+
+
 class QuestionBase(BaseModel):
     """Base fields for Question."""
     text: str = Field(..., description="The question text")
-    type: QuestionType = Field(..., description="Type of question (typical or edge)")
-    scope: QuestionScope = Field(..., description="Scope relative to KB (in_kb or out_kb)")
+    type: Optional[QuestionType] = Field(None, description="Type of question (typical or edge)")
+    scope: Optional[QuestionScope] = Field(None, description="Scope relative to KB (in_kb or out_kb)")
 
 
 class QuestionListOutput(BaseModel):
@@ -46,9 +52,11 @@ class QuestionUpdate(BaseModel):
 class QuestionResponse(QuestionBase):
     """Response model for Question."""
     id: int
-    job_id: int
-    persona_id: int
+    source: QuestionSource
+    job_id: Optional[int] = Field(None, description="Job ID (null for uploaded questions)")
+    persona_id: Optional[int] = Field(None, description="Persona ID (null for uploaded questions without persona)")
     target_id: int
+    orig_id: Optional[str] = Field(None, description="Original ID from user file (for uploaded questions)")
     status: Status
     created_at: datetime
     updated_at: datetime
