@@ -107,6 +107,7 @@ def seed_default_judges(db: Session) -> None:
         judge_data = {
             "name": config["name"],
             "model_name": config["model_name"],
+            "model_label": config.get("model_label"),
             "prompt_template": BASELINE_PROMPT_TEMPLATE,
             "params": {},
             "judge_type": config["judge_type"],
