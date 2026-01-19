@@ -148,16 +148,17 @@ export default function JudgeCard({
   // Calculate aggregate status from jobs
   const isRunning = isPolling || jobs.some((job) => job.status === JobStatus.RUNNING);
   const isCompleted = jobs.length > 0 && jobs.every((job) => job.status === JobStatus.COMPLETED) && questionsWithoutScores === 0;
-  const hasAllScores = questionsWithoutScores === 0;
+  const hasAllScores = jobs.length > 0 && questionsWithoutScores === 0;
   const completedCount = jobs.filter((job) => job.status === JobStatus.COMPLETED).length;
   const totalJobs = jobs.length;
 
   // Fetch metrics when all questions have scores (and not running)
+  // Only fetch if judge has actually run (jobs.length > 0)
   useEffect(() => {
     if ((isCompleted || hasAllScores) && snapshotId && !isRunning) {
       fetchMetrics();
     }
-  }, [isCompleted, hasAllScores, isRunning, snapshotId, judge.id]);
+  }, [isCompleted, hasAllScores, isRunning, snapshotId, judge.id, jobs.length]);
 
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
@@ -305,6 +306,8 @@ export default function JudgeCard({
             </Box>
           ) : questionsWithoutScores > 0 ? (
             totalJobs === 0 ? "Run" : `Update (${questionsWithoutScores} new question${questionsWithoutScores > 1 ? "s" : ""})`
+          ) : jobs.length === 0 ? (
+            "Run Evaluator"
           ) : (
             "Completed"
           )}

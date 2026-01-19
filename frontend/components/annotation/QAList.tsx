@@ -302,7 +302,7 @@ export default function QAList({
   };
 
   const activeQuestion = approvedQuestions.find((q) => q.id === activeQuestionId) || null;
-  const activePersona = activeQuestion ? personaMap[activeQuestion.persona_id] ?? null : null;
+  const activePersona = activeQuestion?.persona_id ? personaMap[activeQuestion.persona_id] ?? null : null;
   const activeAnswer = activeQuestion
     ? questionAnswerMap[activeQuestion.id] ?? null
     : null;

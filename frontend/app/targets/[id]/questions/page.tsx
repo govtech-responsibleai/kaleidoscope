@@ -439,7 +439,7 @@ export default function QuestionsPage() {
                                   <Select
                                     labelId={`edit-type-${newQ.id}`}
                                     value={editedType ?? ""}
-                                    onChange={(e) => setEditedType(e.target.value === "" ? null : e.target.value as QuestionType)}
+                                    onChange={(e) => setEditedType(!e.target.value ? null : e.target.value as QuestionType)}
                                     label="Type"
                                   >
                                     <MenuItem value="">NA</MenuItem>
@@ -452,7 +452,7 @@ export default function QuestionsPage() {
                                   <Select
                                     labelId={`edit-scope-${newQ.id}`}
                                     value={editedScope ?? ""}
-                                    onChange={(e) => setEditedScope(e.target.value === "" ? null : e.target.value as QuestionScope)}
+                                    onChange={(e) => setEditedScope(!e.target.value ? null : e.target.value as QuestionScope)}
                                     label="Scope"
                                   >
                                     <MenuItem value="">NA</MenuItem>
