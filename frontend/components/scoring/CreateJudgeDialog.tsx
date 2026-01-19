@@ -204,11 +204,14 @@ export default function CreateJudgeDialog({
 
     try {
       const updatedParams = { ...(params || {}), temperature: temp };
+      const selectedModel = availableModels.find((m) => m.value === modelName);
+      const modelLabel = selectedModel?.label || modelName;
 
       if (mode === "edit" && judge) {
         const data: JudgeUpdate = {
           name: name.trim(),
           model_name: modelName.trim(),
+          model_label: modelLabel,
           judge_type: judgeType,
           params: updatedParams,
           prompt_template: promptTemplate.trim() || undefined,
@@ -219,6 +222,7 @@ export default function CreateJudgeDialog({
           target_id: targetId,
           name: name.trim(),
           model_name: modelName.trim(),
+          model_label: modelLabel,
           judge_type: judgeType,
           params: updatedParams,
           prompt_template: promptTemplate.trim() || undefined,

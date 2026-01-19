@@ -54,8 +54,10 @@ export default function ResultsTableExpandedRow({
         const questionRes = await questionApi.get(result.question_id);
         setQuestion(questionRes.data);
 
-        const personaRes = await personaApi.get(questionRes.data.persona_id);
-        setPersona(personaRes.data);
+        if (questionRes.data.persona_id) {
+          const personaRes = await personaApi.get(questionRes.data.persona_id);
+          setPersona(personaRes.data);
+        }
       } catch (err) {
         console.error("Failed to fetch question/persona:", err);
       }

@@ -77,11 +77,11 @@ export default function CreateTargetModal({
       // Filter for supported file types
       const supportedFiles = fileArray.filter((file) => {
         const ext = file.name.split(".").pop()?.toLowerCase();
-        return ["pdf", "docx", "md"].includes(ext || "");
+        return ["pdf", "docx", "txt", "md"].includes(ext || "");
       });
 
       if (supportedFiles.length < fileArray.length) {
-        setError("Some files were skipped. Only PDF, DOCX, and MD files are supported.");
+        setError("Some files were skipped. Only PDF, DOCX, TXT, and MD files are supported.");
       } else {
         setError(null);
       }
@@ -241,7 +241,7 @@ export default function CreateTargetModal({
                 type="file"
                 hidden
                 multiple
-                accept=".pdf,.docx,.md"
+                accept=".pdf,.docx,.txt,.md"
                 onChange={handleFileSelect}
               />
             </Button>

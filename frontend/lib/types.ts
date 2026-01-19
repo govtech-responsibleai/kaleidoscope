@@ -266,6 +266,7 @@ export interface QAJob {
   type: string;
   status: JobStatus;
   stage: QAJobStageEnum;
+  error_message: string | null;
   prompt_tokens: number;
   completion_tokens: number;
   total_cost: number;
@@ -376,6 +377,7 @@ export interface JudgeConfig {
   target_id: number;
   name: string;
   model_name: string;
+  model_label?: string;
   temperature?: number;
   judge_type: JudgeType;
   is_baseline: boolean;
@@ -390,6 +392,7 @@ export interface JudgeCreate {
   target_id: number;
   name: string;
   model_name: string;
+  model_label?: string;
   judge_type: JudgeType;
   params?: Record<string, any>;
   prompt_template?: string;
@@ -398,6 +401,7 @@ export interface JudgeCreate {
 export interface JudgeUpdate {
   name?: string;
   model_name?: string;
+  model_label?: string;
   judge_type?: JudgeType;
   params?: Record<string, any>;
   prompt_template?: string;
@@ -425,13 +429,28 @@ export interface JudgeAccuracy {
 export type AggregationMethod =
   | "majority"
   | "majority_tied"
-  | "no_aligned_judge";
+  | "no_aligned_judge"
+  | "override";
 
 export interface AggregatedAccuracy {
   answer_id: number;
   method: AggregationMethod;
   label: boolean | null;
+  is_edited: boolean;
   metadata: string[];
+}
+
+// Answer Label Override types
+export interface AnswerLabelOverride {
+  id: number;
+  answer_id: number;
+  metric_name: string;
+  edited_label: boolean;
+  edited_at: string;
+}
+
+export interface AnswerLabelOverrideCreate {
+  edited_label: boolean;
 }
 
 export interface ResultRow {
@@ -454,6 +473,7 @@ export interface SnapshotMetric {
   created_at: string;
   aggregated_accuracy: number;
   total_answers: number;
+  edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
   has_aligned_judges: boolean;
   reliable_judge_count: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   Box,
   Button,
@@ -16,16 +16,16 @@ import {
 } from "@mui/material";
 import { InfoOutlined as InfoOutlinedIcon, MoreVert as MoreVertIcon } from "@mui/icons-material";
 import { JudgeConfig, JudgeAlignment, JudgeAccuracy, JobStatus, QAJob } from "@/lib/types";
-import { metricsApi } from "@/lib/api";
+import { metricsApi, qaJobApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 
 interface JudgeCardProps {
   judge: JudgeConfig;
   snapshotId: number;
-  jobs: QAJob[];
   questionsWithoutScores: number;
   hasQuestionsWithoutAnswers: boolean;
-  onRun: () => void;
+  onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
+  onJobComplete: () => void;
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
@@ -34,10 +34,10 @@ interface JudgeCardProps {
 export default function JudgeCard({
   judge,
   snapshotId,
-  jobs,
   questionsWithoutScores,
   hasQuestionsWithoutAnswers,
-  onRun,
+  onJobStart,
+  onJobComplete,
   onEdit,
   onDuplicate,
   onDelete,
@@ -46,19 +46,119 @@ export default function JudgeCard({
   const [alignment, setAlignment] = useState<JudgeAlignment | null>(null);
   const [accuracy, setAccuracy] = useState<JudgeAccuracy | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
+  const [jobs, setJobs] = useState<QAJob[]>([]);
+  const [isPolling, setIsPolling] = useState(false);
+
+  const pollingRef = useRef<number | null>(null);
+  const onJobCompleteRef = useRef(onJobComplete);
+
+  // Keep the ref updated with latest callback
+  useEffect(() => {
+    onJobCompleteRef.current = onJobComplete;
+  }, [onJobComplete]);
+
+  // Fetch jobs for this specific judge
+  const fetchJobs = useCallback(async (): Promise<QAJob[]> => {
+    if (!snapshotId) return [];
+    try {
+      const response = await qaJobApi.listByJudge(snapshotId, judge.id);
+      setJobs(response.data);
+      return response.data;
+    } catch (error) {
+      console.error("Failed to fetch jobs:", error);
+      return [];
+    }
+  }, [snapshotId, judge.id]);
+
+  // Start polling for job updates
+  const startPolling = useCallback(() => {
+    // Clear any existing polling
+    if (pollingRef.current) {
+      window.clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+
+    setIsPolling(true);
+
+    const poll = async () => {
+      // Fetch directly instead of using callback to avoid stale closure
+      try {
+        console.log(`[JudgeCard ${judge.name}] Polling jobs for snapshot ${snapshotId}, judge ${judge.id}`);
+        const response = await qaJobApi.listByJudge(snapshotId, judge.id);
+        const currentJobs = response.data;
+
+        const completedCount = currentJobs.filter((j: QAJob) => j.status === JobStatus.COMPLETED).length;
+        console.log(`[JudgeCard ${judge.name}] Fetched ${currentJobs.length} jobs, ${completedCount} completed`, currentJobs.map((j: QAJob) => j.status));
+
+        setJobs(currentJobs);
+
+        // Check if all jobs are completed
+        const allCompleted = currentJobs.length > 0 &&
+          currentJobs.every((job: QAJob) => job.status === JobStatus.COMPLETED);
+
+        if (allCompleted) {
+          // Stop polling
+          if (pollingRef.current) {
+            window.clearInterval(pollingRef.current);
+            pollingRef.current = null;
+          }
+          setIsPolling(false);
+
+          // Fetch metrics and notify parent using ref to get latest callback
+          await fetchMetrics();
+          onJobCompleteRef.current();
+        }
+      } catch (error) {
+        console.error("Failed to poll jobs:", error);
+      }
+    };
+
+    // Poll immediately, then every 5 seconds
+    poll();
+    pollingRef.current = window.setInterval(poll, 5000);
+  }, [snapshotId, judge.id]);
+
+  // Cleanup polling on unmount or snapshot change
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) {
+        window.clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, []);
+
+  // Reset state when snapshot changes
+  useEffect(() => {
+    setJobs([]);
+    setAlignment(null);
+    setAccuracy(null);
+    setIsPolling(false);
+    if (pollingRef.current) {
+      window.clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, [snapshotId]);
+
+  // Fetch jobs on mount and when snapshot changes
+  useEffect(() => {
+    fetchJobs();
+  }, [fetchJobs]);
 
   // Calculate aggregate status from jobs
-  const isRunning = jobs.some((job) => job.status === JobStatus.RUNNING);
+  const isRunning = isPolling || jobs.some((job) => job.status === JobStatus.RUNNING);
   const isCompleted = jobs.length > 0 && jobs.every((job) => job.status === JobStatus.COMPLETED) && questionsWithoutScores === 0;
+  const hasAllScores = jobs.length > 0 && questionsWithoutScores === 0;
   const completedCount = jobs.filter((job) => job.status === JobStatus.COMPLETED).length;
   const totalJobs = jobs.length;
 
-  // Fetch metrics when job completes
+  // Fetch metrics when all questions have scores (and not running)
+  // Only fetch if judge has actually run (jobs.length > 0)
   useEffect(() => {
-    if (isCompleted && snapshotId) {
+    if ((isCompleted || hasAllScores) && snapshotId && !isRunning) {
       fetchMetrics();
     }
-  }, [isCompleted, snapshotId, judge.id]);
+  }, [isCompleted, hasAllScores, isRunning, snapshotId, judge.id, jobs.length]);
 
   const fetchMetrics = async () => {
     setLoadingMetrics(true);
@@ -73,6 +173,16 @@ export default function JudgeCard({
       console.error("Failed to fetch metrics:", error);
     } finally {
       setLoadingMetrics(false);
+    }
+  };
+
+  // Handle run button click
+  const handleRun = async () => {
+    console.log(`[JudgeCard ${judge.name}] handleRun called`);
+    const createdJobs = await onJobStart(judge.id);
+    if (createdJobs && createdJobs.length > 0) {
+      setJobs(createdJobs);
+      startPolling();
     }
   };
 
@@ -117,7 +227,7 @@ export default function JudgeCard({
                 />
               )}
               <Typography variant="caption" color="text.secondary" noWrap sx={{ textOverflow: "ellipsis" }}>
-                {judge.model_name}
+                {judge.model_label || judge.model_name}
               </Typography>
             </Stack>
           </Box>
@@ -187,17 +297,17 @@ export default function JudgeCard({
           variant="contained"
           fullWidth
           sx={{ mt: 2 }}
-          onClick={onRun}
-          disabled={isRunning || isCompleted || loadingMetrics || hasQuestionsWithoutAnswers}
+          onClick={handleRun}
+          disabled={isRunning || isCompleted || hasAllScores || loadingMetrics || hasQuestionsWithoutAnswers}
         >
           {isRunning ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CircularProgress size={16} /> Running ({completedCount}/{totalJobs})
             </Box>
-          ) : totalJobs === 0 ? (
-            "Run"
           ) : questionsWithoutScores > 0 ? (
-            `Update (${questionsWithoutScores} new question${questionsWithoutScores > 1 ? "s" : ""})`
+            totalJobs === 0 ? "Run" : `Update (${questionsWithoutScores} new question${questionsWithoutScores > 1 ? "s" : ""})`
+          ) : jobs.length === 0 ? (
+            "Run Evaluator"
           ) : (
             "Completed"
           )}

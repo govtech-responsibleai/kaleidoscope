@@ -34,6 +34,7 @@ import {
 import { ResultRow, JudgeConfig, QuestionResponse, PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
 import { questionApi, personaApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
+import LabelCell from "./LabelCell";
 import { QAFilter, JudgeFilter } from "./filters";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 
@@ -41,6 +42,7 @@ interface ResultsTableProps {
   results: ResultRow[];
   snapshotId: number;
   judges: JudgeConfig[];
+  onLabelChange?: () => void;
 }
 
 const extractReliableLabels = (metadata: string[]) => {
@@ -105,6 +107,7 @@ export default function ResultsTable({
   results,
   snapshotId,
   judges,
+  onLabelChange,
 }: ResultsTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
@@ -204,7 +207,21 @@ export default function ResultsTable({
     // Filter by label
     if (selectedLabels.length < 2) {
       filtered = filtered.filter((result) => {
-        const metadata = result.aggregated_accuracy?.metadata ?? [];
+        const aggregated = result.aggregated_accuracy;
+
+        // If label was edited, use the override directly
+        if (aggregated?.is_edited && aggregated.label !== null) {
+          const isAccurate = aggregated.label === true;
+          if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) {
+            return !isAccurate;
+          } else if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) {
+            return isAccurate;
+          }
+          return true;
+        }
+
+        // Otherwise use evaluator majority vote
+        const metadata = aggregated?.metadata ?? [];
         const labels = extractReliableLabels(metadata);
         const inaccurateCount = labels.filter((l) => l === false).length;
         const accurateCount = labels.filter((l) => l === true).length;
@@ -452,7 +469,7 @@ export default function ResultsTable({
       )}
 
       <TableContainer component={Paper} sx={{ boxShadow: "none" }}>
-        <Table size="small" sx={{ tableLayout: "fixed" }}>
+        <Table size="small">
 
           <TableHead>
             <TableRow>
@@ -504,12 +521,16 @@ export default function ResultsTable({
                 evaluatorLabels.map((e) => [e.name, e.label])
               );
 
-              // Calculate majority vote based on selected judges
+              // Determine chip label - use override if edited, otherwise calculate from evaluators
               let chipLabel = "No data";
               let chipColor: ChipProps["color"] = "default";
               let helperText: string | null = null;
 
-              if (selectedJudges.size === 0) {
+              // If label was manually edited, use the aggregated label directly
+              if (aggregatedAccuracy?.is_edited && aggregatedAccuracy.label !== null) {
+                chipLabel = aggregatedAccuracy.label ? "Accurate" : "Inaccurate";
+                chipColor = aggregatedAccuracy.label ? "success" : "error";
+              } else if (selectedJudges.size === 0) {
                 chipLabel = "No evaluators selected";
                 chipColor = "warning";
                 helperText = "Please select at least one evaluator.";
@@ -576,14 +597,14 @@ export default function ResultsTable({
                     </TableCell>
 
                     <TableCell>
-                      <Stack spacing={0.5}>
-                        <Chip label={chipLabel} color={chipColor} size="small" />
-                        {helperText && (
-                          <Typography variant="caption" color="text.secondary">
-                            {helperText}
-                          </Typography>
-                        )}
-                      </Stack>
+                      <LabelCell
+                        answerId={result.answer_id}
+                        aggregatedAccuracy={aggregatedAccuracy}
+                        chipLabel={chipLabel}
+                        chipColor={chipColor}
+                        helperText={helperText}
+                        onLabelChange={onLabelChange}
+                      />
                     </TableCell>
 
                     {reliableJudges

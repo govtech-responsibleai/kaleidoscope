@@ -121,58 +121,59 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
   const isFailed = job.status === JobStatus.FAILED;
 
   return (
-    <Paper variant="outlined" sx={{ p: 2, bgcolor: "grey.50" }}>
-      <Stack spacing={2}>
-        <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <Typography variant="subtitle2" fontWeight={600}>
-            Processing Status
+    <Stack spacing={2} sx={{ p: 2, bgcolor: "grey.50", borderBottom: 1, borderColor: "divider" }}>
+      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <Typography variant="subtitle2" fontWeight={600}>
+          Processing Status
+        </Typography>
+        {getStatusChip()}
+      </Box>
+
+      {isRunning && (
+        <>
+          <LinearProgress
+            variant="determinate"
+            value={progress}
+            sx={{ height: 6, borderRadius: 1 }}
+          />
+          <Typography variant="caption" color="text.secondary">
+            {getStageLabel(job.stage)}...
           </Typography>
-          {getStatusChip()}
+        </>
+      )}
+
+      {isFailed && (
+        <Alert severity="error" sx={{ py: 0.5 }}>
+          {job.error_message
+            ? job.error_message
+            : `Job failed at stage: ${getStageLabel(job.stage)}. Try running again.`}
+        </Alert>
+      )}
+
+      {/* Cost tracking (optional) */}
+      {(job.prompt_tokens > 0 || job.completion_tokens > 0) && (
+        <Box sx={{ pt: 1, borderTop: 1, borderColor: "divider" }}>
+          <Stack direction="row" spacing={3}>
+            <Box>
+              <Typography variant="caption" color="text.secondary">
+                Tokens
+              </Typography>
+              <Typography variant="body2">
+                {job.prompt_tokens + job.completion_tokens}
+              </Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary">
+                Cost
+              </Typography>
+              <Typography variant="body2">
+                ${job.total_cost.toFixed(4)}
+              </Typography>
+            </Box>
+          </Stack>
         </Box>
+      )}
 
-        {isRunning && (
-          <>
-            <LinearProgress
-              variant="determinate"
-              value={progress}
-              sx={{ height: 6, borderRadius: 1 }}
-            />
-            <Typography variant="caption" color="text.secondary">
-              {getStageLabel(job.stage)}...
-            </Typography>
-          </>
-        )}
-
-        {isFailed && (
-          <Alert severity="error" sx={{ py: 0.5 }}>
-            Job failed at stage: `{getStageLabel(job.stage)}`. Try running again.
-          </Alert>
-        )}
-
-        {/* Cost tracking (optional) */}
-        {(job.prompt_tokens > 0 || job.completion_tokens > 0) && (
-          <Box sx={{ pt: 1, borderTop: 1, borderColor: "divider" }}>
-            <Stack direction="row" spacing={3}>
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Tokens
-                </Typography>
-                <Typography variant="body2">
-                  {job.prompt_tokens + job.completion_tokens}
-                </Typography>
-              </Box>
-              <Box>
-                <Typography variant="caption" color="text.secondary">
-                  Cost
-                </Typography>
-                <Typography variant="body2">
-                  ${job.total_cost.toFixed(4)}
-                </Typography>
-              </Box>
-            </Stack>
-          </Box>
-        )}
-      </Stack>
-    </Paper>
+    </Stack>
   );
 }

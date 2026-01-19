@@ -24,6 +24,13 @@ export const theme = createTheme({
     ].join(","),
   },
   components: {
+    MuiCssBaseline: {
+      styleOverrides: {
+        html: {
+          fontSize: "90%", // Scale down all rem-based values
+        },
+      },
+    },
     MuiTab: {
       styleOverrides: {
         root: {

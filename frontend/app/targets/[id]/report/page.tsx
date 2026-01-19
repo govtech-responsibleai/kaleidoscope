@@ -25,7 +25,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { targetApi, snapshotApi, judgeApi, metricsApi } from "@/lib/api";
 import { TargetResponse, TargetStats, SnapshotMetric, ConfusionMatrix, Snapshot } from "@/lib/types";
 import SnapshotAccuracyChart from "@/components/overview/SnapshotAccuracyChart";
-import SelectedSnapshotMetricsCard from "@/components/overview/SelectedSnapshotMetricsCard";
+import SnapshotAccuracyCard from "@/components/shared/SnapshotAccuracyCard";
 import ConfusionMatrixCard from "@/components/overview/ConfusionMatrixCard";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import html2canvas from "html2canvas";
@@ -400,9 +400,11 @@ export default function TargetReport() {
                     </CardContent>
                   </Card>
                 ) : (
-                  <SelectedSnapshotMetricsCard
-                    latestSnapshot={selectedSnapshotMetric}
+                  <SnapshotAccuracyCard
+                    snapshotMetric={selectedSnapshotMetric}
                     loading={false}
+                    emptyMessage="No snapshots yet"
+                    showWarningBox
                   />
                 )}
 
