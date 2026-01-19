@@ -757,7 +757,8 @@ Returns:
 
 ## Observability with Phoenix
 
-If `PHOENIX_COLLECTOR_ENDPOINT` is configured, all LLM calls are automatically tracked:
+If `PHOENIX_COLLECTOR_ENDPOINT` is configured, all LLM calls are automatically tracked. 
+Note: when running in Docker, use `host.docker.internal` instead of `localhost` to reach Phoenix on your host machine.
 
 - Token counts (prompt, completion)
 - Costs per call
