@@ -15,11 +15,12 @@ from src.common.database.repositories.annotation_repo import AnnotationRepositor
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.judge_repo import JudgeRepository
+from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
 from src.common.database.models import AnswerScore
 
 logger = logging.getLogger(__name__)
 
-AggregationMethod = Literal["majority", "majority_tied", "no_aligned_judge"]
+AggregationMethod = Literal["majority", "majority_tied", "no_aligned_judge", "override"]
 
 
 @dataclass
@@ -29,6 +30,7 @@ class AggregatedAnswerScore:
     answer_id: int
     method: AggregationMethod
     label: Optional[bool]
+    is_edited: bool = False
     metadata: List[str] = field(default_factory=list)
     accepted_scores: List[AnswerScore] = field(default_factory=list)
 
@@ -37,6 +39,7 @@ class AggregatedAnswerScore:
             "answer_id": self.answer_id,
             "method": self.method,
             "label": self.label,
+            "is_edited": self.is_edited,
             "metadata": self.metadata,
             "reliable_judge_count": len(self.accepted_scores),
         }
@@ -248,6 +251,9 @@ class MetricsService:
         results = []
 
         for answer in answers:
+            # Check for user override first
+            override = AnswerLabelOverrideRepository.get_by_answer(self.db, answer.id)
+
             # Get all scores for this answer across all judges
             answer_scores = AnswerScoreRepository.get_by_answer(self.db, answer.id)
 
@@ -263,11 +269,22 @@ class MetricsService:
                 else:
                     metadata.append(f"- {judge_name}: excluded as not reliable")
 
-            if not reliable_scores:
+            # If there's an override, use it instead of majority vote
+            if override:
+                aggregated_score = AggregatedAnswerScore(
+                    answer_id=answer.id,
+                    method="override",
+                    label=override.edited_label,
+                    is_edited=True,
+                    metadata=metadata,
+                    accepted_scores=reliable_scores
+                )
+            elif not reliable_scores:
                 aggregated_score = AggregatedAnswerScore(
                     answer_id=answer.id,
                     method="no_aligned_judge",
                     label=None,
+                    is_edited=False,
                     metadata=metadata,
                     accepted_scores=reliable_scores
                 )
@@ -278,6 +295,7 @@ class MetricsService:
                         answer_id=answer.id,
                         method="majority_tied",
                         label=None,
+                        is_edited=False,
                         metadata=metadata,
                         accepted_scores=reliable_scores
                     )
@@ -289,6 +307,7 @@ class MetricsService:
                             answer_id=answer.id,
                             method="majority_tied",
                             label=None,
+                            is_edited=False,
                             metadata=metadata,
                             accepted_scores=reliable_scores
                         )
@@ -297,6 +316,7 @@ class MetricsService:
                             answer_id=answer.id,
                             method="majority",
                             label=most_common[0][0],
+                            is_edited=False,
                             metadata=metadata,
                             accepted_scores=reliable_scores
                         )
@@ -412,23 +432,31 @@ class MetricsService:
             has_aligned_judges = False
 
         # Filter out QAs with no reliable judges or incomplete judge coverage
+        # But include overrides even if they have no reliable judges
         filtered_results = [
             r for r in aggregated_results
-            if r.get("aggregated_accuracy", {}).get("method") != "no_aligned_judge"
-            and r.get("aggregated_accuracy", {}).get("reliable_judge_count", 0) == reliable_judge_count
+            if (r.get("aggregated_accuracy", {}).get("method") == "override") or
+            (r.get("aggregated_accuracy", {}).get("method") != "no_aligned_judge"
+             and r.get("aggregated_accuracy", {}).get("reliable_judge_count", 0) == reliable_judge_count)
         ]
 
         # Count accurate vs pending answers (using filtered results)
         total_answers = len(filtered_results)
         accurate_count = 0
         pending_count = 0
+        edited_count = 0
 
         for result in filtered_results:
             aggregated_accuracy = result.get("aggregated_accuracy", {})
             label = aggregated_accuracy.get("label")
             method = aggregated_accuracy.get("method")
+            is_edited = aggregated_accuracy.get("is_edited", False)
 
-            if method == "majority" and label is True:
+            if is_edited:
+                edited_count += 1
+
+            # Count accurate if label is True (either from majority vote or override)
+            if (method == "majority" or method == "override") and label is True:
                 accurate_count += 1
             else:
                 # Includes: label=False (inaccurate), label=None (tied)
@@ -440,7 +468,7 @@ class MetricsService:
         logger.info(
             f"Snapshot {snapshot_id} summary: "
             f"Accuracy={aggregated_accuracy:.3f} ({accurate_count}/{total_answers}), "
-            f"Reliable judges: {reliable_judge_count}"
+            f"Reliable judges: {reliable_judge_count}, Edited: {edited_count}"
         )
 
         return {
@@ -448,6 +476,7 @@ class MetricsService:
             "total_answers": total_answers,
             "accurate_count": accurate_count,
             "pending_count": pending_count,
+            "edited_count": edited_count,
             "judge_alignment_range": judge_alignment_range,
             "has_aligned_judges": has_aligned_judges,
             "reliable_judge_count": reliable_judge_count

@@ -318,6 +318,7 @@ class QAJob(Base):
     type = Column(Enum(QAJobTypeEnum), nullable=False, index=True)
     status = Column(Enum(JobStatusEnum), default=JobStatusEnum.running, nullable=False, index=True)
     stage = Column(Enum(QAJobStageEnum), default=QAJobStageEnum.starting, nullable=False, index=True)
+    error_message = Column(Text, nullable=True)  # Stores error details when job fails
     prompt_tokens = Column(Integer, default=0)
     completion_tokens = Column(Integer, default=0)
     total_cost = Column(Float, default=0.0)
@@ -351,6 +352,7 @@ class Judge(Base):
     # Fields
     name = Column(String, nullable=False)
     model_name = Column(String, nullable=False)
+    model_label = Column(String, nullable=True)
     prompt_template = Column(Text, nullable=False)
     params = Column(JSON, nullable=False, default=dict)
     judge_type = Column(Enum(JudgeTypeEnum), nullable=False)
@@ -454,3 +456,20 @@ class Annotation(Base):
 
     # Relationships
     answer = relationship("Answer", back_populates="annotation")
+
+
+class AnswerLabelOverride(Base):
+    """
+    User override for aggregated accuracy label at answer level.
+    Allows users to manually correct the majority-vote label.
+    """
+    __tablename__ = "answer_label_overrides"
+
+    id = Column(Integer, primary_key=True, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    metric_name = Column(String(50), nullable=False, default="accuracy")
+    edited_label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate
+    edited_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relationships
+    answer = relationship("Answer")

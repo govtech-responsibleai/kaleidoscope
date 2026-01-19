@@ -10,8 +10,10 @@ This is the root API that includes all service modules:
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from sqlalchemy.exc import OperationalError
 
 from src.common.config import get_settings
 from src.common.auth import auth_router, get_scoped_db
@@ -81,11 +83,29 @@ app = FastAPI(
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Update this in production
+    allow_origins=[
+        "https://kaleidoscope.app.tc1.airbase.sg",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Global exception handler for database connection errors
+# This ensures CORS headers are included even on 500 errors
+@app.exception_handler(OperationalError)
+async def database_exception_handler(request: Request, exc: OperationalError):
+    """Handle database connection errors gracefully."""
+    logger.error(f"Database error: {exc}")
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "Database temporarily unavailable. Please try again.",
+            "error_type": "database_connection"
+        }
+    )
 
 # Auth router (no auth required - users need to log in)
 app.include_router(auth_router, prefix=f"{settings.api_prefix}/auth", tags=["Auth"])

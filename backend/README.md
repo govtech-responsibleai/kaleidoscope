@@ -757,7 +757,8 @@ Returns:
 
 ## Observability with Phoenix
 
-If `PHOENIX_COLLECTOR_ENDPOINT` is configured, all LLM calls are automatically tracked:
+If `PHOENIX_COLLECTOR_ENDPOINT` is configured, all LLM calls are automatically tracked. 
+Note: when running in Docker, use `host.docker.internal` instead of `localhost` to reach Phoenix on your host machine.
 
 - Token counts (prompt, completion)
 - Costs per call
@@ -790,6 +791,20 @@ pytest tests/unit/test_question_generator.py -v
 
 ### Database Migrations
 
+**Manual Migration Scripts** (in `src/common/database/migrations/`):
+
+```bash
+# Run migrations inside Docker container (recommended)
+docker exec -it kaleidoscope-api python -m src.common.database.migrations.<migration_name>
+
+# Or if running locally with correct DATABASE_URL in .env
+python -m src.common.database.migrations.<migration_name>
+
+# Rollback a migration
+docker exec -it kaleidoscope-api python -m src.common.database.migrations.<migration_name> --downgrade
+```
+
+**Alembic (alternative)**:
 ```bash
 # Create new migration
 alembic revision --autogenerate -m "Description"

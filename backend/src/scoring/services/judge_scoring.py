@@ -98,8 +98,14 @@ class AnswerJudge:
         except Exception as e:
             logger.error(f"Answer scoring failed for job {self.job_id}: {e}", exc_info=True)
 
-            # Update job with failure status
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.failed, self.job.stage)
+            # Update job with failure status and error message
+            QAJobRepository.update_status(
+                self.db,
+                self.job_id,
+                JobStatusEnum.failed,
+                self.job.stage,
+                error_message=str(e)
+            )
 
     async def _score_claim_based(self):
         """
@@ -115,23 +121,24 @@ class AnswerJudge:
         Returns:
             Created AnswerScore object
         """
-        # Get knowledge base documents - fallback to RAG citations if KB not available
+        # Get context for scoring - prefer RAG citations, fallback to KB documents
         target_id = self.answer.question.target_id
-        kb_documents = KBDocumentRepository.get_by_target(self.db, target_id)
 
-        if kb_documents:
-            # Priority 1: Use uploaded KB documents
-            kb_text = "\n\n".join([doc.processed_text for doc in kb_documents])
-        elif self.answer.rag_citations:
-            # Priority 2: Use RAG citations from answer
+        if self.answer.rag_citations:
+            # Priority 1: Use RAG citations from answer
             rag_chunks = [
                 f"=== Source Document: {chunk['source']} (Chunk {chunk['id']}) ===\n{chunk['chunk']}"
                 for i, chunk in enumerate(self.answer.rag_citations)
             ]
             kb_text = "\n\n".join(rag_chunks)
         else:
-            # Priority 3: Empty fallback
-            kb_text = "[document is empty]"
+            # Priority 2: Fallback to uploaded KB documents
+            kb_documents = KBDocumentRepository.get_by_target(self.db, target_id)
+            if kb_documents:
+                kb_text = "\n\n".join([doc.processed_text for doc in kb_documents])
+            else:
+                # Priority 3: Empty fallback
+                kb_text = "[document is empty]"
 
         # Get checkworthy claims
         all_claims = AnswerClaimRepository.get_by_answer(self.db, self.answer.id)
@@ -263,23 +270,24 @@ class AnswerJudge:
         Returns:
             Created AnswerScore object
         """
-        # Get knowledge base documents - fallback to RAG citations if KB not available
+        # Get context for scoring - prefer RAG citations, fallback to KB documents
         target_id = self.answer.question.target_id
-        kb_documents = KBDocumentRepository.get_by_target(self.db, target_id)
 
-        if kb_documents:
-            # Priority 1: Use uploaded KB documents
-            kb_text = "\n\n".join([doc.processed_text for doc in kb_documents])
-        elif self.answer.rag_citations:
-            # Priority 2: Use RAG citations from answer
+        if self.answer.rag_citations:
+            # Priority 1: Use RAG citations from answer
             rag_chunks = [
                 f"=== RAG Chunk {i+1} (ID: {chunk['id']}) ===\n{chunk['chunk']}"
                 for i, chunk in enumerate(self.answer.rag_citations)
             ]
             kb_text = "\n\n".join(rag_chunks)
         else:
-            # Priority 3: Empty fallback
-            kb_text = "[document is empty]"
+            # Priority 2: Fallback to uploaded KB documents
+            kb_documents = KBDocumentRepository.get_by_target(self.db, target_id)
+            if kb_documents:
+                kb_text = "\n\n".join([doc.processed_text for doc in kb_documents])
+            else:
+                # Priority 3: Empty fallback
+                kb_text = "[document is empty]"
 
         # Render prompt
         prompt = render_template(

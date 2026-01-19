@@ -96,10 +96,11 @@ class QAJobRepository:
         answer_id: Optional[int] = None,
         prompt_tokens: Optional[int] = None,
         completion_tokens: Optional[int] = None,
-        total_cost: Optional[float] = None
+        total_cost: Optional[float] = None,
+        error_message: Optional[str] = None
     ) -> Optional[QAJob]:
         """
-        Update QA job status and optionally stage, answer_id, and costs.
+        Update QA job status and optionally stage, answer_id, costs, and error_message.
 
         Args:
             db: Database session
@@ -110,6 +111,7 @@ class QAJobRepository:
             prompt_tokens: Optional prompt tokens to add (accumulated)
             completion_tokens: Optional completion tokens to add (accumulated)
             total_cost: Optional total cost to add (accumulated)
+            error_message: Optional error message when job fails
 
         Returns:
             Updated QAJob object or None if not found
@@ -129,6 +131,8 @@ class QAJobRepository:
             qa_job.completion_tokens += completion_tokens
         if total_cost is not None:
             qa_job.total_cost += total_cost
+        if error_message is not None:
+            qa_job.error_message = error_message
 
         db.commit()
         db.refresh(qa_job)

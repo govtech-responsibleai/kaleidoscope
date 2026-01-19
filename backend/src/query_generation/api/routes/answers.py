@@ -14,9 +14,11 @@ from src.common.database.repositories.answer_claim_repo import AnswerClaimReposi
 from src.common.database.repositories.answer_claim_score_repo import AnswerClaimScoreRepository
 from src.common.database.repositories.snapshot_repo import SnapshotRepository
 from src.common.database.repositories.annotation_repo import AnnotationRepository
+from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
 from src.common.models.answer import AnswerCreate, AnswerResponse, AnswerListResponse, AnswerBulkSelection
 from src.common.models.answer_score import AnswerScoreResponse
 from src.common.models.answer_claim import AnswerClaimResponse
+from src.common.models.answer_label_override import AnswerLabelOverrideCreate, AnswerLabelOverrideResponse
 from src.query_generation.services.answer_generator import generate_answer_for_question
 
 router = APIRouter()
@@ -397,3 +399,106 @@ def select_default_answers(
         "selected_count": selected_count,
         "total_answers": len(answers)
     }
+
+
+@router.get("/answers/{answer_id}/label-override", response_model=AnswerLabelOverrideResponse)
+def get_label_override(
+    answer_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get label override for a specific answer.
+
+    Args:
+        answer_id: Answer ID
+        db: Database session
+
+    Returns:
+        Label override for the answer
+
+    Raises:
+        HTTPException: If answer or override not found
+    """
+    answer = AnswerRepository.get_by_id(db, answer_id)
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Answer {answer_id} not found"
+        )
+
+    override = AnswerLabelOverrideRepository.get_by_answer(db, answer_id)
+    if not override:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No label override found for answer {answer_id}"
+        )
+
+    return override
+
+
+@router.put("/answers/{answer_id}/label-override", response_model=AnswerLabelOverrideResponse)
+def create_or_update_label_override(
+    answer_id: int,
+    override_data: AnswerLabelOverrideCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Create or update a label override for an answer.
+
+    This allows users to manually override the aggregated accuracy label
+    that was determined by majority vote from evaluators.
+
+    Args:
+        answer_id: Answer ID to override
+        override_data: The new label value
+        db: Database session
+
+    Returns:
+        Created or updated label override
+
+    Raises:
+        HTTPException: If answer not found
+    """
+    answer = AnswerRepository.get_by_id(db, answer_id)
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Answer {answer_id} not found"
+        )
+
+    override = AnswerLabelOverrideRepository.create_or_update(
+        db,
+        answer_id=answer_id,
+        edited_label=override_data.edited_label
+    )
+    return override
+
+
+@router.delete("/answers/{answer_id}/label-override", status_code=status.HTTP_204_NO_CONTENT)
+def delete_label_override(
+    answer_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a label override (reset to evaluator suggestion).
+
+    Args:
+        answer_id: Answer ID whose override should be deleted
+        db: Database session
+
+    Raises:
+        HTTPException: If answer or override not found
+    """
+    answer = AnswerRepository.get_by_id(db, answer_id)
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Answer {answer_id} not found"
+        )
+
+    success = AnswerLabelOverrideRepository.delete(db, answer_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No label override found for answer {answer_id}"
+        )

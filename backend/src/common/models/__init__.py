@@ -96,6 +96,10 @@ from src.common.models.qa_job import (
     QAJobDetailResponse,
     QAJobListResponse
 )
+from src.common.models.answer_label_override import (
+    AnswerLabelOverrideCreate,
+    AnswerLabelOverrideResponse
+)
 
 __all__ = [
     # Target
@@ -180,4 +184,7 @@ __all__ = [
     "QAJobResponse",
     "QAJobDetailResponse",
     "QAJobListResponse",
+    # AnswerLabelOverride
+    "AnswerLabelOverrideCreate",
+    "AnswerLabelOverrideResponse",
 ]

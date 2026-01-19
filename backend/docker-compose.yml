@@ -41,10 +41,12 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       AZURE_API_KEY: ${AZURE_API_KEY}
       AZURE_API_BASE: ${AZURE_API_BASE}
+      LITELLM_PROXY_API_KEY: ${LITELLM_PROXY_API_KEY}
+      LITELLM_PROXY_API_BASE: ${LITELLM_PROXY_API_BASE}
 
-      # Phoenix (optional - comment out API key if hosting on cloud)
-      PHOENIX_COLLECTOR_ENDPOINT: http://host.docker.internal:6006
-      # PHOENIX_API_KEY: ${PHOENIX_API_KEY:-}
+      # Phoenix (optional - set in .env for cloud, defaults to local)
+      PHOENIX_COLLECTOR_ENDPOINT: ${PHOENIX_COLLECTOR_ENDPOINT:-http://host.docker.internal:6006}
+      PHOENIX_API_KEY: ${PHOENIX_API_KEY:-}
 
       # API Settings
       API_TITLE: Kaleidoscope API

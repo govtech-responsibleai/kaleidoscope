@@ -99,30 +99,16 @@ class TestQuestionGenerationAPI:
         assert "not found" in response.json()["detail"].lower()
 
     def test_question_generation_persona_wrong_target(
-        self, test_client, sample_target, sample_personas
+        self, test_client, sample_target, sample_personas, other_target
     ):
         """Test error handling when persona doesn't belong to target."""
-        # Create another target
-        other_target_response = test_client.post(
-            "/api/v1/targets",
-            json={
-                "name": "Other Bot",
-                "agency": "Other Agency",
-                "purpose": "Different purpose",
-                "target_users": "Different users"
-            }
-        )
-        assert other_target_response.status_code == 201
-        other_target_id = other_target_response.json()["id"]
-
-        # Try to generate questions for sample_target using a persona that belongs to it
-        # but specify other_target_id in the URL
+        # Try to generate questions for other_target using a persona that belongs to sample_target
         persona_id = sample_personas[0].id
 
         response = test_client.post(
             "/api/v1/jobs/questions",
             json={
-                "target_id": other_target_id,
+                "target_id": other_target.id,
                 "count_requested": 5,
                 "model_used": "gpt-4o-mini",
                 "persona_ids": [persona_id]

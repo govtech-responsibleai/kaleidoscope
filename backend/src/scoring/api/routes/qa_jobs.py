@@ -188,6 +188,46 @@ def list_qa_jobs(
     return jobs
 
 
+@router.get("/snapshots/{snapshot_id}/judges/{judge_id}/qa-jobs", response_model=List[QAJobResponse])
+def list_qa_jobs_by_judge(
+    snapshot_id: int,
+    judge_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    List all QA jobs for a specific snapshot and judge combination.
+
+    Args:
+        snapshot_id: Snapshot ID
+        judge_id: Judge ID
+        db: Database session
+
+    Returns:
+        List of QA jobs for the judge
+
+    Raises:
+        HTTPException: If snapshot or judge not found
+    """
+    # Verify snapshot exists
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    # Verify judge exists
+    judge = JudgeRepository.get_by_id(db, judge_id)
+    if not judge:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Judge {judge_id} not found"
+        )
+
+    jobs = QAJobRepository.get_by_snapshot_and_judge(db, snapshot_id, judge_id)
+    return jobs
+
+
 @router.get("/qa-jobs/{job_id}", response_model=QAJobDetailResponse)
 def get_qa_job(
     job_id: int,

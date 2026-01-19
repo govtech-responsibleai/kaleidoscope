@@ -15,6 +15,7 @@ from src.common.database.repositories.answer_claim_repo import AnswerClaimReposi
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.answer_claim_score_repo import AnswerClaimScoreRepository
 from src.common.database.repositories.annotation_repo import AnnotationRepository
+from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
 
 __all__ = [
     "TargetRepository",
@@ -30,4 +31,5 @@ __all__ = [
     "AnswerScoreRepository",
     "AnswerClaimScoreRepository",
     "AnnotationRepository",
+    "AnswerLabelOverrideRepository",
 ]

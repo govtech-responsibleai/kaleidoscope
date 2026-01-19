@@ -196,3 +196,161 @@ class TestAnswerGenerator:
 
         # Verify next stage was still called
         mock_extract_claims.assert_awaited_once_with(test_db, sample_qa_job.id)
+
+
+@pytest.mark.unit
+class TestAnswerGeneratorErrors:
+    """Tests for API error handling during answer generation."""
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_api_connection_error_sets_job_failed(
+        self, mock_httpx_client, test_db, sample_qa_job_no_answer
+    ):
+        """Test that connection errors mark job as failed with error_message."""
+        import httpx
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        # Setup target with AIBots endpoint
+        target.endpoint_type = "aibots"
+        target.api_endpoint = "https://api.invalid.com"
+        target.endpoint_config = {"api_key": "test_key"}
+        test_db.commit()
+
+        # Mock httpx to raise connection error
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+        mock_client_instance.post = AsyncMock(
+            side_effect=httpx.ConnectError("Connection refused")
+        )
+
+        # Generate for job
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # Verify job marked as failed with error message
+        test_db.refresh(qa_job)
+        assert qa_job.status == JobStatusEnum.failed
+        assert qa_job.error_message is not None
+        assert "Failed to connect to API" in qa_job.error_message
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_api_timeout_error_sets_job_failed(
+        self, mock_httpx_client, test_db, sample_qa_job_no_answer
+    ):
+        """Test that timeout errors mark job as failed with error_message."""
+        import httpx
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        # Setup target
+        target.endpoint_type = "aibots"
+        target.api_endpoint = "https://api.slow.com"
+        target.endpoint_config = {"api_key": "test_key"}
+        test_db.commit()
+
+        # Mock httpx to raise timeout
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+        mock_client_instance.post = AsyncMock(
+            side_effect=httpx.TimeoutException("Request timed out")
+        )
+
+        # Generate for job
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # Verify job marked as failed
+        test_db.refresh(qa_job)
+        assert qa_job.status == JobStatusEnum.failed
+        assert "timed out" in qa_job.error_message.lower()
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_api_http_401_error_sets_job_failed(
+        self, mock_httpx_client, test_db, sample_qa_job_no_answer
+    ):
+        """Test that HTTP 401 errors mark job as failed with status code."""
+        import httpx
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        # Setup target
+        target.endpoint_type = "aibots"
+        target.api_endpoint = "https://api.error.com"
+        target.endpoint_config = {"api_key": "invalid_key"}
+        test_db.commit()
+
+        # Mock httpx to raise HTTP status error
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+
+        mock_response = Mock()
+        mock_response.status_code = 401
+        mock_response.text = "Unauthorized: Invalid API key"
+        mock_client_instance.post = AsyncMock(
+            side_effect=httpx.HTTPStatusError(
+                "401 Unauthorized",
+                request=Mock(),
+                response=mock_response
+            )
+        )
+
+        # Generate for job
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # Verify job marked as failed with HTTP status
+        test_db.refresh(qa_job)
+        assert qa_job.status == JobStatusEnum.failed
+        assert "401" in qa_job.error_message
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_api_http_500_error_sets_job_failed(
+        self, mock_httpx_client, test_db, sample_qa_job_no_answer
+    ):
+        """Test that HTTP 500 server errors are captured correctly."""
+        import httpx
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        # Setup target
+        target.endpoint_type = "aibots"
+        target.api_endpoint = "https://api.broken.com"
+        target.endpoint_config = {"api_key": "test_key"}
+        test_db.commit()
+
+        # Mock httpx to raise 500 error
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.text = "Internal Server Error"
+        mock_client_instance.post = AsyncMock(
+            side_effect=httpx.HTTPStatusError(
+                "500 Internal Server Error",
+                request=Mock(),
+                response=mock_response
+            )
+        )
+
+        # Generate for job
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # Verify job marked as failed
+        test_db.refresh(qa_job)
+        assert qa_job.status == JobStatusEnum.failed
+        assert "500" in qa_job.error_message
