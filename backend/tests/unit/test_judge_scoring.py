@@ -315,6 +315,93 @@ class TestAnswerJudge:
 
 
 @pytest.mark.unit
+class TestContextPriority:
+    """Tests for RAG citations vs KB documents context priority."""
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.render_template')
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_claim_based_uses_rag_over_kb(
+        self, mock_llm_class, mock_render_template, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+    ):
+        """RAG citations take priority over KB documents for claim-based scoring."""
+        from src.common.database.models import JudgeTypeEnum
+        sample_qa_job.judge.judge_type = JudgeTypeEnum.claim_based
+
+        sample_answer.rag_citations = [
+            {"source": "rag.pdf", "id": "c1", "chunk": "RAG chunk content here."}
+        ]
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            ClaimJudgmentResult(label=True, reasoning="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+        mock_render_template.return_value = "mocked prompt"
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        await scorer.score()
+
+        kb_text = mock_render_template.call_args_list[0].kwargs.get('kb_documents')
+        assert "RAG chunk content" in kb_text
+        assert "Privacy is a major concern" not in kb_text  # KB content should NOT be used
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.render_template')
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_claim_based_falls_back_to_kb(
+        self, mock_llm_class, mock_render_template, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+    ):
+        """KB documents used when no RAG citations for claim-based scoring."""
+        from src.common.database.models import JudgeTypeEnum
+        sample_qa_job.judge.judge_type = JudgeTypeEnum.claim_based
+        sample_answer.rag_citations = None
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            ClaimJudgmentResult(label=True, reasoning="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+        mock_render_template.return_value = "mocked prompt"
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        await scorer.score()
+
+        kb_text = mock_render_template.call_args_list[0].kwargs.get('kb_documents')
+        assert "Privacy is a major concern" in kb_text
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.render_template')
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_claim_based_empty_when_no_context(
+        self, mock_llm_class, mock_render_template, test_db, sample_qa_job, sample_answer, sample_claims
+    ):
+        """Empty fallback when no RAG citations and no KB documents."""
+        from src.common.database.models import JudgeTypeEnum
+        sample_qa_job.judge.judge_type = JudgeTypeEnum.claim_based
+        sample_answer.rag_citations = None
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            ClaimJudgmentResult(label=True, reasoning="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+        mock_render_template.return_value = "mocked prompt"
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        await scorer.score()
+
+        kb_text = mock_render_template.call_args_list[0].kwargs.get('kb_documents')
+        assert kb_text == "[document is empty]"
+
+
+@pytest.mark.unit
 class TestAnswerJudgeErrors:
     """Tests for error handling during LLM scoring."""
 
