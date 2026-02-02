@@ -16,6 +16,12 @@ class Status(str, Enum):
     edited = "edited"
 
 
+class PersonaSource(str, Enum):
+    """Source of persona creation."""
+    generated = "generated"
+    nemotron = "nemotron"
+
+
 class PersonaBase(BaseModel):
     """Base fields for Persona."""
     title: str = Field(..., description="Title of the persona")
@@ -43,7 +49,8 @@ class PersonaUpdate(BaseModel):
 class PersonaResponse(PersonaBase):
     """Response model for Persona."""
     id: int
-    job_id: int
+    source: PersonaSource
+    job_id: Optional[int] = None  # NULL for nemotron personas
     target_id: int
     status: Status
     created_at: datetime
@@ -66,3 +73,9 @@ class PersonaReject(BaseModel):
 class PersonaBulkApprove(BaseModel):
     """Request model for bulk approving personas."""
     persona_ids: list[int] = Field(..., description="List of persona IDs to approve")
+
+
+class NemotronSampleRequest(BaseModel):
+    """Request model for sampling personas from the Nemotron dataset."""
+    target_id: int = Field(..., description="Target ID to associate personas with")
+    n: int = Field(..., description="Number of personas to sample", gt=0)

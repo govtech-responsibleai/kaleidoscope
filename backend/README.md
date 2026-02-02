@@ -253,7 +253,10 @@ PUT    /api/v1/personas/{id}              - Update persona
 POST   /api/v1/personas/{id}/approve      - Approve persona
 POST   /api/v1/personas/{id}/reject       - Reject persona
 POST   /api/v1/personas/bulk-approve      - Bulk approve personas
+POST   /api/v1/personas/sample-nemotron   - Sample general personas from Nemotron dataset
 ```
+
+Personas have a `source` field: `"generated"` (AI) or `"nemotron"` (sampled from NVIDIA's Nemotron-Personas-Singapore dataset).
 
 ### Questions
 
@@ -453,7 +456,19 @@ curl http://localhost:8000/api/v1/jobs/1 | jq
 curl http://localhost:8000/api/v1/jobs/1/personas | jq
 ```
 
-#### 2.4 Approve Personas
+#### 2.4 Alternative: Sample General Personas (Nemotron)
+
+Instead of LLM generation, sample from NVIDIA's [Nemotron-Personas-Singapore](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Singapore) dataset (~148K personas):
+
+```bash
+curl -X POST http://localhost:8000/api/v1/personas/sample-nemotron \
+  -H "Content-Type: application/json" \
+  -d '{"target_id": 1, "n": 5}' | jq
+```
+
+First call downloads and caches the dataset; subsequent calls are instant. Duplicate titles are auto-suffixed.
+
+#### 2.5 Approve Personas
 
 ```bash
 # Approve individual persona
@@ -848,21 +863,3 @@ GEMINI_API_KEY=<your-api-key>
 To get `DATABASE_URL`: Login via TechPass to [dbslicer](https://dbslicer.app.tc1.airbase.sg) and copy your database connection strings (e.g. `DATABASE_URL`, `DATABASE_HOST`, etc.).
 
 For help, join the `#airbase-v2` Slack channel.
-
-## Next Steps
-
-- [x] Implement persona generation service logic
-- [x] Implement question generation service logic
-- [x] Add question similarity search using embeddings
-- [x] Add unit tests for similarity functions
-- [x] Add knowledge base document upload and processing
-- [x] Add answer generation service (AIBots integration)
-- [x] Add scoring service (judge LLM evaluation)
-- [x] Add human annotation workflow
-- [x] Add metrics calculation and export
-- [ ] Setup CI/CD
-- [ ] Deploy to serverless (AWS Lambda, AWS RDS, etc.)
-
-## License
-
-[Your License Here]
