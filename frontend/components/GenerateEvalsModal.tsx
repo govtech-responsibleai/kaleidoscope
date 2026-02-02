@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -16,6 +16,8 @@ import {
   IconButton,
   Alert,
   TextField,
+  Chip,
+  Collapse,
 } from "@mui/material";
 import {
   Close as CloseIcon,
@@ -24,6 +26,7 @@ import {
   Save as SaveIcon,
   Upload as UploadIcon,
   AutoAwesome as AutoAwesomeIcon,
+  Groups as GroupsIcon,
 } from "@mui/icons-material";
 import { jobApi, personaApi, questionApi } from "@/lib/api";
 import { PersonaResponse, JobStatus, PersonaUpdate } from "@/lib/types";
@@ -46,7 +49,9 @@ export default function GenerateEvalsModal({
   onJobLaunched,
   onQuestionsUploaded,
 }: GenerateEvalsModalProps) {
-  const [step, setStep] = useState(-2); // -2: Choose mode, -1: Generate personas, 0: Select Personas, 1: Generate Questions, 2: Upload file
+  const [step, setStep] = useState(-1); // -1: Choose mode, 0: Select Personas, 1: Generate Questions, 2: Upload file
+  const [selectedMode, setSelectedMode] = useState<"generate" | null>(null);
+  const [personaSource, setPersonaSource] = useState<"ai" | "general" | null>(null);
   const [personas, setPersonas] = useState<PersonaResponse[]>([]);
   const [rejectedPersonaIds, setRejectedPersonaIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
@@ -66,7 +71,8 @@ export default function GenerateEvalsModal({
   const [savingPersonaId, setSavingPersonaId] = useState<number | null>(null);
 
   const generatePersonas = async (count = DEFAULT_PERSONA_COUNT) => {
-    setStep(0); // Move to step 0 when starting generation
+    setStep(0);
+    setPersonaSource("ai");
     setLoading(true);
     setError(null);
     try {
@@ -93,6 +99,22 @@ export default function GenerateEvalsModal({
     } catch (error) {
       console.error("Failed to generate personas:", error);
       setError("Failed to generate personas. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const sampleNemotronPersonas = async (count = DEFAULT_PERSONA_COUNT) => {
+    setStep(0);
+    setPersonaSource("general");
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await personaApi.sampleNemotron(targetId, count);
+      setPersonas(prev => [...prev, ...response.data]);
+    } catch (error) {
+      console.error("Failed to sample Nemotron personas:", error);
+      setError("Failed to sample general personas. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -232,7 +254,9 @@ export default function GenerateEvalsModal({
   };
 
   const handleClose = () => {
-    setStep(-2);
+    setStep(-1);
+    setSelectedMode(null);
+    setPersonaSource(null);
     setPersonas([]);
     setRejectedPersonaIds(new Set());
     setLoading(false);
@@ -264,7 +288,7 @@ export default function GenerateEvalsModal({
           </Alert>
         )}
 
-        {step === -2 && (
+        {step === -1 && (
           <Box
             display="flex"
             flexDirection="column"
@@ -279,20 +303,23 @@ export default function GenerateEvalsModal({
             <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ maxWidth: 500 }}>
               You can generate questions from scratch using AI, or upload a file with existing questions.
             </Typography>
-            <Box display="flex" gap={3} mt={2}>
+            <Box display="flex" gap={3} mt={2} alignItems="flex-start">
               <Card
                 sx={{
                   width: 250,
+                  height: selectedMode === "generate" ? "auto" : "200px", 
                   cursor: "pointer",
                   transition: "all 0.2s",
+                  border: selectedMode === "generate" ? "2px solid" : "2px solid transparent",
+                  borderColor: selectedMode === "generate" ? "primary.main" : "transparent",
                   "&:hover": {
                     transform: "translateY(-4px)",
                     boxShadow: 4,
                   },
                 }}
-                onClick={() => setStep(-1)}
+                onClick={() => setSelectedMode("generate")}
               >
-                <CardContent sx={{ textAlign: "center", py: 4 }}>
+                <CardContent sx={{ textAlign: "center", py: 4, height: "200px" }}>
                   <AutoAwesomeIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Generate from Scratch
@@ -301,15 +328,44 @@ export default function GenerateEvalsModal({
                     AI will create personas and generate targeted questions
                   </Typography>
                 </CardContent>
+                <Collapse in={selectedMode === "generate"} timeout={300}>
+                  <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<AutoAwesomeIcon />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        generatePersonas();
+                      }}
+                      fullWidth
+                    >
+                      Generate with AI
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      startIcon={<GroupsIcon />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        sampleNemotronPersonas();
+                      }}
+                      fullWidth
+                    >
+                      Get General Personas
+                    </Button>
+                  </Box>
+                </Collapse>
               </Card>
               <Card
                 sx={{
                   width: 250,
-                  cursor: "pointer",
+                  height: "200px",
+                  cursor: selectedMode === "generate" ? "default" : "pointer",
                   transition: "all 0.2s",
+                  opacity: selectedMode === "generate" ? 0.4 : 1,
+                  pointerEvents: selectedMode === "generate" ? "none" : "auto",
                   "&:hover": {
-                    transform: "translateY(-4px)",
-                    boxShadow: 4,
+                    transform: selectedMode === "generate" ? "none" : "translateY(-4px)",
+                    boxShadow: selectedMode === "generate" ? 0 : 4,
                   },
                 }}
                 onClick={() => setStep(2)}
@@ -328,33 +384,6 @@ export default function GenerateEvalsModal({
           </Box>
         )}
 
-        {step === -1 && (
-          <Box
-            display="flex"
-            flexDirection="column"
-            alignItems="center"
-            justifyContent="center"
-            py={6}
-            gap={3}
-          >
-            <Typography variant="h5" fontWeight={600} textAlign="center">
-              Generate Personas
-            </Typography>
-            <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ maxWidth: 500 }}>
-              Personas represent different types of users who might interact with your system.
-              Generate personas first to create targeted evaluation questions.
-            </Typography>
-            <Button
-              variant="contained"
-              size="large"
-              onClick={() => generatePersonas()}
-              sx={{ mt: 2 }}
-            >
-              Generate
-            </Button>
-          </Box>
-        )}
-
         {step === 0 && (
           <>
             <Box mb={3}>
@@ -365,15 +394,24 @@ export default function GenerateEvalsModal({
                 Review the generated personas below and select those that best represent your target users.
                 You can edit personas to better match your needs, or reject ones that don't apply.
               </Typography>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mt={2}>
+              <Box display="flex" gap={1} mt={2}>
                 <Button
-                  startIcon={<RefreshIcon />}
+                  startIcon={loading && personaSource === "ai" ? <CircularProgress size={16} /> : <RefreshIcon />}
                   onClick={() => generatePersonas()}
                   disabled={loading}
                   size="small"
                   variant="outlined"
                 >
-                  Generate More
+                  {loading && personaSource === "ai" ? "Generating..." : "Generate More (AI)"}
+                </Button>
+                <Button
+                  startIcon={loading && personaSource === "general" ? <CircularProgress size={16} /> : <GroupsIcon />}
+                  onClick={() => sampleNemotronPersonas()}
+                  disabled={loading}
+                  size="small"
+                  variant="outlined"
+                >
+                  {loading && personaSource === "general" ? "Sampling..." : "Get More (General)"}
                 </Button>
               </Box>
             </Box>
@@ -382,7 +420,7 @@ export default function GenerateEvalsModal({
               <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={4} gap={2}>
                 <CircularProgress />
                 <Typography variant="body2" color="text.secondary">
-                  Generating personas, please wait...
+                  {personaSource === "ai" ? "Generating personas with AI, please wait..." : "Sampling general personas, please wait..."}
                 </Typography>
               </Box>
             ) : (
@@ -445,9 +483,17 @@ export default function GenerateEvalsModal({
                           </Box>
                         ) : (
                           <>
-                            <Typography variant="h6" gutterBottom>
-                              {persona.title}
-                            </Typography>
+                            <Box display="flex" alignItems="center" gap={1} mb={1}>
+                              <Typography variant="h6">
+                                {persona.title}
+                              </Typography>
+                              {persona.source === "generated" && (
+                                <Chip label="AI" size="small" color="primary" variant="outlined" />
+                              )}
+                              {persona.source === "nemotron" && (
+                                <Chip label="General" size="small" color="secondary" variant="outlined" />
+                              )}
+                            </Box>
                             <Typography variant="body2" color="text.secondary" gutterBottom>
                               {persona.info}
                             </Typography>
@@ -599,7 +645,7 @@ export default function GenerateEvalsModal({
 
       {step === 2 && (
         <DialogActions>
-          <Button onClick={() => setStep(-2)} disabled={uploading}>
+          <Button onClick={() => setStep(-1)} disabled={uploading}>
             Back
           </Button>
           <Button

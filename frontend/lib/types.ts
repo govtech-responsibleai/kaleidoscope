@@ -89,9 +89,12 @@ export interface PersonaUpdate {
   use_case?: string;
 }
 
+export type PersonaSource = "generated" | "nemotron";
+
 export interface PersonaResponse extends PersonaBase {
   id: number;
-  job_id: number;
+  source: PersonaSource;
+  job_id: number | null;
   target_id: number;
   status: Status;
   created_at: string;
