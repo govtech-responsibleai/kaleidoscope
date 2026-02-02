@@ -18,13 +18,15 @@ from src.common.models.job import (
 )
 from src.common.models.persona import (
     Status,
+    PersonaSource,
     PersonaBase,
     PersonaListOutput,
     PersonaUpdate,
     PersonaResponse,
     PersonaApprove,
     PersonaReject,
-    PersonaBulkApprove
+    PersonaBulkApprove,
+    NemotronSampleRequest
 )
 from src.common.models.question import (
     QuestionType,
@@ -116,6 +118,7 @@ __all__ = [
     "JobStats",
     # Persona
     "Status",
+    "PersonaSource",
     "PersonaBase",
     "PersonaListOutput",
     "PersonaUpdate",
@@ -123,6 +126,7 @@ __all__ = [
     "PersonaApprove",
     "PersonaReject",
     "PersonaBulkApprove",
+    "NemotronSampleRequest",
     # Question
     "QuestionType",
     "QuestionScope",

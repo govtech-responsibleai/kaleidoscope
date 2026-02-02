@@ -22,6 +22,25 @@ from src.common.database.models import JobStatusEnum
 logger = logging.getLogger(__name__)
 
 
+def _deduplicate_title(title: str, taken_titles: set) -> str:
+    """
+    Append a numeric suffix if the title already exists.
+
+    Args:
+        title: Proposed title
+        taken_titles: Set of titles already in use
+
+    Returns:
+        Unique title, e.g. "Young Couple (2)" if "Young Couple" is taken
+    """
+    if title not in taken_titles:
+        return title
+    counter = 2
+    while f"{title} ({counter})" in taken_titles:
+        counter += 1
+    return f"{title} ({counter})"
+
+
 class PersonaGenerator:
     """Service for generating personas using LLM."""
 
@@ -151,7 +170,7 @@ class PersonaGenerator:
 
     def _save_personas(self, personas_data: List[PersonaBase]) -> List[Any]:
         """
-        Save generated personas to database.
+        Save generated personas to database, deduplicating titles with suffix.
 
         Args:
             personas_data: List of PersonaBase Pydantic models
@@ -159,13 +178,20 @@ class PersonaGenerator:
         Returns:
             List of saved Persona objects
         """
+        existing = PersonaRepository.get_by_target(
+            self.db, self.target.id, status=None, skip=0, limit=10000
+        )
+        taken_titles = {p.title for p in existing}
+
         personas_to_create = []
 
         for persona in personas_data:
+            title = _deduplicate_title(persona.title, taken_titles)
+            taken_titles.add(title)
             personas_to_create.append({
                 "job_id": self.job_id,
                 "target_id": self.target.id,
-                "title": persona.title,
+                "title": title,
                 "info": persona.info,
                 "style": persona.style,
                 "use_case": persona.use_case,
