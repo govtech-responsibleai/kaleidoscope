@@ -161,6 +161,9 @@ export const personaApi = {
 
   bulkApprove: (personaIds: number[]) =>
     api.post("/personas/bulk-approve", { persona_ids: personaIds }),
+
+  sampleNemotron: (targetId: number, n: number) =>
+    api.post<PersonaResponse[]>("/personas/sample-nemotron", { target_id: targetId, n }),
 };
 
 // Question endpoints
