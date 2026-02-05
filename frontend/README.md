@@ -275,8 +275,8 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
   - Sort by various fields
 
 - **Export Results**:
-  - Export to CSV for external analysis
-  - Includes all questions, answers, scores, and metadata
+  - Export to CSV for external analysis (calls `GET /targets/snapshots/:snapshotId/export`)
+  - Backend also supports `?include_evaluators=true` to download a ZIP with the CSV plus judge-level JSON for deeper analysis (used by internal tooling)
 
 ## API Integration
 
@@ -374,7 +374,7 @@ The frontend integrates with the Kaleidoscope backend API:
 - `GET /snapshots/:id/judges/:judgeId/alignment` - Get judge alignment metrics (F1, precision, recall, accuracy)
 - `GET /snapshots/:id/judges/:judgeId/accuracy` - Get judge accuracy on all responses
 - `GET /snapshots/:id/results` - Get aggregated results with judge breakdown
-- `POST /snapshots/:id/export` - Export results to CSV
+- `GET /targets/snapshots/:id/export` - Export snapshot results (CSV by default; pass `?include_evaluators=true` to receive a ZIP with CSV + judge JSON)
 - `GET /targets/:id/snapshot-metrics` - Get aggregated metrics for all snapshots of a target
 
 ## Configuration
