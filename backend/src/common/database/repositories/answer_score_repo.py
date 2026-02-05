@@ -63,6 +63,19 @@ class AnswerScoreRepository:
         )
 
     @staticmethod
+    def get_by_snapshot(
+        db: Session,
+        snapshot_id: int
+    ) -> List[AnswerScore]:
+        """Get all judge scores for answers that belong to a snapshot."""
+        return (
+            db.query(AnswerScore)
+            .join(Answer)
+            .filter(Answer.snapshot_id == snapshot_id)
+            .all()
+        )
+
+    @staticmethod
     def get_by_snapshot_and_judge(
         db: Session,
         snapshot_id: int,

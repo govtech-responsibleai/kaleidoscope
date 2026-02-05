@@ -84,15 +84,24 @@ curl -X POST https://your-api/api/v1/auth/admin/create-user \
 
 ### Using the API
 
+
+All API calls require a valid token. First, login to get a token:
+
 ```bash
-# 1. Login to get token
 curl -sX POST http://localhost:8000/api/v1/auth/login \
   -d "username=<user>&password=<pass>"
-
-# 2. Use token in requests
-curl http://localhost:8000/api/v1/targets \
-  -H "Authorization: Bearer <token>"
 ```
+
+Export the `access_token` for use in subsequent commands:
+
+```bash
+export TOKEN=<access_token from response>
+```
+
+> **Important:** All curl commands below require the Authorization header. Add this to every request:
+> ```
+> -H "Authorization: Bearer $TOKEN"
+> ```
 
 Tokens expire after 3 days.
 
@@ -228,6 +237,11 @@ DELETE /api/v1/targets/{id}               - Delete target
 GET    /api/v1/targets/{id}/stats         - Get stats
 GET    /api/v1/targets/{id}/personas      - List personas for target
 GET    /api/v1/targets/{id}/questions     - List questions for target
+GET    /api/v1/targets/{id}/personas/export   - Export personas (csv/json)
+GET    /api/v1/targets/{id}/questions/export  - Export questions (csv/json)
+GET    /api/v1/targets/snapshots/{snapshot_id}/export
+                                        - Export snapshot results (supports ?include_evaluators=true for judge JSON)
+GET    /api/v1/targets/{id}/export-all  - Export personas, questions, snapshots (+evaluator JSON) as ZIP
 ```
 
 ### Generation Jobs
@@ -729,16 +743,44 @@ Returns majority-vote labels across all judges with individual breakdowns.
 curl http://localhost:8000/api/v1/snapshots/1/results | jq
 ```
 
-#### 7.4 Export Results as CSV
+#### 7.4 Export Personas and Questions
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/snapshots/1/export \
-  --output results.csv | jq
+# Export personas as CSV (default)
+curl "http://localhost:8000/api/v1/targets/1/personas/export" \
+  --output target_1_personas.csv
+
+# Export personas as JSON
+curl "http://localhost:8000/api/v1/targets/1/personas/export?format=json" | jq
+
+# Export questions as CSV (default)
+curl "http://localhost:8000/api/v1/targets/1/questions/export" \
+  --output target_1_questions.csv
+
+# Export questions as JSON
+curl "http://localhost:8000/api/v1/targets/1/questions/export?format=json" | jq
 ```
 
-CSV contains: Question | Answer | Accuracy | Metadata (per-judge breakdown)
+#### 7.5 Export Results as CSV
 
-#### 7.5 Get Snapshot Metrics (Target-Level)
+```bash
+# Standard CSV export (frontend default)
+curl "http://localhost:8000/api/v1/targets/snapshots/1/export" \
+  --output snapshot_1_results.csv
+
+# Include evaluator metrics & raw judge scores (returns ZIP with CSV + JSON)
+curl "http://localhost:8000/api/v1/targets/snapshots/1/export?include_evaluators=true" \
+  --output snapshot_1_results_with_judges.zip
+
+# Export everything (personas, questions, snapshots, evaluator JSON) for a target
+curl "http://localhost:8000/api/v1/targets/8/export-all" \
+  --output target_1_export.zip
+```
+
+The CSV contains Question | Answer | Human Label | Aggregated Accuracy | Metadata (per-judge breakdown).  
+When `include_evaluators=true`, the zip also contains `snapshot_1_evaluators.json` with judge accuracy/alignment stats and every `AnswerScore`.
+
+#### 7.6 Get Snapshot Metrics (Target-Level)
 
 Returns aggregated performance metrics across all snapshots for a target, useful for tracking improvements over time.
 
