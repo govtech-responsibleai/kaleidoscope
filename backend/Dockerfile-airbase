@@ -17,11 +17,15 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy pre-downloaded HuggingFace dataset (avoids SSL/timeout issues)
+# Run: cp -r ~/.cache/huggingface/datasets/nvidia___nemotron-personas-singapore ./nemotron-dataset
+COPY nemotron-dataset/ /app/.cache/huggingface/datasets/nvidia___nemotron-personas-singapore/
+
 # Copy application code
 COPY src/ ./src/
 
 # Fix permissions for app user
-RUN chmod -R 755 ./src/
+RUN chmod -R 755 ./src/ && chown -R app:app /app/.cache/
 
 # Switch to non-root user (provided by Airbase base image)
 USER app

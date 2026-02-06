@@ -321,60 +321,22 @@ class MetricsService:
                             accepted_scores=reliable_scores
                         )
 
+            # Get annotation for this answer
+            annotation = AnnotationRepository.get_by_answer(self.db, answer.id)
+
             results.append({
                 "question_id": answer.question_id,
                 "question_text": answer.question.text if answer.question else None,
                 "answer_id": answer.id,
                 "answer_content": answer.answer_content,
-                "aggregated_accuracy": aggregated_score.to_dict()
+                "aggregated_accuracy": aggregated_score.to_dict(),
+                "human_label": annotation.label if annotation else None,
+                "human_notes": annotation.notes if annotation else None,
             })
 
         logger.info(f"Generated aggregated results for {len(results)} answers in snapshot {snapshot_id}")
 
         return results
-
-    def export_results_csv(self, snapshot_id: int) -> str:
-        """
-        Export aggregated evaluation results as CSV.
-
-        Args:
-            snapshot_id: Snapshot ID
-
-        Returns:
-            CSV string with headers: question, answer, accuracy, metadata
-
-        Raises:
-            ValueError: If no answers found for the snapshot
-        """
-        # Reuse aggregated results that power the frontend view
-        aggregated_results = self.get_aggregated_results(snapshot_id)
-
-        # Create CSV in memory
-        output = io.StringIO()
-        writer = csv.writer(output)
-
-        # Write headers that match the frontend columns
-        writer.writerow(["Question", "Answer", "Accuracy", "Metadata"])
-
-        for result in aggregated_results:
-            aggregated_accuracy = result.get("aggregated_accuracy", {})
-            metadata_parts = aggregated_accuracy.get("metadata", [])
-
-            writer.writerow([
-                result.get("question_text", ""),
-                result.get("answer_content", ""),
-                _format_label(aggregated_accuracy.get("label")),
-                " | ".join(metadata_parts)
-            ])
-
-        csv_content = output.getvalue()
-        output.close()
-
-        logger.info(
-            f"Exported {len(aggregated_results)} aggregated results for snapshot {snapshot_id}"
-        )
-
-        return csv_content
 
     def calculate_snapshot_summary(self, snapshot_id: int) -> Dict:
         """

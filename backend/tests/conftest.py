@@ -298,6 +298,36 @@ def sample_question(test_db, sample_target, sample_job, sample_personas):
 
 
 @pytest.fixture
+def sample_questions(test_db, sample_target, sample_job, sample_personas):
+    """Create multiple sample questions for testing."""
+    questions = [
+        Question(
+            job_id=sample_job.id,
+            persona_id=sample_personas[0].id,
+            target_id=sample_target.id,
+            text="What are the main risks associated with AI systems?",
+            type=QuestionTypeEnum.typical,
+            scope=QuestionScopeEnum.in_kb,
+            status=StatusEnum.approved
+        ),
+        Question(
+            job_id=sample_job.id,
+            persona_id=sample_personas[1].id,
+            target_id=sample_target.id,
+            text="How do I implement a new policy?",
+            type=QuestionTypeEnum.edge,
+            scope=QuestionScopeEnum.out_kb,
+            status=StatusEnum.pending
+        ),
+    ]
+    test_db.add_all(questions)
+    test_db.commit()
+    for q in questions:
+        test_db.refresh(q)
+    return questions
+
+
+@pytest.fixture
 def sample_answer(test_db, sample_question, sample_snapshot):
     """Create a sample answer with multi-sentence content."""
     answer = Answer(

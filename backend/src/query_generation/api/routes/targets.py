@@ -2,8 +2,12 @@
 API routes for Target management.
 """
 
+import io
+import json
+import zipfile
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
@@ -11,6 +15,7 @@ from src.common.database.repositories import TargetRepository, PersonaRepository
 from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse
 from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
+from src.common.services.export_service import ExportService, ExportFormat
 
 router = APIRouter()
 
@@ -254,3 +259,198 @@ def list_questions_for_target(
         response.append(question_dict)
 
     return response
+
+
+@router.get("/{target_id}/personas/export")
+def export_personas(
+    target_id: int,
+    format: ExportFormat = Query(ExportFormat.CSV),
+    db: Session = Depends(get_db)
+):
+    """
+    Export all personas for a target.
+
+    Args:
+        target_id: Target ID
+        format: Export format (csv or json)
+        db: Database session
+
+    Returns:
+        CSV or JSON file with all personas
+
+    Raises:
+        HTTPException: If target not found or no personas exist
+    """
+    try:
+        export_service = ExportService(db)
+        data = export_service.export_personas(target_id, format)
+
+        if format == ExportFormat.JSON:
+            return data
+
+        return Response(
+            content=data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=target_{target_id}_personas.csv"
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/{target_id}/questions/export")
+def export_questions(
+    target_id: int,
+    format: ExportFormat = Query(ExportFormat.CSV),
+    db: Session = Depends(get_db)
+):
+    """
+    Export all questions for a target.
+
+    Args:
+        target_id: Target ID
+        format: Export format (csv or json)
+        db: Database session
+
+    Returns:
+        CSV or JSON file with all questions
+
+    Raises:
+        HTTPException: If target not found or no questions exist
+    """
+    try:
+        export_service = ExportService(db)
+        data = export_service.export_questions(target_id, format)
+
+        if format == ExportFormat.JSON:
+            return data
+
+        return Response(
+            content=data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=target_{target_id}_questions.csv"
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/snapshots/{snapshot_id}/export")
+def export_snapshot(
+    snapshot_id: int,
+    format: ExportFormat = Query(ExportFormat.CSV),
+    include_evaluators: bool = Query(False),
+    db: Session = Depends(get_db)
+):
+    """
+    Export snapshot results including answers, annotations, and judge scores.
+
+    Args:
+        snapshot_id: Snapshot ID
+        format: Export format (csv or json)
+        db: Database session
+
+    Returns:
+        CSV or JSON file with results
+
+    Raises:
+        HTTPException: If snapshot not found or no answers available
+    """
+    try:
+        export_service = ExportService(db)
+        results_data, evaluator_payload = export_service.export_snapshot(
+            snapshot_id,
+            format,
+            include_evaluators=include_evaluators
+        )
+
+        if format == ExportFormat.JSON:
+            if include_evaluators:
+                return {
+                    "results": results_data,
+                    "evaluator_exports": evaluator_payload or []
+                }
+            return results_data
+
+        if include_evaluators:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+                zip_file.writestr(
+                    f"snapshot_{snapshot_id}_results.csv",
+                    results_data
+                )
+                evaluator_content = json.dumps(evaluator_payload or [], indent=2)
+                zip_file.writestr(
+                    f"snapshot_{snapshot_id}_evaluators.json",
+                    evaluator_content
+                )
+
+            zip_buffer.seek(0)
+            return Response(
+                content=zip_buffer.getvalue(),
+                media_type="application/zip",
+                headers={
+                    "Content-Disposition": f"attachment; filename=snapshot_{snapshot_id}_results.zip"
+                }
+            )
+
+        return Response(
+            content=results_data,
+            media_type="text/csv",
+            headers={
+                "Content-Disposition": f"attachment; filename=snapshot_{snapshot_id}_results.csv"
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/{target_id}/export-all")
+def export_all(
+    target_id: int,
+    format: ExportFormat = Query(ExportFormat.CSV),
+    db: Session = Depends(get_db)
+):
+    """
+    Export all data for a target as a ZIP file.
+
+    Contains personas, questions, and all snapshot results.
+
+    Args:
+        target_id: Target ID
+        format: Export format for individual files (csv or json)
+        db: Database session
+
+    Returns:
+        ZIP file containing all data
+
+    Raises:
+        HTTPException: If target not found
+    """
+    try:
+        export_service = ExportService(db)
+        zip_bytes = export_service.export_all(target_id, format)
+
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename=target_{target_id}_export.zip"
+            }
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )

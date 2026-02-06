@@ -4,7 +4,6 @@ API routes for Metrics calculation and export.
 
 from typing import Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
@@ -155,52 +154,6 @@ def get_aggregated_results(
             "results": results,
             "total": len(results)
         }
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
-
-@router.post("/snapshots/{snapshot_id}/export")
-def export_results(
-    snapshot_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Export aggregated evaluation results as CSV.
-
-    Args:
-        snapshot_id: Snapshot ID
-        db: Database session
-
-    Returns:
-        CSV file with headers: question, answer, accuracy, metadata
-
-    Raises:
-        HTTPException: If snapshot not found or no answers available
-    """
-    # Verify snapshot exists
-    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
-    if not snapshot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Snapshot {snapshot_id} not found"
-        )
-
-    # Generate CSV export
-    try:
-        metrics_service = MetricsService(db)
-        csv_content = metrics_service.export_results_csv(snapshot_id)
-
-        # Return as downloadable CSV file
-        return Response(
-            content=csv_content,
-            media_type="text/csv",
-            headers={
-                "Content-Disposition": f"attachment; filename=snapshot_{snapshot_id}_aggregated_results.csv"
-            }
-        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
