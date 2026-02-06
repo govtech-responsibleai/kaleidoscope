@@ -395,8 +395,9 @@ export const metricsApi = {
   getResults: (snapshotId: number) =>
     api.get<SnapshotResultsResponse>(`/snapshots/${snapshotId}/results`),
 
-  exportCSV: (snapshotId: number) =>
-    api.post(`/snapshots/${snapshotId}/export`, undefined, {
+  exportCSV: (snapshotId: number, format: "csv" | "json" = "csv") =>
+    api.get(`/targets/snapshots/${snapshotId}/export`, {
+      params: { format },
       responseType: "blob",
     }),
 
