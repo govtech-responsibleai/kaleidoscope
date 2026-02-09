@@ -357,7 +357,7 @@ export default function QAList({
     >
       <Box
         sx={{
-          flexBasis: { md: "25%" },
+          width: { md: "25%" },
           display: "flex",
           flexDirection: "column",
           position: { md: "sticky" },
@@ -481,7 +481,7 @@ export default function QAList({
       <Paper
         variant="outlined"
         sx={{
-          flexBasis: { md: "52%" },
+          width: { md: "52%" },
           bgcolor: "rgb(0, 0, 0, 0.01)",
         }}
       >
@@ -499,7 +499,7 @@ export default function QAList({
 
       <Box
         sx={{
-          flexBasis: { md: "23%" },
+          width: { md: "23%" },
         }}
       >
         <AnnotationForm
