@@ -426,7 +426,25 @@ export default function ScoringPage() {
       ) : !annotationStatus?.is_complete ? (
         <Alert severity="info">
           {annotationStatus
-            ? `Complete all ${annotationStatus.total_selected} annotations in the annotation tab to view scoring. (${annotationStatus.total_annotated} / ${annotationStatus.total_selected} completed)`
+            ? (() => {
+                const totalSelected = annotationStatus.selected_ids.length;
+                const totalAnnotated = annotationStatus.selected_and_annotated_ids.length;
+                const annotatedSet = new Set(annotationStatus.selected_and_annotated_ids);
+                const unannotatedIds = annotationStatus.selected_ids.filter(id => !annotatedSet.has(id));
+                return <>
+                  {`Complete all ${totalSelected} annotations in the annotation tab to view scoring. (${totalAnnotated} / ${totalSelected} completed)`}
+                  {unannotatedIds.length > 0 && (
+                    <Box sx={{ mt: 1 }}>
+                      <strong>Incomplete Questions:</strong>
+                      <Box component="ul" sx={{ mt: 0, mb: 0, pl: 2 }}>
+                        {unannotatedIds.map((id) => (
+                          <li key={id}>Q{id}</li>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </>;
+              })()
             : "Complete annotations in the annotation tab to view scoring."}
         </Alert>
       ) : (

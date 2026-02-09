@@ -661,6 +661,7 @@ export default function QuestionsPage() {
             <Table>
               <TableHead>
                 <TableRow>
+                  <TableCell sx={{ width: 70 }}>ID</TableCell>
                   <TableCell>Question</TableCell>
                   <TableCell align="center" sx={{ width: 160 }}>
                     <TableHeaderFilter
@@ -695,6 +696,9 @@ export default function QuestionsPage() {
               <TableBody>
                 {filteredQuestions.map((question) => (
                   <TableRow key={question.id}>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary" fontWeight={600}>{question.id}</Typography>
+                    </TableCell>
                     <TableCell>
                       <Typography>{question.text}</Typography>
                     </TableCell>
