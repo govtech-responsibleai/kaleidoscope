@@ -92,17 +92,6 @@ export const theme = createTheme({
         shrink: { transform: "none" },
       },
     },
-    MuiOutlinedInput: {
-      styleOverrides: {
-        root: {
-          // kill the notch so the top-left corner is solid again
-          "& legend": { display: "none" },
-          "& .MuiOutlinedInput-notchedOutline legend": { display: "none" },
-          "& .MuiOutlinedInput-notchedOutline": { padding: 0 },
-          borderRadius: 5,
-        },
-      },
-    },
     MuiFormHelperText: {
       styleOverrides: {
         root: {
