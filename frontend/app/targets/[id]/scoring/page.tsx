@@ -17,6 +17,7 @@ import {
   Add as AddIcon,
   ArrowBackIosNew as ArrowBackIosNewIcon,
   ArrowForwardIos as ArrowForwardIosIcon,
+  Download as DownloadIcon,
 } from "@mui/icons-material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import JudgeCards from "@/components/scoring/JudgeCards";
@@ -348,6 +349,25 @@ export default function ScoringPage() {
     }
   };
 
+  const handleExportSnapshot = async () => {
+    if (!selectedSnapshotId) return;
+    try {
+      const response = await metricsApi.exportJSON(selectedSnapshotId);
+      const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `snapshot_${selectedSnapshotId}_results.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to export snapshot:", error);
+      alert("Failed to export snapshot. Please try again.");
+    }
+  };
+
   if (snapshotsLoading || judgesLoading) {
     return (
       <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
@@ -358,13 +378,34 @@ export default function ScoringPage() {
 
   return (
     <Box>
-      <SnapshotHeader
-        targetId={targetId}
-        snapshots={snapshots}
-        selectedSnapshotId={selectedSnapshotId}
-        onSelectSnapshot={handleSnapshotSelect}
-        onSnapshotCreated={fetchSnapshots}
-      />
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1 }}>
+        <Box sx={{ flex: 1 }}>
+          <SnapshotHeader
+            targetId={targetId}
+            snapshots={snapshots}
+            selectedSnapshotId={selectedSnapshotId}
+            onSelectSnapshot={handleSnapshotSelect}
+            onSnapshotCreated={fetchSnapshots}
+          />
+        </Box>
+        <Tooltip title="Download data for this snapshot">
+          <span>
+            <IconButton
+              onClick={handleExportSnapshot}
+              disabled={!selectedSnapshotId}
+              sx={{
+                bgcolor: "secondary.main",
+                color: "white",
+                borderRadius: 1,
+                "&:hover": { bgcolor: "secondary.dark" },
+                "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
+              }}
+            >
+              <DownloadIcon />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
 
       {error && (
         <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
