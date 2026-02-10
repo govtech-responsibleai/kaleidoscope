@@ -24,11 +24,13 @@ import {
   Divider,
   Alert,
   TextField,
+  Tooltip,
 } from "@mui/material";
 import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
   Delete as DeleteIcon,
+  Download as DownloadIcon,
   Edit as EditIcon,
   Save as SaveIcon,
 } from "@mui/icons-material";
@@ -357,6 +359,31 @@ export default function QuestionsPage() {
     setSimilarQuestionsMap({});
   };
 
+  const triggerDownload = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportQuestions = async () => {
+    try {
+      const [questionsRes, personasRes] = await Promise.all([
+        targetApi.exportQuestions(targetId, "json"),
+        targetApi.exportPersonas(targetId, "json"),
+      ]);
+      triggerDownload(questionsRes.data, `questions_target_${targetId}.json`);
+      triggerDownload(personasRes.data, `personas_target_${targetId}.json`);
+    } catch (error) {
+      console.error("Failed to export:", error);
+      alert("Failed to export data. Please try again.");
+    }
+  };
+
   const handleDeleteQuestion = async (questionId: number) => {
     try {
       await questionApi.delete(questionId);
@@ -603,20 +630,38 @@ export default function QuestionsPage() {
         </Box>
       ) : (
         <>
-          {/* Generate More Button */}
-          <Box display="flex" justifyContent="flex-start" mb={2}>
+          {/* Generate More Button + Download */}
+          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
             <Button
               variant="outlined"
               onClick={() => setGenerateModalOpen(true)}
             >
               Generate More Evals
             </Button>
+            <Tooltip title="Download questions & personas">
+              <span>
+                <IconButton
+                  onClick={handleExportQuestions}
+                  disabled={loading || !hasQuestions}
+                  sx={{
+                    bgcolor: "secondary.main",
+                    color: "white",
+                    borderRadius: 1,
+                    "&:hover": { bgcolor: "secondary.dark" },
+                    "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
+                  }}
+                >
+                  <DownloadIcon />
+                </IconButton>
+              </span>
+            </Tooltip>
           </Box>
 
           <TableContainer component={Paper} variant="outlined">
             <Table>
               <TableHead>
                 <TableRow>
+                  <TableCell sx={{ width: 70 }}>ID</TableCell>
                   <TableCell>Question</TableCell>
                   <TableCell align="center" sx={{ width: 160 }}>
                     <TableHeaderFilter
@@ -651,6 +696,9 @@ export default function QuestionsPage() {
               <TableBody>
                 {filteredQuestions.map((question) => (
                   <TableRow key={question.id}>
+                    <TableCell>
+                      <Typography variant="body2" color="text.secondary" fontWeight={600}>{question.id}</Typography>
+                    </TableCell>
                     <TableCell>
                       <Typography>{question.text}</Typography>
                     </TableCell>

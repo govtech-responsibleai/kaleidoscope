@@ -352,21 +352,25 @@ export default function QAList({
         display: "flex",
         flexDirection: { xs: "column", md: "row" },
         gap: 3,
-        alignItems: "stretch",
+        alignItems: "flex-start",
       }}
     >
       <Box
         sx={{
-          flexBasis: { md: "25%" },
+          width: { md: "25%" },
           display: "flex",
           flexDirection: "column",
+          position: { md: "sticky" },
+          top: { md: 24 },
+          maxHeight: { md: "calc(100vh - 48px)" },
+          minHeight: 0,
         }}
       >
         <Stack
           direction="row"
           justifyContent="space-between"
           alignItems="center"
-          sx={{ mt:1, mb: 1 }}
+          sx={{ mt:1, mb: 1, flexShrink: 0 }}
         >
           <Typography variant="h5">Question List</Typography>
           <Tooltip title="Toggle between all answers or selected only">
@@ -405,7 +409,7 @@ export default function QAList({
           </Tooltip>
         </Stack>
 
-        <Stack spacing={1} sx={{ mt: 2, mb: 2 }}>
+        <Stack spacing={1} sx={{ mt: 2, mb: 2, flexShrink: 0 }}>
           <Stack direction="row" alignItems="center" justifyContent={"space-between"} spacing={1}>
             <Typography variant="caption" color="text.secondary">
               Annotated: {annotatedCount} / {savedSelections.size}
@@ -477,8 +481,8 @@ export default function QAList({
       <Paper
         variant="outlined"
         sx={{
-          flexBasis: { md: "52%" },
-          bgcolor: "rgb(0, 0, 0, 0.01)" 
+          width: { md: "52%" },
+          bgcolor: "rgb(0, 0, 0, 0.01)",
         }}
       >
         <QAContent
@@ -495,7 +499,7 @@ export default function QAList({
 
       <Box
         sx={{
-          flexBasis: { md: "23%" },
+          width: { md: "23%" },
         }}
       >
         <AnnotationForm

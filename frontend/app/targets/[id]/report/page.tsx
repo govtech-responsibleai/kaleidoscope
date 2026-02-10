@@ -8,11 +8,11 @@ import {
   Divider,
   Typography,
   CircularProgress,
-  Button,
+  IconButton,
+  Tooltip,
   Stack,
   Select,
   MenuItem,
-  useTheme,
 } from "@mui/material";
 import {
   Person as PersonIcon,
@@ -35,7 +35,6 @@ export default function TargetReport() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const theme = useTheme();
   const targetId = parseInt(params.id as string);
   const [metric, setMetric] = useState<string>("accuracy");
 
@@ -197,15 +196,23 @@ export default function TargetReport() {
     <Box>
       {/* Header with Download Report Button */}
       <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", mb: 3 }}>
-        <Button
-          variant="contained"
-          startIcon={<DownloadIcon />}
-          onClick={handleDownloadReport}
-          disabled={downloading || loading}
-          sx={{ bgcolor: theme.palette.secondary.main }}
-        >
-          {downloading ? "Generating PDF..." : "Download Report"}
-        </Button>
+        <Tooltip title={downloading ? "Generating PDF..." : "Download Report PDF"}>
+          <span>
+            <IconButton
+              onClick={handleDownloadReport}
+              disabled={downloading || loading}
+              sx={{
+                bgcolor: "secondary.main",
+                color: "white",
+                borderRadius: 1,
+                "&:hover": { bgcolor: "secondary.dark" },
+                "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
+              }}
+            >
+              {downloading ? <CircularProgress size={24} color="inherit" /> : <DownloadIcon />}
+            </IconButton>
+          </span>
+        </Tooltip>
       </Box>
 
       {/* Report Content */}

@@ -128,6 +128,9 @@ export default function QAItem({
           <Stack direction="row" spacing={1.5} alignItems="flex-start">
             <Box sx={{ flexGrow: 1 }}>
               <Typography variant="subtitle2" sx={{ fontWeight: 600, textOverflow: 'ellipsis', overflow: 'hidden', display: '-webkit-box', lineClamp: 2, WebkitLineClamp: 2, WebkitBoxOrient: 'vertical'  }}>
+              <Typography component="span" variant="subtitle2" color="text.secondary" sx={{ fontWeight: 600, mr: 0.5 }}>
+                {question.id}.
+              </Typography>
               {question?.text
                 ? question.text
                 : "Question not found."}

@@ -116,6 +116,18 @@ export const targetApi = {
 
   getStats: (id: number) =>
     api.get<TargetStats>(`/targets/${id}/stats`),
+
+  exportQuestions: (id: number, format: "csv" | "json" = "json") =>
+    api.get(`/targets/${id}/questions/export`, {
+      params: { format },
+      responseType: "blob",
+    }),
+
+  exportPersonas: (id: number, format: "csv" | "json" = "json") =>
+    api.get(`/targets/${id}/personas/export`, {
+      params: { format },
+      responseType: "blob",
+    }),
 };
 
 // Job endpoints
@@ -399,6 +411,11 @@ export const metricsApi = {
     api.get(`/targets/snapshots/${snapshotId}/export`, {
       params: { format },
       responseType: "blob",
+    }),
+
+  exportJSON: (snapshotId: number) =>
+    api.get(`/targets/snapshots/${snapshotId}/export`, {
+      params: { format: "json", include_evaluators: true },
     }),
 
   getSnapshotMetrics: (targetId: number) =>

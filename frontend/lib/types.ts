@@ -362,9 +362,10 @@ export interface Annotation {
 }
 
 export interface AnnotationCompletionStatus {
-  total_selected: number;
-  total_annotated: number;
+  selected_ids: number[];
+  selected_and_annotated_ids: number[];
   is_complete: boolean;
+  completion_percentage: number;
 }
 
 // Judge types

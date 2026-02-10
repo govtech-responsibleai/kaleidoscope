@@ -441,12 +441,14 @@ export default function GenerateEvalsModal({
                     <Card
                       key={persona.id}
                       sx={{
+                        display: "flex",
+                        flexDirection: "column",
                         border: isRejected ? "2px solid #f44336" : "2px solid #4caf50",
                         opacity: isRejected ? 0.5 : 1,
                         transition: "all 0.2s",
                       }}
                     >
-                      <CardContent>
+                      <CardContent sx={{ flex: 1 }}>
                         {isEditing ? (
                           <Box display="flex" flexDirection="column" gap={2}>
                             <TextField
