@@ -125,6 +125,9 @@ class ClaimProcessor:
         if not answer:
             raise ValueError(f"Answer with id {answer_id} not found")
 
+        # Cache system prompt for checkworthy checks
+        self._system_prompt = answer.system_prompt or "[No system prompt available]"
+
         # Use NLTK to split into sentences
         if nltk is None:
             raise ImportError("nltk is required for claim extraction. Install nltk to run claim processing.")
@@ -200,7 +203,8 @@ class ClaimProcessor:
         # Render prompt
         prompt = render_template(
             "checkworthy.md",
-            claim_text=claim.claim_text
+            claim_text=claim.claim_text,
+            system_prompt=self._system_prompt
         )
 
         # Call LLM

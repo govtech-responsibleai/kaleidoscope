@@ -88,44 +88,46 @@ class AnnotationRepository:
         Returns:
             Dictionary with completion statistics:
             {
-                "total_selected": int,
-                "total_selected_and_annotated": int,
+                "selected_ids": list,
+                "selected_and_annotated_ids": list,
                 "is_complete": bool,
                 "completion_percentage": float
             }
         """
-        # Count all answers selected for annotation
-        total_selected = (
-            db.query(Answer)
+        # Get question IDs of all selected answers
+        selected_rows = (
+            db.query(Answer.question_id)
             .filter(
                 Answer.snapshot_id == snapshot_id,
                 Answer.is_selected_for_annotation == True
             )
-            .count()
+            .all()
         )
+        selected_ids = [row[0] for row in selected_rows]
 
-        # Count selected answers that have annotations
-        total_selected_and_annotated = (
-            db.query(Annotation)
-            .join(Answer)
+        # Get question IDs of selected answers that have annotations
+        annotated_rows = (
+            db.query(Answer.question_id)
+            .join(Annotation)
             .filter(
                 Answer.snapshot_id == snapshot_id,
                 Answer.is_selected_for_annotation == True
             )
-            .count()
+            .all()
         )
+        selected_and_annotated_ids = [row[0] for row in annotated_rows]
 
         # Calculate completion status
-        is_complete = total_selected > 0 and total_selected == total_selected_and_annotated
+        is_complete = len(selected_ids) > 0 and len(selected_ids) == len(selected_and_annotated_ids)
         completion_percentage = (
-            (total_selected_and_annotated / total_selected * 100)
-            if total_selected > 0
+            (len(selected_and_annotated_ids) / len(selected_ids) * 100)
+            if len(selected_ids) > 0
             else 0.0
         )
 
         return {
-            "total_selected": total_selected,
-            "total_selected_and_annotated": total_selected_and_annotated,
+            "selected_ids": selected_ids,
+            "selected_and_annotated_ids": selected_and_annotated_ids,
             "is_complete": is_complete,
             "completion_percentage": round(completion_percentage, 2)
         }

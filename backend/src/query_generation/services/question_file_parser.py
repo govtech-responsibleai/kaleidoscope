@@ -185,7 +185,6 @@ class QuestionFileParser:
             raise ValueError(f"Failed to parse Excel file: {str(e)}")
 
     @staticmethod
-    @staticmethod
     def _map_fields(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         Map user fields to internal format.
