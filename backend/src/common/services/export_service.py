@@ -18,6 +18,7 @@ from src.common.database.repositories.question_repo import QuestionRepository
 from src.common.database.repositories.snapshot_repo import SnapshotRepository
 from src.common.database.repositories.target_repo import TargetRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
+from src.common.database.repositories.answer_repo import AnswerRepository
 from src.scoring.services.metrics_service import MetricsService
 
 logger = logging.getLogger(__name__)
@@ -209,8 +210,8 @@ class ExportService:
             output = io.StringIO()
             writer = csv.writer(output)
             writer.writerow([
-                "Question ID", "Question", "Answer ID", "Answer",
-                "Human Label", "Human Notes", "Aggregated Accuracy", "Judge Metadata"
+                "Question_ID", "Question", "Answer_ID", "Answer",
+                "Human_Label", "Human_Notes", "Aggregated_Accuracy", "Judge_Metadata"
             ])
 
             for row in results:
@@ -239,6 +240,67 @@ class ExportService:
             logger.info(f"Exported {len(results)} results for snapshot {snapshot_id} as CSV")
 
         return main_export, evaluator_payload
+
+    def export_aibots_responses(
+        self,
+        snapshot_id: int,
+    ) -> List[Dict]:
+        """
+        Export full AIBots responses for a snapshot as JSON.
+        Each entry contains the complete response including all metadata, citations, etc.
+
+        Args:
+            snapshot_id: Snapshot ID
+
+        Returns:
+            List of dicts containing full AIBots responses
+
+        Raises:
+            ValueError: If snapshot not found
+        """
+        snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
+        if not snapshot:
+            raise ValueError(f"Snapshot {snapshot_id} not found")
+
+        results = self.metrics_service.get_aggregated_results(snapshot_id)
+
+        export_rows: List[Dict] = []
+
+        for row in results:
+            answer_id = row.get("answer_id")
+            question_id = row.get("question_id", "")
+            question_text = row.get("question_text", "")
+
+            if not answer_id:
+                continue
+
+            answer = AnswerRepository.get_by_id(self.db, answer_id)
+            
+            if not answer:
+                continue
+
+            # Build the full AIBots response object
+            aibots_response = {
+                "answer_id": answer.id,
+                "question_id": question_id,
+                "question_text": question_text,
+                "snapshot_id": answer.snapshot_id,
+                "chat_id": answer.chat_id,
+                "message_id": answer.message_id,
+                "answer_content": answer.answer_content,
+                "system_prompt": answer.system_prompt,
+                "model": answer.model,
+                "guardrails": answer.guardrails if answer.guardrails else {},
+                "rag_citations": answer.rag_citations if answer.rag_citations else [],
+                "raw_response": answer.raw_response if answer.raw_response else {},
+                "is_selected_for_annotation": answer.is_selected_for_annotation,
+                "created_at": answer.created_at.isoformat() if answer.created_at else None,
+            }
+
+            export_rows.append(aibots_response)
+
+        logger.info(f"Exported {len(export_rows)} full AIBots responses for snapshot {snapshot_id}")
+        return export_rows
 
     def _build_evaluator_exports(self, snapshot_id: int) -> List[Dict]:
         """
@@ -308,6 +370,8 @@ class ExportService:
         - personas.csv (or .json)
         - questions.csv (or .json)
         - snapshot_{id}_{name}.csv (or .json) for each snapshot
+        - snapshot_{id}_{name}_aibots_responses.json for each snapshot (full AIBots responses)
+        - snapshot_{id}_{name}_evaluators.json for each snapshot
 
         Args:
             target_id: Target ID
@@ -364,6 +428,15 @@ class ExportService:
                         )
                 except ValueError as e:
                     logger.warning(f"Skipping snapshot {snapshot.id} export: {e}")
+
+                try:
+                    aibots_responses = self.export_aibots_responses(snapshot.id)
+                    zip_file.writestr(
+                        f"snapshot_{snapshot.id}_{snapshot.name}_aibots_responses.json",
+                        json.dumps(aibots_responses, indent=2)
+                    )
+                except ValueError as e:
+                    logger.warning(f"Skipping AIBots responses export for snapshot {snapshot.id}: {e}")
 
         zip_buffer.seek(0)
         zip_bytes = zip_buffer.getvalue()
