@@ -69,7 +69,7 @@ class TestPersonaGenerator:
             )
         ]
 
-        personas = generator._save_personas(personas_data)
+        personas = generator._save_personas(personas_data, [])
 
         assert len(personas) == 2
         assert personas[0].title == "Test Persona 1"

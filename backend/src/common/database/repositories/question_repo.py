@@ -26,9 +26,8 @@ class QuestionRepository:
         """Create multiple questions."""
         questions = [Question(**data) for data in questions_data]
         db.add_all(questions)
+        db.flush()
         db.commit()
-        for question in questions:
-            db.refresh(question)
         return questions
 
     @staticmethod

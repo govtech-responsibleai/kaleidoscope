@@ -8,6 +8,11 @@ import logging
 from io import StringIO, BytesIO
 from typing import List, Dict, Any, Optional
 
+from sqlalchemy.orm import Session
+
+from src.common.database.models import StatusEnum, QuestionTypeEnum, QuestionScopeEnum, QuestionSourceEnum
+from src.common.database.repositories.persona_repo import PersonaRepository
+
 logger = logging.getLogger(__name__)
 
 
@@ -218,3 +223,85 @@ class QuestionFileParser:
             return None
 
         return mapped
+
+    @staticmethod
+    def prepare_questions_for_target(
+        parsed_questions: List[Dict[str, Any]],
+        target_id: int,
+        db: Session
+    ) -> List[dict]:
+        """
+        Validate and enrich parsed questions for database insertion.
+
+        Sets target_id, source, status, job_id. Resolves persona by title,
+        validates type and scope enums.
+
+        Args:
+            parsed_questions: Output from parse_file()
+            target_id: Target ID to associate questions with
+            db: Database session for persona lookup
+
+        Returns:
+            List of question dicts ready for QuestionRepository.create_many()
+        """
+        questions_to_create: List[dict] = []
+
+        for idx, parsed_q in enumerate(parsed_questions):
+            try:
+                question_data: dict = {
+                    "target_id": target_id,
+                    "text": parsed_q["text"],
+                    "source": QuestionSourceEnum.uploaded,
+                    "status": StatusEnum.pending,
+                    "job_id": None,
+                    "persona_id": None,
+                }
+
+                if "orig_id" in parsed_q:
+                    question_data["orig_id"] = parsed_q["orig_id"]
+
+                # Lookup persona by title
+                if "persona_title" in parsed_q:
+                    persona = PersonaRepository.get_by_title(
+                        db, target_id, parsed_q["persona_title"]
+                    )
+                    if persona:
+                        question_data["persona_id"] = persona.id
+                    else:
+                        logger.warning(
+                            f"Question {idx+1}: Persona '{parsed_q['persona_title']}' "
+                            f"not found for target {target_id}"
+                        )
+
+                # Validate type enum
+                if "type" in parsed_q:
+                    type_value = str(parsed_q["type"]).lower()
+                    if type_value in ("typical", "edge"):
+                        question_data["type"] = QuestionTypeEnum[type_value]
+                    else:
+                        logger.warning(
+                            f"Question {idx+1}: Invalid type '{parsed_q['type']}', setting to null"
+                        )
+                        question_data["type"] = None
+                else:
+                    question_data["type"] = None
+
+                # Validate scope enum
+                if "scope" in parsed_q:
+                    scope_value = str(parsed_q["scope"]).lower()
+                    if scope_value in ("in_kb", "out_kb"):
+                        question_data["scope"] = QuestionScopeEnum[scope_value]
+                    else:
+                        logger.warning(
+                            f"Question {idx+1}: Invalid scope '{parsed_q['scope']}', setting to null"
+                        )
+                        question_data["scope"] = None
+                else:
+                    question_data["scope"] = None
+
+                questions_to_create.append(question_data)
+
+            except Exception as e:
+                logger.error(f"Failed to process question {idx+1}: {e}", exc_info=True)
+
+        return questions_to_create

@@ -38,17 +38,12 @@ class QAJobProcessor:
         self.question_id = question_id
         self.judge_id = judge_id
 
-    async def run(self, job_id: int, is_scoring: bool = False) -> QAJob:
+    async def run(self, job_id: int) -> QAJob:
         """
         Process an existing QA job through its pipeline stages.
 
-        This function assumes the job record already exists in the database (created via
-        get_or_create_qajobs_batch). It retrieves the job and processes it based on its
-        current stage.
-
         Args:
             job_id: QAJob ID to process (required)
-            is_scoring: If True, override stage to scoring_answers
 
         Returns:
             QAJob object after processing
@@ -73,99 +68,114 @@ class QAJobProcessor:
             QAJobRepository.update_status(self.db, job_id, JobStatusEnum.running, job.stage)
             logger.info(f"Updated job {job_id} status to running")
 
-        # Update job stage if is_scoring flag is set
-        if is_scoring:
-            stage = QAJobStageEnum.scoring_answers
-            logger.info(f"Updating job {job_id} stage to {stage.value} (is_scoring=True)")
-            job = QAJobRepository.update_status(self.db, job.id, job.status, stage)
-
-        # Trigger pipeline based on current stage
-        await self._trigger_pipeline_stage(job)
+        # Run the pipeline
+        await self._run_pipeline(job)
 
         return job
 
-    async def _trigger_pipeline_stage(self, job: QAJob) -> None:
+    async def _run_pipeline(self, job: QAJob) -> None:
         """
-        Trigger the appropriate pipeline stage based on job's current stage.
-
-        This runs: 
-        1) generate_answer_for_job(...)
-        2) extract_and_check_claims(...)
-        3) score_answer(...)
+        Run pipeline stages sequentially with pause checks between stages.
 
         Args:
             job: QAJob to process
         """
-        current_stage = job.stage
+        stages = [
+            (QAJobStageEnum.generating_answers, self._run_answer_generation),
+            (QAJobStageEnum.processing_answers, self._run_claim_processing),
+            (QAJobStageEnum.scoring_answers, self._run_scoring),
+        ]
 
-        if current_stage == QAJobStageEnum.starting:
-            # Start from beginning - generate answer
-            logger.info(f"QAJob {job.id}: Starting pipeline from 'starting' stage")
-            await generate_answer_for_job(self.db, job.id, self.question_id, self.snapshot_id)
+        start_idx = self._get_start_index(job)
 
-        elif current_stage == QAJobStageEnum.generating_answers:
-            # Check if answer exists
-            answer = AnswerRepository.get_by_question_and_snapshot(
-                self.db, self.question_id, self.snapshot_id
+        if start_idx >= len(stages):
+            # All stages already done
+            logger.info(f"QAJob {job.id}: All stages already complete")
+            QAJobRepository.update_status(
+                self.db, job.id, JobStatusEnum.completed, QAJobStageEnum.completed
             )
+            return
 
-            # Check if answer exists
-            if answer and answer.answer_content:
-                # Valid answer exists, move to claim processing
-                logger.info(f"QAJob {job.id}: Answer exists, moving to claim processing")
-                await extract_and_check_claims(self.db, job.id)
-            else:
-                # Answer missing, generate it
-                logger.info(f"QAJob {job.id}: Answer missing, generating answer")
-                await generate_answer_for_job(self.db, job.id, self.question_id, self.snapshot_id)
+        for stage_enum, stage_fn in stages[start_idx:]:
+            # Re-read job status from DB to check for pause
+            job = QAJobRepository.get_by_id(self.db, job.id)
+            if job.status == JobStatusEnum.paused:
+                logger.info(f"Job {job.id} paused before {stage_enum.value}")
+                return
 
-        elif current_stage == QAJobStageEnum.processing_answers:
-            # Check if claims exist AND are fully checked
-            claims = AnswerClaimRepository.get_by_answer(self.db, job.answer_id)
-
-            if claims:
-                # Check if all claims have been checked (created_at != checked_at)
-                # Note: checked_at acts as a natural failure indicator. When generate_structured_async
-                # fails in _check_single_claim, checked_at is never updated and remains == created_at.
-                # This allows us to detect unchecked claims and retry without needing a failure message.
-                all_checked = all(claim.created_at != claim.checked_at for claim in claims)
-
-                if all_checked:
-                    logger.info(f"QAJob {job.id}: All {len(claims)} claims checked, moving to scoring")
-                    await score_answer(self.db, job.id)
-                else:
-                    unchecked_count = sum(
-                        1 for claim in claims if claim.created_at == claim.checked_at
-                    )
-                    logger.info(
-                        f"QAJob {job.id}: {unchecked_count} claims not checked, "
-                        f"running claim processing"
-                    )
-                    await extract_and_check_claims(self.db, job.id)
-            else:
-                logger.info(f"QAJob {job.id}: No claims found, running claim processing")
-                await extract_and_check_claims(self.db, job.id)
-
-        elif current_stage == QAJobStageEnum.scoring_answers:
-            # Check if score exists
-            score = AnswerScoreRepository.get_by_answer_and_judge(
-                self.db, job.answer_id, self.judge_id
-            )
-
-            # Check if score exists
-            if score:
-                # Valid score exists, mark as completed
-                logger.info(f"QAJob {job.id}: Score already exists, marking as completed")
+            QAJobRepository.update_status(self.db, job.id, JobStatusEnum.running, stage_enum)
+            try:
+                await stage_fn(job)
+            except Exception as e:
+                # Catch unhandled exceptions (stage functions should handle errors
+                # internally, but this is a safety net for unexpected failures)
+                logger.error(f"QAJob {job.id} failed during {stage_enum.value}: {e}")
                 QAJobRepository.update_status(
-                    self.db, job.id, JobStatusEnum.completed, QAJobStageEnum.completed
+                    self.db, job.id, JobStatusEnum.failed, stage_enum
                 )
-            else:
-                # Score missing, run scoring
-                logger.info(f"QAJob {job.id}: Score missing, running scoring")
-                await score_answer(self.db, job.id)
+                return
 
-        else:
-            raise ValueError(f"Unknown stage: {current_stage}")
+            # Re-check status after stage completes
+            # Stage functions may set status to failed (internal error handling) or
+            # an external caller may have set status to paused
+            job = QAJobRepository.get_by_id(self.db, job.id)
+            if job.status != JobStatusEnum.running:
+                logger.info(
+                    f"Job {job.id} stopped during {stage_enum.value} "
+                    f"(status: {job.status.value})"
+                )
+                return
+
+        QAJobRepository.update_status(
+            self.db, job.id, JobStatusEnum.completed, QAJobStageEnum.completed
+        )
+
+    def _get_start_index(self, job: QAJob) -> int:
+        """
+        Determine which pipeline stage to start from based on existing data.
+
+        Args:
+            job: QAJob to check
+
+        Returns:
+            Index into the stages list (0=answer gen, 1=claims, 2=scoring, 3=all done)
+        """
+        # Check if answer exists
+        answer = AnswerRepository.get_by_question_and_snapshot(
+            self.db, self.question_id, self.snapshot_id
+        )
+        if not answer or not answer.answer_content:
+            return 0  # answer generation
+
+        # Check if claims exist and are fully checked
+        claims = AnswerClaimRepository.get_by_answer(self.db, answer.id)
+        if not claims:
+            return 1  # claim processing
+
+        all_checked = all(claim.created_at != claim.checked_at for claim in claims)
+        if not all_checked:
+            return 1  # retry unchecked claims
+
+        # Check if score exists for this judge
+        score = AnswerScoreRepository.get_by_answer_and_judge(
+            self.db, answer.id, self.judge_id
+        )
+        if not score:
+            return 2  # scoring
+
+        return 3  # all done
+
+    async def _run_answer_generation(self, job: QAJob) -> None:
+        """Run the answer generation stage."""
+        await generate_answer_for_job(self.db, job.id, self.question_id, self.snapshot_id)
+
+    async def _run_claim_processing(self, job: QAJob) -> None:
+        """Run the claim processing stage."""
+        await extract_and_check_claims(self.db, job.id)
+
+    async def _run_scoring(self, job: QAJob) -> None:
+        """Run the scoring stage."""
+        await score_answer(self.db, job.id)
 
 
 async def run_qajob(
@@ -174,12 +184,9 @@ async def run_qajob(
     question_id: int,
     judge_id: int,
     job_id: int,
-    is_scoring: bool = False
 ) -> QAJob:
     """
     Process an existing QA job through its pipeline stages (convenience function).
-
-    This function assumes the job record already exists in the database.
 
     Args:
         db: Database session
@@ -187,13 +194,12 @@ async def run_qajob(
         question_id: Question ID
         judge_id: Judge ID for scoring
         job_id: QAJob ID to process (required)
-        is_scoring: If True, override stage to scoring_answers
 
     Returns:
         QAJob object after processing
     """
     processor = QAJobProcessor(db, snapshot_id, question_id, judge_id)
-    return await processor.run(job_id, is_scoring)
+    return await processor.run(job_id)
 
 
 async def pause_qajob(db: Session, job_id: int) -> QAJob:
@@ -301,7 +307,6 @@ async def run_qajobs_batch(
     judge_id: int,
     question_ids: List[int],
     job_ids: Optional[List[int]] = None,
-    is_scoring: bool = False,
 ) -> List[QAJob]:
     """
     Run QA jobs batch for multiple questions.
@@ -315,7 +320,6 @@ async def run_qajobs_batch(
         judge_id: Judge ID for scoring
         question_ids: List of question IDs to process
         job_ids: Optional list of job IDs to resume (None = check for existing or create new)
-        is_scoring: Boolean flag to indicate if this is a scoring job
 
     Returns:
         List of QAJob objects after processing
@@ -328,7 +332,7 @@ async def run_qajobs_batch(
 
     # Process all jobs concurrently
     jobs = await asyncio.gather(*(
-        run_qajob(db, snapshot_id, qn_id, judge_id, qn2qajob.get(qn_id), is_scoring)
+        run_qajob(db, snapshot_id, qn_id, judge_id, qn2qajob.get(qn_id))
         for qn_id in question_ids
     ))
 

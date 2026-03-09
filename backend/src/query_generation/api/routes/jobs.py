@@ -28,6 +28,33 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
+def run_persona_generation_background(
+    job_id: int,
+    sample_personas: Optional[List[str]] = None
+):
+    """
+    Background task for running persona generation asynchronously.
+
+    Args:
+        job_id: Job ID for the generation task
+        sample_personas: Optional list of example persona descriptions
+    """
+    from src.common.database.connection import SessionLocal
+    db = SessionLocal()
+
+    try:
+        generate_personas_for_job(
+            db,
+            job_id,
+            sample_personas=sample_personas
+        )
+        logger.info(f"Background task completed persona generation for job {job_id}")
+    except Exception as e:
+        logger.error(f"Background persona generation failed for job {job_id}: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
 def run_question_generation_background(
     job_id: int,
     persona_ids: Optional[List[int]] = None,
@@ -67,22 +94,25 @@ def run_question_generation_background(
 )
 def create_persona_generation_job(
     job_request: JobCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """
     Create a persona generation job for a target.
 
-    Creates a new generation job and runs persona generation synchronously.
+    Runs generation asynchronously in the background. Returns immediately with status="running".
+    Use GET /jobs/{id} to check completion status.
 
     Args:
         job_request: Generation job configuration (includes target_id)
+        background_tasks: FastAPI background tasks
         db: Database session
 
     Returns:
-        Completed job with generated personas
+        Created job with status="running"
 
     Raises:
-        HTTPException: If target not found or generation fails
+        HTTPException: If target not found
     """
     # Verify target exists
     target = TargetRepository.get_by_id(db, job_request.target_id)
@@ -103,26 +133,16 @@ def create_persona_generation_job(
     }
     job = JobRepository.create(db, job_data)
 
-    # Store job_id before generation (in case of DB rollback)
-    job_id = job.id
+    # Run persona generation asynchronously in background
+    background_tasks.add_task(
+        run_persona_generation_background,
+        job.id,
+        job_request.sample_personas
+    )
 
-    # Run persona generation synchronously
-    try:
-        generate_personas_for_job(
-            db,
-            job_id,
-            sample_personas=job_request.sample_personas
-        )
-        logger.info(f"Completed persona generation for job {job_id}")
-    except Exception as e:
-        logger.error(f"Persona generation failed for job {job_id}: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Persona generation failed: {str(e)}"
-        )
+    logger.info(f"Created persona generation job {job.id}, running in background")
 
-    # Refresh job to get updated status
-    db.refresh(job)
+    # Return immediately with status="running"
     return job
 
 

@@ -79,11 +79,10 @@ class TestClaimProcessor:
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
-    @patch('src.scoring.services.judge_scoring.score_answer', new_callable=AsyncMock)
     async def test_process_success(
-        self, mock_score_answer, mock_llm_class, test_db, sample_qa_job, sample_answer
+        self, mock_llm_class, test_db, sample_qa_job, sample_answer
     ):
-        """Test full process pipeline: extract -> check -> update costs -> call next stage."""
+        """Test full process pipeline: extract -> check -> update costs."""
         # Mock LLM - will be called 3 times (once per claim)
         mock_llm_instance = MagicMock()
 
@@ -125,9 +124,6 @@ class TestClaimProcessor:
         assert sample_qa_job.prompt_tokens == 200  # 2 calls * 100
         assert sample_qa_job.completion_tokens == 100  # 2 calls * 50
         assert sample_qa_job.total_cost == pytest.approx(0.0004, rel=1e-6)
-
-        # Verify next stage called
-        mock_score_answer.assert_awaited_once_with(test_db, sample_qa_job.id)
 
     @pytest.mark.asyncio
     async def test_process_skips_if_not_running(self, test_db, sample_qa_job, sample_answer):
@@ -185,9 +181,8 @@ class TestClaimProcessorErrors:
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
-    @patch('src.scoring.services.judge_scoring.score_answer', new_callable=AsyncMock)
     async def test_checkworthy_llm_error_defaults_to_checkworthy_true(
-        self, mock_score_answer, mock_llm_class, test_db, sample_qa_job, sample_answer
+        self, mock_llm_class, test_db, sample_qa_job, sample_answer
     ):
         """Test that checkworthy LLM errors default claims to checkworthy=True."""
         # Update answer to have longer sentences that will be checked

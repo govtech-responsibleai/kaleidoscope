@@ -2,6 +2,7 @@
 Integration tests for question generation API endpoints.
 """
 
+import io
 import pytest
 
 
@@ -180,3 +181,61 @@ class TestQuestionGenerationAPI:
         job_response = test_client.get(f"/api/v1/jobs/{job_id}")
         assert job_response.status_code == 200
         assert job_response.json()["id"] == job_id
+
+
+@pytest.mark.integration
+class TestQuestionUploadAPI:
+    """Integration tests for question file upload endpoint."""
+
+    def test_upload_valid_csv(self, test_client, sample_target):
+        """Upload a valid CSV creates questions in the database."""
+        csv_content = b"question,type,scope\nWhat is AI?,typical,in_kb\nHow does ML work?,edge,out_kb\n"
+        response = test_client.post(
+            f"/api/v1/questions/upload?target_id={sample_target.id}",
+            files={"file": ("questions.csv", io.BytesIO(csv_content), "text/csv")},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["count"] == 2
+        assert body["target_id"] == sample_target.id
+
+    def test_upload_invalid_format_returns_400(self, test_client, sample_target):
+        """Uploading a file with unsupported format returns 400."""
+        response = test_client.post(
+            f"/api/v1/questions/upload?target_id={sample_target.id}",
+            files={"file": ("questions.txt", io.BytesIO(b"random data"), "text/plain")},
+        )
+
+        assert response.status_code == 400
+
+    def test_upload_csv_missing_question_column(self, test_client, sample_target):
+        """CSV without 'question' column returns 400."""
+        csv_content = b"name,description\nAlice,Something\n"
+        response = test_client.post(
+            f"/api/v1/questions/upload?target_id={sample_target.id}",
+            files={"file": ("bad.csv", io.BytesIO(csv_content), "text/csv")},
+        )
+
+        assert response.status_code == 400
+
+    def test_upload_unknown_persona_still_creates(self, test_client, sample_target):
+        """CSV with unknown persona should still create questions (persona_id=None)."""
+        csv_content = b"question,persona\nWhat is AI?,NonExistentPersona\n"
+        response = test_client.post(
+            f"/api/v1/questions/upload?target_id={sample_target.id}",
+            files={"file": ("q.csv", io.BytesIO(csv_content), "text/csv")},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["count"] == 1
+
+    def test_upload_target_not_found(self, test_client):
+        """Uploading to non-existent target returns 404."""
+        csv_content = b"question\nWhat is AI?\n"
+        response = test_client.post(
+            "/api/v1/questions/upload?target_id=99999",
+            files={"file": ("q.csv", io.BytesIO(csv_content), "text/csv")},
+        )
+
+        assert response.status_code == 404

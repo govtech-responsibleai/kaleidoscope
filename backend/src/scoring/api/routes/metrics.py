@@ -1,20 +1,28 @@
-"""
-API routes for Metrics calculation and export.
-"""
+"""API routes for Metrics calculation and export."""
 
-from typing import Dict, List, Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import SnapshotRepository, JudgeRepository, TargetRepository
+from src.common.models.metrics import (
+    AggregatedResult,
+    ConfusionMatrixResponse,
+    JudgeAccuracyResponse,
+    JudgeAlignmentResponse,
+    TargetSnapshotMetric,
+)
 from src.scoring.services.metrics_service import MetricsService
 
 router = APIRouter()
 
 
 
-@router.get("/snapshots/{snapshot_id}/judges/{judge_id}/alignment")
+@router.get(
+    "/snapshots/{snapshot_id}/judges/{judge_id}/alignment",
+    response_model=JudgeAlignmentResponse,
+)
 def get_judge_alignment(
     snapshot_id: int,
     judge_id: int,
@@ -65,7 +73,10 @@ def get_judge_alignment(
         )
 
 
-@router.get("/snapshots/{snapshot_id}/judges/{judge_id}/accuracy")
+@router.get(
+    "/snapshots/{snapshot_id}/judges/{judge_id}/accuracy",
+    response_model=JudgeAccuracyResponse,
+)
 def get_chatbot_accuracy(
     snapshot_id: int,
     judge_id: int,
@@ -116,7 +127,7 @@ def get_chatbot_accuracy(
         )
 
 
-@router.get("/snapshots/{snapshot_id}/results")
+@router.get("/snapshots/{snapshot_id}/results", response_model=List[AggregatedResult])
 def get_aggregated_results(
     snapshot_id: int,
     db: Session = Depends(get_db)
@@ -148,12 +159,8 @@ def get_aggregated_results(
     # Get aggregated results
     try:
         metrics_service = MetricsService(db)
-        results = metrics_service.get_aggregated_results(snapshot_id)
-        return {
-            "snapshot_id": snapshot_id,
-            "results": results,
-            "total": len(results)
-        }
+        results, _ = metrics_service.get_aggregated_results(snapshot_id)
+        return results
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -161,7 +168,7 @@ def get_aggregated_results(
         )
 
 
-@router.get("/targets/{target_id}/snapshot-metrics")
+@router.get("/targets/{target_id}/snapshot-metrics", response_model=List[TargetSnapshotMetric])
 def get_target_snapshot_metrics(
     target_id: int,
     db: Session = Depends(get_db)
@@ -169,28 +176,15 @@ def get_target_snapshot_metrics(
     """
     Get aggregated metrics for all snapshots of a target.
 
-    Returns summary metrics for each snapshot including aggregated accuracy
-    and judge alignment ranges for visualization and reporting.
+    Returns summary metrics for each snapshot including aggregated accuracy,
+    judge alignment ranges, and aligned judges list.
 
     Args:
         target_id: Target ID
         db: Database session
 
     Returns:
-        Dict with list of snapshot metrics:
-        {
-            "snapshots": [
-                {
-                    "snapshot_id": 1,
-                    "snapshot_name": "Snapshot 1",
-                    "created_at": "2024-01-15T10:30:00Z",
-                    "aggregated_accuracy": 0.73,
-                    "total_answers": 100,
-                    "judge_alignment_range": {"min": 0.50, "max": 0.85},
-                    "has_aligned_judges": true
-                }
-            ]
-        }
+        List of snapshot metrics
 
     Raises:
         HTTPException: If target not found
@@ -213,17 +207,15 @@ def get_target_snapshot_metrics(
     for snapshot in snapshots:
         try:
             summary = metrics_service.calculate_snapshot_summary(snapshot.id)
-            snapshot_metrics.append({
-                "snapshot_id": snapshot.id,
-                "snapshot_name": snapshot.name,
-                "created_at": snapshot.created_at.isoformat(),
-                "aggregated_accuracy": summary["aggregated_accuracy"],
-                "total_answers": summary["total_answers"],
-                "edited_count": summary["edited_count"],
-                "judge_alignment_range": summary["judge_alignment_range"],
-                "has_aligned_judges": summary["has_aligned_judges"],
-                "reliable_judge_count": summary["reliable_judge_count"]
-            })
+            snapshot_metrics.append(
+                summary.model_copy(
+                    update={
+                        "snapshot_id": snapshot.id,
+                        "snapshot_name": snapshot.name,
+                        "created_at": snapshot.created_at.isoformat(),
+                    }
+                )
+            )
         except ValueError:
             # No answers for this snapshot, skip it
             continue
@@ -234,12 +226,13 @@ def get_target_snapshot_metrics(
             logger.exception(f"Failed to calculate metrics for snapshot {snapshot.id}")
             continue
 
-    return {
-        "snapshots": snapshot_metrics
-    }
+    return snapshot_metrics
 
 
-@router.get("/targets/{target_id}/confusion-matrix")
+@router.get(
+    "/targets/{target_id}/confusion-matrix",
+    response_model=ConfusionMatrixResponse,
+)
 def get_confusion_matrix(
     target_id: int,
     snapshot_id: Optional[int] = Query(None),
@@ -258,17 +251,7 @@ def get_confusion_matrix(
         db: Database session
 
     Returns:
-        Dict with confusion matrix:
-        {
-            "matrix": {
-                "typical_in_kb": 5,
-                "typical_out_kb": 3,
-                "edge_in_kb": 2,
-                "edge_out_kb": 7
-            },
-            "total_inaccurate": 17,
-            "snapshot_id": 1
-        }
+        Confusion matrix response
 
     Raises:
         HTTPException: If target not found or no snapshots available

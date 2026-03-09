@@ -48,7 +48,6 @@ class QAJobStart(BaseModel):
     judge_id: int = Field(..., description="Judge ID to use for scoring")
     question_ids: list[int] = Field(..., description="List of question IDs to process")
     job_ids: Optional[list[int]] = Field(None, description="List of QA job IDs to resume")
-    is_scoring: bool = Field(False, description="Flag to indicate if this is a scoring job")
 
 
 class QAJobPauseRequest(BaseModel):

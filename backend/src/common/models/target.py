@@ -59,6 +59,8 @@ class TargetUpdate(BaseModel):
 class TargetResponse(TargetBase):
     """Response model for Target."""
     id: int
+    user_id: Optional[int] = None
+    owner_username: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

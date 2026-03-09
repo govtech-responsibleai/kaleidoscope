@@ -13,7 +13,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
     nltk = None
 
-from src.common.database.models import AnswerClaim, JobStatusEnum, QAJobStageEnum
+from src.common.database.models import AnswerClaim, JobStatusEnum
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -76,10 +76,6 @@ class ClaimProcessor:
                 logger.info(f"QAJob {self.job_id} is not running (status={self.job.status.value}). Skipping claim processing.")
                 return
 
-            # Update job stage
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.running, QAJobStageEnum.processing_answers)
-            logger.info(f"QAJob {self.job_id}: Stage updated to 'processing_answers'")
-
             # Get answer_id from job
             answer_id = self.job.answer_id
 
@@ -93,10 +89,6 @@ class ClaimProcessor:
             self._update_job_status()
 
             logger.info(f"QAJob {self.job_id}: Completed claim processing for answer {answer_id}")
-
-            # Call next stage in pipeline
-            from src.scoring.services.judge_scoring import score_answer
-            await score_answer(self.db, self.job_id)
 
         except Exception as e:
             logger.error(f"Claim processing failed for job {self.job_id}: {e}", exc_info=True)
@@ -194,9 +186,9 @@ class ClaimProcessor:
 
         # Skip LLM check for very short claims (sanity check)
         if len(claim.claim_text) < MIN_CLAIM_LENGTH:
-            claim.checkworthy = False
-            claim.checked_at = datetime.utcnow()
-            self.db.commit()
+            AnswerClaimRepository.update_checkworthy(
+                self.db, claim.id, checkworthy=False, checked_at=datetime.utcnow()
+            )
             logger.debug(f"Claim {claim.id} marked as not checkworthy (too short: {len(claim.claim_text)} chars)")
             return
 
@@ -219,19 +211,19 @@ class ClaimProcessor:
             # Track costs
             self.cost_tracker.add_call(metadata)
 
-            # Update claim
-            claim.checkworthy = result.checkworthy
-            claim.checked_at = datetime.utcnow()
-            self.db.commit()
+            # Update claim via repository
+            AnswerClaimRepository.update_checkworthy(
+                self.db, claim.id, checkworthy=result.checkworthy, checked_at=datetime.utcnow()
+            )
 
             logger.debug(f"Claim {claim.id} checkworthy={result.checkworthy}: {result.reasoning}")
 
         except Exception as e:
             logger.error(f"Failed to check claim {claim.id}: {e}", exc_info=True)
-            # Mark as checkworthy=True by default
-            claim.checkworthy = True
-            claim.checked_at = datetime.utcnow()
-            self.db.commit()
+            # Mark as checkworthy=True by default via repository
+            AnswerClaimRepository.update_checkworthy(
+                self.db, claim.id, checkworthy=True, checked_at=datetime.utcnow()
+            )
             logger.warning(f"Claim {claim.id} marked as checkworthy=True due to error (will be judged)")
 
     def _update_job_status(self) -> None:

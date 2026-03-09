@@ -4,7 +4,7 @@ Repository for Persona database operations.
 
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func  # noqa: F401 - used by callers
 
 from src.common.database.models import Persona, StatusEnum
 
@@ -26,9 +26,8 @@ class PersonaRepository:
         """Create multiple personas."""
         personas = [Persona(**data) for data in personas_data]
         db.add_all(personas)
+        db.flush()
         db.commit()
-        for persona in personas:
-            db.refresh(persona)
         return personas
 
     @staticmethod

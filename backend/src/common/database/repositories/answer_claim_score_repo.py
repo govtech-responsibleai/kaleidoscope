@@ -25,9 +25,8 @@ class AnswerClaimScoreRepository:
         """Create multiple answer claim scores."""
         claim_scores = [AnswerClaimScore(**data) for data in claim_scores_data]
         db.add_all(claim_scores)
+        db.flush()
         db.commit()
-        for claim_score in claim_scores:
-            db.refresh(claim_score)
         return claim_scores
 
     @staticmethod

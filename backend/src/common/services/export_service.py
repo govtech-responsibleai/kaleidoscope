@@ -201,11 +201,11 @@ class ExportService:
             raise ValueError(f"Snapshot {snapshot_id} not found")
 
         # Get aggregated results from metrics service (includes annotations)
-        results = self.metrics_service.get_aggregated_results(snapshot_id)
+        results, _ = self.metrics_service.get_aggregated_results(snapshot_id)
         evaluator_payload: Optional[List[Dict]] = None
 
         if format == ExportFormat.JSON:
-            main_export: Union[str, List[Dict]] = results
+            main_export: Union[str, List[Dict]] = [r.model_dump() for r in results]
         else:
             output = io.StringIO()
             writer = csv.writer(output)
@@ -215,16 +215,16 @@ class ExportService:
             ])
 
             for row in results:
-                aggregated = row.get("aggregated_accuracy", {})
+                agg = row.aggregated_accuracy
                 writer.writerow([
-                    row.get("question_id", ""),
-                    row.get("question_text", ""),
-                    row.get("answer_id", ""),
-                    row.get("answer_content", ""),
-                    _format_label(row.get("human_label")),
-                    row.get("human_notes", "") or "",
-                    _format_label(aggregated.get("label")),
-                    " | ".join(aggregated.get("metadata", [])),
+                    row.question_id,
+                    row.question_text or "",
+                    row.answer_id,
+                    row.answer_content,
+                    _format_label(row.human_label),
+                    row.human_notes or "",
+                    _format_label(agg.label),
+                    " | ".join(agg.metadata),
                 ])
 
             csv_content = output.getvalue()
@@ -232,7 +232,7 @@ class ExportService:
             main_export = csv_content
 
         if include_evaluators:
-            evaluator_payload = self._build_evaluator_exports(snapshot_id)
+            evaluator_payload = self._build_evaluator_exports(snapshot_id, results)
 
         if isinstance(main_export, list):
             logger.info(f"Exported {len(results)} results for snapshot {snapshot_id} as JSON")
@@ -262,22 +262,15 @@ class ExportService:
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
 
-        results = self.metrics_service.get_aggregated_results(snapshot_id)
+        # Fetch answers directly with eager-loaded questions instead of going through metrics
+        answers = AnswerRepository.get_by_snapshot(self.db, snapshot_id, eager_load=True)
 
         export_rows: List[Dict] = []
 
-        for row in results:
-            answer_id = row.get("answer_id")
-            question_id = row.get("question_id", "")
-            question_text = row.get("question_text", "")
-
-            if not answer_id:
-                continue
-
-            answer = AnswerRepository.get_by_id(self.db, answer_id)
-            
-            if not answer:
-                continue
+        for answer in answers:
+            question = answer.question
+            question_id = answer.question_id
+            question_text = question.text if question else ""
 
             # Build the full AIBots response object
             aibots_response = {
@@ -302,7 +295,7 @@ class ExportService:
         logger.info(f"Exported {len(export_rows)} full AIBots responses for snapshot {snapshot_id}")
         return export_rows
 
-    def _build_evaluator_exports(self, snapshot_id: int) -> List[Dict]:
+    def _build_evaluator_exports(self, snapshot_id: int, aggregated_results: Optional[List] = None) -> List[Dict]:
         """
         Build judge-level export payload including metrics and raw scores.
         """
@@ -351,8 +344,8 @@ class ExportService:
                 "judge_id": judge_id,
                 "judge_name": getattr(judge, "name", None) if judge else None,
                 "judge_model": getattr(judge, "model_name", None) if judge else None,
-                "judge_accuracy": accuracy,
-                "judge_alignment": alignment,
+                "judge_accuracy": accuracy.model_dump() if accuracy else None,
+                "judge_alignment": alignment.model_dump() if alignment else None,
                 "judge_scores": judge_scores,
             })
 

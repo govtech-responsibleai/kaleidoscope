@@ -3,8 +3,10 @@ Pydantic models for AnswerClaim API requests and responses.
 """
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, Field
+
+from src.common.models.answer_score import AnswerClaimScoreResponse
 
 
 class AnswerClaimResponse(BaseModel):
@@ -16,15 +18,16 @@ class AnswerClaimResponse(BaseModel):
     checkworthy: bool
     created_at: datetime
     checked_at: datetime
+    score: Optional[AnswerClaimScoreResponse] = None
 
     class Config:
         from_attributes = True
 
 
-class AnswerClaimListResponse(BaseModel):
-    """Response model for listing answer claims."""
+class AnswerClaimsWithScoresResponse(BaseModel):
+    """Response model for answer claims with scores from a specific judge."""
+    answer_id: int
     claims: List[AnswerClaimResponse]
-    total: int
 
 
 class CheckworthyResult(BaseModel):

@@ -428,9 +428,9 @@ class TestAnswerJudgeErrors:
         scorer = AnswerJudge(test_db, sample_qa_job.id)
         await scorer.score()
 
-        # Job should still complete (claim errors don't fail whole job)
+        # Job should still be running (orchestrator handles completion, claim errors don't fail the job)
         test_db.refresh(sample_qa_job)
-        assert sample_qa_job.status == JobStatusEnum.completed
+        assert sample_qa_job.status == JobStatusEnum.running
 
         # Verify claim scores have the specific error message
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository

@@ -116,7 +116,7 @@ app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", ta
 app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"], dependencies=[Depends(get_scoped_db)])
 app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"], dependencies=[Depends(get_scoped_db)])
 app.include_router(kb_documents.router, prefix=settings.api_prefix, tags=["Knowledge Base"], dependencies=[Depends(get_scoped_db)])
-app.include_router(answers.router, prefix=f"{settings.api_prefix}", tags=["Answers"], dependencies=[Depends(get_scoped_db)])
+app.include_router(answers.router, prefix=f"{settings.api_prefix}/answers", tags=["Answers"], dependencies=[Depends(get_scoped_db)])
 
 # Include routers from scoring service (all require auth + user scoping)
 app.include_router(snapshots.router, prefix=f"{settings.api_prefix}", tags=["Snapshots"], dependencies=[Depends(get_scoped_db)])

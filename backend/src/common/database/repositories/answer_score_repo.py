@@ -25,9 +25,8 @@ class AnswerScoreRepository:
         """Create multiple answer scores."""
         scores = [AnswerScore(**data) for data in scores_data]
         db.add_all(scores)
+        db.flush()
         db.commit()
-        for score in scores:
-            db.refresh(score)
         return scores
 
     @staticmethod

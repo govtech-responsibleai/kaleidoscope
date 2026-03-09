@@ -5,8 +5,7 @@ Service for calculating judge alignment and accuracy metrics.
 import csv
 import io
 import logging
-from dataclasses import dataclass, field
-from typing import Dict, List, Literal, Optional
+from typing import Dict, List, Optional, Tuple
 from collections import Counter
 from sqlalchemy.orm import Session
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
@@ -17,32 +16,17 @@ from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
 from src.common.database.models import AnswerScore
+from src.common.models.metrics import (
+    AggregatedAnswerScore,
+    AggregatedResult,
+    AlignedJudge,
+    JudgeAlignmentResponse,
+    JudgeAccuracyResponse,
+    TargetSnapshotMetric,
+    ConfusionMatrixResponse,
+)
 
 logger = logging.getLogger(__name__)
-
-AggregationMethod = Literal["majority", "majority_tied", "no_aligned_judge", "override"]
-
-
-@dataclass
-class AggregatedAnswerScore:
-    """Aggregated score for an answer using reliable judges only."""
-
-    answer_id: int
-    method: AggregationMethod
-    label: Optional[bool]
-    is_edited: bool = False
-    metadata: List[str] = field(default_factory=list)
-    accepted_scores: List[AnswerScore] = field(default_factory=list)
-
-    def to_dict(self) -> Dict:
-        return {
-            "answer_id": self.answer_id,
-            "method": self.method,
-            "label": self.label,
-            "is_edited": self.is_edited,
-            "metadata": self.metadata,
-            "reliable_judge_count": len(self.accepted_scores),
-        }
 
 
 def _format_label(label: Optional[bool]) -> str:
@@ -63,14 +47,11 @@ class MetricsService:
         """
         self.db = db
 
-    def calculate_judge_alignment(self, snapshot_id: int, judge_id: int) -> Dict:
+    def calculate_judge_alignment(
+        self, snapshot_id: int, judge_id: int
+    ) -> JudgeAlignmentResponse:
         """
         Calculate judge alignment metrics by comparing judge scores with human annotations.
-
-        This function:
-        1. Gets selected annotations (where answer.is_selected_for_annotation=True)
-        2. Gets judge scores for the same selected answers
-        3. Calculates F1, precision, recall, and accuracy using sklearn
 
         Args:
             snapshot_id: Snapshot ID
@@ -116,7 +97,7 @@ class MetricsService:
             raise ValueError(f"No overlapping annotations and scores found for snapshot {snapshot_id}, judge {judge_id}")
 
         # Calculate metrics using sklearn. Positive Label: False (Inaccurate), Negative Label: True (Accurate)
-        f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+        f1 = f1_score(y_true, y_pred, average="macro", pos_label=False, zero_division=0)
         precision = precision_score(y_true, y_pred, average='binary', pos_label=False, zero_division=0)
         recall = recall_score(y_true, y_pred, average='binary', pos_label=False, zero_division=0)
         accuracy = accuracy_score(y_true, y_pred)
@@ -127,19 +108,17 @@ class MetricsService:
             f"({len(y_true)} samples)"
         )
 
-        return {
-            "f1": round(f1, 3),
-            "precision": round(precision, 3),
-            "recall": round(recall, 3),
-            "accuracy": round(accuracy, 3),
-            "sample_count": len(y_true)
-        }
+        return JudgeAlignmentResponse(
+            f1=round(f1, 3),
+            precision=round(precision, 3),
+            recall=round(recall, 3),
+            accuracy=round(accuracy, 3),
+            sample_count=len(y_true),
+        )
 
-    def calculate_accuracy(self, snapshot_id: int, judge_id: int) -> Dict:
+    def calculate_accuracy(self, snapshot_id: int, judge_id: int) -> JudgeAccuracyResponse:
         """
         Calculate overall accuracy for a judge across all answers in a snapshot.
-
-        Accuracy = (number of accurate answers) / (total answers)
 
         Args:
             snapshot_id: Snapshot ID
@@ -151,13 +130,11 @@ class MetricsService:
         Raises:
             ValueError: If no scores found
         """
-        # Get all answer scores for this snapshot and judge
         scores = AnswerScoreRepository.get_by_snapshot_and_judge(self.db, snapshot_id, judge_id)
 
         if not scores:
             raise ValueError(f"No scores found for judge {judge_id}, snapshot {snapshot_id}")
 
-        # Calculate accuracy
         total_count = len(scores)
         accurate_count = sum(1 for score in scores if score.overall_label is True)
         accuracy = accurate_count / total_count if total_count > 0 else 0.0
@@ -167,47 +144,15 @@ class MetricsService:
             f"{accurate_count}/{total_count} = {accuracy:.3f}"
         )
 
-        return {
-            "accuracy": round(accuracy, 3),
-            "total_answers": total_count,
-            "accurate_count": accurate_count
-        }
+        return JudgeAccuracyResponse(
+            accuracy=round(accuracy, 3),
+            total_answers=total_count,
+            accurate_count=accurate_count,
+        )
 
-    def _calculate_judge_reliability_map(self, snapshot_id: int) -> Dict[int, float]:
-        """
-        Calculate reliability (F1 score) for all judges on a snapshot.
-
-        Helper method that computes judge alignment for each judge and returns
-        a mapping of judge_id to F1 score. Judges with no annotations or errors
-        are assigned a reliability of 0.0.
-
-        Args:
-            snapshot_id: Snapshot ID
-
-        Returns:
-            Dict mapping judge_id to F1 score (reliability)
-        """
-        judges = JudgeRepository.get_all(self.db)
-        reliability_map: Dict[int, float] = {}
-
-        for judge in judges:
-            reliability = 0.0
-            try:
-                metrics = self.calculate_judge_alignment(snapshot_id, judge.id)
-                reliability = metrics.get("f1", 0.0) or 0.0
-            except ValueError:
-                # No overlapping annotations/scores – treat as unreliable
-                reliability = 0.0
-            except Exception:
-                logger.exception(
-                    "Failed to calculate reliability for judge %s", judge.id
-                )
-                reliability = 0.0
-            reliability_map[judge.id] = reliability
-
-        return reliability_map
-
-    def get_aggregated_results(self, snapshot_id: int) -> List[Dict]:
+    def get_aggregated_results(
+        self, snapshot_id: int
+    ) -> Tuple[List[AggregatedResult], Dict[int, float]]:
         """
         Get aggregated evaluation results across all answers in a snapshot.
 
@@ -216,46 +161,60 @@ class MetricsService:
         2. Computes per-judge reliability (F1) and filters to judges above 0.5
         3. Aggregates the reliable labels via majority vote (ties captured explicitly)
 
+        Also computes and returns the judge reliability map (B2: inlined).
+
         Args:
             snapshot_id: Snapshot ID
 
         Returns:
-            List of dicts with:
-            [{
-                "question_id": 1,
-                "question_text": "What is...",
-                "answer_id": 10,
-                "answer_content": "The answer is...",
-                "aggregated_accuracy": {
-                    "answer_id": 10,
-                    "method": "majority",
-                    "label": True,
-                    "metadata": ["Judge A: Accurate", "Judge B: excluded as not reliable"]
-                }
-            }]
+            Tuple of (list of AggregatedResult, reliability_map dict)
 
         Raises:
             ValueError: If no answers found for snapshot
         """
-        # Get all answers for the snapshot with question info
-        answers = AnswerRepository.get_by_snapshot(self.db, snapshot_id)
+        # Load answers with scores, annotations, and question data in one pass.
+        answers = AnswerRepository.get_with_scores_and_annotation(self.db, snapshot_id)
+        answers = sorted(answers, key=lambda answer: answer.id)
 
         if not answers:
             raise ValueError(f"No answers found for snapshot {snapshot_id}")
 
-        # Get all judges and their reliability (F1) scores
+        overrides = AnswerLabelOverrideRepository.get_by_snapshot(self.db, snapshot_id)
+        override_map = {override.answer_id: override for override in overrides}
+
+        # Get reliability only for judges that actually have scores on this snapshot
+        # (avoids querying all judges in the system, most of which have no scores)
+        judge_ids_in_snapshot = set()
+        for answer in answers:
+            for score in answer.scores:
+                judge_ids_in_snapshot.add(score.judge_id)
+
         judges = JudgeRepository.get_all(self.db)
         judge_map = {judge.id: judge.name for judge in judges}
-        reliability_map = self._calculate_judge_reliability_map(snapshot_id)
+        reliability_map: Dict[int, float] = {}
 
-        results = []
+        for judge_id in judge_ids_in_snapshot:
+            reliability = 0.0
+            try:
+                metrics = self.calculate_judge_alignment(snapshot_id, judge_id)
+                reliability = metrics.f1 or 0.0
+            except ValueError:
+                reliability = 0.0
+            except Exception:
+                logger.exception(
+                    "Failed to calculate reliability for judge %s", judge_id
+                )
+                reliability = 0.0
+            reliability_map[judge_id] = reliability
+
+        results: List[AggregatedResult] = []
 
         for answer in answers:
             # Check for user override first
-            override = AnswerLabelOverrideRepository.get_by_answer(self.db, answer.id)
+            override = override_map.get(answer.id)
 
-            # Get all scores for this answer across all judges
-            answer_scores = AnswerScoreRepository.get_by_answer(self.db, answer.id)
+            # Scores and annotation are already eager loaded on the answer.
+            answer_scores = answer.scores
 
             metadata: List[str] = []
             reliable_scores: List[AnswerScore] = []
@@ -277,7 +236,7 @@ class MetricsService:
                     label=override.edited_label,
                     is_edited=True,
                     metadata=metadata,
-                    accepted_scores=reliable_scores
+
                 )
             elif not reliable_scores:
                 aggregated_score = AggregatedAnswerScore(
@@ -286,7 +245,6 @@ class MetricsService:
                     label=None,
                     is_edited=False,
                     metadata=metadata,
-                    accepted_scores=reliable_scores
                 )
             else:
                 labels = [score.overall_label for score in reliable_scores if score.overall_label is not None]
@@ -297,7 +255,7 @@ class MetricsService:
                         label=None,
                         is_edited=False,
                         metadata=metadata,
-                        accepted_scores=reliable_scores
+    
                     )
                 else:
                     label_counts = Counter(labels)
@@ -309,7 +267,7 @@ class MetricsService:
                             label=None,
                             is_edited=False,
                             metadata=metadata,
-                            accepted_scores=reliable_scores
+        
                         )
                     else:
                         aggregated_score = AggregatedAnswerScore(
@@ -318,155 +276,134 @@ class MetricsService:
                             label=most_common[0][0],
                             is_edited=False,
                             metadata=metadata,
-                            accepted_scores=reliable_scores
+        
                         )
 
             # Get annotation for this answer
-            annotation = AnnotationRepository.get_by_answer(self.db, answer.id)
+            annotation = answer.annotation
 
-            results.append({
-                "question_id": answer.question_id,
-                "question_text": answer.question.text if answer.question else None,
-                "answer_id": answer.id,
-                "answer_content": answer.answer_content,
-                "aggregated_accuracy": aggregated_score.to_dict(),
-                "human_label": annotation.label if annotation else None,
-                "human_notes": annotation.notes if annotation else None,
-            })
+            # Include question_type and question_scope from answer.question
+            question = answer.question
+            results.append(AggregatedResult(
+                question_id=answer.question_id,
+                question_text=question.text if question else None,
+                question_type=question.type.value if question and question.type else None,
+                question_scope=question.scope.value if question and question.scope else None,
+                answer_id=answer.id,
+                answer_content=answer.answer_content,
+                aggregated_accuracy=aggregated_score,
+                human_label=annotation.label if annotation else None,
+                human_notes=annotation.notes if annotation else None,
+            ))
 
         logger.info(f"Generated aggregated results for {len(results)} answers in snapshot {snapshot_id}")
 
-        return results
+        return results, reliability_map
 
-    def calculate_snapshot_summary(self, snapshot_id: int) -> Dict:
+    def calculate_snapshot_summary(self, snapshot_id: int) -> TargetSnapshotMetric:
         """
         Calculate summary metrics for a snapshot.
-
-        This method aggregates results across all answers and judges to provide
-        high-level metrics for visualization and reporting.
 
         Args:
             snapshot_id: Snapshot ID
 
         Returns:
-            Dict with summary metrics:
-            {
-                "aggregated_accuracy": 0.73,        # % of answers with majority "accurate"
-                "total_answers": 100,
-                "accurate_count": 73,
-                "pending_count": 12,                # None/ties/no aligned judges
-                "judge_alignment_range": {
-                    "min": 0.50,
-                    "max": 0.85
-                },
-                "has_aligned_judges": True,         # any F1 >= 0.5
-                "reliable_judge_count": 3
-            }
+            Dict with summary metrics including aligned_judges list
 
         Raises:
             ValueError: If no answers found for snapshot
         """
-        # Get aggregated results for all answers
-        # Part of the response contains a list of QAs with its aggregated score.
-        aggregated_results = self.get_aggregated_results(snapshot_id)
+        # Single call to get_aggregated_results for both results and reliability map
+        aggregated_results, reliability_map = self.get_aggregated_results(snapshot_id)
 
-        print("Aggregated results:", [{"aggregated_accuracy": x["aggregated_accuracy"]} for x in aggregated_results])
+        logger.debug(
+            "Aggregated results: %s",
+            [{"aggregated_accuracy": r.aggregated_accuracy.model_dump()} for r in aggregated_results]
+        )
 
-        # Get judge reliability scores and calculate reliable judge count early
-        reliability_map = self._calculate_judge_reliability_map(snapshot_id)
+        # Build aligned_judges list (reuse judges from DB, no re-fetch needed)
+        judges = JudgeRepository.get_all(self.db)
+        judge_map = {judge.id: judge.name for judge in judges}
+        aligned_judges: List[AlignedJudge] = []
 
-        # Calculate judge alignment range and check for aligned judges
+        # Calculate judge alignment range; fix sentinel leak
+        judge_alignment_range = None
         if reliability_map:
-            judge_alignment_range = {
-                "min": 2,
-                "max": 0
-            }
-            reliable_judge_count = 0
-            for v in reliability_map.values():
-                if v >= 0.5:
-                    reliable_judge_count += 1
-                    judge_alignment_range["min"] = min(judge_alignment_range["min"], v)
-                    judge_alignment_range["max"] = max(judge_alignment_range["max"], v)
-            has_aligned_judges = reliable_judge_count > 0
-        else:
-            judge_alignment_range = None
-            reliable_judge_count = 0
-            has_aligned_judges = False
+            range_min = None
+            range_max = None
+            for judge_id, f1_val in reliability_map.items():
+                if f1_val >= 0.5:
+                    aligned_judges.append(AlignedJudge(
+                        judge_id=judge_id,
+                        name=judge_map.get(judge_id, "Unknown"),
+                        f1=round(f1_val, 3),
+                    ))
+                    if range_min is None or f1_val < range_min:
+                        range_min = f1_val
+                    if range_max is None or f1_val > range_max:
+                        range_max = f1_val
 
-        # Filter out QAs with no reliable judges or incomplete judge coverage
-        # But include overrides even if they have no reliable judges
-        filtered_results = [
-            r for r in aggregated_results
-            if (r.get("aggregated_accuracy", {}).get("method") == "override") or
-            (r.get("aggregated_accuracy", {}).get("method") != "no_aligned_judge"
-             and r.get("aggregated_accuracy", {}).get("reliable_judge_count", 0) == reliable_judge_count)
-        ]
+            # Only set range if we find aligned judges 
+            if aligned_judges:
+                judge_alignment_range = {
+                    "min": range_min,
+                    "max": range_max,
+                }
 
-        # Count accurate vs pending answers (using filtered results)
-        total_answers = len(filtered_results)
+        # Count answers by label category
+        # All QA rows are included — unreliable judges are already excluded
+        # per-answer in get_aggregated_results.
+        total_answers = len(aggregated_results)
         accurate_count = 0
-        pending_count = 0
+        inaccurate_count = 0
+        pending_count = 0  # True pending: ties, None labels, no aligned judges
         edited_count = 0
 
-        for result in filtered_results:
-            aggregated_accuracy = result.get("aggregated_accuracy", {})
-            label = aggregated_accuracy.get("label")
-            method = aggregated_accuracy.get("method")
-            is_edited = aggregated_accuracy.get("is_edited", False)
-
-            if is_edited:
+        for result in aggregated_results:
+            agg = result.aggregated_accuracy
+            if agg.is_edited:
                 edited_count += 1
 
-            # Count accurate if label is True (either from majority vote or override)
-            if (method == "majority" or method == "override") and label is True:
+            if (agg.method == "majority" or agg.method == "override") and agg.label is True:
                 accurate_count += 1
+            elif (agg.method == "majority" or agg.method == "override") and agg.label is False:
+                inaccurate_count += 1
             else:
-                # Includes: label=False (inaccurate), label=None (tied)
+                # label is None: tied vote, no aligned judges, or pending evaluation
                 pending_count += 1
 
         # Calculate overall aggregated accuracy
-        aggregated_accuracy = accurate_count / total_answers if total_answers > 0 else 0.0
+        agg_accuracy = accurate_count / total_answers if total_answers > 0 else 0.0
 
         logger.info(
             f"Snapshot {snapshot_id} summary: "
-            f"Accuracy={aggregated_accuracy:.3f} ({accurate_count}/{total_answers}), "
-            f"Reliable judges: {reliable_judge_count}, Edited: {edited_count}"
+            f"Accuracy={agg_accuracy:.3f} ({accurate_count}/{total_answers}), "
+            f"Aligned judges: {len(aligned_judges)}, Edited: {edited_count}"
         )
 
-        return {
-            "aggregated_accuracy": round(aggregated_accuracy, 3),
-            "total_answers": total_answers,
-            "accurate_count": accurate_count,
-            "pending_count": pending_count,
-            "edited_count": edited_count,
-            "judge_alignment_range": judge_alignment_range,
-            "has_aligned_judges": has_aligned_judges,
-            "reliable_judge_count": reliable_judge_count
-        }
+        return TargetSnapshotMetric(
+            aggregated_accuracy=round(agg_accuracy, 3),
+            total_answers=total_answers,
+            accurate_count=accurate_count,
+            inaccurate_count=inaccurate_count,
+            pending_count=pending_count,
+            edited_count=edited_count,
+            judge_alignment_range=judge_alignment_range,
+            aligned_judges=aligned_judges,
+        )
 
-    def calculate_confusion_matrix(self, target_id: int, snapshot_id: Optional[int] = None) -> Dict:
+    def calculate_confusion_matrix(
+        self, target_id: int, snapshot_id: Optional[int] = None
+    ) -> ConfusionMatrixResponse:
         """
         Calculate confusion matrix for question types/scopes vs inaccurate responses.
-
-        Shows distribution of inaccurate responses across question type (typical/edge)
-        and scope (in_kb/out_kb) combinations.
 
         Args:
             target_id: Target ID
             snapshot_id: Optional snapshot ID (if None, uses latest snapshot)
 
         Returns:
-            Dict with confusion matrix data:
-            {
-                "matrix": {
-                    "typical_in_kb": 5,
-                    "typical_out_kb": 3,
-                    "edge_in_kb": 2,
-                    "edge_out_kb": 7
-                },
-                "total_inaccurate": 17,
-                "snapshot_id": 1
-            }
+            Dict with confusion matrix data
 
         Raises:
             ValueError: If no snapshot found or no answers available
@@ -483,7 +420,6 @@ class MetricsService:
             snapshots = SnapshotRepository.get_by_target(self.db, target_id)
             if not snapshots:
                 raise ValueError(f"No snapshots found for target {target_id}")
-            # Sort by created_at descending and take the first one
             snapshot = sorted(snapshots, key=lambda s: s.created_at, reverse=True)[0]
             snapshot_id = snapshot.id
         else:
@@ -493,7 +429,7 @@ class MetricsService:
 
         # Get aggregated results for the snapshot
         try:
-            aggregated_results = self.get_aggregated_results(snapshot_id)
+            aggregated_results, _ = self.get_aggregated_results(snapshot_id)
         except ValueError as e:
             raise ValueError(f"Failed to get aggregated results: {str(e)}")
 
@@ -505,19 +441,14 @@ class MetricsService:
             "edge_out_kb": 0,
         }
 
-        # Count inaccurate responses by question type and scope
+        # Use question_type/question_scope from AggregatedResult
         for result in aggregated_results:
-            aggregated_accuracy = result.get("aggregated_accuracy", {})
-            label = aggregated_accuracy.get("label")
-            method = aggregated_accuracy.get("method")
-
-            # Only count answers that have been evaluated and are inaccurate
-            if method == "majority" and label is False:
-                # Get question details from the answer
-                answer = AnswerRepository.get_by_id(self.db, result["answer_id"])
-                if answer and answer.question:
-                    q_type = answer.question.type.value  # "typical" or "edge"
-                    q_scope = answer.question.scope.value  # "in_kb" or "out_kb"
+            agg = result.aggregated_accuracy
+            # Include overridden inaccurate answers
+            if agg.label is False and agg.method in ("majority", "override"):
+                q_type = result.question_type
+                q_scope = result.question_scope
+                if q_type and q_scope:
                     key = f"{q_type}_{q_scope}"
                     if key in matrix:
                         matrix[key] += 1
@@ -529,40 +460,24 @@ class MetricsService:
             f"Total inaccurate={total_inaccurate}"
         )
 
-        return {
-            "matrix": matrix,
-            "total_inaccurate": total_inaccurate,
-            "snapshot_id": snapshot_id,
-        }
+        # Remove snapshot_id from return (caller already knows it)
+        return ConfusionMatrixResponse(
+            matrix=matrix,
+            total_inaccurate=total_inaccurate,
+        )
 
 
-def calculate_judge_alignment(db: Session, snapshot_id: int, judge_id: int) -> Dict:
-    """
-    Calculate judge alignment metrics (convenience function).
-
-    Args:
-        db: Database session
-        snapshot_id: Snapshot ID
-        judge_id: Judge ID to evaluate
-
-    Returns:
-        Dict with metrics
-    """
+def calculate_judge_alignment(
+    db: Session, snapshot_id: int, judge_id: int
+) -> JudgeAlignmentResponse:
+    """Calculate judge alignment metrics (convenience function)."""
     service = MetricsService(db)
     return service.calculate_judge_alignment(snapshot_id, judge_id)
 
 
-def calculate_accuracy(db: Session, snapshot_id: int, judge_id: int) -> Dict:
-    """
-    Calculate overall accuracy for a judge (convenience function).
-
-    Args:
-        db: Database session
-        snapshot_id: Snapshot ID
-        judge_id: Judge ID
-
-    Returns:
-        Dict with accuracy metrics
-    """
+def calculate_accuracy(
+    db: Session, snapshot_id: int, judge_id: int
+) -> JudgeAccuracyResponse:
+    """Calculate overall accuracy for a judge (convenience function)."""
     service = MetricsService(db)
     return service.calculate_accuracy(snapshot_id, judge_id)

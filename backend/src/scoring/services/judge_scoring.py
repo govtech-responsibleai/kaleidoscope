@@ -7,7 +7,7 @@ import asyncio
 from typing import List
 from sqlalchemy.orm import Session
 
-from src.common.database.models import JobStatusEnum, QAJobStageEnum, JudgeTypeEnum
+from src.common.database.models import JobStatusEnum, JudgeTypeEnum
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -74,10 +74,6 @@ class AnswerJudge:
                 logger.info(f"QAJob {self.job_id} is not running (status={self.job.status.value}). Skipping scoring.")
                 return
 
-            # Update job stage
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.running, QAJobStageEnum.scoring_answers)
-            logger.info(f"QAJob {self.job_id}: Stage updated to 'scoring_answers'")
-
             # Route to appropriate scoring function
             if self.judge.judge_type == JudgeTypeEnum.claim_based:
                 logger.info(f"QAJob {self.job_id}: Using claim-based scoring")
@@ -91,9 +87,7 @@ class AnswerJudge:
             # Update job costs
             self._update_job_status()
 
-            # Update job status to completed
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.completed, QAJobStageEnum.completed)
-            logger.info(f"QAJob {self.job_id}: Completed with overall_label={answer_score.overall_label}")
+            logger.info(f"QAJob {self.job_id}: Scoring complete with overall_label={answer_score.overall_label}")
 
         except Exception as e:
             logger.error(f"Answer scoring failed for job {self.job_id}: {e}", exc_info=True)

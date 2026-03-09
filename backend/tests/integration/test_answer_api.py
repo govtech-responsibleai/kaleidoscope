@@ -68,37 +68,21 @@ class TestAnswerSelectionAPI:
         ]
 
         response = test_client.post(
-            "/api/v1/answers/bulk-selection",
+            f"/api/v1/snapshots/{sample_annotations[0].answer.snapshot_id}/answers/bulk-selection",
             json={"selections": selections}
         )
 
         assert response.status_code == 200
         data = response.json()
-        assert data["updated_count"] == len(selections)
+        assert len(data) == len(selections)
+        returned_ids = {item["id"] for item in data}
+        assert returned_ids == {selection["answer_id"] for selection in selections}
 
+        test_db.expire_all()
         for selection in selections:
             answer = test_db.get(Answer, selection["answer_id"])
             assert answer.is_selected_for_annotation == selection["is_selected"]
 
-    def test_toggle_answer_selection_flips_flag(self, test_client, test_db, sample_answer):
-        """
-        Test PUT /answers/{answer_id}/selection toggles the selection state.
-        """
-        from src.common.database.models import Answer
-
-        initial_answer = test_db.get(Answer, sample_answer.id)
-        assert initial_answer.is_selected_for_annotation is False
-
-        first_toggle = test_client.put(f"/api/v1/answers/{sample_answer.id}/selection")
-        assert first_toggle.status_code == 200
-        assert first_toggle.json()["is_selected_for_annotation"] is True
-
-        second_toggle = test_client.put(f"/api/v1/answers/{sample_answer.id}/selection")
-        assert second_toggle.status_code == 200
-        assert second_toggle.json()["is_selected_for_annotation"] is False
-
-        refreshed_answer = test_db.get(Answer, sample_answer.id)
-        assert refreshed_answer.is_selected_for_annotation is False
 
 
 @pytest.mark.integration

@@ -13,12 +13,12 @@ class TestPersonaGenerationAPI:
     """Integration tests for persona generation API."""
 
     @patch('src.query_generation.services.persona_generator.LLMClient')
-    def test_persona_generation_end_to_end(self, mock_llm_class, test_client, sample_target, mock_llm_response):
+    def test_persona_generation_end_to_end(self, mock_llm_class, test_client, test_db_factory, sample_target, mock_llm_response):
         """
         Test complete persona generation flow end-to-end.
 
         Tests:
-        1. Create job and generate personas via API
+        1. Create job and generate personas via API (runs async in background)
         2. Personas are saved to database
         3. Job status is updated
         4. Can retrieve and approve personas
@@ -59,22 +59,30 @@ class TestPersonaGenerationAPI:
         mock_llm_instance.generate_structured.return_value = (mock_persona_list, mock_metadata)
         mock_llm_class.return_value = mock_llm_instance
 
-        # 1. Generate personas
-        gen_response = test_client.post(
-            "/api/v1/jobs/personas",
-            json={
-                "target_id": sample_target.id,
-                "count_requested": 3,
-                "model_used": "gpt-4o-mini"
-            }
-        )
+        # Patch SessionLocal so the background task uses the test DB
+        with patch('src.common.database.connection.SessionLocal', test_db_factory):
+            # 1. Generate personas (now runs in background, but TestClient runs background tasks synchronously)
+            gen_response = test_client.post(
+                "/api/v1/jobs/personas",
+                json={
+                    "target_id": sample_target.id,
+                    "count_requested": 3,
+                    "model_used": "gpt-4o-mini"
+                }
+            )
 
         assert gen_response.status_code == 201
         job_data = gen_response.json()
         assert job_data["type"] == "persona_generation"
-        assert job_data["status"] == "completed"
-        assert job_data["total_cost"] > 0
+        assert job_data["status"] == "running"
         job_id = job_data["id"]
+
+        # Background task has already run (TestClient runs them synchronously).
+        # Verify job completed by fetching it.
+        job_response = test_client.get(f"/api/v1/jobs/{job_id}")
+        assert job_response.status_code == 200
+        assert job_response.json()["status"] == "completed"
+        assert job_response.json()["total_cost"] > 0
 
         # 2. Get personas from job
         personas_response = test_client.get(f"/api/v1/jobs/{job_id}/personas")

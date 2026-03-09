@@ -241,7 +241,7 @@ class Answer(Base):
     raw_response = Column(JSON, nullable=True)
 
     # Annotation selection
-    is_selected_for_annotation = Column(Boolean, default=False, nullable=False)
+    is_selected_for_annotation = Column(Boolean, default=False, nullable=False, index=True)
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
@@ -317,7 +317,7 @@ class QAJob(Base):
     # FK
     snapshot_id = Column(Integer, ForeignKey("snapshots.id", ondelete="CASCADE"), nullable=False, index=True)
     question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
-    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="SET NULL"), nullable=True, index=True)
+    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=True, index=True)
     answer_id = Column(Integer, ForeignKey("answers.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Fields
@@ -406,7 +406,7 @@ class AnswerClaimScore(Base):
     id = Column(Integer, primary_key=True, index=True)
     # FK
     claim_id = Column(Integer, ForeignKey("answer_claims.id", ondelete="CASCADE"), nullable=False)
-    answer_score_id = Column(Integer, ForeignKey("answer_scores.id"), nullable=False)
+    answer_score_id = Column(Integer, ForeignKey("answer_scores.id", ondelete="CASCADE"), nullable=False)
 
     # Fields
     label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate (Hallucinated)

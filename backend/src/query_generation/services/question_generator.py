@@ -21,7 +21,7 @@ from src.common.database.repositories import (
     JobRepository,
     KBDocumentRepository
 )
-from src.common.database.models import JobStatusEnum, QuestionSourceEnum
+from src.common.database.models import Persona, JobStatusEnum, QuestionSourceEnum
 
 logger = logging.getLogger(__name__)
 
@@ -83,12 +83,12 @@ class QuestionGenerator:
 
             # Get personas to generate questions for
             if self.persona_ids:
-                # Use provided persona IDs
-                personas = []
-                for persona_id in self.persona_ids:
-                    persona = PersonaRepository.get_by_id(self.db, persona_id)
-                    if persona:
-                        personas.append(persona)
+                # Use provided persona IDs (batch query instead of N individual fetches)
+                personas = (
+                    self.db.query(Persona)
+                    .filter(Persona.id.in_(self.persona_ids))
+                    .all()
+                )
                 logger.info(f"Generating questions for {len(personas)} specified personas")
             elif self.job.persona_id:
                 # Use single persona from job
@@ -130,15 +130,19 @@ class QuestionGenerator:
                 ]
                 logger.info("No KB content available, skipping in_kb questions")
 
+            # Pre-fetch data used across persona loop to avoid N+1 queries
+            approved_questions = QuestionRepository.get_approved_by_target(
+                self.db,
+                self.target.id
+            )
+            approved_personas = PersonaRepository.get_approved_by_target(
+                self.db,
+                self.target.id
+            )
+
             # Generate questions for each persona
             for persona in personas:
                 logger.info(f"Generating questions for persona {persona.id}: {persona.title}")
-
-                # Get approved questions to avoid duplicates
-                approved_questions = QuestionRepository.get_approved_by_target(
-                    self.db,
-                    self.target.id
-                )
 
                 # Generate questions for each combination of type and scope
                 for question_type, question_scope in question_combinations:
@@ -150,7 +154,9 @@ class QuestionGenerator:
                         approved_questions,
                         kb_text,
                         question_type=question_type,
-                        question_scope=question_scope
+                        question_scope=question_scope,
+                        num_combinations=len(question_combinations),
+                        num_approved_personas=len(approved_personas)
                     )
 
                     # Call LLM with structured output
@@ -188,7 +194,9 @@ class QuestionGenerator:
         approved_questions: List[Any],
         kb_text: Optional[str],
         question_type: str,
-        question_scope: str
+        question_scope: str,
+        num_combinations: int = 4,
+        num_approved_personas: int = 1
     ) -> str:
         """
         Render the question generation prompt template.
@@ -199,6 +207,8 @@ class QuestionGenerator:
             kb_text: Compiled KB text from documents (retrieved once in generate())
             question_type: Type of questions ("typical" or "edge")
             question_scope: Scope of questions ("in_kb" or "out_kb")
+            num_combinations: Number of active type/scope combinations
+            num_approved_personas: Pre-fetched count of approved personas
 
         Returns:
             Rendered prompt string
@@ -207,17 +217,12 @@ class QuestionGenerator:
         approved_questions_text = [q.text for q in approved_questions]
 
         # Calculate how many questions to generate per combination
-        # Since we have 4 combinations, divide count_requested by 4
         if self.job.persona_id:
-            # Single persona: divide by 4 combinations
-            questions_to_generate = max(1, self.job.count_requested // 4)
+            # Single persona: divide by active combinations
+            questions_to_generate = max(1, self.job.count_requested // num_combinations)
         else:
-            # Multiple personas: divide by number of personas AND 4 combinations
-            approved_personas = PersonaRepository.get_approved_by_target(
-                self.db,
-                self.target.id
-            )
-            total_combinations = len(approved_personas) * 4
+            # Multiple personas: divide by number of personas AND active combinations
+            total_combinations = num_approved_personas * num_combinations
             questions_to_generate = max(1, self.job.count_requested // total_combinations)
 
         # Render template

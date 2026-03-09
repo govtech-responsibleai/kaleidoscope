@@ -8,9 +8,10 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.repositories import QuestionRepository, TargetRepository, PersonaRepository
-from src.common.database.models import StatusEnum, QuestionTypeEnum, QuestionScopeEnum, QuestionSourceEnum
+from src.common.database.repositories import QuestionRepository, TargetRepository
+from src.common.database.models import StatusEnum
 from src.common.models import (
+    AnswerResponse,
     QuestionResponse,
     QuestionUpdate,
     QuestionBulkApprove,
@@ -142,6 +143,32 @@ def bulk_approve_questions(
     """
     questions = QuestionRepository.bulk_approve(db, request.question_ids)
     return questions
+
+
+@router.get("/{question_id}/answers", response_model=List[AnswerResponse])
+def get_answers_by_question(
+    question_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all answers for a question.
+
+    Args:
+        question_id: Question ID
+        db: Database session
+
+    Returns:
+        List of answers
+    """
+    question = QuestionRepository.get_by_id(db, question_id)
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Question {question_id} not found"
+        )
+
+    answers = question.answers
+    return answers
 
 
 @router.post("/similar", response_model=SimilarQuestionsResponse)
@@ -337,79 +364,10 @@ async def upload_questions(
             detail=f"Failed to parse file: {str(e)}"
         )
 
-    # Process and validate each question
-    questions_to_create = []
-    for idx, parsed_q in enumerate(parsed_questions):
-        try:
-            # Build question data
-            question_data = {
-                "target_id": target_id,
-                "text": parsed_q["text"],
-                "source": QuestionSourceEnum.uploaded,
-                "status": StatusEnum.pending,
-                "job_id": None,  # No job for uploaded questions
-                "persona_id": None,  # Will be set if persona_title is provided
-            }
-
-            # Add orig_id if provided
-            if "orig_id" in parsed_q:
-                question_data["orig_id"] = parsed_q["orig_id"]
-
-            # Lookup persona by title if provided
-            if "persona_title" in parsed_q:
-                persona = PersonaRepository.get_by_title(
-                    db, target_id, parsed_q["persona_title"]
-                )
-                if persona:
-                    question_data["persona_id"] = persona.id
-                else:
-                    logger.warning(
-                        f"Question {idx+1}: Persona '{parsed_q['persona_title']}' not found for target {target_id}"
-                    )
-
-            # Set type (null if not provided or invalid)
-            if "type" in parsed_q:
-                try:
-                    type_value = str(parsed_q["type"]).lower()
-                    if type_value in ["typical", "edge"]:
-                        question_data["type"] = QuestionTypeEnum[type_value]
-                    else:
-                        logger.warning(
-                            f"Question {idx+1}: Invalid type '{parsed_q['type']}', setting to null"
-                        )
-                        question_data["type"] = None
-                except Exception:
-                    logger.warning(
-                        f"Question {idx+1}: Invalid type '{parsed_q['type']}', setting to null"
-                    )
-                    question_data["type"] = None
-            else:
-                question_data["type"] = None
-
-            # Set scope (null if not provided or invalid)
-            if "scope" in parsed_q:
-                try:
-                    scope_value = str(parsed_q["scope"]).lower()
-                    if scope_value in ["in_kb", "out_kb"]:
-                        question_data["scope"] = QuestionScopeEnum[scope_value]
-                    else:
-                        logger.warning(
-                            f"Question {idx+1}: Invalid scope '{parsed_q['scope']}', setting to null"
-                        )
-                        question_data["scope"] = None
-                except Exception:
-                    logger.warning(
-                        f"Question {idx+1}: Invalid scope '{parsed_q['scope']}', setting to null"
-                    )
-                    question_data["scope"] = None
-            else:
-                question_data["scope"] = None
-
-            questions_to_create.append(question_data)
-
-        except Exception as e:
-            logger.error(f"Failed to process question {idx+1}: {e}", exc_info=True)
-            # Continue processing other questions
+    # Validate and enrich parsed questions
+    questions_to_create = QuestionFileParser.prepare_questions_for_target(
+        parsed_questions, target_id, db
+    )
 
     if not questions_to_create:
         raise HTTPException(

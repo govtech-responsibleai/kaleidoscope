@@ -59,8 +59,11 @@ from src.common.models.snapshot import (
 from src.common.models.answer import (
     AnswerCreate,
     AnswerResponse,
+    AnswerListItemResponse,
     AnswerListResponse,
-    AnswerBulkSelection
+    AnswerSelection,
+    AnswerBulkSelection,
+    DefaultSelectionResponse,
 )
 from src.common.models.judge import (
     JudgeType,
@@ -72,7 +75,7 @@ from src.common.models.judge import (
 )
 from src.common.models.answer_claim import (
     AnswerClaimResponse,
-    AnswerClaimListResponse,
+    AnswerClaimsWithScoresResponse,
     CheckworthyResult
 )
 from src.common.models.answer_score import (
@@ -101,6 +104,16 @@ from src.common.models.qa_job import (
 from src.common.models.answer_label_override import (
     AnswerLabelOverrideCreate,
     AnswerLabelOverrideResponse
+)
+from src.common.models.metrics import (
+    AggregationMethod,
+    AggregatedAnswerScore,
+    AggregatedResult,
+    AlignedJudge,
+    JudgeAlignmentResponse,
+    JudgeAccuracyResponse,
+    TargetSnapshotMetric,
+    ConfusionMatrixResponse,
 )
 
 __all__ = [
@@ -155,8 +168,11 @@ __all__ = [
     # Answer
     "AnswerCreate",
     "AnswerResponse",
+    "AnswerListItemResponse",
     "AnswerListResponse",
+    "AnswerSelection",
     "AnswerBulkSelection",
+    "DefaultSelectionResponse",
     # Judge
     "JudgeType",
     "JudgeCreate",
@@ -191,4 +207,13 @@ __all__ = [
     # AnswerLabelOverride
     "AnswerLabelOverrideCreate",
     "AnswerLabelOverrideResponse",
+    # Metrics
+    "AggregationMethod",
+    "AggregatedAnswerScore",
+    "AggregatedResult",
+    "AlignedJudge",
+    "JudgeAlignmentResponse",
+    "JudgeAccuracyResponse",
+    "TargetSnapshotMetric",
+    "ConfusionMatrixResponse",
 ]

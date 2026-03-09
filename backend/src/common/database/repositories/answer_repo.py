@@ -2,10 +2,11 @@
 Repository for Answer database operations.
 """
 
-from typing import List, Optional
+from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy.orm import Session, joinedload
 
 from src.common.database.models import Answer
+from src.common.models.answer import AnswerSelection
 
 
 class AnswerRepository:
@@ -26,6 +27,13 @@ class AnswerRepository:
         return db.query(Answer).filter(Answer.id == answer_id).first()
 
     @staticmethod
+    def get_by_ids(db: Session, answer_ids: List[int]) -> List[Answer]:
+        """Get multiple answers by IDs."""
+        if not answer_ids:
+            return []
+        return db.query(Answer).filter(Answer.id.in_(answer_ids)).all()
+
+    @staticmethod
     def get_by_question(db: Session, question_id: int) -> List[Answer]:
         """Get all answers for a question."""
         return db.query(Answer).filter(Answer.question_id == question_id).all()
@@ -35,16 +43,28 @@ class AnswerRepository:
         db: Session,
         snapshot_id: int,
         skip: int = 0,
-        limit: int = 100
+        limit: int = 100,
+        eager_load: bool = False
     ) -> List[Answer]:
-        """Get answers for a snapshot with pagination."""
-        return (
-            db.query(Answer)
-            .filter(Answer.snapshot_id == snapshot_id)
-            .offset(skip)
-            .limit(limit)
-            .all()
-        )
+        """Get answers for a snapshot with pagination.
+
+        Args:
+            db: Database session
+            snapshot_id: Snapshot ID to filter by
+            skip: Pagination offset
+            limit: Pagination limit
+            eager_load: If True, eagerly load question and annotation relationships
+
+        Returns:
+            List of Answer objects
+        """
+        query = db.query(Answer).filter(Answer.snapshot_id == snapshot_id)
+        if eager_load:
+            query = query.options(
+                joinedload(Answer.question),
+                joinedload(Answer.annotation)
+            )
+        return query.order_by(Answer.id).offset(skip).limit(limit).all()
 
     @staticmethod
     def get_by_question_and_snapshot(
@@ -96,24 +116,22 @@ class AnswerRepository:
     @staticmethod
     def update_annotation_selection(
         db: Session,
-        selections: List[dict]
+        selections: List[AnswerSelection]
     ) -> List[Answer]:
         """
         Update annotation selection with individual values per answer.
 
         Args:
             db: Database session
-            selections: List of dicts with answer_id and is_selected
-                        [{"answer_id": 1, "is_selected": True}, ...]
+            selections: List of AnswerSelection models with answer_id and is_selected
 
         Returns:
             List of updated Answer objects
         """
-        answer_ids = [s["answer_id"] for s in selections]
-        answers = db.query(Answer).filter(Answer.id.in_(answer_ids)).all()
+        selection_map = {selection.answer_id: selection.is_selected for selection in selections}
+        answer_ids = list(selection_map.keys())
 
-        # Create lookup for selection values
-        selection_map = {s["answer_id"]: s["is_selected"] for s in selections}
+        answers = db.query(Answer).filter(Answer.id.in_(answer_ids)).all()
 
         for answer in answers:
             answer.is_selected_for_annotation = selection_map[answer.id]

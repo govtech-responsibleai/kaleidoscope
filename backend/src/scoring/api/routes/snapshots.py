@@ -2,14 +2,22 @@
 API routes for Snapshot management.
 """
 
+import math
+import random
 from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.repositories import SnapshotRepository, TargetRepository, QuestionRepository
+from src.common.database.repositories import SnapshotRepository, TargetRepository, QuestionRepository, AnswerRepository
 from src.common.models import (
+    AnswerBulkSelection,
+    AnswerListResponse,
+    AnswerListItemResponse,
+    AnswerResponse,
+    AnswerSelection,
+    DefaultSelectionResponse,
     SnapshotCreate,
     SnapshotUpdate,
     SnapshotResponse,
@@ -110,6 +118,127 @@ def get_snapshot(
             detail=f"Snapshot {snapshot_id} not found"
         )
     return snapshot
+
+
+@router.get("/snapshots/{snapshot_id}/answers", response_model=AnswerListResponse)
+def list_answers_for_snapshot(
+    snapshot_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    List all answers for a snapshot.
+
+    Returns answers with question text and annotation status for the mailbox UI.
+    """
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    answers = AnswerRepository.get_by_snapshot(db, snapshot_id, skip, limit, eager_load=True)
+
+    enriched_answers = [
+        AnswerListItemResponse(
+            id=a.id,
+            snapshot_id=a.snapshot_id,
+            question_id=a.question_id,
+            chat_id=a.chat_id,
+            message_id=a.message_id,
+            answer_content=a.answer_content,
+            model=a.model,
+            guardrails=a.guardrails,
+            rag_citations=a.rag_citations,
+            is_selected_for_annotation=a.is_selected_for_annotation,
+            created_at=a.created_at,
+            question_text=a.question.text if a.question else None,
+            has_annotation=a.annotation is not None,
+        )
+        for a in answers
+    ]
+
+    total = AnswerRepository.count_by_snapshot(db, snapshot_id)
+    return AnswerListResponse(answers=enriched_answers, total=total)
+
+
+@router.post("/snapshots/{snapshot_id}/answers/bulk-selection", response_model=List[AnswerResponse])
+def bulk_update_answer_selection(
+    snapshot_id: int,
+    request: AnswerBulkSelection,
+    db: Session = Depends(get_db)
+):
+    """
+    Bulk update is_selected_for_annotation for multiple answers in a snapshot.
+    """
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    answer_ids = [s.answer_id for s in request.selections]
+    existing = AnswerRepository.get_by_ids(db, answer_ids)
+    existing_ids = {a.id for a in existing}
+    missing = set(answer_ids) - existing_ids
+    if missing:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Answers not found: {sorted(missing)}"
+        )
+
+    wrong_snapshot = sorted(a.id for a in existing if a.snapshot_id != snapshot_id)
+    if wrong_snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Answers do not belong to snapshot {snapshot_id}: {wrong_snapshot}"
+        )
+
+    updated_answers = AnswerRepository.update_annotation_selection(db, request.selections)
+    return updated_answers
+
+
+@router.post("/snapshots/{snapshot_id}/answers/select-default", response_model=DefaultSelectionResponse)
+def select_default_answers(
+    snapshot_id: int,
+    selection_pct: float = 0.2,
+    db: Session = Depends(get_db)
+):
+    """
+    Auto-select a percentage of answers for annotation.
+    """
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    answers = AnswerRepository.get_by_snapshot(db, snapshot_id, skip=0, limit=1000)
+
+    if not answers:
+        return DefaultSelectionResponse(
+            snapshot_id=snapshot_id,
+            selected_count=0,
+            total_answers=0
+        )
+
+    random.seed(42)
+    selected_answers = random.sample(answers, math.ceil(len(answers) * selection_pct))
+    selections = [
+        AnswerSelection(answer_id=answer.id, is_selected=True)
+        for answer in selected_answers
+    ]
+    AnswerRepository.update_annotation_selection(db, selections)
+
+    return DefaultSelectionResponse(
+        snapshot_id=snapshot_id,
+        selected_count=len(selected_answers),
+        total_answers=len(answers)
+    )
 
 
 @router.put("/snapshots/{snapshot_id}", response_model=SnapshotResponse)

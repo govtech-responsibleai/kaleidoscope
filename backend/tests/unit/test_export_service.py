@@ -78,9 +78,9 @@ class TestExportService:
             lines = result.strip().split("\n")
             assert len(lines) > 1
             header = lines[0]
-            assert "Human Label" in header
-            assert "Human Notes" in header
-            assert "Aggregated Accuracy" in header
+            assert "Human_Label" in header
+            assert "Human_Notes" in header
+            assert "Aggregated_Accuracy" in header
         else:
             assert isinstance(result, list)
             assert len(result) > 0

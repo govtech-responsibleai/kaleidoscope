@@ -115,7 +115,7 @@ def test_client(test_db_factory):
     test_app.include_router(snapshots.router, prefix=f"{settings.api_prefix}", tags=["Snapshots"])
     test_app.include_router(kb_documents.router, prefix=f"{settings.api_prefix}", tags=["Knowledge Base"])
     # Answers and metrics routers
-    test_app.include_router(answers.router, prefix=f"{settings.api_prefix}", tags=["Answers"])
+    test_app.include_router(answers.router, prefix=f"{settings.api_prefix}/answers", tags=["Answers"])
     test_app.include_router(metrics.router, prefix=f"{settings.api_prefix}", tags=["Metrics"])
 
     # Override database dependency to use test session factory

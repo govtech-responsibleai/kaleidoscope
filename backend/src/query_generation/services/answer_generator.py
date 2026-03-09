@@ -10,7 +10,7 @@ from typing import Dict, Any
 from sqlalchemy.orm import Session
 
 from src.common.config import get_settings
-from src.common.database.models import Question, Answer, QAJob, JobStatusEnum, QAJobStageEnum
+from src.common.database.models import Question, Answer, QAJob, JobStatusEnum
 from src.common.database.repositories import (
     AnswerRepository,
     QuestionRepository,
@@ -135,15 +135,15 @@ class AnswerGenerator:
             "Content-Type": "application/json"
         }
 
-        print(f"Creating chat at: {url}")
-        print(f"Payload: {payload}")
+        logger.info(f"Creating chat at: {url}")
+        logger.debug(f"Payload: {payload}")
 
         with httpx.Client(timeout=30.0) as client:
             response = client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
-        print(f"Create chat response: {data}")
+        logger.debug(f"Create chat response: {data}")
         return data["id"]
 
     def _send_message(self, chat_id: str, content: str, api_key: str, base_url: str) -> Dict[str, Any]:
@@ -157,13 +157,13 @@ class AnswerGenerator:
         # Using multipart/form-data as per API spec
         data = {"content": content}
 
-        print(f"Sending message to: {url}")
-        print(f"Message payload: {data}")
+        logger.debug(f"Sending message to: {url}")
+        logger.debug(f"Message payload: {data}")
 
         with httpx.Client(timeout=60.0) as client:
             response = client.post(url, data=data, headers=headers)
-            print(f"Message response status: {response.status_code}")
-            print(f"Message response body: {response.text}")
+            logger.debug(f"Message response status: {response.status_code}")
+            logger.debug(f"Message response body: {response.text}")
             response.raise_for_status()
 
         return response.json()
@@ -258,10 +258,6 @@ class AnswerGenerator:
                 logger.info(f"QAJob {self.job_id} is not running (status={self.job.status.value}). Skipping answer generation.")
                 return
 
-            # Update job stage
-            QAJobRepository.update_status(self.db, self.job_id, JobStatusEnum.running, QAJobStageEnum.generating_answers)
-            logger.info(f"QAJob {self.job_id}: Stage updated to 'generating_answers'")
-
             # Check if answer already exists
             existing_answer = AnswerRepository.get_by_question_and_snapshot(self.db, question_id, snapshot_id)
 
@@ -276,10 +272,6 @@ class AnswerGenerator:
 
             # Update job with answer_id and costs
             self._update_job(answer_id=answer.id)
-
-            # Call next stage in pipeline
-            from src.scoring.services.claim_processor import extract_and_check_claims
-            await extract_and_check_claims(self.db, self.job_id)
 
         except Exception as e:
             logger.error(f"Answer generation failed for job {self.job_id}: {e}", exc_info=True)
@@ -360,15 +352,15 @@ class AnswerGenerator:
             "Content-Type": "application/json"
         }
 
-        print(f"[async] Creating chat at: {url}")
-        print(f"[async] Payload: {payload}")
+        logger.debug(f"[async] Creating chat at: {url}")
+        logger.debug(f"[async] Payload: {payload}")
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(url, json=payload, headers=headers)
             response.raise_for_status()
             data = response.json()
 
-        print(f"[async] Create chat response: {data}")
+        logger.debug(f"[async] Create chat response: {data}")
         return data["id"]
 
     async def _send_message_async(self, chat_id: str, content: str, api_key: str, base_url: str) -> Dict[str, Any]:
@@ -381,13 +373,13 @@ class AnswerGenerator:
 
         data = {"content": content}
 
-        print(f"[async] Sending message to: {url}")
-        print(f"[async] Message payload: {data}")
+        logger.debug(f"[async] Sending message to: {url}")
+        logger.debug(f"[async] Message payload: {data}")
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(url, data=data, headers=headers)
-            print(f"[async] Message response status: {response.status_code}")
-            print(f"[async] Message response body: {response.text}")
+            logger.debug(f"[async] Message response status: {response.status_code}")
+            logger.debug(f"[async] Message response body: {response.text}")
             response.raise_for_status()
 
         return response.json()

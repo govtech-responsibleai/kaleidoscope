@@ -46,7 +46,7 @@ async def start_qa_jobs(
 
     Args:
         snapshot_id: Snapshot ID
-        request: Request with judge_id, question_ids, and optional is_scoring
+        request: Request with judge_id, question_ids, and optional job_ids
         background_tasks: FastAPI background tasks for async execution
         db: Database session
 
@@ -107,9 +107,8 @@ async def start_qa_jobs(
                     snapshot_id=snapshot_id,
                     judge_id=request.judge_id,
                     question_ids=request.question_ids,
-                    job_ids=request.job_ids,
-                    is_scoring=request.is_scoring)
-                )  # or create a new event loop and run
+                    job_ids=request.job_ids)
+                )
             finally:
                 db.close()
         await run_in_threadpool(sync_work)

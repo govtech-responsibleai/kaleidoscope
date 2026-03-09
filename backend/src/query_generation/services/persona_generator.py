@@ -116,8 +116,8 @@ class PersonaGenerator:
 
             logger.info(f"Generated {len(persona_list.personas)} personas")
 
-            # Step 4: Save personas to database
-            personas = self._save_personas(persona_list.personas)
+            # Step 4: Save personas to database (reuse fetched list to avoid re-query)
+            personas = self._save_personas(persona_list.personas, all_existing_personas)
             logger.info(f"Saved {len(personas)} personas to database")
 
             # Step 5: Update job status
@@ -168,20 +168,18 @@ class PersonaGenerator:
 
         return prompt
 
-    def _save_personas(self, personas_data: List[PersonaBase]) -> List[Any]:
+    def _save_personas(self, personas_data: List[PersonaBase], existing_personas: List[Any]) -> List[Any]:
         """
         Save generated personas to database, deduplicating titles with suffix.
 
         Args:
             personas_data: List of PersonaBase Pydantic models
+            existing_personas: Already-fetched list of existing personas for this target
 
         Returns:
             List of saved Persona objects
         """
-        existing = PersonaRepository.get_by_target(
-            self.db, self.target.id, status=None, skip=0, limit=10000
-        )
-        taken_titles = {p.title for p in existing}
+        taken_titles = {p.title for p in existing_personas}
 
         personas_to_create = []
 

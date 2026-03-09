@@ -26,9 +26,8 @@ class QAJobRepository:
         """Create multiple QA jobs."""
         qa_jobs = [QAJob(**data) for data in qa_jobs_data]
         db.add_all(qa_jobs)
+        db.flush()
         db.commit()
-        for qa_job in qa_jobs:
-            db.refresh(qa_job)
         return qa_jobs
 
     @staticmethod

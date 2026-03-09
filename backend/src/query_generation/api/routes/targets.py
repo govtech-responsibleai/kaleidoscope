@@ -20,6 +20,16 @@ from src.common.services.export_service import ExportService, ExportFormat
 router = APIRouter()
 
 
+def _target_to_response(target) -> TargetResponse:
+    """Convert a Target ORM model to TargetResponse with owner_username."""
+    return TargetResponse.model_validate(
+        target,
+        from_attributes=True,
+    ).model_copy(update={
+        "owner_username": target.owner.username if target.owner else None,
+    })
+
+
 @router.post("", response_model=TargetResponse, status_code=status.HTTP_201_CREATED)
 def create_target(
     target: TargetCreate,
@@ -40,7 +50,7 @@ def create_target(
     target_data = target.model_dump()
     target_data["user_id"] = user_id
     created_target = TargetRepository.create(db, target_data)
-    return created_target
+    return _target_to_response(created_target)
 
 
 @router.get("", response_model=List[TargetResponse])
@@ -61,7 +71,7 @@ def list_targets(
         List of targets
     """
     targets = TargetRepository.get_all(db, skip=skip, limit=limit)
-    return targets
+    return [_target_to_response(t) for t in targets]
 
 
 @router.get("/{target_id}", response_model=TargetResponse)
@@ -88,7 +98,7 @@ def get_target(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Target {target_id} not found"
         )
-    return target
+    return _target_to_response(target)
 
 
 @router.put("/{target_id}", response_model=TargetResponse)
@@ -118,7 +128,7 @@ def update_target(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Target {target_id} not found"
         )
-    return target
+    return _target_to_response(target)
 
 
 @router.delete("/{target_id}", status_code=status.HTTP_204_NO_CONTENT)

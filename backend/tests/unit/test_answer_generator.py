@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 from src.query_generation.services.answer_generator import AnswerGenerator
-from src.common.database.models import JobStatusEnum, QAJobStageEnum
+from src.common.database.models import JobStatusEnum
 
 
 @pytest.mark.unit
@@ -132,11 +132,10 @@ class TestAnswerGenerator:
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.httpx.Client')
-    @patch('src.scoring.services.claim_processor.extract_and_check_claims', new_callable=AsyncMock)
     async def test_generate_for_job_success(
-        self, mock_extract_claims, mock_httpx_client, test_db, sample_qa_job, sample_question, sample_target
+        self, mock_httpx_client, test_db, sample_qa_job, sample_question, sample_target
     ):
-        """Test answer generation for QA job updates job status and calls next stage."""
+        """Test answer generation for QA job generates answer and updates job."""
         # Setup target
         sample_target.endpoint_type = "aibots"
         sample_target.api_endpoint = "https://api.test.com"
@@ -173,18 +172,14 @@ class TestAnswerGenerator:
         generator = AnswerGenerator(test_db, sample_qa_job.id)
         await generator.generate_for_job(sample_question.id, sample_qa_job.snapshot_id)
 
-        # Verify job stage updated
+        # Verify job has answer_id set
         test_db.refresh(sample_qa_job)
-        assert sample_qa_job.stage == QAJobStageEnum.generating_answers
-
-        # Verify next stage called
-        mock_extract_claims.assert_awaited_once_with(test_db, sample_qa_job.id)
+        assert sample_qa_job.answer_id is not None
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.httpx.Client')
-    @patch('src.scoring.services.claim_processor.extract_and_check_claims', new_callable=AsyncMock)
     async def test_generate_for_job_skips_if_answer_exists(
-        self, mock_extract_claims, mock_httpx_client, test_db, sample_qa_job, sample_question, sample_answer
+        self, mock_httpx_client, test_db, sample_qa_job, sample_question, sample_answer
     ):
         """Test that generate_for_job skips generation if answer already exists."""
         # Generate for job (answer already exists from fixture)
@@ -193,9 +188,6 @@ class TestAnswerGenerator:
 
         # Verify httpx was NOT called (no new API request)
         mock_httpx_client.assert_not_called()
-
-        # Verify next stage was still called
-        mock_extract_claims.assert_awaited_once_with(test_db, sample_qa_job.id)
 
 
 @pytest.mark.unit
