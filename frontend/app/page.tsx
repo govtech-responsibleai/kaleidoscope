@@ -6,21 +6,16 @@ import {
   Typography,
   Button,
   Card,
-  CardContent,
-  CardActions,
   CircularProgress,
   IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Alert,
 } from "@mui/material";
 import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { targetApi } from "@/lib/api";
 import { TargetResponse } from "@/lib/types";
 import CreateTargetModal from "@/components/overview/CreateTargetModal";
+import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+import { getTargetTheme } from "@/lib/targetTheme";
 
 export default function Home() {
   const router = useRouter();
@@ -29,15 +24,15 @@ export default function Home() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [targetToDelete, setTargetToDelete] = useState<TargetResponse | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const fetchTargets = async () => {
     try {
       const response = await targetApi.list();
       setTargets(response.data);
-    } catch (error) {
+      setLoading(false);
+    } catch (error: any) {
+      if (error?.response?.status === 401) return; // interceptor handles redirect, keep spinner
       console.error("Failed to fetch targets:", error);
-    } finally {
       setLoading(false);
     }
   };
@@ -56,22 +51,6 @@ export default function Home() {
     setDeleteDialogOpen(true);
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!targetToDelete) return;
-
-    setDeleting(true);
-    try {
-      await targetApi.delete(targetToDelete.id);
-      await fetchTargets(); // Refresh the list
-      setDeleteDialogOpen(false);
-      setTargetToDelete(null);
-    } catch (error) {
-      console.error("Failed to delete target:", error);
-      alert("Failed to delete target. Please try again.");
-    } finally {
-      setDeleting(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -138,69 +117,129 @@ export default function Home() {
             },
           }}
         >
-          {targets.map((target) => (
-            <Card
-              key={target.id}
-              variant="outlined"
-              sx={{
-                minWidth: 0,
-                height: "100%",
-                display: "flex",
-                flexDirection: "column",
-                cursor: "pointer",
-                transition: "all 0.2s",
-                "&:hover": { transform: "translateY(-4px)", boxShadow: 3 },
-              }}
-              onClick={() => handleTargetClick(target.id)}
-            >
-              <CardContent sx={{ flexGrow: 1, minWidth: 0 }}>
-                <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={1}>
+          {targets.map((target) => {
+            const theme = getTargetTheme(target.name);
+            const createdDate = new Date(target.created_at).toLocaleDateString("en-US", {
+              month: "short",
+              day: "numeric",
+              year: "numeric",
+            });
+            return (
+              <Card
+                key={target.id}
+                sx={{
+                  minWidth: 0,
+                  height: "100%",
+                  display: "flex",
+                  flexDirection: "column",
+                  cursor: "pointer",
+                  borderRadius: "10px",
+                  overflow: "hidden",
+                  transition: "transform 0.2s, box-shadow 0.2s",
+                  "&:hover": {
+                    transform: "translateY(-2px)",
+                    boxShadow: 3,
+                  },
+                }}
+                onClick={() => handleTargetClick(target.id)}
+              >
+                {/* Gradient accent line */}
+                <Box
+                  sx={{
+                    height: 4,
+                    background: theme.gradient,
+                  }}
+                />
+
+                {/* Card body */}
+                <Box sx={{ p: 2, flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
                   <Typography
                     variant="h6"
                     component="h2"
-                    sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: 1 }}
+                    fontWeight={600}
+                    sx={{
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      mb: 0.25,
+                    }}
                   >
                     {target.name}
                   </Typography>
-                  <IconButton
-                    size="small"
-                    onClick={(e) => handleDeleteClick(e, target)}
+
+                  {(target.agency || target.owner_username) && (
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5, minWidth: 0 }}>
+                      {target.agency && (
+                        <Typography
+                          variant="body2"
+                          color="text.secondary"
+                          sx={{
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                          }}
+                        >
+                          {target.agency}
+                        </Typography>
+                      )}
+                      {target.agency && target.owner_username && (
+                        <Typography variant="body2" color="text.disabled">·</Typography>
+                      )}
+                      {target.owner_username && (
+                        <Typography
+                          variant="caption"
+                          color="text.disabled"
+                          sx={{ whiteSpace: "nowrap" }}
+                        >
+                          {target.owner_username}
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+
+                  {target.purpose && (
+                    <Typography
+                      variant="body2"
+                      color="text.secondary"
+                      sx={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        mb: 1,
+                      }}
+                    >
+                      {target.purpose}
+                    </Typography>
+                  )}
+
+                  {/* Footer row */}
+                  <Box
                     sx={{
-                      ml: 1,
-                      opacity: 0.6,
-                      "&:hover": { opacity: 1, color: "error.main" }
+                      mt: "auto",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                     }}
                   >
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
+                    <Typography variant="caption" color="text.disabled">
+                      {createdDate}
+                    </Typography>
+                    <IconButton
+                      size="small"
+                      onClick={(e) => handleDeleteClick(e, target)}
+                      sx={{
+                        opacity: 0.5,
+                        "&:hover": { opacity: 1, color: "error.main" },
+                      }}
+                    >
+                      <DeleteIcon fontSize="small" />
+                    </IconButton>
+                  </Box>
                 </Box>
-                {target.agency && (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    gutterBottom
-                    sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                  >
-                    {target.agency}
-                  </Typography>
-                )}
-                {target.purpose && (
-                  <Typography
-                    variant="body2"
-                    color="text.secondary"
-                    sx={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
-                  >
-                    {target.purpose}
-                  </Typography>
-                )}
-              </CardContent>
-              <CardActions>
-                <Button size="small" onClick={() => handleTargetClick(target.id)}>
-                  View Details
-                </Button>
-              </CardActions>
-            </Card>
-          ))}
+              </Card>
+            );
+          })}
         </Box>
       )}
 
@@ -210,43 +249,23 @@ export default function Home() {
         onSuccess={fetchTargets}
       />
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
+      <ConfirmDeleteDialog
         open={deleteDialogOpen}
-        onClose={() => !deleting && setDeleteDialogOpen(false)}
-        maxWidth="sm"
-        fullWidth
-      >
-        <DialogTitle>Delete Target Application</DialogTitle>
-        <DialogContent>
-          <Alert severity="error" sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" gutterBottom>
-              This action cannot be undone!
-            </Typography>
-          </Alert>
-          <Typography variant="body1" gutterBottom>
-            Are you sure you want to delete <strong>{targetToDelete?.name}</strong>?
-          </Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
-            This will permanently delete all associated data including personas, questions,
-            knowledge base documents, and statistics.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteDialogOpen(false)} disabled={deleting}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleDeleteConfirm}
-            color="error"
-            variant="contained"
-            disabled={deleting}
-            startIcon={deleting ? <CircularProgress size={20} /> : <DeleteIcon />}
-          >
-            {deleting ? "Deleting..." : "Delete Permanently"}
-          </Button>
-        </DialogActions>
-      </Dialog>
+        onClose={() => {
+          setDeleteDialogOpen(false);
+          setTargetToDelete(null);
+        }}
+        onConfirm={async () => {
+          if (!targetToDelete) return;
+          await targetApi.delete(targetToDelete.id);
+          await fetchTargets();
+          setTargetToDelete(null);
+        }}
+        title="Delete Target Application"
+        itemName={targetToDelete?.name}
+        description="This will permanently delete all associated data including personas, questions, knowledge base documents, and statistics."
+        destructive
+      />
     </Box>
   );
 }

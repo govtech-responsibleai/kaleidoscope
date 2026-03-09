@@ -9,25 +9,21 @@ import {
   SelectChangeEvent,
   Stack,
   IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogContentText,
-  DialogActions,
-  Button,
 } from "@mui/material";
 import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
 import DeleteIcon from "@mui/icons-material/Delete";
 import { Snapshot } from "@/lib/types";
 import CreateSnapshotDialog from "./CreateSnapshotDialog";
+import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
 import { snapshotApi } from "@/lib/api";
 
 interface SnapshotHeaderProps {
   targetId: number;
   snapshots: Snapshot[];
   selectedSnapshotId: number | null;
-  onSelectSnapshot: (snapshotId: number) => void;
+  onSelectSnapshot: (snapshotId: number | null) => void;
   onSnapshotCreated: (snapshot: Snapshot) => void;
+  onSnapshotDeleted?: () => void;
   loading?: boolean;
 }
 
@@ -37,12 +33,12 @@ export default function SnapshotHeader({
   selectedSnapshotId,
   onSelectSnapshot,
   onSnapshotCreated,
+  onSnapshotDeleted,
   loading = false,
 }: SnapshotHeaderProps) {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [snapshotToDelete, setSnapshotToDelete] = useState<Snapshot | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   const handleSnapshotChange = (event: SelectChangeEvent<string>) => {
     const value = event.target.value;
@@ -69,35 +65,6 @@ export default function SnapshotHeader({
     setDeleteDialogOpen(true);
   };
 
-  const handleDeleteConfirm = async () => {
-    if (!snapshotToDelete) return;
-
-    setDeleting(true);
-    try {
-      await snapshotApi.delete(snapshotToDelete.id);
-
-      // If the deleted snapshot was selected, select another one
-      if (selectedSnapshotId === snapshotToDelete.id) {
-        const remaining = sortedSnapshots.filter(s => s.id !== snapshotToDelete.id);
-        if (remaining.length > 0) {
-          onSelectSnapshot(remaining[0].id);
-        } else {
-          onSelectSnapshot(0); // No snapshots left
-        }
-      }
-
-      // Refresh snapshots list
-      onSnapshotCreated(snapshotToDelete); // Reuse this callback to trigger refresh
-    } catch (error) {
-      console.error("Failed to delete snapshot:", error);
-      alert("Failed to delete snapshot. Please try again.");
-    } finally {
-      setDeleting(false);
-      setDeleteDialogOpen(false);
-      setSnapshotToDelete(null);
-    }
-  };
-
   const handleDeleteCancel = () => {
     setDeleteDialogOpen(false);
     setSnapshotToDelete(null);
@@ -105,7 +72,7 @@ export default function SnapshotHeader({
 
   const hasSnapshots = snapshots.length > 0;
   const selectValue =
-    selectedSnapshotId && hasSnapshots ? selectedSnapshotId.toString() : "";
+    selectedSnapshotId !== null && hasSnapshots ? selectedSnapshotId.toString() : "";
 
   // Sort snapshots by created_at descending (most recent first)
   const sortedSnapshots = [...snapshots].sort((a, b) =>
@@ -172,23 +139,29 @@ export default function SnapshotHeader({
           onSuccess={handleCreateSuccess}
         />
 
-        {/* Delete Confirmation Dialog */}
-        <Dialog open={deleteDialogOpen} onClose={handleDeleteCancel}>
-          <DialogTitle>Delete Snapshot?</DialogTitle>
-          <DialogContent>
-            <DialogContentText>
-              Are you sure you want to delete the snapshot "{snapshotToDelete?.name}"? This action cannot be undone.
-            </DialogContentText>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={handleDeleteCancel} disabled={deleting}>
-              Cancel
-            </Button>
-            <Button onClick={handleDeleteConfirm} color="error" variant="contained" disabled={deleting}>
-              {deleting ? "Deleting..." : "Delete"}
-            </Button>
-          </DialogActions>
-        </Dialog>
+        <ConfirmDeleteDialog
+          open={deleteDialogOpen}
+          onClose={handleDeleteCancel}
+          onConfirm={async () => {
+            if (!snapshotToDelete) return;
+            await snapshotApi.delete(snapshotToDelete.id);
+
+            // Select the most recent remaining snapshot
+            if (selectedSnapshotId === snapshotToDelete.id) {
+              const remaining = sortedSnapshots.filter(s => s.id !== snapshotToDelete.id);
+              if (remaining.length > 0) {
+                onSelectSnapshot(remaining[0].id);
+              } else {
+                onSelectSnapshot(null);
+              }
+            }
+
+            onSnapshotDeleted?.();
+            setSnapshotToDelete(null);
+          }}
+          title="Delete Snapshot?"
+          itemName={snapshotToDelete?.name}
+        />
     </>
   );
 }

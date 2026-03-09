@@ -109,8 +109,15 @@ export default function CreateTargetModal({
     setError(null);
 
     try {
+      // Strip endpoint fields if no api_endpoint is provided (avoids backend validation error)
+      const submitData: TargetCreate = {
+        ...formData,
+        endpoint_type: formData.api_endpoint ? formData.endpoint_type : undefined,
+        endpoint_config: formData.api_endpoint ? formData.endpoint_config : undefined,
+      };
+
       // Create the target first
-      const targetResponse = await targetApi.create(formData);
+      const targetResponse = await targetApi.create(submitData);
       const targetId = targetResponse.data.id;
 
       // Upload documents if any
@@ -166,9 +173,9 @@ export default function CreateTargetModal({
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle>Create New Target Application</DialogTitle>
       <DialogContent>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 2 }}>
+        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
           {error && (
-            <Alert severity="warning" onClose={() => setError(null)}>
+            <Alert severity="error" onClose={() => setError(null)}>
               {error}
             </Alert>
           )}

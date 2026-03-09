@@ -15,9 +15,16 @@ import {
   Divider,
 } from "@mui/material";
 import {
-  DashboardCustomizeOutlined as DashboardIcon,
   ChevronLeft as ChevronLeftIcon,
   Logout as LogoutIcon,
+  DashboardCustomizeOutlined as DashboardIcon,
+  HomeOutlined as HomeOutlinedIcon,
+  QuestionMark as QuestionMarkIcon,
+  PostAdd as PostAddIcon,
+  SmartToyOutlined as SmartToyIcon,
+  SsidChart as SsidChartIcon,
+  AssessmentOutlined as AssessmentOutlinedIcon,
+  AdminPanelSettingsOutlined as AdminPanelSettingsIcon,
 } from "@mui/icons-material";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
@@ -36,9 +43,11 @@ export default function Navigation({ children }: NavigationProps) {
   const pathname = usePathname();
   const [open, setOpen] = useState(true);
   const [username, setUsername] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     setUsername(authApi.getUsername());
+    setIsAdmin(authApi.isAdmin());
   }, [pathname]);
 
   const handleSignOut = () => {
@@ -47,11 +56,30 @@ export default function Navigation({ children }: NavigationProps) {
     router.push("/login");
   };
 
-  const menuItems = [
-    { label: "Targets", icon: <DashboardIcon />, path: "/" },
-  ];
-
   const drawerWidth = open ? DRAWER_WIDTH_OPEN : DRAWER_WIDTH_CLOSED;
+
+  // Detect target route
+  const targetMatch = pathname.match(/^\/targets\/(\d+)/);
+  const targetId = targetMatch ? targetMatch[1] : null;
+
+  // Derive activeTab from pathname (same logic as layout)
+  const getActiveTab = () => {
+    if (pathname.includes("/annotation")) return "annotation";
+    if (pathname.includes("/scoring")) return "scoring";
+    if (pathname.includes("/report")) return "report";
+    if (pathname.includes("/questions")) return "questions";
+    if (pathname.includes("/metrics")) return "metrics";
+    return "overview";
+  };
+  const activeTab = getActiveTab();
+
+  const targetNavItems = [
+    { label: "Overview", icon: <HomeOutlinedIcon />, tab: "overview", path: `/targets/${targetId}` },
+    { label: "Questions", icon: <QuestionMarkIcon />, tab: "questions", path: `/targets/${targetId}/questions` },
+    { label: "Annotations", icon: <PostAddIcon />, tab: "annotation", path: `/targets/${targetId}/annotation` },
+    { label: "Scoring", icon: <SmartToyIcon />, tab: "scoring", path: `/targets/${targetId}/scoring` },
+    { label: "Report", icon: <SsidChartIcon />, tab: "report", path: `/targets/${targetId}/report` },
+  ];
 
   // Don't show navigation on login page
   if (pathname === "/login") {
@@ -74,10 +102,10 @@ export default function Navigation({ children }: NavigationProps) {
           "& .MuiDrawer-paper": {
             width: drawerWidth,
             boxSizing: "border-box",
-            backgroundColor: "rgb(0, 0, 0, 0.05)",
+            backgroundColor: "#fff",
+            borderRight: "1px solid rgba(0,0,0,0.12)",
             overflowX: "hidden",
             overflowY: "hidden",
-            border: "none",
             display: "flex",
             flexDirection: "column",
             transition: (theme) =>
@@ -114,42 +142,161 @@ export default function Navigation({ children }: NavigationProps) {
             </IconButton>
           )}
         </Toolbar>
+
         <Box sx={{ overflow: "hidden", flexGrow: 1 }}>
-          <List>
-            {menuItems.map((item) => (
-              <ListItem key={item.path} disablePadding sx={{ display: "block" }}>
+          {targetId ? (
+            <List>
+              {/* Back to all targets */}
+              <ListItem disablePadding sx={{ display: "block" }}>
                 <ListItemButton
-                  selected={pathname === item.path || pathname.startsWith("/targets")}
-                  onClick={() => router.push(item.path)}
+                  onClick={() => router.push("/")}
                   sx={{
                     minHeight: 48,
                     justifyContent: open ? "initial" : "center",
                     px: 2.5,
-                    "&.Mui-selected": {
-                      backgroundColor: "white",
-                    },
-                    "&.Mui-selected:hover": {
-                      backgroundColor: "white",
-                    },
                   }}
                 >
                   <ListItemIcon
-                    sx={{
-                      minWidth: 0,
-                      mr: open ? 1 : "auto",
-                      justifyContent: "center",
-                    }}
+                    sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
                   >
-                    {item.icon}
+                    <ChevronLeftIcon />
                   </ListItemIcon>
-                  <ListItemText
-                    primary={item.label}
-                    sx={{ opacity: open ? 1 : 0 }}
-                  />
+                  <ListItemText primary="All Targets" sx={{ opacity: open ? 1 : 0 }} />
                 </ListItemButton>
               </ListItem>
-            ))}
-          </List>
+
+              {/* Target Information subheader */}
+              {open && (
+                <Box sx={{ px: 2.5, pt: 1.5, pb: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
+                    Target Information
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Overview */}
+              <ListItem disablePadding sx={{ display: "block" }}>
+                <ListItemButton
+                  selected={activeTab === "overview"}
+                  onClick={() => router.push(`/targets/${targetId}`)}
+                  sx={{
+                    minHeight: 48,
+                    justifyContent: open ? "initial" : "center",
+                    px: 2.5,
+                  }}
+                >
+                  <ListItemIcon
+                    sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
+                  >
+                    <HomeOutlinedIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Overview" sx={{ opacity: open ? 1 : 0 }} />
+                </ListItemButton>
+              </ListItem>
+
+              {/* Metrics */}
+              <ListItem disablePadding sx={{ display: "block" }}>
+                <ListItemButton
+                  selected={activeTab === "metrics"}
+                  onClick={() => router.push(`/targets/${targetId}/metrics`)}
+                  sx={{
+                    minHeight: 48,
+                    justifyContent: open ? "initial" : "center",
+                    px: 2.5,
+                  }}
+                >
+                  <ListItemIcon
+                    sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
+                  >
+                    <AssessmentOutlinedIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Metrics" sx={{ opacity: open ? 1 : 0 }} />
+                </ListItemButton>
+              </ListItem>
+
+              {/* Run Evaluations subheader */}
+              {open && (
+                <Box sx={{ px: 2.5, pt: 1.5, pb: 0.5 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
+                    Run Evaluations
+                  </Typography>
+                </Box>
+              )}
+
+              {/* Questions, Annotations, Scoring, Report */}
+              {targetNavItems.slice(1).map((item) => (
+                <ListItem key={item.tab} disablePadding sx={{ display: "block" }}>
+                  <ListItemButton
+                    selected={activeTab === item.tab}
+                    onClick={() => router.push(item.path)}
+                    sx={{
+                      minHeight: 48,
+                      justifyContent: open ? "initial" : "center",
+                      px: 2.5,
+                    }}
+                  >
+                    <ListItemIcon
+                      sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
+                    >
+                      {item.icon}
+                    </ListItemIcon>
+                    <ListItemText primary={item.label} sx={{ opacity: open ? 1 : 0 }} />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          ) : (
+            <List>
+              <ListItem disablePadding sx={{ display: "block" }}>
+                <ListItemButton
+                  selected={pathname === "/" || pathname.startsWith("/targets")}
+                  onClick={() => router.push("/")}
+                  sx={{
+                    minHeight: 48,
+                    justifyContent: open ? "initial" : "center",
+                    px: 2.5,
+                  }}
+                >
+                  <ListItemIcon
+                    sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
+                  >
+                    <DashboardIcon />
+                  </ListItemIcon>
+                  <ListItemText primary="Targets" sx={{ opacity: open ? 1 : 0 }} />
+                </ListItemButton>
+              </ListItem>
+              {isAdmin && (
+                <>
+                  <Divider sx={{ my: 1 }} />
+                  {open && (
+                    <Box sx={{ px: 2.5, pt: 0.5, pb: 0.5 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 600 }}>
+                        Administration
+                      </Typography>
+                    </Box>
+                  )}
+                  <ListItem disablePadding sx={{ display: "block" }}>
+                    <ListItemButton
+                      selected={pathname === "/admin"}
+                      onClick={() => router.push("/admin")}
+                      sx={{
+                        minHeight: 48,
+                        justifyContent: open ? "initial" : "center",
+                        px: 2.5,
+                      }}
+                    >
+                      <ListItemIcon
+                        sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
+                      >
+                        <AdminPanelSettingsIcon />
+                      </ListItemIcon>
+                      <ListItemText primary="Users" sx={{ opacity: open ? 1 : 0 }} />
+                    </ListItemButton>
+                  </ListItem>
+                </>
+              )}
+            </List>
+          )}
         </Box>
 
         {/* User status at bottom */}
@@ -172,11 +319,7 @@ export default function Navigation({ children }: NavigationProps) {
                 {username}
               </Typography>
             )}
-            <IconButton
-              onClick={handleSignOut}
-              size="small"
-              title="Sign out"
-            >
+            <IconButton onClick={handleSignOut} size="small" title="Sign out">
               <LogoutIcon />
             </IconButton>
           </Box>

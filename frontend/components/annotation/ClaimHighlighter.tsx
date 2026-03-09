@@ -164,11 +164,11 @@ export default function ClaimHighlighter({
     return map;
   }, [claimScores]);
 
-  // Sort claims by sequence order and filter for checkworthy only
+  // Sort claims by backend-provided claim index and filter for checkworthy only
   const sortedClaims = useMemo(() => {
     return [...claims]
       .filter((claim) => claim.checkworthy)
-      .sort((a, b) => (a.sequence_order ?? 0) - (b.sequence_order ?? 0));
+      .sort((a, b) => (a.claim_index ?? 0) - (b.claim_index ?? 0));
   }, [claims]);
 
   // Build segments highlighting claims in the answer

@@ -239,9 +239,13 @@ export default function QAList({
       return;
     }
 
+    if (!snapshotId) {
+      return;
+    }
+
     // Update selections
     try {
-      await answerApi.bulkSelection({ selections }); // Update selections in DB
+      await answerApi.bulkSelection(snapshotId, { selections }); // Update selections in DB
 
       setQaMap((prev) => {
         const next: QAMap = { ...prev };

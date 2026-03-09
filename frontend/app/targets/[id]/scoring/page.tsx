@@ -20,6 +20,7 @@ import {
   Download as DownloadIcon,
 } from "@mui/icons-material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
+import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import JudgeCards from "@/components/scoring/JudgeCards";
 import CreateJudgeDialog from "@/components/scoring/CreateJudgeDialog";
 import ResultsTable from "@/components/scoring/ResultsTable";
@@ -63,6 +64,7 @@ export default function ScoringPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | "duplicate">("create");
   const [dialogJudge, setDialogJudge] = useState<JudgeConfig | null>(null);
+  const [judgeToDelete, setJudgeToDelete] = useState<JudgeConfig | null>(null);
 
   // Results state
   const [results, setResults] = useState<ResultRow[]>([]);
@@ -84,22 +86,36 @@ export default function ScoringPage() {
   const [error, setError] = useState<string | null>(null);
   const judgeCardsRef = useRef<HTMLDivElement | null>(null);
 
+  const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
+    setSelectedSnapshotId(snapshotId);
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    if (snapshotId === null) {
+      newSearchParams.delete("snapshot");
+    } else {
+      newSearchParams.set("snapshot", snapshotId.toString());
+    }
+    const query = newSearchParams.toString();
+    router.push(`/targets/${targetId}/scoring${query ? `?${query}` : ""}`, { scroll: false });
+  }, [searchParams, router, targetId]);
+
   // Fetch snapshots
   const fetchSnapshots = useCallback(async () => {
     setSnapshotsLoading(true);
     try {
       const response = await snapshotApi.list(targetId);
       setSnapshots(response.data);
-      if (!selectedSnapshotId && response.data.length > 0) {
-        // Select the most recent snapshot (sort by created_at descending)
-        const mostRecent = [...response.data].sort((a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )[0];
-        setSelectedSnapshotId(mostRecent.id);
-        // Update URL with default selection
-        const newSearchParams = new URLSearchParams(searchParams.toString());
-        newSearchParams.set("snapshot", mostRecent.id.toString());
-        router.push(`/targets/${targetId}/scoring?${newSearchParams.toString()}`, { scroll: false });
+      const hasSelectedSnapshot = selectedSnapshotId !== null && response.data.some(
+        (snapshot) => snapshot.id === selectedSnapshotId
+      );
+      if (!hasSelectedSnapshot) {
+        if (response.data.length > 0) {
+          const mostRecent = [...response.data].sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0];
+          updateSnapshotSelection(mostRecent.id);
+        } else if (selectedSnapshotId !== null) {
+          updateSnapshotSelection(null);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch snapshots:", error);
@@ -107,7 +123,7 @@ export default function ScoringPage() {
     } finally {
       setSnapshotsLoading(false);
     }
-  }, [targetId, selectedSnapshotId, searchParams, router]);
+  }, [targetId, selectedSnapshotId, updateSnapshotSelection]);
 
   // Fetch judges
   const fetchJudges = useCallback(async () => {
@@ -146,7 +162,7 @@ export default function ScoringPage() {
     setResultsLoading(true);
     try {
       const response = await metricsApi.getResults(snapshotId);
-      setResults(response.data.results ?? []);
+      setResults(response.data ?? []);
     } catch (error) {
       console.error("Failed to fetch results:", error);
       setError("Failed to load results.");
@@ -160,7 +176,7 @@ export default function ScoringPage() {
     setSnapshotMetricLoading(true);
     try {
       const response = await metricsApi.getSnapshotMetrics(targetId);
-      const metrics = response.data.snapshots;
+      const metrics = response.data;
       // Find the metric for the selected snapshot
       const currentMetric = metrics.find((m) => m.snapshot_id === selectedSnapshotId) || null;
       setSnapshotMetric(currentMetric);
@@ -235,12 +251,8 @@ export default function ScoringPage() {
   }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics]);
 
   // Handle snapshot selection
-  const handleSnapshotSelect = (snapshotId: number) => {
-    setSelectedSnapshotId(snapshotId);
-    // Update URL to persist selection across tab switches
-    const newSearchParams = new URLSearchParams(searchParams.toString());
-    newSearchParams.set("snapshot", snapshotId.toString());
-    router.push(`/targets/${targetId}/scoring?${newSearchParams.toString()}`, { scroll: false });
+  const handleSnapshotSelect = (snapshotId: number | null) => {
+    updateSnapshotSelection(snapshotId);
   };
 
   const handleScrollJudgeCards = (direction: "left" | "right") => {
@@ -276,7 +288,6 @@ export default function ScoringPage() {
       const response = await qaJobApi.start(selectedSnapshotId, {
         judge_id: judgeId,
         question_ids: questionIdsToScore,
-        is_scoring: true,
       });
 
       return response.data;
@@ -330,23 +341,12 @@ export default function ScoringPage() {
   }, [selectedSnapshotId, fetchResults, fetchSnapshotMetrics]);
 
   // Handle delete judge
-  const handleDeleteJudge = async (judge: JudgeConfig) => {
+  const handleDeleteJudge = (judge: JudgeConfig) => {
     if (!judge.is_editable || judge.is_baseline) {
       setError("Cannot delete this judge.");
       return;
     }
-
-    if (!confirm(`Are you sure you want to delete judge "${judge.name}"?`)) {
-      return;
-    }
-
-    try {
-      await judgeApi.delete(judge.id);
-      await fetchJudges();
-    } catch (error) {
-      console.error("Failed to delete judge:", error);
-      setError("Failed to delete judge.");
-    }
+    setJudgeToDelete(judge);
   };
 
   const handleExportSnapshot = async () => {
@@ -386,6 +386,7 @@ export default function ScoringPage() {
             selectedSnapshotId={selectedSnapshotId}
             onSelectSnapshot={handleSnapshotSelect}
             onSnapshotCreated={fetchSnapshots}
+            onSnapshotDeleted={fetchSnapshots}
           />
         </Box>
         <Tooltip title="Download data for this snapshot">
@@ -567,6 +568,19 @@ export default function ScoringPage() {
         judge={dialogJudge}
         onClose={handleCloseDialog}
         onSuccess={handleDialogSuccess}
+      />
+
+      <ConfirmDeleteDialog
+        open={judgeToDelete !== null}
+        onClose={() => setJudgeToDelete(null)}
+        onConfirm={async () => {
+          if (!judgeToDelete) return;
+          await judgeApi.delete(judgeToDelete.id);
+          await fetchJudges();
+          setJudgeToDelete(null);
+        }}
+        title="Delete Judge"
+        itemName={judgeToDelete?.name}
       />
     </Box>
   );

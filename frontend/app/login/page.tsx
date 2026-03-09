@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Card,
@@ -18,6 +18,16 @@ import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
+  const [sessionExpired, setSessionExpired] = useState(false);
+
+  useEffect(() => {
+    const expired = sessionStorage.getItem("session_expired") === "true";
+    if (expired) {
+      sessionStorage.removeItem("session_expired");
+      setSessionExpired(true);
+    }
+  }, []);
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -57,6 +67,12 @@ export default function LoginPage() {
           <Typography variant="body2" color="text.secondary" textAlign="center" mb={3}>
             Sign in to continue
           </Typography>
+
+          {sessionExpired && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              Your session has expired. Please sign in again.
+            </Alert>
+          )}
 
           {error && (
             <Alert severity="error" sx={{ mb: 2 }}>

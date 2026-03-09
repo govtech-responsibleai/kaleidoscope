@@ -636,7 +636,7 @@ export default function QuestionsPage() {
               variant="outlined"
               onClick={() => setGenerateModalOpen(true)}
             >
-              Generate More Evals
+              Generate More Questions
             </Button>
             <Tooltip title="Download questions & personas">
               <span>

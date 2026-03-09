@@ -528,7 +528,7 @@ export default function ResultsTable({
 
                     <TableCell>
                       <Typography variant="subtitle2">
-                        {truncate(result.question_text, 160)}
+                        {truncate(result.question_text ?? "", 160)}
                       </Typography>
                     </TableCell>
 

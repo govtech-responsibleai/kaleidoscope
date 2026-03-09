@@ -30,21 +30,35 @@ export default function AnnotationPage() {
   const [error, setError] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
 
+  const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
+    setSelectedSnapshotId(snapshotId);
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    if (snapshotId === null) {
+      newSearchParams.delete("snapshot");
+    } else {
+      newSearchParams.set("snapshot", snapshotId.toString());
+    }
+    const query = newSearchParams.toString();
+    router.push(`/targets/${targetId}/annotation${query ? `?${query}` : ""}`, { scroll: false });
+  }, [searchParams, router, targetId]);
+
   const fetchSnapshots = useCallback(async () => {
     setSnapshotsLoading(true);
     try {
       const response = await snapshotApi.list(targetId);
       setSnapshots(response.data);
-      if (!selectedSnapshotId && response.data.length > 0) {
-        // Select the most recent snapshot (sort by created_at descending)
-        const mostRecent = [...response.data].sort((a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )[0];
-        setSelectedSnapshotId(mostRecent.id);
-        // Update URL with default selection
-        const newSearchParams = new URLSearchParams(searchParams.toString());
-        newSearchParams.set("snapshot", mostRecent.id.toString());
-        router.push(`/targets/${targetId}/annotation?${newSearchParams.toString()}`, { scroll: false });
+      const hasSelectedSnapshot = selectedSnapshotId !== null && response.data.some(
+        (snapshot) => snapshot.id === selectedSnapshotId
+      );
+      if (!hasSelectedSnapshot) {
+        if (response.data.length > 0) {
+          const mostRecent = [...response.data].sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0];
+          updateSnapshotSelection(mostRecent.id);
+        } else if (selectedSnapshotId !== null) {
+          updateSnapshotSelection(null);
+        }
       }
     } catch (err) {
       console.error("Failed to load snapshots:", err);
@@ -52,7 +66,7 @@ export default function AnnotationPage() {
     } finally {
       setSnapshotsLoading(false);
     }
-  }, [targetId, selectedSnapshotId, searchParams, router]);
+  }, [targetId, selectedSnapshotId, updateSnapshotSelection]);
 
   const fetchBaselineJudge = useCallback(async () => {
     try {
@@ -69,25 +83,17 @@ export default function AnnotationPage() {
     fetchBaselineJudge();
   }, [fetchSnapshots, fetchBaselineJudge]);
 
-  const handleSnapshotSelect = useCallback((snapshotId: number) => {
-    setSelectedSnapshotId(snapshotId);
+  const handleSnapshotSelect = useCallback((snapshotId: number | null) => {
+    updateSnapshotSelection(snapshotId);
     setQaJobs([]);
     setQaMap({});
-    // Update URL to persist selection across tab switches
-    const newSearchParams = new URLSearchParams(searchParams.toString());
-    newSearchParams.set("snapshot", snapshotId.toString());
-    router.push(`/targets/${targetId}/annotation?${newSearchParams.toString()}`, { scroll: false });
-  }, [searchParams, router, targetId]);
+  }, [updateSnapshotSelection]);
 
   const handleSnapshotCreated = useCallback((snapshot: Snapshot) => {
-    setSelectedSnapshotId(snapshot.id);
+    updateSnapshotSelection(snapshot.id);
     fetchSnapshots();
     setCreateDialogOpen(false);
-    // Update URL with newly created snapshot
-    const newSearchParams = new URLSearchParams(searchParams.toString());
-    newSearchParams.set("snapshot", snapshot.id.toString());
-    router.push(`/targets/${targetId}/annotation?${newSearchParams.toString()}`, { scroll: false });
-  }, [fetchSnapshots, searchParams, router, targetId]);
+  }, [fetchSnapshots, updateSnapshotSelection]);
 
   const handleExportSnapshot = async () => {
     if (!selectedSnapshotId) return;
@@ -166,6 +172,7 @@ export default function AnnotationPage() {
             selectedSnapshotId={selectedSnapshotId}
             onSelectSnapshot={handleSnapshotSelect}
             onSnapshotCreated={handleSnapshotCreated}
+            onSnapshotDeleted={fetchSnapshots}
           />
         </Box>
         <Tooltip title="Download data for this snapshot">

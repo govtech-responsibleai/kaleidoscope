@@ -64,6 +64,8 @@ export interface TargetUpdate {
 
 export interface TargetResponse extends TargetBase {
   id: number;
+  user_id?: number;
+  owner_username?: string;
   created_at: string;
   updated_at: string;
 }
@@ -281,7 +283,6 @@ export interface QAJobStartRequest {
   judge_id: number;
   question_ids: number[];
   job_ids?: number[]
-  is_scoring: boolean;
 }
 
 // Answer types
@@ -289,25 +290,32 @@ export interface AnswerClaim {
   id: number;
   answer_id: number;
   claim_text: string;
-  sequence_order: number;
+  claim_index: number;
   checkworthy: boolean;
+  created_at?: string;
+  checked_at?: string;
 }
 
 export interface Answer {
   id: number;
   snapshot_id: number;
   question_id: number;
-  question_text: string;
+  chat_id?: string | null;
+  message_id?: string | null;
   answer_content: string;
+  model?: string | null;
+  guardrails?: unknown;
+  rag_citations?: Array<Record<string, unknown>> | null;
   is_selected_for_annotation: boolean;
-  has_annotation: boolean;
+  question_text?: string | null;
+  has_annotation?: boolean;
   claims?: AnswerClaim[];
   created_at: string;
-  updated_at: string;
 }
 
 export interface AnswerListResponse {
   answers: Answer[];
+  total: number;
 }
 
 export interface AnswerClaimScore {
@@ -321,11 +329,10 @@ export interface AnswerClaimScore {
 export interface AnswerScore {
   id: number;
   answer_id: number;
-  judge_config_id: number;
-  qa_job_id: number;
+  judge_id: number;
   overall_label: boolean;
   explanation?: string;
-  claim_scores: AnswerClaimScore[];
+  claim_scores?: AnswerClaimScore[];
   created_at: string;
 }
 
@@ -334,6 +341,7 @@ export interface AnswerWithClaims extends Answer {
 }
 
 export interface AnswerClaimsWithScoresResponse {
+  answer_id: number;
   claims: (AnswerClaim & { score?: AnswerClaimScore })[];
 }
 
@@ -442,6 +450,7 @@ export interface AggregatedAccuracy {
   label: boolean | null;
   is_edited: boolean;
   metadata: string[];
+  aligned_judge_count: number;
 }
 
 // Answer Label Override types
@@ -459,16 +468,22 @@ export interface AnswerLabelOverrideCreate {
 
 export interface ResultRow {
   question_id: number;
-  question_text: string;
+  question_text: string | null;
+  question_type: string | null;
+  question_scope: string | null;
   answer_id: number;
   answer_content: string;
   aggregated_accuracy: AggregatedAccuracy;
+  human_label: boolean | null;
+  human_notes: string | null;
 }
 
-export interface SnapshotResultsResponse {
-  snapshot_id: number;
-  results: ResultRow[];
-  total: number;
+export type SnapshotResultsResponse = ResultRow[];
+
+export interface AlignedJudge {
+  judge_id: number;
+  name: string;
+  f1: number;
 }
 
 export interface SnapshotMetric {
@@ -479,13 +494,10 @@ export interface SnapshotMetric {
   total_answers: number;
   edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
-  has_aligned_judges: boolean;
-  reliable_judge_count: number;
+  aligned_judges: AlignedJudge[];
 }
 
-export interface SnapshotMetricsResponse {
-  snapshots: SnapshotMetric[];
-}
+export type SnapshotMetricsResponse = SnapshotMetric[];
 
 export interface ConfusionMatrix {
   matrix: {
@@ -495,7 +507,6 @@ export interface ConfusionMatrix {
     edge_out_kb: number;
   };
   total_inaccurate: number;
-  snapshot_id: number;
 }
 
 // Additional types for frontend use
@@ -513,3 +524,19 @@ export interface QARecord {
 }
 
 export type QAMap = Record<number, QARecord>;
+
+// Admin / User Management types
+export interface UserResponse {
+  id: number;
+  username: string;
+  is_active: boolean;
+  is_admin: boolean;
+  created_at: string;
+  target_count: number;
+}
+
+export interface CreateUserRequest {
+  username: string;
+  password: string;
+  is_admin: boolean;
+}

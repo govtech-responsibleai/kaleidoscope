@@ -54,6 +54,18 @@ export default function TargetReport() {
   const [confusionMatrix, setConfusionMatrix] = useState<ConfusionMatrix | null>(null);
   const [confusionMatrixLoading, setConfusionMatrixLoading] = useState(true);
 
+  const updateSnapshotSelection = (snapshotId: number | null) => {
+    setSelectedSnapshotId(snapshotId);
+    const newSearchParams = new URLSearchParams(searchParams.toString());
+    if (snapshotId === null) {
+      newSearchParams.delete("snapshot");
+    } else {
+      newSearchParams.set("snapshot", snapshotId.toString());
+    }
+    const query = newSearchParams.toString();
+    router.push(`/targets/${targetId}/report${query ? `?${query}` : ""}`, { scroll: false });
+  };
+
   const fetchData = async () => {
     try {
       const [targetRes, statsRes, snapshotsRes, judgesRes, metricsRes] = await Promise.all([
@@ -67,18 +79,20 @@ export default function TargetReport() {
       setStats(statsRes.data);
       setSnapshots(snapshotsRes.data);
       setJudgeCount(judgesRes.data.length);
-      setSnapshotMetrics(metricsRes.data.snapshots);
+      setSnapshotMetrics(metricsRes.data ?? []);
 
-      // Select the most recent snapshot if none selected
-      if (!selectedSnapshotId && snapshotsRes.data.length > 0) {
-        const mostRecent = [...snapshotsRes.data].sort((a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )[0];
-        setSelectedSnapshotId(mostRecent.id);
-        // Update URL with default selection
-        const newSearchParams = new URLSearchParams(searchParams.toString());
-        newSearchParams.set("snapshot", mostRecent.id.toString());
-        router.push(`/targets/${targetId}/report?${newSearchParams.toString()}`, { scroll: false });
+      const hasSelectedSnapshot = selectedSnapshotId !== null && snapshotsRes.data.some(
+        (snapshot) => snapshot.id === selectedSnapshotId
+      );
+      if (!hasSelectedSnapshot) {
+        if (snapshotsRes.data.length > 0) {
+          const mostRecent = [...snapshotsRes.data].sort((a, b) =>
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+          )[0];
+          updateSnapshotSelection(mostRecent.id);
+        } else if (selectedSnapshotId !== null) {
+          updateSnapshotSelection(null);
+        }
       }
     } catch (error) {
       console.error("Failed to fetch target data:", error);
@@ -108,15 +122,14 @@ export default function TargetReport() {
   useEffect(() => {
     if (selectedSnapshotId) {
       fetchConfusionMatrix(selectedSnapshotId);
+    } else {
+      setConfusionMatrix(null);
+      setConfusionMatrixLoading(false);
     }
   }, [selectedSnapshotId]);
 
-  const handleSelectSnapshot = (snapshotId: number) => {
-    setSelectedSnapshotId(snapshotId);
-    // Update URL to persist selection across tab switches
-    const newSearchParams = new URLSearchParams(searchParams.toString());
-    newSearchParams.set("snapshot", snapshotId.toString());
-    router.push(`/targets/${targetId}/report?${newSearchParams.toString()}`, { scroll: false });
+  const handleSelectSnapshot = (snapshotId: number | null) => {
+    updateSnapshotSelection(snapshotId);
   };
 
   const handleSnapshotCreated = async () => {
@@ -372,6 +385,7 @@ export default function TargetReport() {
                       selectedSnapshotId={selectedSnapshotId}
                       onSelectSnapshot={handleSelectSnapshot}
                       onSnapshotCreated={handleSnapshotCreated}
+                      onSnapshotDeleted={handleSnapshotCreated}
                       loading={loading}
                     />
                   </Box>

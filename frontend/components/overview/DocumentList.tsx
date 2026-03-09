@@ -11,12 +11,7 @@ import {
   ListItemSecondaryAction,
   IconButton,
   Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
   CircularProgress,
-  Chip,
 } from "@mui/material";
 import {
   Delete as DeleteIcon,
@@ -26,6 +21,7 @@ import {
 } from "@mui/icons-material";
 import { kbDocumentApi } from "@/lib/api";
 import { KBDocumentResponse } from "@/lib/types";
+import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 
 interface DocumentListProps {
   targetId: number;
@@ -46,7 +42,6 @@ export default function DocumentList({
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [totalSize, setTotalSize] = useState(0);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [documentToDelete, setDocumentToDelete] = useState<number | null>(null);
 
   const fetchDocuments = async () => {
@@ -87,21 +82,6 @@ export default function DocumentList({
 
   const handleDeleteClick = (documentId: number) => {
     setDocumentToDelete(documentId);
-    setDeleteConfirmOpen(true);
-  };
-
-  const handleDeleteConfirm = async () => {
-    if (!documentToDelete) return;
-
-    try {
-      await kbDocumentApi.delete(documentToDelete);
-      await fetchDocuments();
-      setDeleteConfirmOpen(false);
-      setDocumentToDelete(null);
-    } catch (error) {
-      console.error("Failed to delete document:", error);
-      alert("Failed to delete document. Please try again.");
-    }
   };
 
   const formatFileSize = (bytes: number) => {
@@ -211,24 +191,17 @@ export default function DocumentList({
         )}
       </Box>
 
-      {/* Delete Confirmation Dialog */}
-      <Dialog
-        open={deleteConfirmOpen}
-        onClose={() => setDeleteConfirmOpen(false)}
-      >
-        <DialogTitle>Delete Document</DialogTitle>
-        <DialogContent>
-          <Typography>
-            Are you sure you want to delete this document? This action cannot be undone.
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setDeleteConfirmOpen(false)}>Cancel</Button>
-          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
-            Delete
-          </Button>
-        </DialogActions>
-      </Dialog>
+      <ConfirmDeleteDialog
+        open={documentToDelete !== null}
+        onClose={() => setDocumentToDelete(null)}
+        onConfirm={async () => {
+          if (!documentToDelete) return;
+          await kbDocumentApi.delete(documentToDelete);
+          await fetchDocuments();
+          setDocumentToDelete(null);
+        }}
+        title="Delete Document"
+      />
     </Box>
   );
 }

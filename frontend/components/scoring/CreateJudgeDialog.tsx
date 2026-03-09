@@ -268,11 +268,6 @@ export default function CreateJudgeDialog({
             </Alert>
           )}
 
-          <Typography variant="h6" sx={{ mt: 2 }}>
-            Judge Configuration
-          </Typography>
-
-
           <TextField
             label="Judge Name"
             required

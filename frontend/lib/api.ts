@@ -46,6 +46,8 @@ import {
   ConfusionMatrix,
   AnswerLabelOverride,
   AnswerLabelOverrideCreate,
+  UserResponse,
+  CreateUserRequest,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -67,25 +69,49 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// Redirect to login on 401 (expired/invalid token)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const hasToken = typeof window !== "undefined" && !!localStorage.getItem("token");
+    const isAuthEndpoint = error.config?.url?.includes("/auth/login");
+    if (error.response?.status === 401 && hasToken && !isAuthEndpoint) {
+      localStorage.removeItem("token");
+      localStorage.removeItem("username");
+      localStorage.removeItem("is_admin");
+      sessionStorage.setItem("session_expired", "true");
+      window.location.href = "/login";
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Auth endpoints
 export const authApi = {
   login: async (username: string, password: string) => {
     const formData = new URLSearchParams();
     formData.append("username", username);
     formData.append("password", password);
-    const response = await api.post<{ access_token: string; token_type: string }>(
+    const response = await api.post<{
+      access_token: string;
+      token_type: string;
+      is_admin: boolean;
+      username: string;
+    }>(
       "/auth/login",
       formData,
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
     localStorage.setItem("token", response.data.access_token);
     localStorage.setItem("username", username);
+    localStorage.setItem("is_admin", String(response.data.is_admin));
     return response.data;
   },
 
   logout: () => {
     localStorage.removeItem("token");
     localStorage.removeItem("username");
+    localStorage.removeItem("is_admin");
   },
 
   isLoggedIn: () => {
@@ -94,6 +120,10 @@ export const authApi = {
 
   getUsername: () => {
     return typeof window !== "undefined" ? localStorage.getItem("username") : null;
+  },
+
+  isAdmin: () => {
+    return typeof window !== "undefined" && localStorage.getItem("is_admin") === "true";
   },
 };
 
@@ -299,11 +329,8 @@ export const answerApi = {
       params: { judge_id: judgeId },
     }),
 
-  updateSelection: (answerId: number, isSelected: boolean) =>
-    api.put(`/answers/${answerId}/selection`, { is_selected_for_annotation: isSelected }),
-
-  bulkSelection: (data: BulkSelectionRequest) =>
-    api.post("/answers/bulk-selection", data),
+  bulkSelection: (snapshotId: number, data: BulkSelectionRequest) =>
+    api.post(`/snapshots/${snapshotId}/answers/bulk-selection`, data),
 
   selectDefault: (snapshotId: number) =>
     api.post(`/snapshots/${snapshotId}/answers/select-default`),
@@ -328,7 +355,7 @@ export const annotationApi = {
     api.post<Annotation[]>("/annotations/bulk", data),
 
   listBySnapshot: (snapshotId: number) =>
-    api.get<Annotation[]>(`/snapshots/${snapshotId}/annotations`),
+    api.get<{ annotations: Annotation[]; total: number }>(`/snapshots/${snapshotId}/annotations`),
 
   getByAnswer: (answerId: number) =>
     api.get<Annotation>(`/answers/${answerId}/annotations`),
@@ -425,6 +452,18 @@ export const metricsApi = {
     api.get<ConfusionMatrix>(`/targets/${targetId}/confusion-matrix`, {
       params: snapshotId ? { snapshot_id: snapshotId } : undefined,
     }),
+};
+
+// Admin endpoints
+export const adminApi = {
+  listUsers: () =>
+    api.get<UserResponse[]>("/auth/admin/users"),
+
+  createUser: (data: CreateUserRequest) =>
+    api.post<{ message: string; username: string }>("/auth/admin/create-user-jwt", data),
+
+  deleteUser: (username: string) =>
+    api.delete<{ message: string }>(`/auth/admin/delete-user-jwt/${username}`),
 };
 
 export default api;

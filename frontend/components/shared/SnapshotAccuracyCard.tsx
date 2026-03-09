@@ -56,8 +56,8 @@ export default function SnapshotAccuracyCard({
     );
   }
 
-  const hasReliableJudges = snapshotMetric.has_aligned_judges;
-  const reliableJudgeCount = snapshotMetric.reliable_judge_count;
+  const hasReliableJudges = snapshotMetric.aligned_judges.length > 0;
+  const reliableJudgeCount = snapshotMetric.aligned_judges.length;
   const alignmentRange = snapshotMetric.judge_alignment_range;
 
   return (

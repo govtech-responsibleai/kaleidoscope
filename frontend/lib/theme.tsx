@@ -92,6 +92,22 @@ export const theme = createTheme({
         shrink: { transform: "none" },
       },
     },
+    MuiTextField: {
+      styleOverrides: {
+        root: {
+          // Hide the notch and remove the fieldset top offset (label is positioned outside via MuiInputLabel)
+          "& .MuiOutlinedInput-notchedOutline legend": { display: "none" },
+          "& .MuiOutlinedInput-notchedOutline": { top: 0 },
+        },
+      },
+    },
+    MuiOutlinedInput: {
+      styleOverrides: {
+        root: {
+          borderRadius: 5,
+        },
+      },
+    },
     MuiFormHelperText: {
       styleOverrides: {
         root: {
@@ -182,6 +198,40 @@ export const theme = createTheme({
       styleOverrides: {
         paper: {
           borderRadius: 5,
+        },
+      },
+    },
+    MuiDialog: {
+      styleOverrides: {
+        paper: {
+          borderRadius: 12,
+        },
+      },
+    },
+    MuiDialogTitle: {
+      styleOverrides: {
+        root: {
+          fontWeight: 600,
+        },
+      },
+    },
+    MuiDialogContent: {
+      styleOverrides: {
+        root: {
+          paddingLeft: 24,
+          paddingRight: 24,
+          paddingTop: 20,
+          paddingBottom: 20,
+        },
+      },
+    },
+    MuiDialogActions: {
+      styleOverrides: {
+        root: {
+          paddingLeft: 24,
+          paddingRight: 24,
+          paddingTop: 16,
+          paddingBottom: 16,
         },
       },
     },

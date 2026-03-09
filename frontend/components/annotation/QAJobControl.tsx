@@ -261,7 +261,7 @@ export default function QAJobControl({
 
         if (annotatedNeedingSelection.length > 0) {
           try {
-            await answerApi.bulkSelection({
+            await answerApi.bulkSelection(snapshotId, {
               selections: annotatedNeedingSelection.map((answer) => ({
                 answer_id: answer.id,
                 is_selected: true,
@@ -635,7 +635,7 @@ export default function QAJobControl({
           judge_id: baselineJudgeId,
           question_ids: failedJobs.map((job) => job.question_id),
           job_ids: failedJobs.map((job) => job.id),
-          is_scoring: false,
+
         });
         setQaJobs(response.data);
         startPolling();
@@ -651,7 +651,7 @@ export default function QAJobControl({
         const response = await qaJobApi.start(snapshotId, {
           judge_id: baselineJudgeId,
           question_ids: questionsWithoutAnswers,
-          is_scoring: false,
+
         });
         setQaJobs(response.data);
         startPolling();
@@ -692,7 +692,6 @@ export default function QAJobControl({
         judge_id: baselineJudgeId,
         question_ids: pausedJobs.map((job) => job.question_id),
         job_ids: pausedJobs.map((job) => job.id),
-        is_scoring: false,
       });
       setQaJobs(response.data);
       startPolling();
