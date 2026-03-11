@@ -7,9 +7,9 @@ The platform automates the creation of diverse evaluation questions across user 
 ## Features
 
 - **Target Application Management**: Create and manage target applications with detailed configuration
-- **Knowledge Base Management**: Upload, view, and manage documents (PDF, DOCX, TXT, MD) for each target
-- **Persona Generation**: Automatically generate user personas for testing with approval workflow
-- **Question Generation**: Generate evaluation questions based on selected personas
+- **Knowledge Base Management**: Upload, view, and manage documents (PDF, DOCX, TXT, MD) for each target with informational guidance text
+- **Persona Generation**: Automatically generate user personas with Singapore contextualisation and audience handling, plus manual creation and Nemotron sampling
+- **Question Generation**: Generate evaluation questions with configurable input style (brief/regular/detailed) and automatic web search context
 - **Question Review**: Review newly generated questions with automatic similarity detection
 - **Advanced Filtering**: Filter questions by persona, type (typical/edge), and scope (in KB/out of KB)
 - **Snapshot Management**: Version control for chatbot iterations to track improvements over time
@@ -92,7 +92,9 @@ kaleidoscope-frontend/
 │           └── page.tsx         # Scoring & judge management page
 ├── components/                  # React components
 │   ├── Navigation.tsx           # Sidebar navigation
-│   ├── GenerateEvalsModal.tsx   # Modal for persona/question generation
+│   ├── GenerateEvalsModal.tsx   # Modal for persona/question generation (with input style selector)
+│   ├── personas/               # Persona generation components
+│   ├── questions/              # Question generation components
 │   ├── overview/                # Overview page components
 │   │   ├── CreateTargetModal.tsx        # Modal for creating targets
 │   │   ├── DocumentList.tsx             # Knowledge base document management
@@ -188,6 +190,8 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
   - Click "Generate Questions" when ready
 
 - **Step 2: Generate Questions**
+  - Select **Input Style**: brief (terse, slang), regular (natural language), or detailed (professional)
+  - System automatically runs web search for contextual grounding (indicator shown in UI)
   - System generates questions for selected personas
   - Real-time polling for job completion
   - Status updates displayed in modal
@@ -311,9 +315,11 @@ The frontend integrates with the Kaleidoscope backend API:
 ### Persona Endpoints
 - `GET /personas/:id` - Get single persona
 - `PUT /personas/:id` - Update persona
+- `POST /personas` - Manually create a persona
 - `POST /personas/:id/approve` - Approve single persona
 - `POST /personas/:id/reject` - Reject single persona
 - `POST /personas/bulk-approve` - Approve multiple personas
+- `POST /personas/sample-nemotron` - Sample general personas from Nemotron dataset
 - `GET /personas/:id/questions` - List questions for persona
 
 ### Question Endpoints
@@ -532,14 +538,6 @@ To switch back to local development, set `NEXT_PUBLIC_API_DOMAIN` back to `http:
 
 ### Notes
 - `middleware.ts` configures CSP (Content Security Policy) headers for Next.js. 
-
-## Future Enhancements
-
-- [ ] Question and persona editing capabilities
-- [ ] Batch operations for questions (bulk delete, bulk edit)
-- [ ] Question versioning and history tracking
-- [ ] Multi-turn evaluation workflow 
-- [ ] Bias-adjusted judge accuracy
 
 ## Troubleshooting
 

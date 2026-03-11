@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -25,6 +25,8 @@ import {
   Alert,
   TextField,
   Tooltip,
+  Tabs,
+  Tab,
 } from "@mui/material";
 import {
   CheckCircle as CheckCircleIcon,
@@ -33,6 +35,7 @@ import {
   Download as DownloadIcon,
   Edit as EditIcon,
   Save as SaveIcon,
+  Add as AddIcon,
 } from "@mui/icons-material";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { useParams } from "next/navigation";
@@ -40,21 +43,26 @@ import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
 import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, QuestionUpdate } from "@/lib/types";
 import { JOB_POLLING_INTERVAL } from "@/lib/constants";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
+import PersonaTable from "@/components/questions/PersonaTable";
+import AddPersonasDialog from "@/components/questions/AddPersonasDialog";
 
 export default function QuestionsPage() {
   const params = useParams();
   const targetId = parseInt(params.id as string);
 
+  const [activeTab, setActiveTab] = useState(0);
   const [target, setTarget] = useState<TargetResponse | null>(null);
   const [questions, setQuestions] = useState<QuestionResponse[]>([]);
   const [personas, setPersonas] = useState<PersonaResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [generateModalOpen, setGenerateModalOpen] = useState(false);
+  const [addPersonasOpen, setAddPersonasOpen] = useState(false);
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [jobStatus, setJobStatus] = useState<"running" | "finding_similar" | "ready_for_review" | null>(null);
   const [newQuestions, setNewQuestions] = useState<QuestionResponse[]>([]);
   const [similarQuestionsMap, setSimilarQuestionsMap] = useState<Record<number, QuestionResponse[]>>({});
   const [processingQuestionId, setProcessingQuestionId] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Edit mode state
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
@@ -67,6 +75,37 @@ export default function QuestionsPage() {
   const [selectedTypes, setSelectedTypes] = useState<string[]>(["typical", "edge"]);
   const [selectedScopes, setSelectedScopes] = useState<string[]>(["in_kb", "out_kb"]);
 
+  // Ref to avoid stale closure in polling useEffect
+  const questionsRef = useRef<QuestionResponse[]>([]);
+
+  const buildSimilarMap = useCallback(async (
+    newQs: QuestionResponse[],
+    allQuestions: QuestionResponse[]
+  ): Promise<Record<number, QuestionResponse[]>> => {
+    const similarMap: Record<number, QuestionResponse[]> = {};
+    if (newQs.length === 0) return similarMap;
+
+    try {
+      const similarRes = await questionApi.findSimilar({
+        target_id: targetId,
+        question_ids: newQs.map(q => q.id),
+        similarity_threshold: 0.7,
+      });
+
+      for (const result of similarRes.data.results) {
+        const similarQuestionIds = result.similar_questions.map(sq => sq.question_id);
+        similarMap[result.query_question_id] = allQuestions.filter(q =>
+          q.status === "approved" && similarQuestionIds.includes(q.id)
+        );
+      }
+    } catch (error) {
+      console.error("Failed to find similar questions:", error);
+      newQs.forEach(q => { similarMap[q.id] = []; });
+    }
+
+    return similarMap;
+  }, [targetId]);
+
   const fetchData = async () => {
     try {
       const [targetRes, questionsRes, personasRes] = await Promise.all([
@@ -77,8 +116,9 @@ export default function QuestionsPage() {
 
       setTarget(targetRes.data);
       setQuestions(questionsRes.data);
+      questionsRef.current = questionsRes.data;
       setPersonas(personasRes.data);
-      return questionsRes.data; // Return the fresh questions data
+      return questionsRes.data;
     } catch (error) {
       console.error("Failed to fetch data:", error);
       return [];
@@ -87,8 +127,6 @@ export default function QuestionsPage() {
     }
   };
 
-  // Load pending questions for review (from uploads)
-  // Takes the full questions list to avoid stale state issues
   const loadPendingQuestionsForReview = async (allQuestions: QuestionResponse[]) => {
     const pendingQuestions = allQuestions.filter(q => q.status === "pending");
     if (pendingQuestions.length === 0) return;
@@ -96,29 +134,7 @@ export default function QuestionsPage() {
     setNewQuestions(pendingQuestions);
     setJobStatus("finding_similar");
 
-    // Find similar questions for all pending questions
-    const similarMap: Record<number, QuestionResponse[]> = {};
-    try {
-      const similarRes = await questionApi.findSimilar({
-        target_id: targetId,
-        question_ids: pendingQuestions.map(q => q.id),
-        similarity_threshold: 0.7,
-      });
-
-      for (const result of similarRes.data.results) {
-        const similarQuestionIds = result.similar_questions.map(sq => sq.question_id);
-        const similarFullQuestions = allQuestions.filter(q =>
-          q.status === "approved" && similarQuestionIds.includes(q.id)
-        );
-        similarMap[result.query_question_id] = similarFullQuestions;
-      }
-    } catch (error) {
-      console.error("Failed to find similar questions:", error);
-      pendingQuestions.forEach(q => {
-        similarMap[q.id] = [];
-      });
-    }
-
+    const similarMap = await buildSimilarMap(pendingQuestions, allQuestions);
     setSimilarQuestionsMap(similarMap);
     setJobStatus("ready_for_review");
   };
@@ -163,42 +179,15 @@ export default function QuestionsPage() {
           clearInterval(interval);
           setJobStatus("finding_similar");
 
-          // Fetch new questions from the job
           const jobQuestionsRes = await jobApi.getQuestions(activeJobId);
           const newQs = jobQuestionsRes.data;
           setNewQuestions(newQs);
 
-          // Find similar questions for all new questions in one request
-          const similarMap: Record<number, QuestionResponse[]> = {};
-
-          if (newQs.length > 0) {
-            try {
-              const similarRes = await questionApi.findSimilar({
-                target_id: targetId,
-                question_ids: newQs.map(q => q.id),
-                similarity_threshold: 0.7,
-              });
-
-              // Process results for each query question
-              for (const result of similarRes.data.results) {
-                const similarQuestionIds = result.similar_questions.map(sq => sq.question_id);
-                const similarFullQuestions = questions.filter(q => similarQuestionIds.includes(q.id));
-                similarMap[result.query_question_id] = similarFullQuestions;
-              }
-            } catch (error) {
-              console.error("Failed to find similar questions:", error);
-              // Initialize empty arrays for all questions if the request fails
-              newQs.forEach(q => {
-                similarMap[q.id] = [];
-              });
-            }
-          }
-
+          const similarMap = await buildSimilarMap(newQs, questionsRef.current);
           setSimilarQuestionsMap(similarMap);
           setJobStatus("ready_for_review");
           setActiveJobId(null);
 
-          // Refresh the main questions list
           fetchData();
         } else if (response.data.status === JobStatus.FAILED) {
           clearInterval(interval);
@@ -212,7 +201,7 @@ export default function QuestionsPage() {
     }, JOB_POLLING_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [activeJobId, questions]);
+  }, [activeJobId, buildSimilarMap]);
 
   // Get only approved questions
   const approvedQuestions = useMemo(() => {
@@ -250,49 +239,25 @@ export default function QuestionsPage() {
     { value: "out_kb", label: "Out KB" },
   ], []);
 
-  const handleApproveNewQuestion = async (questionId: number) => {
+  const handleReviewQuestion = async (questionId: number, action: "approve" | "reject") => {
     setProcessingQuestionId(questionId);
     try {
-      await questionApi.approve(questionId);
-      // Remove from new questions
+      if (action === "approve") {
+        await questionApi.approve(questionId);
+      } else {
+        await questionApi.reject(questionId);
+      }
       const updatedNewQuestions = newQuestions.filter(q => q.id !== questionId);
       setNewQuestions(updatedNewQuestions);
 
-      // If all questions reviewed, close the job section and refresh
       if (updatedNewQuestions.length === 0) {
         setJobStatus(null);
         setSimilarQuestionsMap({});
-        // Only refresh when all questions are done
         await fetchData();
       }
-      // Don't call fetchData() for individual approvals to avoid retriggering useEffect
     } catch (error) {
-      console.error("Failed to approve question:", error);
-      alert("Failed to approve question. Please try again.");
-    } finally {
-      setProcessingQuestionId(null);
-    }
-  };
-
-  const handleRejectNewQuestion = async (questionId: number) => {
-    setProcessingQuestionId(questionId);
-    try {
-      await questionApi.reject(questionId);
-      // Remove from new questions
-      const updatedNewQuestions = newQuestions.filter(q => q.id !== questionId);
-      setNewQuestions(updatedNewQuestions);
-
-      // If all questions reviewed, close the job section and refresh
-      if (updatedNewQuestions.length === 0) {
-        setJobStatus(null);
-        setSimilarQuestionsMap({});
-        // Only refresh when all questions are done
-        await fetchData();
-      }
-      // Don't call fetchData() for individual rejections to avoid retriggering useEffect
-    } catch (error) {
-      console.error("Failed to reject question:", error);
-      alert("Failed to reject question. Please try again.");
+      console.error(`Failed to ${action} question:`, error);
+      setError(`Failed to ${action} question. Please try again.`);
     } finally {
       setProcessingQuestionId(null);
     }
@@ -346,7 +311,7 @@ export default function QuestionsPage() {
       handleCancelEdit();
     } catch (error) {
       console.error("Failed to update question:", error);
-      alert("Failed to update question. Please try again.");
+      setError("Failed to update question. Please try again.");
     } finally {
       setProcessingQuestionId(null);
     }
@@ -380,7 +345,7 @@ export default function QuestionsPage() {
       triggerDownload(personasRes.data, `personas_target_${targetId}.json`);
     } catch (error) {
       console.error("Failed to export:", error);
-      alert("Failed to export data. Please try again.");
+      setError("Failed to export data. Please try again.");
     }
   };
 
@@ -415,9 +380,84 @@ export default function QuestionsPage() {
 
   return (
     <Box>
+      <Tabs
+        value={activeTab}
+        onChange={(_, newValue) => setActiveTab(newValue)}
+        sx={{ mb: 3, borderBottom: 1, borderColor: "divider" }}
+      >
+        <Tab label="Questions" />
+        <Tab label="Manage Personas" />
+      </Tabs>
+
+      {activeTab === 1 && (
+        personas.length === 0 ? (
+          <Box
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            minHeight="30vh"
+            gap={2}
+            sx={{ maxWidth: 500, mx: "auto", textAlign: "center" }}
+          >
+            <Typography variant="h5" fontWeight={600}>
+              No personas yet
+            </Typography>
+            <Typography variant="body1" color="text.secondary">
+              Personas define the types of users that will interact with your
+              chatbot. Add some to get started.
+            </Typography>
+            <Button
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => setAddPersonasOpen(true)}
+            >
+              Add Personas
+            </Button>
+          </Box>
+        ) : (
+          <Box>
+            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+              <Typography variant="body2" color="text.secondary">
+                {personas.length} persona{personas.length !== 1 ? "s" : ""} total
+                {" | "}
+                {personas.filter((p) => p.status === "approved").length} approved
+              </Typography>
+              <Button
+                variant="outlined"
+                startIcon={<AddIcon />}
+                onClick={() => setAddPersonasOpen(true)}
+                size="small"
+              >
+                Add Personas
+              </Button>
+            </Box>
+            <PersonaTable
+              personas={personas}
+              onPersonasChanged={fetchData}
+              onError={setError}
+            />
+          </Box>
+        )
+      )}
+
+      <AddPersonasDialog
+        open={addPersonasOpen}
+        onClose={() => setAddPersonasOpen(false)}
+        targetId={targetId}
+        onPersonasAdded={fetchData}
+      />
+
+      {activeTab === 0 && <>
+      {error && (
+        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+          {error}
+        </Alert>
+      )}
+
       {/* Job Status Section */}
       {jobStatus && (
-        <Card variant="outlined" sx={{ mb: 3, backgroundColor: "#f5f5f5" }}>
+        <Card variant="outlined" sx={{ mb: 3, backgroundColor: "grey.100" }}>
           <CardContent>
             <Typography variant="h6" fontWeight={600} sx={{mb: 2}}>
               Generation Job
@@ -441,7 +481,7 @@ export default function QuestionsPage() {
                 {newQuestions.map((newQ) => {
                   const isEditing = editingQuestionId === newQ.id;
                   return (
-                  <Card key={newQ.id} sx={{ mb: 2, border: "2px solid #1976d2" }}>
+                  <Card key={newQ.id} sx={{ mb: 2, border: "2px solid", borderColor: "primary.main" }}>
                     <CardContent>
                       <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
                         <Box flex={1}>
@@ -545,7 +585,7 @@ export default function QuestionsPage() {
                                 variant="contained"
                                 color="success"
                                 startIcon={<CheckCircleIcon />}
-                                onClick={() => handleApproveNewQuestion(newQ.id)}
+                                onClick={() => handleReviewQuestion(newQ.id, "approve")}
                                 disabled={processingQuestionId !== null}
                               >
                                 {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Approve"}
@@ -554,7 +594,7 @@ export default function QuestionsPage() {
                                 variant="outlined"
                                 color="error"
                                 startIcon={<CancelIcon />}
-                                onClick={() => handleRejectNewQuestion(newQ.id)}
+                                onClick={() => handleReviewQuestion(newQ.id, "reject")}
                                 disabled={processingQuestionId !== null}
                               >
                                 Reject
@@ -571,7 +611,7 @@ export default function QuestionsPage() {
                             Similar Existing Questions ({similarQuestionsMap[newQ.id].length})
                           </Typography>
                           {similarQuestionsMap[newQ.id].map((similarQ) => (
-                            <Box key={similarQ.id} sx={{ pl: 2, py: 1, backgroundColor: "#f9f9f9", borderRadius: 1, mb: 1 }}>
+                            <Box key={similarQ.id} sx={{ pl: 2, py: 1, backgroundColor: "grey.50", borderRadius: 1, mb: 1 }}>
                               <Typography variant="body2" color="text.secondary">
                                 {similarQ.text}
                               </Typography>
@@ -636,7 +676,7 @@ export default function QuestionsPage() {
               variant="outlined"
               onClick={() => setGenerateModalOpen(true)}
             >
-              Generate More Questions
+              Add Questions
             </Button>
             <Tooltip title="Download questions & personas">
               <span>
@@ -739,6 +779,8 @@ export default function QuestionsPage() {
           </TableContainer>
         </>
       )}
+
+      </>}
 
       <GenerateEvalsModal
         open={generateModalOpen}

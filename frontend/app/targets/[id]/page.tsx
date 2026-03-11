@@ -10,7 +10,7 @@ import {
   Divider,
 } from "@mui/material";
 import { useParams } from "next/navigation";
-import { targetApi } from "@/lib/api";
+import { targetApi, webSearchApi } from "@/lib/api";
 import { TargetResponse, TargetStats, TargetUpdate, EndpointType } from "@/lib/types";
 import DocumentList from "@/components/overview/DocumentList";
 
@@ -25,6 +25,7 @@ export default function TargetOverview() {
   const [editForm, setEditForm] = useState<TargetUpdate>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [updateLoading, setUpdateLoading] = useState(false);
+  const [hasWebContext, setHasWebContext] = useState<boolean | null>(null);
 
   const fetchData = async () => {
     try {
@@ -34,6 +35,11 @@ export default function TargetOverview() {
       ]);
       setTarget(targetRes.data);
       setStats(statsRes.data);
+      // Fetch web context status separately so it doesn't block page load
+      webSearchApi.listDocuments(targetId).then((res) => {
+        const webDocs = res.data as any[];
+        setHasWebContext(webDocs.length > 0 && webDocs.some((d: any) => d.results?.results?.length > 0));
+      }).catch(() => setHasWebContext(false));
       // Initialize form with fetched data
       setEditForm({
         name: targetRes.data.name,
@@ -64,7 +70,31 @@ export default function TargetOverview() {
   const handleUpdate = async () => {
     setUpdateLoading(true);
     try {
+      // Check if web-search-relevant fields changed
+      const webSearchFields: (keyof TargetUpdate)[] = ["name", "agency", "purpose", "target_users"];
+      const relevantFieldChanged = target && webSearchFields.some(
+        (field) => editForm[field] !== (target[field] || "")
+      );
+
       await targetApi.update(targetId, editForm);
+
+      // Re-trigger web search if relevant fields changed
+      if (relevantFieldChanged) {
+        setHasWebContext(null);
+        webSearchApi.trigger(targetId)
+          .then(() => {
+            // Re-fetch web context status after delay to allow background task to complete
+            // Can consider polling, but overkill for now
+            setTimeout(() => {
+              webSearchApi.listDocuments(targetId).then((res) => {
+                const webDocs = res.data as any[];
+                setHasWebContext(webDocs.length > 0 && webDocs.some((d: any) => d.results?.results?.length > 0));
+              }).catch(() => setHasWebContext(false));
+            }, 5000);
+          })
+          .catch((err) => console.warn("Web search trigger failed:", err));
+      }
+
       await fetchData();
     } catch (error) {
       console.error("Failed to update target:", error);
@@ -177,16 +207,43 @@ export default function TargetOverview() {
         <Divider orientation="vertical" flexItem sx={{ display: { xs: "none", md: "block" } }} />
 
         {/* Knowledge Base Documents */}
-        <Box sx={{ flex: { md: "0 0 calc(45% - 64px)" }, display: "flex", flexDirection: "column", maxHeight: "100%", overflow: "hidden" }}>
+        <Box sx={{ flex: { md: "0 0 calc(45% - 64px)" }, display: "flex", flexDirection: "column", maxHeight: "100%", gap: 1 }}>
           <DocumentList
             key={documentRefreshKey}
             targetId={targetId}
             hideUploadButton={false}
-            maxHeight="100%"
             onUploadEnd={fetchData}
           />
+
+          {hasWebContext !== null && (
+            // Add a small bullet point before the text
+            <Typography
+              variant="caption"
+              sx={{
+                mt: 1,
+                display: "flex",
+                alignItems: "center",
+                gap: 0.75,
+                color: hasWebContext ? "success.main" : "text.disabled",
+              }}
+            >
+              <Box
+                component="span"
+                sx={{
+                  width: 6,
+                  height: 6,
+                  borderRadius: "50%",
+                  bgcolor: hasWebContext ? "success.main" : "text.disabled",
+                  flexShrink: 0,
+                }}
+              />
+              {hasWebContext ? "Additional web context retrieved." : "Additional web context not retrieved."}
+            </Typography>
+          )}
+
         </Box>
       </Box>
+      
 
     </Box>
   );

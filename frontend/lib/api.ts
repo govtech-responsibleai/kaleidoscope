@@ -8,6 +8,7 @@ import {
   TargetResponse,
   TargetUpdate,
   TargetStats,
+  PersonaCreate,
   PersonaResponse,
   PersonaUpdate,
   QuestionResponse,
@@ -160,6 +161,15 @@ export const targetApi = {
     }),
 };
 
+// Web search endpoints
+export const webSearchApi = {
+  trigger: (targetId: number, numQueries: number = 1) =>
+    api.post(`/targets/${targetId}/web-search`, null, { params: { num_queries: numQueries } }),
+
+  listDocuments: (targetId: number) =>
+    api.get(`/targets/${targetId}/web-documents`),
+};
+
 // Job endpoints
 export const jobApi = {
   createPersonaJob: (targetId: number, data: JobCreate) =>
@@ -186,6 +196,9 @@ export const jobApi = {
 
 // Persona endpoints
 export const personaApi = {
+  create: (data: PersonaCreate) =>
+    api.post<PersonaResponse>("/personas", data),
+
   list: (targetId: number) =>
     api.get<PersonaResponse[]>(`/targets/${targetId}/personas`),
 

@@ -28,7 +28,6 @@ interface DocumentListProps {
   hideUploadButton?: boolean;
   onUploadStart?: () => void;
   onUploadEnd?: () => void;
-  maxHeight?: string;
 }
 
 export default function DocumentList({
@@ -36,7 +35,6 @@ export default function DocumentList({
   hideUploadButton = false,
   onUploadStart,
   onUploadEnd,
-  maxHeight,
 }: DocumentListProps) {
   const [documents, setDocuments] = useState<KBDocumentResponse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,11 +102,14 @@ export default function DocumentList({
   }
 
   return (
-    <Box sx={{ height: maxHeight ? "100%" : "auto", display: "flex", flexDirection: "column" }}>
+    <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
         <Box>
           <Typography variant="h6" fontWeight={600}>
             Knowledge Base Documents
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ my: 0.5 }}>
+            <i> Used to inform question generation. For best results, upload documents that cover the scope of your target application.</i>
           </Typography>
           {documents.length > 0 && (
             <Typography variant="body2" color="text.secondary">
@@ -122,8 +123,9 @@ export default function DocumentList({
             variant="outlined"
             startIcon={<UploadIcon />}
             disabled={uploading}
+            sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
           >
-            {uploading ? "Uploading..." : "Upload Documents"}
+            {uploading ? "Uploading..." : "Upload"}
             <input
               type="file"
               hidden
@@ -135,11 +137,7 @@ export default function DocumentList({
         )}
       </Box>
 
-      <Box sx={{
-        flexGrow: 1,
-        overflow: maxHeight ? "auto" : "visible",
-        maxHeight: maxHeight || "none"
-      }}>
+      <Box sx={{ flexGrow: 1, overflow: "auto", minHeight: 0 }}>
         {documents.length === 0 ? (
           <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
             <FileIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
