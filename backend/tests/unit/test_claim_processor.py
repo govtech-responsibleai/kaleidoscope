@@ -1,5 +1,5 @@
 """
-Unit tests for ClaimProcessor service.
+Unit tests for ClaimProcessor service and claim_processor_steps.
 """
 
 import pytest
@@ -7,6 +7,10 @@ from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime
 
 from src.scoring.services.claim_processor import ClaimProcessor
+from src.scoring.services.claim_processor_steps import (
+    ClaimMergeCodeBlocks,
+    ClaimCitationFilter,
+)
 from src.common.database.models import JobStatusEnum, QAJobStageEnum
 from src.common.models import CheckworthyResult
 
@@ -141,38 +145,77 @@ class TestClaimProcessor:
         claims = AnswerClaimRepository.get_by_answer(test_db, sample_answer.id)
         assert len(claims) == 0
 
-    def test_postprocess_claims_comprehensive(self, test_db, sample_qa_job):
-        """Test all postprocessing rules and validate no character loss."""
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.claim_processor.LLMClient')
+    async def test_checkworthy_uses_zero_temperature(
+        self, mock_llm_class, test_db, sample_qa_job, sample_answer
+    ):
+        """Test that checkworthy LLM calls use temperature=0.0."""
+        sample_answer.answer_content = "This is a long enough claim to pass the short filter."
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(
+            return_value=(
+                CheckworthyResult(checkworthy=True, reasoning="factual"),
+                {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
+                 "model": "gemini/gemini-2.5-flash-lite", "cost": 0.0001}
+            )
+        )
+        mock_llm_class.return_value = mock_llm_instance
+
         processor = ClaimProcessor(test_db, sample_qa_job.id)
+        await processor.process()
 
-        # Test data covering: line breaks, brackets, nesting
-        # This simulates what NLTK might produce from a complex answer
-        input_claims = [
-            "First claim is long.\n(Second claim) text ",  # Space at end
-            "[Third is (nested) long enough]"
-        ]
+        call_kwargs = mock_llm_instance.generate_structured_async.call_args[1]
+        assert call_kwargs["temperature"] == 0.0
 
-        # Save original for validation
-        original_joined = "".join(input_claims)
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.claim_processor.LLMClient')
+    async def test_mermaid_block_stays_single_claim(
+        self, mock_llm_class, test_db, sample_qa_job, sample_answer
+    ):
+        """Test that a mermaid chart in an answer becomes one claim."""
+        sample_answer.answer_content = (
+            "Here is the flow:\n"
+            "```mermaid\n"
+            "flowchart LR\n"
+            "  A[Start] --> B{Check}\n"
+            "  B -->|Yes| C[Done]\n"
+            "  B -->|No| D[Retry]\n"
+            "```\n"
+            "That covers the process."
+        )
+        test_db.commit()
 
-        # Run postprocessing
-        result = processor._postprocess_claims(input_claims)
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(
+            return_value=(
+                CheckworthyResult(checkworthy=True, reasoning="factual"),
+                {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
+                 "model": "gemini/gemini-2.5-flash-lite", "cost": 0.0001}
+            )
+        )
+        mock_llm_class.return_value = mock_llm_instance
 
-        # CRITICAL: Verify no character loss
-        assert "".join(result) == original_joined, "Postprocessed claims must preserve all characters"
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        claims = processor._extract_claims(sample_answer.id)
 
-        # Expected behavior:
-        # 1. Split by \n: ["First claim is long.\n", "(Second claim) text ", "[Third...]"]
-        # 2. Shift brackets:
-        #    - "(Second claim)" shifts to previous: ["First claim is long.\n(Second claim)", " text ", "[Third...]"]
-        #    - "[Third is (nested) long enough]" shifts to previous: [..., " text [Third...]", ""]
-        # Final result should have 3 claims (including empty string from bracket shift)
-        assert len(result) == 3
+        mermaid_claims = [c for c in claims if "```mermaid" in c.claim_text]
+        assert len(mermaid_claims) == 1
+        assert "flowchart LR" in mermaid_claims[0].claim_text
 
-        # Verify the claims are correct
-        assert result[0] == "First claim is long.\n(Second claim)"
-        assert result[1] == " text [Third is (nested) long enough]"
-        assert result[2] == ""  # Empty after bracket shift
+    def test_build_claim_context(self, test_db, sample_qa_job, sample_answer):
+        """Test that claim context includes surrounding claims with >>> <<< markers."""
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        claims = processor._extract_claims(sample_answer.id)
+
+        # Build context for the middle claim (index 1)
+        context = ClaimProcessor._build_claim_context(1, claims)
+
+        assert ">>> Bias is a concern. <<<" in context
+        assert "AI poses privacy risks." in context
+        assert "Transparency is important." in context
 
 
 @pytest.mark.unit
@@ -228,3 +271,49 @@ class TestClaimProcessorErrors:
         assert sample_qa_job.status == JobStatusEnum.failed
         assert sample_qa_job.error_message is not None
         assert "not found" in sample_qa_job.error_message.lower()
+
+
+@pytest.mark.unit
+class TestClaimTransform:
+    """Tests for ClaimTransform steps."""
+
+    def test_apply_transforms_comprehensive(self, test_db, sample_qa_job):
+        """Test newline split + bracket shift transforms with no character loss."""
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        input_claims = [
+            "First claim is long.\n(Second claim) text ",
+            "[Third is (nested) long enough]"
+        ]
+        original_joined = "".join(input_claims)
+        result = processor._apply_transforms(input_claims)
+
+        assert "".join(result) == original_joined
+        assert len(result) == 3
+        assert result[0] == "First claim is long.\n(Second claim)"
+        assert result[1] == " text [Third is (nested) long enough]"
+        assert result[2] == ""
+
+    def test_merge_code_blocks(self):
+        """Test that a fenced block split across claims is merged."""
+        step = ClaimMergeCodeBlocks()
+        claims = [
+            "Chart:\n```mermaid\nflowchart LR\n",
+            "A --> B\n",
+            "B --> C\n```\n",
+            "Next sentence.",
+        ]
+        result = step.transform(claims)
+        assert len(result) == 2
+        assert "```mermaid" in result[0] and "```\n" in result[0]
+        assert result[1] == "Next sentence."
+
+
+@pytest.mark.unit
+class TestClaimFilter:
+    """Tests for ClaimFilter steps."""
+
+    def test_citation_filter(self):
+        f = ClaimCitationFilter()
+        assert f.check("1. Source ID: career_guidance.txt") is False
+        assert f.check("AI is transforming healthcare.") is None
+

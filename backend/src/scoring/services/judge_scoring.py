@@ -209,7 +209,7 @@ class AnswerJudge:
             result, metadata = await self.llm_client.generate_structured_async(
                 prompt=prompt,
                 response_model=ClaimJudgmentResult,
-                temperature=0.7
+                temperature=0.0
             )
 
             # Track costs
@@ -297,7 +297,7 @@ class AnswerJudge:
             result, metadata = await self.llm_client.generate_structured_async(
                 prompt=prompt,
                 response_model=ResponseJudgmentResult,
-                temperature=0.7
+                temperature=0.0
             )
 
             # Track costs

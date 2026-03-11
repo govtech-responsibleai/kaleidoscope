@@ -1,19 +1,63 @@
-You are given a claim or statement extracted from an LLM response. Your task is to decide whether this sentence contains a check-worthy factual claim that should be verified against a knowledge base.
+You are given a span of text extracted from an LLM response. Your task is to determine whether the marked text contains a **check-worthy factual claim** that should be verified against a knowledge base.
 
-A check-worthy factual claim is any statement that asserts a fact, event, statistic, definition, attribution, relationship, capability, or description that could be true or false. For example, if a claim is an opinion or an expression, it cannot be checked for factuality. Another example is that the statement has to be meaningful for it to be considered a claim. In such cases, it cannot be checked for factuality.
+## Definition of a check-worthy claim
 
-Additionally, you are given the `system prompt` that was used to instruct the chatbot. If the claim originates from or is directly instructed by the system prompt (e.g. disclaimers, greetings, boilerplate, role descriptions, or behavioral instructions the chatbot was told to include), it is NOT check-worthy — these are intended behavior, not factual claims to verify against the knowledge base.
+A text span is **check-worthy** if it asserts information that could reasonably be verified as true or false using a reliable knowledge source.
 
-Label the claim as "True" if it is check-worthy, and "False" if it is not.
+This includes, but is not limited to:
 
-Give your answer in JSON format as follows:
+- assertions, facts, and definitions or explanations of concepts
+- attributions, relationships, capabilities, requirements, rules, or constraints
+- quantities, dates, statistics, rankings, or comparisons
+
+When in doubt, prefer **True** if the span contains a concrete factual assertion that could be checked.
+
+## What is NOT check-worthy?
+
+Mark the span as **not check-worthy** if it does **not** make a factual assertion requiring verification.
+
+This includes:
+
+- opinions, preferences, advice, or subjective judgments
+- greetings, disclaimers, or boilerplate
+- role or behavior instructions originating from the system prompt
+- purely structural text that organizes the response rather than asserting facts
+- conversational lead-ins or framing text introducing bullets, lists, or next steps
+- prompts or invitations for the user to respond
+
+### Examples of NOT check-worthy structural / conversational text
+
+The following are usually **False** unless they also contain a specific factual assertion:
+
+- headers, section titles, and formatting
+  - “Next steps”
+  - “What you can do now”
+  - “Summary:”
+- prompt lines and action-oriented recommendations
+  - “If you like, tell me:”
+  - “Let me know if you want me to…”
+  - “I recommend checking with support.”
+
+## Use context carefully
+
+Use the surrounding context to decide whether the marked text is a genuine claim, or merely structural or conversational.
+If the marked text is a fragment, interpret it in context. Only label **True** when the marked span contributes a factual claim.
+
+## Output format
+
+Return your answer in JSON:
+
+```json
 {
-    "checkworthy": "<True or False>"
-    "reasoning": "Brief explanation on your rationale."
+  "checkworthy": "<True or False>",
+  "reasoning": "Brief explanation of why the marked text is or is not a check-worthy factual claim."
 }
 
-This is the system prompt:
+=== SYSTEM PROMPT ===
 {{system_prompt}}
 
-This is the claim:
-{{claim_text}}
+=== CLAIM IN CONTEXT (the claim being evaluated is marked with >>> <<<) ===
+{{claim_context}}
+
+===
+
