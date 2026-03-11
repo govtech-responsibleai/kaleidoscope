@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from src.common.database.connection import get_db
 from src.common.database.repositories import PersonaRepository, QuestionRepository, TargetRepository
 from src.common.models import (
+    PersonaCreate,
     PersonaResponse,
     PersonaUpdate,
     PersonaBulkApprove,
@@ -21,6 +22,45 @@ from src.query_generation.services import sample_personas_from_nemotron
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post(
+    "",
+    response_model=PersonaResponse,
+    status_code=status.HTTP_201_CREATED
+)
+def create_persona(
+    request: PersonaCreate,
+    db: Session = Depends(get_db)
+):
+    """
+    Manually create a single persona for a target.
+
+    Args:
+        request: Persona fields including target_id
+        db: Database session
+
+    Returns:
+        Created persona with status="approved"
+    """
+    target = TargetRepository.get_by_id(db, request.target_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target {request.target_id} not found"
+        )
+
+    persona_data = {
+        "target_id": request.target_id,
+        "title": request.title,
+        "info": request.info,
+        "style": request.style,
+        "use_case": request.use_case,
+        "source": "generated",
+        "status": StatusEnum.approved,
+    }
+    persona = PersonaRepository.create(db, persona_data)
+    return persona
 
 
 @router.post(

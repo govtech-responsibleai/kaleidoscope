@@ -44,6 +44,9 @@ services:
       LITELLM_PROXY_API_KEY: ${LITELLM_PROXY_API_KEY}
       LITELLM_PROXY_API_BASE: ${LITELLM_PROXY_API_BASE}
 
+      # Web Search
+      SERPER_API_KEY: ${SERPER_API_KEY:-}
+
       # Phoenix (optional - set in .env for cloud, defaults to local)
       PHOENIX_COLLECTOR_ENDPOINT: ${PHOENIX_COLLECTOR_ENDPOINT:-http://host.docker.internal:6006}
       PHOENIX_API_KEY: ${PHOENIX_API_KEY:-}

@@ -38,7 +38,7 @@
 ```bash
 # 1. Set up environment
 cp .env.example .env
-# Edit .env: Add your API keys + JWT_SECRET_KEY (see README.md for auth setup)
+# Edit .env: Add your API keys + JWT_SECRET_KEY + SERPER_API_KEY (see README.md for auth setup)
 
 # 2. Start services
 docker-compose up -d
@@ -107,24 +107,28 @@ docker-compose --profile test run --rm test pytest -v -m integration
 
 ## Adding New Services
 
-When you add a scoring service or other modules:
+To add a new service module:
 
-1. Create service in `src/scoring/`
-2. Add routes in `src/scoring/api/routes/`
+1. Create service in `src/<module_name>/`
+2. Add routes in `src/<module_name>/api/routes/`
 3. Import and include router in `src/main.py`:
 
 ```python
-from src.scoring.api.routes import scores
-app.include_router(scores.router, prefix=f"{settings.api_prefix}/scores", tags=["Scoring"])
+from src.<module_name>.api.routes import <resource>
+app.include_router(<resource>.router, prefix=f"{settings.api_prefix}/<resource>", tags=["<Module>"])
 ```
 
 That's it! No Docker changes needed - same container, same endpoint.
+
+## Current Services
+
+- **Query Generation**: Persona generation, question generation (with input style variants and web search context), similarity detection
+- **Scoring**: Claim-based and response-level judge evaluation, QA job orchestration, annotations, metrics
 
 ## Next Steps
 
 1. **Start services**: `docker-compose up -d`
 2. **Run tests**: `docker-compose --profile test up test --abort-on-container-exit`
 3. **Test API manually**: Use http://localhost:8000/docs
-4. **Implement scoring service** (when ready)
 
 See [DOCKER.md](DOCKER.md) for all Docker commands.

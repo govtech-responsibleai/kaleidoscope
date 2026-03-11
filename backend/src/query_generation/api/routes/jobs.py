@@ -58,7 +58,8 @@ def run_persona_generation_background(
 def run_question_generation_background(
     job_id: int,
     persona_ids: Optional[List[int]] = None,
-    sample_questions: Optional[List[str]] = None
+    sample_questions: Optional[List[str]] = None,
+    input_style: Optional[str] = None
 ):
     """
     Background task for running question generation asynchronously.
@@ -67,6 +68,7 @@ def run_question_generation_background(
         job_id: Job ID for the generation task
         persona_ids: Optional list of persona IDs to generate for
         sample_questions: Optional list of example questions
+        input_style: Optional input_style level (casual, regular, formal)
     """
     # Create a new database session for the background task
     from src.common.database.connection import SessionLocal
@@ -77,7 +79,8 @@ def run_question_generation_background(
             db,
             job_id,
             persona_ids=persona_ids,
-            sample_questions=sample_questions
+            sample_questions=sample_questions,
+            input_style=input_style
         )
         logger.info(f"Background task completed question generation for job {job_id}")
     except Exception as e:
@@ -127,7 +130,7 @@ def create_persona_generation_job(
     job_data = {
         "target_id": job_request.target_id,
         "type": JobTypeEnum.persona_generation,
-        "count_requested": job_request.count_requested,
+        "count_requested": job_request.count_requested or settings.default_persona_count,
         "model_used": job_request.model_used or settings.default_llm_model,
         "status": "running"
     }
@@ -213,7 +216,7 @@ def create_question_generation_job_for_target(
         "target_id": job_request.target_id,
         "type": JobTypeEnum.question_generation,
         "persona_id": None,  # Multiple personas
-        "count_requested": job_request.count_requested,
+        "count_requested": job_request.count_requested or settings.default_question_count,
         "model_used": job_request.model_used or settings.default_llm_model,
         "status": "running"
     }
@@ -224,7 +227,8 @@ def create_question_generation_job_for_target(
         run_question_generation_background,
         job.id,
         job_request.persona_ids,
-        job_request.sample_questions
+        job_request.sample_questions,
+        job_request.input_style
     )
 
     logger.info(f"Created question generation job {job.id}, running in background")

@@ -15,7 +15,8 @@ from src.common.models import PersonaListOutput, PersonaBase
 from src.common.database.repositories import (
     TargetRepository,
     PersonaRepository,
-    JobRepository
+    JobRepository,
+    WebDocumentRepository
 )
 from src.common.database.models import JobStatusEnum
 
@@ -99,11 +100,16 @@ class PersonaGenerator:
                 limit=1000  # High limit to get all personas
             )
 
-            # Step 2: Render prompt template
-            prompt = self._render_prompt(all_existing_personas)
+            # Step 2: Get web context for grounding
+            web_text = WebDocumentRepository.get_compiled_context(
+                self.db, self.target.id
+            )
+
+            # Step 3: Render prompt template
+            prompt = self._render_prompt(all_existing_personas, web_text)
             logger.info(f"Rendered prompt ({len(prompt)} chars)")
 
-            # Step 3: Call LLM with structured output
+            # Step 4: Call LLM with structured output
             persona_list, metadata = self.llm_client.generate_structured(
                 prompt=prompt,
                 response_model=PersonaListOutput,
@@ -116,11 +122,11 @@ class PersonaGenerator:
 
             logger.info(f"Generated {len(persona_list.personas)} personas")
 
-            # Step 4: Save personas to database (reuse fetched list to avoid re-query)
+            # Step 5: Save personas to database (reuse fetched list to avoid re-query)
             personas = self._save_personas(persona_list.personas, all_existing_personas)
             logger.info(f"Saved {len(personas)} personas to database")
 
-            # Step 5: Update job status
+            # Step 6: Update job status
             self._update_job_status(JobStatusEnum.completed)
 
             self.cost_tracker.log_summary(prefix=f"Job {self.job_id}")
@@ -133,12 +139,13 @@ class PersonaGenerator:
             self._update_job_status(JobStatusEnum.failed)
             raise
 
-    def _render_prompt(self, existing_personas: List[Any]) -> str:
+    def _render_prompt(self, existing_personas: List[Any], web_text: str) -> str:
         """
         Render the persona generation prompt template.
 
         Args:
             existing_personas: List of all existing personas to avoid duplicate titles
+            web_text: Formatted web search results for grounding
 
         Returns:
             Rendered prompt string
@@ -161,6 +168,7 @@ class PersonaGenerator:
             purpose=self.target.purpose or "Not specified",
             target_users=self.target.target_users or "General users",
             agency=self.target.agency or "Not specified",
+            web_text=web_text,
             sample_personas=self.sample_personas,
             target_persona_count=self.job.count_requested,
             approved_personas=existing_personas_data if existing_personas_data else None

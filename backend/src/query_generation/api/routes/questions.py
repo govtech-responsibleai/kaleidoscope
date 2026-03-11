@@ -180,7 +180,7 @@ def find_similar_questions_endpoint(
     Find semantically similar questions using Gemini embeddings and cosine similarity.
 
     Given a target_id and multiple question_ids, this endpoint:
-    1. Gets embeddings for all query questions using Gemini text-embedding-004 (1 batch call)
+    1. Gets embeddings for all query questions using Gemini gemini-embedding-001 (1 batch call)
     2. Gets embeddings for all other APPROVED questions in the target
     3. Uses matrix multiplication to calculate all similarities at once
     4. Returns question IDs with similarity >= threshold (default 0.7) for each query

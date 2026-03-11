@@ -32,18 +32,18 @@ class TestPersonaGenerator:
     def test_render_prompt_no_approved_personas(self, test_db, sample_job):
         """Test prompt rendering with no approved personas."""
         generator = PersonaGenerator(test_db, sample_job.id)
-        prompt = generator._render_prompt([])
+        prompt = generator._render_prompt([], "")
 
         assert "Test RAI Bot" in prompt
         assert "GovTech" in prompt
         assert "Test chatbot for responsible AI" in prompt
-        assert "No confirmed personas yet" in prompt
+        assert "No existing personas yet" in prompt
 
     def test_render_prompt_with_approved_personas(self, test_db, sample_job, sample_personas):
         """Test prompt rendering with approved personas."""
         generator = PersonaGenerator(test_db, sample_job.id)
         approved = [p for p in sample_personas if p.status == StatusEnum.approved]
-        prompt = generator._render_prompt(approved)
+        prompt = generator._render_prompt(approved, "")
 
         assert "Technical Officer" in prompt
         assert "Software engineer" in prompt

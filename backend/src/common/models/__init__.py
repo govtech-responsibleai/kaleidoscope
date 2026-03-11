@@ -21,6 +21,7 @@ from src.common.models.persona import (
     PersonaSource,
     PersonaBase,
     PersonaListOutput,
+    PersonaCreate,
     PersonaUpdate,
     PersonaResponse,
     PersonaApprove,
@@ -31,6 +32,7 @@ from src.common.models.persona import (
 from src.common.models.question import (
     QuestionType,
     QuestionScope,
+    InputStyle,
     QuestionSource,
     QuestionBase,
     QuestionListOutput,
@@ -105,6 +107,12 @@ from src.common.models.answer_label_override import (
     AnswerLabelOverrideCreate,
     AnswerLabelOverrideResponse
 )
+from src.common.models.web_search import (
+    SearchQueryListOutput,
+    SearchResultSitelink,
+    SearchResult,
+    SearchResultsOutput
+)
 from src.common.models.metrics import (
     AggregationMethod,
     AggregatedAnswerScore,
@@ -134,6 +142,7 @@ __all__ = [
     "PersonaSource",
     "PersonaBase",
     "PersonaListOutput",
+    "PersonaCreate",
     "PersonaUpdate",
     "PersonaResponse",
     "PersonaApprove",
@@ -143,6 +152,7 @@ __all__ = [
     # Question
     "QuestionType",
     "QuestionScope",
+    "InputStyle",
     "QuestionSource",
     "QuestionBase",
     "QuestionListOutput",
@@ -207,6 +217,11 @@ __all__ = [
     # AnswerLabelOverride
     "AnswerLabelOverrideCreate",
     "AnswerLabelOverrideResponse",
+    # Web Search
+    "SearchQueryListOutput",
+    "SearchResultSitelink",
+    "SearchResult",
+    "SearchResultsOutput",
     # Metrics
     "AggregationMethod",
     "AggregatedAnswerScore",

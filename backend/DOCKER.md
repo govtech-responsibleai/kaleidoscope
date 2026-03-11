@@ -13,6 +13,8 @@
 ```bash
 cp .env.example .env
 # Edit .env and add your API keys + JWT_SECRET_KEY (see README.md for auth setup)
+# Required: GEMINI_API_KEY, JWT_SECRET_KEY, ADMIN_API_KEY
+# Optional: SERPER_API_KEY (enables web search context for question generation)
 ```
 
 ### 2. Start services
@@ -174,8 +176,9 @@ docker-compose logs api
 ```
 
 Common issues:
-- Missing `OPENAI_API_KEY` in `.env`
+- Missing `GEMINI_API_KEY` in `.env`
 - Database not ready (wait 5-10 seconds)
+- Missing `SERPER_API_KEY` (web search will be skipped gracefully)
 
 ### Port conflicts
 
