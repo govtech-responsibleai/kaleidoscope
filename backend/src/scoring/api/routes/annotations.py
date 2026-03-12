@@ -3,11 +3,14 @@ API routes for Annotation management.
 """
 
 from typing import List
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import AnnotationRepository, AnswerRepository, SnapshotRepository
+from src.common.database.models import AnswerRubricLabel
 from src.common.models import (
     AnnotationCreate,
     AnnotationUpdate,
@@ -15,6 +18,22 @@ from src.common.models import (
     AnnotationBulkCreate,
     AnnotationListResponse
 )
+
+
+class AnswerRubricLabelUpsert(BaseModel):
+    option_value: str
+
+
+class AnswerRubricLabelResponse(BaseModel):
+    id: int
+    answer_id: int
+    rubric_id: int
+    option_value: str
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
 
 router = APIRouter()
 
@@ -268,3 +287,46 @@ def delete_annotation(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Annotation {annotation_id} not found"
         )
+
+
+@router.get("/answers/{answer_id}/rubric-labels", response_model=List[AnswerRubricLabelResponse])
+def get_rubric_labels_for_answer(
+    answer_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get all custom rubric labels for an answer."""
+    answer = AnswerRepository.get_by_id(db, answer_id)
+    if not answer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Answer {answer_id} not found")
+    return db.query(AnswerRubricLabel).filter(AnswerRubricLabel.answer_id == answer_id).all()
+
+
+@router.put("/answers/{answer_id}/rubric-labels/{rubric_id}", response_model=AnswerRubricLabelResponse)
+def upsert_rubric_label(
+    answer_id: int,
+    rubric_id: int,
+    data: AnswerRubricLabelUpsert,
+    db: Session = Depends(get_db)
+):
+    """Create or update a custom rubric label for an answer."""
+    answer = AnswerRepository.get_by_id(db, answer_id)
+    if not answer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Answer {answer_id} not found")
+
+    existing = db.query(AnswerRubricLabel).filter(
+        AnswerRubricLabel.answer_id == answer_id,
+        AnswerRubricLabel.rubric_id == rubric_id
+    ).first()
+
+    if existing:
+        existing.option_value = data.option_value
+        existing.updated_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing)
+        return existing
+    else:
+        label = AnswerRubricLabel(answer_id=answer_id, rubric_id=rubric_id, option_value=data.option_value)
+        db.add(label)
+        db.commit()
+        db.refresh(label)
+        return label

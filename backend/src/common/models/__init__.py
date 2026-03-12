@@ -105,6 +105,12 @@ from src.common.models.answer_label_override import (
     AnswerLabelOverrideCreate,
     AnswerLabelOverrideResponse
 )
+from src.common.models.target_rubric import (
+    RubricOption,
+    TargetRubricCreate,
+    TargetRubricUpdate,
+    TargetRubricResponse,
+)
 from src.common.models.metrics import (
     AggregationMethod,
     AggregatedAnswerScore,
@@ -216,4 +222,9 @@ __all__ = [
     "JudgeAccuracyResponse",
     "TargetSnapshotMetric",
     "ConfusionMatrixResponse",
+    # TargetRubric
+    "RubricOption",
+    "TargetRubricCreate",
+    "TargetRubricUpdate",
+    "TargetRubricResponse",
 ]

@@ -125,6 +125,7 @@ class Target(Base):
     questions = relationship("Question", back_populates="target", cascade="all, delete-orphan")
     kb_documents = relationship("KnowledgeBaseDocument", back_populates="target", cascade="all, delete-orphan")
     snapshots = relationship("Snapshot", back_populates="target", cascade="all, delete-orphan")
+    custom_rubrics = relationship("TargetRubric", back_populates="target", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Target(id={self.id}, name='{self.name}', user_id={self.user_id})>"
@@ -479,3 +480,44 @@ class AnswerLabelOverride(Base):
 
     # Relationships
     answer = relationship("Answer")
+
+
+class TargetRubric(Base):
+    """Custom evaluation rubric for a target."""
+    __tablename__ = "target_rubrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    criteria = Column(Text, nullable=False, default="")
+    options = Column(JSON, nullable=False, default=list)
+    position = Column(Integer, nullable=False, default=0)
+    category = Column(String, nullable=False, default="default")  # "accuracy" | "voice" | "relevancy" | "default"
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    target = relationship("Target", back_populates="custom_rubrics")
+    rubric_labels = relationship("AnswerRubricLabel", back_populates="rubric", cascade="all, delete-orphan")
+
+
+class AnswerRubricLabel(Base):
+    """Per-rubric human label for a single answer."""
+    __tablename__ = "answer_rubric_labels"
+
+    id = Column(Integer, primary_key=True, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
+    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="CASCADE"), nullable=False, index=True)
+    option_value = Column(String, nullable=False)  # The selected option text
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("answer_id", "rubric_id", name="uix_answer_rubric_label"),
+    )
+
+    # Relationships
+    rubric = relationship("TargetRubric", back_populates="rubric_labels")
+
+    def __repr__(self):
+        return f"<TargetRubric(id={self.id}, name='{self.name}', target_id={self.target_id})>"
