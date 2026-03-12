@@ -4,22 +4,121 @@ import React, { useEffect, useState } from "react";
 import {
   Alert,
   Box,
-  Button,
-  FormControlLabel,
-  Radio,
-  RadioGroup,
+  CircularProgress,
   Stack,
-  TextField,
+  ToggleButton,
+  ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import { Answer, Annotation } from "@/lib/types";
+import { Answer, Annotation, AnswerRubricLabel, TargetRubricResponse } from "@/lib/types";
 import { annotationApi } from "@/lib/api";
+
+// Shared toggle styles
+const toggleSx = {
+  "& .MuiToggleButton-root": {
+    py: 1.25,
+    fontSize: "0.85rem",
+    fontWeight: 600,
+    textTransform: "none",
+    border: "1px solid",
+    borderColor: "divider",
+    flex: 1,
+    transition: "all 0.15s",
+  },
+};
+
+interface AccuracyRowProps {
+  value: boolean | null;
+  onChange: (val: boolean) => void;
+  saving: boolean;
+}
+
+function AccuracyRow({ value, onChange, saving }: AccuracyRowProps) {
+  return (
+    <Box>
+      <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+        Accuracy
+      </Typography>
+      <ToggleButtonGroup
+        exclusive
+        fullWidth
+        value={value === null ? "" : value ? "accurate" : "inaccurate"}
+        onChange={(_, val) => { if (val !== null) onChange(val === "accurate"); }}
+        sx={{
+          ...toggleSx,
+          "& .MuiToggleButton-root.Mui-selected[value='accurate']": {
+            bgcolor: "success.main", color: "white", borderColor: "success.main",
+            "&:hover": { bgcolor: "success.dark" },
+          },
+          "& .MuiToggleButton-root.Mui-selected[value='inaccurate']": {
+            bgcolor: "error.main", color: "white", borderColor: "error.main",
+            "&:hover": { bgcolor: "error.dark" },
+          },
+        }}
+      >
+        <ToggleButton value="accurate" disabled={saving}>Accurate</ToggleButton>
+        <ToggleButton value="inaccurate" disabled={saving}>Inaccurate</ToggleButton>
+      </ToggleButtonGroup>
+    </Box>
+  );
+}
+
+interface CustomRubricRowProps {
+  rubric: TargetRubricResponse;
+  value: string | null;
+  onChange: (val: string) => void;
+  saving: boolean;
+}
+
+function CustomRubricRow({ rubric, value, onChange, saving }: CustomRubricRowProps) {
+  // Colours cycle through a small palette for visual distinction
+  const palette = ["primary", "secondary", "warning", "info"] as const;
+  return (
+    <Box>
+      <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+        {rubric.name}
+      </Typography>
+      {rubric.options.length === 0 ? (
+        <Typography variant="caption" color="text.disabled" fontStyle="italic">
+          No options defined for this rubric.
+        </Typography>
+      ) : (
+        <ToggleButtonGroup
+          exclusive
+          fullWidth
+          value={value ?? ""}
+          onChange={(_, val) => { if (val !== null) onChange(val); }}
+          sx={toggleSx}
+        >
+          {rubric.options.map((opt, i) => (
+            <ToggleButton
+              key={opt.option}
+              value={opt.option}
+              disabled={saving}
+              sx={{
+                "&.Mui-selected": {
+                  bgcolor: `${palette[i % palette.length]}.main`,
+                  color: "white",
+                  borderColor: `${palette[i % palette.length]}.main`,
+                  "&:hover": { bgcolor: `${palette[i % palette.length]}.dark` },
+                },
+              }}
+            >
+              {opt.option}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      )}
+    </Box>
+  );
+}
 
 interface AnnotationFormProps {
   answer: Answer | null;
   onAnnotationSaved: () => void;
   showHelperAlert?: boolean;
   onDismissHelperAlert?: () => void;
+  rubrics: TargetRubricResponse[];
 }
 
 export default function AnnotationForm({
@@ -27,103 +126,86 @@ export default function AnnotationForm({
   onAnnotationSaved,
   showHelperAlert = false,
   onDismissHelperAlert,
+  rubrics,
 }: AnnotationFormProps) {
-  const [label, setLabel] = useState<boolean | null>(null);
-  const [notes, setNotes] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [accuracyLabel, setAccuracyLabel] = useState<boolean | null>(null);
   const [existingAnnotation, setExistingAnnotation] = useState<Annotation | null>(null);
-  const [loadingAnnotation, setLoadingAnnotation] = useState(false);
-  const [showSaveSuccess, setShowSaveSuccess] = useState(false);
+  // Map rubricId → selected option string
+  const [rubricLabels, setRubricLabels] = useState<Record<number, string>>({});
+  const [loading, setLoading] = useState(false);
+  const [savingRubric, setSavingRubric] = useState<number | "accuracy" | null>(null);
 
-  // Fetch existing annotation when answer changes
   useEffect(() => {
     if (!answer) {
-      setLabel(null);
-      setNotes("");
+      setAccuracyLabel(null);
       setExistingAnnotation(null);
-      setShowSaveSuccess(false);
+      setRubricLabels({});
       return;
     }
 
-    const fetchAnnotation = async () => {
-      setLoadingAnnotation(true);
-      setShowSaveSuccess(false);
+    const fetchAll = async () => {
+      setLoading(true);
       try {
-        const response = await annotationApi.getByAnswer(answer.id);
-        const annotation = response.data;
-        setExistingAnnotation(annotation);
-        setLabel(annotation.label);
-        setNotes(annotation.notes || "");
-      } catch (error) {
-        // No annotation exists yet
-        setExistingAnnotation(null);
-        setLabel(null);
-        setNotes("");
+        const [annotationRes, rubricRes] = await Promise.allSettled([
+          annotationApi.getByAnswer(answer.id),
+          annotationApi.getRubricLabels(answer.id),
+        ]);
+
+        if (annotationRes.status === "fulfilled") {
+          setExistingAnnotation(annotationRes.value.data);
+          setAccuracyLabel(annotationRes.value.data.label);
+        } else {
+          setExistingAnnotation(null);
+          setAccuracyLabel(null);
+        }
+
+        if (rubricRes.status === "fulfilled") {
+          const map: Record<number, string> = {};
+          rubricRes.value.data.forEach((rl: AnswerRubricLabel) => {
+            map[rl.rubric_id] = rl.option_value;
+          });
+          setRubricLabels(map);
+        } else {
+          setRubricLabels({});
+        }
       } finally {
-        setLoadingAnnotation(false);
+        setLoading(false);
       }
     };
 
-    fetchAnnotation();
-  }, [answer]);
+    fetchAll();
+  }, [answer?.id]);
 
-  const handleSave = async () => {
-    if (!answer || label === null) return;
-
-    setSaving(true);
+  const handleAccuracyChange = async (val: boolean) => {
+    if (!answer) return;
+    setAccuracyLabel(val);
+    setSavingRubric("accuracy");
     try {
       if (existingAnnotation) {
-        // Update existing annotation
-        await annotationApi.update(existingAnnotation.id, {
-          answer_id: answer.id,
-          label,
-          notes: notes.trim() || undefined,
-        });
+        await annotationApi.update(existingAnnotation.id, { answer_id: answer.id, label: val });
       } else {
-        // Create new annotation
-        await annotationApi.create({
-          answer_id: answer.id,
-          label,
-          notes: notes.trim() || undefined,
-        });
+        const res = await annotationApi.create({ answer_id: answer.id, label: val });
+        setExistingAnnotation(res.data);
       }
       onAnnotationSaved();
-
-      // Show success message briefly
-      setShowSaveSuccess(true);
-      setTimeout(() => {
-        setShowSaveSuccess(false);
-      }, 3000);
-    } catch (error) {
-      console.error("Failed to save annotation:", error);
+    } catch (err) {
+      console.error("Failed to save accuracy annotation:", err);
     } finally {
-      setSaving(false);
+      setSavingRubric(null);
     }
   };
 
-  const handleReset = () => {
-    if (existingAnnotation) {
-      setLabel(existingAnnotation.label);
-      setNotes(existingAnnotation.notes || "");
-    } else {
-      setLabel(null);
-      setNotes("");
+  const handleRubricChange = async (rubricId: number, optionValue: string) => {
+    if (!answer) return;
+    setRubricLabels((prev) => ({ ...prev, [rubricId]: optionValue }));
+    setSavingRubric(rubricId);
+    try {
+      await annotationApi.upsertRubricLabel(answer.id, rubricId, { option_value: optionValue });
+    } catch (err) {
+      console.error("Failed to save rubric label:", err);
+    } finally {
+      setSavingRubric(null);
     }
-    setShowSaveSuccess(false);
-  };
-
-  // Check if current form state has changes compared to saved annotation
-  const hasUnsavedChanges = () => {
-    if (!existingAnnotation) {
-      // No existing annotation, so any selection is a change
-      return label !== null;
-    }
-
-    // Compare current state with existing annotation
-    const labelChanged = label !== existingAnnotation.label;
-    const notesChanged = (notes.trim() || "") !== (existingAnnotation.notes || "");
-
-    return labelChanged || notesChanged;
   };
 
   if (!answer) {
@@ -138,93 +220,57 @@ export default function AnnotationForm({
     );
   }
 
-  // Check if answer is not yet generated or not selected for annotation
   if (!answer.answer_content) {
     return (
-      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <Typography variant="body1" color="text.secondary" align="center">
-            Answer generation in progress. Check back later.
-          </Typography>
-        </Box>
+      <Box sx={{ height: "100%", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+        <Typography variant="body1" color="text.secondary" align="center">
+          Answer generation in progress.
+        </Typography>
       </Box>
     );
   }
 
   if (!answer.is_selected_for_annotation) {
     return (
-      <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        <Box sx={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          {/* <Typography variant="body1" color="text.secondary" align="center">
-            Add this response to the annotation set to enable labeling.
-          </Typography> */}
-          <Alert severity="info">
-            Add this response to the annotation set to enable labeling.
-          </Alert>
-        </Box>
+      <Box sx={{ height: "100%" }}>
+        <Alert severity="info">Add this response to the annotation set to enable labeling.</Alert>
       </Box>
     );
   }
 
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <Stack spacing={2} sx={{ flex: 1 }}>
-        <Typography variant="h5">Your Annotations</Typography>
+      <Stack spacing={2.5} sx={{ flex: 1 }}>
+        <Typography variant="h5">Annotations</Typography>
 
         {showHelperAlert && (
-          <Alert
-            severity="info"
-            onClose={onDismissHelperAlert}
-          >
-            Ready to annotate! Select whether the answer is accurate, then click Save. You may hover over the highlighted text and review the baseline judge's evaluation below for assistance.
+          <Alert severity="info" onClose={onDismissHelperAlert}>
+            Ready to annotate! Toggle a label for each rubric below.
           </Alert>
         )}
 
-        <Box>
-          <RadioGroup
-            row
-            value={label === null ? "" : label ? "accurate" : "inaccurate"}
-            onChange={(event) => {
-              setLabel(event.target.value === "accurate");
-              setShowSaveSuccess(false);
-            }}
-          >
-            <FormControlLabel value="accurate" control={<Radio />} label="Accurate" />
-            <FormControlLabel value="inaccurate" control={<Radio />} label="Inaccurate" />
-          </RadioGroup>
-
-          <TextField
-            label="Notes"
-            value={notes}
-            onChange={(event) => {
-              setNotes(event.target.value);
-              setShowSaveSuccess(false);
-            }}
-            multiline
-            minRows={3}
-            fullWidth
-            sx={{ mt: 2 }}
-            placeholder="Optional notes about your annotation"
-          />
-
-          <Stack direction="row" spacing={2} alignItems="center" justifyContent="center" sx={{ mt: 2 }}>
-            <Button
-              variant="contained"
-              onClick={handleSave}
-              disabled={label === null || saving || loadingAnnotation || !hasUnsavedChanges()}
-            >
-              {saving ? "Saving..." : "Save Annotation"}
-            </Button>
-            <Button variant="text" onClick={handleReset} disabled={saving || loadingAnnotation}>
-              Reset
-            </Button>
-            {showSaveSuccess && (
-              <Typography variant="body2" color="success.main" sx={{ fontWeight: 600 }}>
-                Saved
-              </Typography>
-            )}
+        {loading ? (
+          <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
+            <CircularProgress size={24} />
+          </Box>
+        ) : (
+          <Stack spacing={2.5} divider={<Box sx={{ borderBottom: 1, borderColor: "divider" }} />}>
+            <AccuracyRow
+              value={accuracyLabel}
+              onChange={handleAccuracyChange}
+              saving={savingRubric === "accuracy"}
+            />
+            {rubrics.map((rubric) => (
+              <CustomRubricRow
+                key={rubric.id}
+                rubric={rubric}
+                value={rubricLabels[rubric.id] ?? null}
+                onChange={(val) => handleRubricChange(rubric.id, val)}
+                saving={savingRubric === rubric.id}
+              />
+            ))}
           </Stack>
-        </Box>
+        )}
       </Stack>
     </Box>
   );

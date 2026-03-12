@@ -525,6 +525,52 @@ export interface QARecord {
 
 export type QAMap = Record<number, QARecord>;
 
+// Rubric annotation label types
+export interface AnswerRubricLabelUpsert {
+  option_value: string;
+}
+
+export interface AnswerRubricLabel {
+  id: number;
+  answer_id: number;
+  rubric_id: number;
+  option_value: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// Rubric types
+export interface RubricOption {
+  option: string;
+  description: string;
+}
+
+export interface TargetRubricCreate {
+  name: string;
+  criteria: string;
+  options: RubricOption[];
+}
+
+export interface TargetRubricUpdate {
+  name?: string;
+  criteria?: string;
+  options?: RubricOption[];
+}
+
+export type RubricCategory = "accuracy" | "voice" | "relevancy" | "default";
+
+export interface TargetRubricResponse {
+  id: number;
+  target_id: number;
+  name: string;
+  criteria: string;
+  options: RubricOption[];
+  position: number;
+  category: RubricCategory;
+  created_at: string;
+  updated_at: string;
+}
+
 // Admin / User Management types
 export interface UserResponse {
   id: number;

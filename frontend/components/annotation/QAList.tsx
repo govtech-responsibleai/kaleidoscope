@@ -16,7 +16,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse } from "@/lib/types";
+import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse, TargetRubricResponse } from "@/lib/types";
 import { answerApi, questionApi, personaApi } from "@/lib/api";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
@@ -30,6 +30,7 @@ interface QAListProps {
   qaJobs: QAJob[];
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
+  rubrics: TargetRubricResponse[];
 }
 
 export default function QAList({
@@ -38,6 +39,7 @@ export default function QAList({
   qaJobs,
   qaMap,
   setQaMap,
+  rubrics,
 }: QAListProps) {
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
   const [personaMap, setPersonaMap] = useState<Record<number, PersonaResponse>>({});
@@ -498,6 +500,7 @@ export default function QAList({
           onNext={handleNext}
           prevDisabled={prevDisabled}
           nextDisabled={nextDisabled}
+          rubrics={rubrics}
         />
       </Paper>
 
@@ -511,6 +514,7 @@ export default function QAList({
           onAnnotationSaved={handleAnnotationSaved}
           showHelperAlert={showHelperAlert}
           onDismissHelperAlert={() => setHelperAlertDismissed(true)}
+          rubrics={rubrics}
         />
       </Box>
     </Box>

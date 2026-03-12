@@ -3,13 +3,17 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   CircularProgress,
-  Divider,
   IconButton,
   Paper,
   Stack,
+  Tab,
+  Tabs,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -18,6 +22,7 @@ import {
   ArrowBackIosNew as ArrowBackIosNewIcon,
   ArrowForwardIos as ArrowForwardIosIcon,
   Download as DownloadIcon,
+  ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
@@ -32,6 +37,7 @@ import {
   AnnotationCompletionStatus,
   QAJob,
   SnapshotMetric,
+  TargetRubricResponse,
 } from "@/lib/types";
 import {
   snapshotApi,
@@ -40,6 +46,7 @@ import {
   metricsApi,
   annotationApi,
   questionApi,
+  targetRubricApi,
 } from "@/lib/api";
 
 export default function ScoringPage() {
@@ -48,7 +55,6 @@ export default function ScoringPage() {
   const searchParams = useSearchParams();
   const targetId = Number(params.id);
 
-  // Snapshot state - initialize from URL if available
   const snapshotIdFromUrl = searchParams.get("snapshot");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
@@ -56,34 +62,31 @@ export default function ScoringPage() {
   );
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
 
-  // Judges state
   const [judges, setJudges] = useState<JudgeConfig[]>([]);
   const [judgesLoading, setJudgesLoading] = useState(true);
 
-  // Dialog state
+  const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | "duplicate">("create");
   const [dialogJudge, setDialogJudge] = useState<JudgeConfig | null>(null);
   const [judgeToDelete, setJudgeToDelete] = useState<JudgeConfig | null>(null);
 
-  // Results state
   const [results, setResults] = useState<ResultRow[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
 
-  // Annotation completion state
   const [annotationStatus, setAnnotationStatus] = useState<AnnotationCompletionStatus | null>(null);
   const [checkingAnnotations, setCheckingAnnotations] = useState(true);
 
-  // Questions status state
   const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number>(0);
   const [questionsWithoutScores, setQuestionsWithoutScores] = useState<Record<number, number>>({});
 
-  // Aggregated metrics state
   const [snapshotMetric, setSnapshotMetric] = useState<SnapshotMetric | null>(null);
   const [snapshotMetricLoading, setSnapshotMetricLoading] = useState(false);
 
-  // UI state
   const [error, setError] = useState<string | null>(null);
+  const [mainTab, setMainTab] = useState(0); // 0 = Scores, 1 = Error Analysis
+
   const judgeCardsRef = useRef<HTMLDivElement | null>(null);
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
@@ -98,16 +101,13 @@ export default function ScoringPage() {
     router.push(`/targets/${targetId}/scoring${query ? `?${query}` : ""}`, { scroll: false });
   }, [searchParams, router, targetId]);
 
-  // Fetch snapshots
   const fetchSnapshots = useCallback(async () => {
     setSnapshotsLoading(true);
     try {
       const response = await snapshotApi.list(targetId);
       setSnapshots(response.data);
-      const hasSelectedSnapshot = selectedSnapshotId !== null && response.data.some(
-        (snapshot) => snapshot.id === selectedSnapshotId
-      );
-      if (!hasSelectedSnapshot) {
+      const hasSelected = selectedSnapshotId !== null && response.data.some(s => s.id === selectedSnapshotId);
+      if (!hasSelected) {
         if (response.data.length > 0) {
           const mostRecent = [...response.data].sort((a, b) =>
             new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -117,124 +117,98 @@ export default function ScoringPage() {
           updateSnapshotSelection(null);
         }
       }
-    } catch (error) {
-      console.error("Failed to fetch snapshots:", error);
+    } catch {
       setError("Failed to load snapshots.");
     } finally {
       setSnapshotsLoading(false);
     }
   }, [targetId, selectedSnapshotId, updateSnapshotSelection]);
 
-  // Fetch judges
   const fetchJudges = useCallback(async () => {
     setJudgesLoading(true);
     try {
       const response = await judgeApi.list(targetId);
-      // Sort: baseline first, then others
-      const sorted = response.data.sort((a, b) =>
-        Number(b.is_baseline) - Number(a.is_baseline)
-      );
-      setJudges(sorted);
-    } catch (error) {
-      console.error("Failed to fetch judges:", error);
+      setJudges(response.data.sort((a, b) => Number(b.is_baseline) - Number(a.is_baseline)));
+    } catch {
       setError("Failed to load judges.");
     } finally {
       setJudgesLoading(false);
     }
   }, [targetId]);
 
-  // Check annotation completion
   const checkAnnotationCompletion = useCallback(async (snapshotId: number) => {
     setCheckingAnnotations(true);
     try {
       const response = await annotationApi.getCompletionStatus(snapshotId);
       setAnnotationStatus(response.data);
-    } catch (error) {
-      console.error("Failed to check annotation status:", error);
+    } catch {
       setAnnotationStatus(null);
     } finally {
       setCheckingAnnotations(false);
     }
   }, []);
 
-  // Fetch results
   const fetchResults = useCallback(async (snapshotId: number) => {
     setResultsLoading(true);
     try {
       const response = await metricsApi.getResults(snapshotId);
       setResults(response.data ?? []);
-    } catch (error) {
-      console.error("Failed to fetch results:", error);
+    } catch {
       setError("Failed to load results.");
     } finally {
       setResultsLoading(false);
     }
   }, []);
 
-  // Fetch snapshot metrics (aggregated accuracy)
   const fetchSnapshotMetrics = useCallback(async () => {
     setSnapshotMetricLoading(true);
     try {
       const response = await metricsApi.getSnapshotMetrics(targetId);
-      const metrics = response.data;
-      // Find the metric for the selected snapshot
-      const currentMetric = metrics.find((m) => m.snapshot_id === selectedSnapshotId) || null;
+      const currentMetric = response.data.find((m) => m.snapshot_id === selectedSnapshotId) || null;
       setSnapshotMetric(currentMetric);
-    } catch (error) {
-      console.error("Failed to fetch snapshot metrics:", error);
+    } catch {
       setSnapshotMetric(null);
     } finally {
       setSnapshotMetricLoading(false);
     }
   }, [targetId, selectedSnapshotId]);
 
-  // Fetch questions without answers (using baseline judge)
   const fetchQuestionsWithoutAnswers = useCallback(async (snapshotId: number) => {
     const baselineJudge = judges.find((j) => j.is_baseline);
-    if (!baselineJudge) {
-      setQuestionsWithoutAnswers(0);
-      return;
-    }
-
+    if (!baselineJudge) { setQuestionsWithoutAnswers(0); return; }
     try {
       const response = await questionApi.listApprovedWithoutAnswers(snapshotId, baselineJudge.id);
       setQuestionsWithoutAnswers(response.data.length);
-    } catch (error) {
-      console.error("Failed to fetch questions without answers:", error);
+    } catch {
       setQuestionsWithoutAnswers(0);
     }
   }, [judges]);
 
-  // Fetch questions without scores for all judges
   const fetchQuestionsWithoutScores = useCallback(async (snapshotId: number) => {
     try {
       const counts: Record<number, number> = {};
-
       for (const judge of judges) {
         const response = await questionApi.listApprovedWithoutScores(snapshotId, judge.id);
         counts[judge.id] = response.data.length;
       }
       setQuestionsWithoutScores(counts);
-    } catch (error) {
-      console.error("Failed to fetch questions without scores:", error);
+    } catch {
       setQuestionsWithoutScores({});
     }
   }, [judges]);
 
-  // Initial data fetch
   useEffect(() => {
     fetchSnapshots();
     fetchJudges();
+    targetRubricApi.list(targetId).then((res) => setRubrics(res.data)).catch(() => {});
   }, [fetchSnapshots, fetchJudges]);
 
-  // Fetch data when snapshot changes
   useEffect(() => {
     setAnnotationStatus(null);
     setResults([]);
     setQuestionsWithoutAnswers(0);
     setQuestionsWithoutScores({});
     setSnapshotMetric(null);
-
     if (selectedSnapshotId) {
       checkAnnotationCompletion(selectedSnapshotId);
       fetchQuestionsWithoutAnswers(selectedSnapshotId);
@@ -242,7 +216,6 @@ export default function ScoringPage() {
     }
   }, [selectedSnapshotId, checkAnnotationCompletion, fetchQuestionsWithoutAnswers, fetchQuestionsWithoutScores]);
 
-  // Fetch results and metrics when annotations are complete
   useEffect(() => {
     if (selectedSnapshotId && annotationStatus?.is_complete) {
       fetchResults(selectedSnapshotId);
@@ -250,104 +223,41 @@ export default function ScoringPage() {
     }
   }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics]);
 
-  // Handle snapshot selection
-  const handleSnapshotSelect = (snapshotId: number | null) => {
-    updateSnapshotSelection(snapshotId);
-  };
+  const handleSnapshotSelect = (snapshotId: number | null) => updateSnapshotSelection(snapshotId);
 
   const handleScrollJudgeCards = (direction: "left" | "right") => {
     const container = judgeCardsRef.current;
-    if (!container) {
-      return;
-    }
-
-    const scrollAmount = container.clientWidth * 0.8;
-    container.scrollBy({
-      left: direction === "left" ? -scrollAmount : scrollAmount,
-      behavior: "smooth",
-    });
+    if (!container) return;
+    container.scrollBy({ left: direction === "left" ? -container.clientWidth * 0.8 : container.clientWidth * 0.8, behavior: "smooth" });
   };
 
-  // Handle job start - creates jobs and returns them for JudgeCard to manage
   const handleJobStart = async (judgeId: number): Promise<QAJob[] | null> => {
-    if (!selectedSnapshotId) {
-      setError("Select a snapshot to run judges.");
-      return null;
-    }
-
+    if (!selectedSnapshotId) { setError("Select a snapshot to run judges."); return null; }
     try {
-      // Get only questions without scores for this judge
       const questionsResponse = await questionApi.listApprovedWithoutScores(selectedSnapshotId, judgeId);
       const questionIdsToScore = questionsResponse.data.map((q) => q.id);
-
-      if (questionIdsToScore.length === 0) {
-        setError("All questions already scored for this judge.");
-        return null;
-      }
-
-      const response = await qaJobApi.start(selectedSnapshotId, {
-        judge_id: judgeId,
-        question_ids: questionIdsToScore,
-      });
-
+      if (questionIdsToScore.length === 0) { setError("All questions already scored for this judge."); return null; }
+      const response = await qaJobApi.start(selectedSnapshotId, { judge_id: judgeId, question_ids: questionIdsToScore });
       return response.data;
-    } catch (error) {
-      console.error("Failed to run judge:", error);
+    } catch {
       setError("Unable to start judge run.");
       return null;
     }
   };
 
-  // Handle job completion - refresh results and metrics
   const handleJobComplete = useCallback(async () => {
     if (!selectedSnapshotId) return;
-
-    await Promise.all([
-      fetchResults(selectedSnapshotId),
-      fetchQuestionsWithoutScores(selectedSnapshotId),
-      fetchSnapshotMetrics(),
-    ]);
+    await Promise.all([fetchResults(selectedSnapshotId), fetchQuestionsWithoutScores(selectedSnapshotId), fetchSnapshotMetrics()]);
   }, [selectedSnapshotId, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics]);
 
-  // Handle judge dialog
-  const handleOpenDialog = (
-    mode: "create" | "edit" | "duplicate",
-    judge?: JudgeConfig
-  ) => {
-    setDialogMode(mode);
-    setDialogJudge(judge || null);
-    setDialogOpen(true);
+  const handleOpenDialog = (mode: "create" | "edit" | "duplicate", judge?: JudgeConfig) => {
+    setDialogMode(mode); setDialogJudge(judge || null); setDialogOpen(true);
   };
 
-  const handleCloseDialog = () => {
-    setDialogOpen(false);
-    setDialogJudge(null);
-  };
-
-  const handleDialogSuccess = async () => {
-    await fetchJudges();
-    handleCloseDialog();
-  };
-
-  // Handle label change (refresh results and metrics)
   const handleLabelChange = useCallback(async () => {
     if (!selectedSnapshotId) return;
-
-    // Refresh both results and metrics to reflect the label change
-    await Promise.all([
-      fetchResults(selectedSnapshotId),
-      fetchSnapshotMetrics(),
-    ]);
+    await Promise.all([fetchResults(selectedSnapshotId), fetchSnapshotMetrics()]);
   }, [selectedSnapshotId, fetchResults, fetchSnapshotMetrics]);
-
-  // Handle delete judge
-  const handleDeleteJudge = (judge: JudgeConfig) => {
-    if (!judge.is_editable || judge.is_baseline) {
-      setError("Cannot delete this judge.");
-      return;
-    }
-    setJudgeToDelete(judge);
-  };
 
   const handleExportSnapshot = async () => {
     if (!selectedSnapshotId) return;
@@ -362,23 +272,19 @@ export default function ScoringPage() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to export snapshot:", error);
+    } catch {
       alert("Failed to export snapshot. Please try again.");
     }
   };
 
   if (snapshotsLoading || judgesLoading) {
-    return (
-      <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-        <CircularProgress />
-      </Box>
-    );
+    return <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>;
   }
 
   return (
     <Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1 }}>
+      {/* Snapshot header + export */}
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1, mb: 2 }}>
         <Box sx={{ flex: 1 }}>
           <SnapshotHeader
             targetId={targetId}
@@ -395,9 +301,7 @@ export default function ScoringPage() {
               onClick={handleExportSnapshot}
               disabled={!selectedSnapshotId}
               sx={{
-                bgcolor: "secondary.main",
-                color: "white",
-                borderRadius: 1,
+                bgcolor: "secondary.main", color: "white", borderRadius: 1,
                 "&:hover": { bgcolor: "secondary.dark" },
                 "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
               }}
@@ -408,58 +312,54 @@ export default function ScoringPage() {
         </Tooltip>
       </Box>
 
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
+      {error && <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>{error}</Alert>}
 
       {!selectedSnapshotId ? (
         <Box sx={{ py: 6, textAlign: "center" }}>
-          <Typography variant="body1" color="text.secondary">
-            Select a snapshot to compare judges.
-          </Typography>
+          <Typography variant="body1" color="text.secondary">Select a snapshot to compare judges.</Typography>
         </Box>
       ) : checkingAnnotations ? (
-        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-          <CircularProgress />
-        </Box>
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>
       ) : !annotationStatus?.is_complete ? (
         <Alert severity="info">
-          {annotationStatus
-            ? (() => {
-                const totalSelected = annotationStatus.selected_ids.length;
-                const totalAnnotated = annotationStatus.selected_and_annotated_ids.length;
-                const annotatedSet = new Set(annotationStatus.selected_and_annotated_ids);
-                const unannotatedIds = annotationStatus.selected_ids.filter(id => !annotatedSet.has(id));
-                return <>
-                  {`Complete all ${totalSelected} annotations in the annotation tab to view scoring. (${totalAnnotated} / ${totalSelected} completed)`}
-                  {unannotatedIds.length > 0 && (
-                    <Box sx={{ mt: 1 }}>
-                      <strong>Incomplete Questions:</strong>
-                      <Box component="ul" sx={{ mt: 0, mb: 0, pl: 2 }}>
-                        {unannotatedIds.map((id) => (
-                          <li key={id}>Q{id}</li>
-                        ))}
-                      </Box>
-                    </Box>
-                  )}
-                </>;
-              })()
-            : "Complete annotations in the annotation tab to view scoring."}
+          {annotationStatus ? (() => {
+            const totalSelected = annotationStatus.selected_ids.length;
+            const totalAnnotated = annotationStatus.selected_and_annotated_ids.length;
+            const annotatedSet = new Set(annotationStatus.selected_and_annotated_ids);
+            const unannotatedIds = annotationStatus.selected_ids.filter(id => !annotatedSet.has(id));
+            return <>
+              {`Complete all ${totalSelected} annotations to view scoring. (${totalAnnotated} / ${totalSelected} done)`}
+              {unannotatedIds.length > 0 && (
+                <Box sx={{ mt: 1 }}>
+                  <strong>Unannotated:</strong>
+                  <Box component="ul" sx={{ mt: 0, mb: 0, pl: 2 }}>
+                    {unannotatedIds.map((id) => <li key={id}>Q{id}</li>)}
+                  </Box>
+                </Box>
+              )}
+            </>;
+          })() : "Complete annotations to view scoring."}
         </Alert>
       ) : (
-          <Stack spacing={1.5}>
-            {/* Alert for questions without answers */}
-            {questionsWithoutAnswers > 0 && (
-              <Alert severity="warning">
-                {questionsWithoutAnswers} new question{questionsWithoutAnswers > 1 ? "s" : ""} found. Run baseline judge in Annotations tab first.
-              </Alert>
-            )}
+        <Stack spacing={2}>
+          {questionsWithoutAnswers > 0 && (
+            <Alert severity="warning">
+              {questionsWithoutAnswers} new question{questionsWithoutAnswers > 1 ? "s" : ""} found. Run baseline judge in Annotations tab first.
+            </Alert>
+          )}
 
-            {/* Aggregated Accuracy Card + Evaluators Section */}
-            <Stack direction="row" spacing={3} alignItems="stretch">
-              {/* Aggregated Accuracy Card - Fixed on left */}
+          {/* Main Tabs */}
+          <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+            <Tabs value={mainTab} onChange={(_, v) => setMainTab(v)}>
+              <Tab label="Scores" />
+              <Tab label="Error Analysis" />
+            </Tabs>
+          </Box>
+
+          {/* ── SCORES TAB ── */}
+          {mainTab === 0 && (
+            <Stack spacing={2}>
+              {/* Overall score card */}
               <SnapshotAccuracyCard
                 snapshotMetric={snapshotMetric}
                 loading={snapshotMetricLoading}
@@ -467,107 +367,68 @@ export default function ScoringPage() {
                 showExplanatoryText
               />
 
-              {/* Evaluators Header + Carousel */}
-              <Paper
-                variant="outlined"
-                sx={{
-                  flex: 1,
-                  minWidth: 0,
-                  bgcolor: "rgb(0, 0, 0, 0.01)",
-                  p: 2
+              {/* Accuracy evaluators section (collapsible) */}
+              <EvaluatorSection
+                title="Accuracy Evaluators"
+                description="Evaluators that measure factual accuracy against your knowledge base."
+                judges={judges}
+                snapshotId={selectedSnapshotId}
+                scrollContainerRef={judgeCardsRef}
+                questionsWithoutScores={questionsWithoutScores}
+                hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
+                onJobStart={handleJobStart}
+                onJobComplete={handleJobComplete}
+                onEditJudge={(j) => handleOpenDialog("edit", j)}
+                onDuplicateJudge={(j) => handleOpenDialog("duplicate", j)}
+                onDeleteJudge={(j) => {
+                  if (!j.is_editable || j.is_baseline) { setError("Cannot delete this judge."); return; }
+                  setJudgeToDelete(j);
                 }}
-              >
-                {/* Header */}
-                <Box sx={{ mb: 2 }}>
-                  <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 1 }}>
-                    <Typography variant="h5">
-                      Your Evaluator List
+                onAddJudge={() => handleOpenDialog("create")}
+                onScrollLeft={() => handleScrollJudgeCards("left")}
+                onScrollRight={() => handleScrollJudgeCards("right")}
+              />
+
+              {/* Custom rubric evaluator stubs */}
+              {rubrics.map((rubric) => (
+                <Accordion key={rubric.id} variant="outlined" disableGutters>
+                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                    <Typography fontWeight={600}>{rubric.name} Evaluators</Typography>
+                  </AccordionSummary>
+                  <AccordionDetails>
+                    <Typography variant="body2" color="text.secondary">
+                      No evaluators configured for this rubric yet. Custom rubric evaluators will appear here once added.
                     </Typography>
-
-                    <Box sx={{ display: "flex", gap: 1 }}>
-                      <Tooltip title="Add Judge">
-                        <IconButton
-                          color="primary"
-                          sx={{ border: 1, borderColor: "divider" }}
-                          aria-label="add judge"
-                          onClick={() => handleOpenDialog("create")}
-                        >
-                          <AddIcon />
-                        </IconButton>
-                      </Tooltip>
-
-                      <span>
-                        <IconButton
-                          sx={{ border: 1, borderColor: "divider" }}
-                          aria-label="scroll judges left"
-                          onClick={() => handleScrollJudgeCards("left")}
-                          disabled={judges.length === 0}
-                        >
-                          <ArrowBackIosNewIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                      <span>
-                        <IconButton
-                          sx={{ border: 1, borderColor: "divider" }}
-                          aria-label="scroll judges right"
-                          onClick={() => handleScrollJudgeCards("right")}
-                          disabled={judges.length === 0}
-                        >
-                          <ArrowForwardIosIcon fontSize="small" />
-                        </IconButton>
-                      </span>
-                    </Box>
-                  </Box>
-
-                  <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                    Accuracy is aggregated from the following evaluators. Test multiple AI evaluators to measure your chatbot&apos;s accuracy!
-                    <br/>
-                    More reliable evaluators (those that align with your annotations) give you more confidence in the accuracy score.
-                  </Typography>
-                </Box>
-
-                {/* Judge Cards Carousel */}
-                <JudgeCards
-                  judges={judges}
-                  snapshotId={selectedSnapshotId}
-                  scrollContainerRef={judgeCardsRef}
-                  questionsWithoutScores={questionsWithoutScores}
-                  hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
-                  onJobStart={handleJobStart}
-                  onJobComplete={handleJobComplete}
-                  onEditJudge={(judge) => handleOpenDialog("edit", judge)}
-                  onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
-                  onDeleteJudge={handleDeleteJudge}
-                />
-              </Paper>
+                  </AccordionDetails>
+                </Accordion>
+              ))}
             </Stack>
+          )}
 
-            <Divider sx={{ pt: 2 }}/>
-
-            {/* Results Table */}
-            {resultsLoading ? (
-              <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
-                <CircularProgress />
-              </Box>
+          {/* ── ERROR ANALYSIS TAB ── */}
+          {mainTab === 1 && (
+            resultsLoading ? (
+              <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>
             ) : (
               <ResultsTable
                 results={results}
                 snapshotId={selectedSnapshotId}
                 judges={judges}
+                rubrics={rubrics}
                 onLabelChange={handleLabelChange}
               />
-            )}
-          </Stack>
+            )
+          )}
+        </Stack>
       )}
 
-      {/* Create/Edit Judge Dialog */}
       <CreateJudgeDialog
         open={dialogOpen}
         targetId={targetId}
         mode={dialogMode}
         judge={dialogJudge}
-        onClose={handleCloseDialog}
-        onSuccess={handleDialogSuccess}
+        onClose={() => { setDialogOpen(false); setDialogJudge(null); }}
+        onSuccess={async () => { await fetchJudges(); setDialogOpen(false); setDialogJudge(null); }}
       />
 
       <ConfirmDeleteDialog
@@ -583,5 +444,70 @@ export default function ScoringPage() {
         itemName={judgeToDelete?.name}
       />
     </Box>
+  );
+}
+
+// ── Collapsible evaluator section ──────────────────────────────────────────
+interface EvaluatorSectionProps {
+  title: string;
+  description: string;
+  judges: JudgeConfig[];
+  snapshotId: number;
+  scrollContainerRef: React.Ref<HTMLDivElement>;
+  questionsWithoutScores: Record<number, number>;
+  hasQuestionsWithoutAnswers: boolean;
+  onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
+  onJobComplete: () => void;
+  onEditJudge: (judge: JudgeConfig) => void;
+  onDuplicateJudge: (judge: JudgeConfig) => void;
+  onDeleteJudge: (judge: JudgeConfig) => void;
+  onAddJudge: () => void;
+  onScrollLeft: () => void;
+  onScrollRight: () => void;
+}
+
+function EvaluatorSection({
+  title, description, judges, snapshotId, scrollContainerRef,
+  questionsWithoutScores, hasQuestionsWithoutAnswers,
+  onJobStart, onJobComplete, onEditJudge, onDuplicateJudge, onDeleteJudge,
+  onAddJudge, onScrollLeft, onScrollRight,
+}: EvaluatorSectionProps) {
+  return (
+    <Accordion defaultExpanded variant="outlined" disableGutters>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <Typography fontWeight={600}>{title}</Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ pt: 0 }}>
+        {/* Controls row — outside AccordionSummary to avoid nested <button> */}
+        <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1.5 }}>
+          <Typography variant="body2" color="text.secondary">{description}</Typography>
+          <Stack direction="row" spacing={1}>
+            <Tooltip title="Add Judge">
+              <IconButton size="small" color="primary" sx={{ border: 1, borderColor: "divider" }} onClick={onAddJudge}>
+                <AddIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            <IconButton size="small" sx={{ border: 1, borderColor: "divider" }} onClick={onScrollLeft} disabled={judges.length === 0}>
+              <ArrowBackIosNewIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" sx={{ border: 1, borderColor: "divider" }} onClick={onScrollRight} disabled={judges.length === 0}>
+              <ArrowForwardIosIcon fontSize="small" />
+            </IconButton>
+          </Stack>
+        </Stack>
+        <JudgeCards
+          judges={judges}
+          snapshotId={snapshotId}
+          scrollContainerRef={scrollContainerRef}
+          questionsWithoutScores={questionsWithoutScores}
+          hasQuestionsWithoutAnswers={hasQuestionsWithoutAnswers}
+          onJobStart={onJobStart}
+          onJobComplete={onJobComplete}
+          onEditJudge={onEditJudge}
+          onDuplicateJudge={onDuplicateJudge}
+          onDeleteJudge={onDeleteJudge}
+        />
+      </AccordionDetails>
+    </Accordion>
   );
 }

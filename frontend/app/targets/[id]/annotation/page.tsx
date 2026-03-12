@@ -7,9 +7,9 @@ import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import CreateSnapshotDialog from "@/components/shared/CreateSnapshotDialog";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
-import { Snapshot, QAJob, QAMap } from "@/lib/types";
+import { Snapshot, QAJob, QAMap, TargetRubricResponse } from "@/lib/types";
 import { Download as DownloadIcon } from "@mui/icons-material";
-import { snapshotApi, judgeApi, metricsApi } from "@/lib/api";
+import { snapshotApi, judgeApi, metricsApi, targetRubricApi } from "@/lib/api";
 
 export default function AnnotationPage() {
   const params = useParams();
@@ -25,6 +25,7 @@ export default function AnnotationPage() {
   );
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
   const [baselineJudgeId, setBaselineJudgeId] = useState<number | null>(null);
+  const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
   const [qaJobs, setQaJobs] = useState<QAJob[]>([]);
   const [qaMap, setQaMap] = useState<QAMap>({});
   const [error, setError] = useState<string | null>(null);
@@ -81,6 +82,7 @@ export default function AnnotationPage() {
   useEffect(() => {
     fetchSnapshots();
     fetchBaselineJudge();
+    targetRubricApi.list(targetId).then((res) => setRubrics(res.data)).catch(() => {});
   }, [fetchSnapshots, fetchBaselineJudge]);
 
   const handleSnapshotSelect = useCallback((snapshotId: number | null) => {
@@ -220,6 +222,7 @@ export default function AnnotationPage() {
         qaJobs={qaJobs}
         qaMap={qaMap}
         setQaMap={setQaMap}
+        rubrics={rubrics}
       />
     </Box>
   );

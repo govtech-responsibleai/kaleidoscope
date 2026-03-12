@@ -48,6 +48,11 @@ import {
   AnswerLabelOverrideCreate,
   UserResponse,
   CreateUserRequest,
+  TargetRubricCreate,
+  TargetRubricUpdate,
+  TargetRubricResponse,
+  AnswerRubricLabel,
+  AnswerRubricLabelUpsert,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -371,6 +376,12 @@ export const annotationApi = {
 
   getCompletionStatus: (snapshotId: number) =>
     api.get<AnnotationCompletionStatus>(`/snapshots/${snapshotId}/annotations/completion-status`),
+
+  getRubricLabels: (answerId: number) =>
+    api.get<AnswerRubricLabel[]>(`/answers/${answerId}/rubric-labels`),
+
+  upsertRubricLabel: (answerId: number, rubricId: number, data: AnswerRubricLabelUpsert) =>
+    api.put<AnswerRubricLabel>(`/answers/${answerId}/rubric-labels/${rubricId}`, data),
 };
 
 // Judge endpoints
@@ -464,6 +475,20 @@ export const adminApi = {
 
   deleteUser: (username: string) =>
     api.delete<{ message: string }>(`/auth/admin/delete-user-jwt/${username}`),
+};
+
+export const targetRubricApi = {
+  list: (targetId: number) =>
+    api.get<TargetRubricResponse[]>(`/targets/${targetId}/rubrics`),
+
+  create: (targetId: number, data: TargetRubricCreate) =>
+    api.post<TargetRubricResponse>(`/targets/${targetId}/rubrics`, data),
+
+  update: (targetId: number, rubricId: number, data: TargetRubricUpdate) =>
+    api.put<TargetRubricResponse>(`/targets/${targetId}/rubrics/${rubricId}`, data),
+
+  delete: (targetId: number, rubricId: number) =>
+    api.delete(`/targets/${targetId}/rubrics/${rubricId}`),
 };
 
 export default api;
