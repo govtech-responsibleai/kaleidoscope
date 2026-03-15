@@ -15,9 +15,11 @@ from src.common.database.repositories.answer_claim_score_repo import AnswerClaim
 from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.database.repositories.kb_document_repo import KBDocumentRepository
+from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
-from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult
+from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult, RubricJudgmentResult
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +54,13 @@ class AnswerJudge:
         if not self.answer:
             raise ValueError(f"Answer {self.job.answer_id} not found")
 
+        # Load rubric if this is a rubric job
+        self.rubric = None
+        if self.job.rubric_id:
+            self.rubric = TargetRubricRepository.get_by_id(db, self.job.rubric_id)
+            if not self.rubric:
+                raise ValueError(f"Rubric {self.job.rubric_id} not found")
+
         # Initialize LLM client with judge's model
         self.llm_client = LLMClient(model=self.judge.model_name)
 
@@ -72,6 +81,13 @@ class AnswerJudge:
             # Check if job is still running
             if self.job.status != JobStatusEnum.running:
                 logger.info(f"QAJob {self.job_id} is not running (status={self.job.status.value}). Skipping scoring.")
+                return
+
+            # Rubric scoring branch — completely separate from accuracy scoring
+            if self.job.rubric_id:
+                logger.info(f"QAJob {self.job_id}: Using rubric scoring for rubric {self.job.rubric_id}")
+                await self._score_rubric_response_level()
+                self._update_job_status()
                 return
 
             # Route to appropriate scoring function
@@ -317,6 +333,61 @@ class AnswerJudge:
 
         except Exception as e:
             logger.error(f"Failed to score answer {self.answer.id}: {e}", exc_info=True)
+            raise
+
+    # Category-specific prompt templates for rubric scoring
+    RUBRIC_TEMPLATE_MAP = {
+        "voice": "voice_rubric_judge.md",
+        "relevancy": "relevancy_rubric_judge.md",
+        "default": "default_rubric_judge.md",
+    }
+
+    async def _score_rubric_response_level(self) -> None:
+        """
+        Score an answer against a custom rubric using response-level judging.
+
+        Selects a category-specific prompt template (voice, relevancy, or default),
+        calls LLM to pick one option, and stores the result in RubricAnswerScore.
+        """
+        template_name = self.RUBRIC_TEMPLATE_MAP.get(
+            self.rubric.category, "default_rubric_judge.md"
+        )
+        logger.info(f"QAJob {self.job_id}: Using template '{template_name}' for rubric category '{self.rubric.category}'")
+
+        prompt = render_template(
+            template_name,
+            question_text=self.answer.question.text,
+            answer_text=self.answer.answer_content,
+            rubric_name=self.rubric.name,
+            rubric_criteria=self.rubric.criteria,
+            rubric_options=self.rubric.options,
+        )
+
+        try:
+            result, metadata = await self.llm_client.generate_structured_async(
+                prompt=prompt,
+                response_model=RubricJudgmentResult,
+                temperature=0.7,
+            )
+
+            self.cost_tracker.add_call(metadata)
+
+            score_data = {
+                "answer_id": self.answer.id,
+                "rubric_id": self.rubric.id,
+                "judge_id": self.judge.id,
+                "option_chosen": result.chosen_option,
+                "explanation": result.explanation,
+            }
+            RubricAnswerScoreRepository.create(self.db, score_data)
+
+            logger.info(
+                f"QAJob {self.job_id}: Rubric scoring complete. "
+                f"answer={self.answer.id}, rubric={self.rubric.id}, option='{result.chosen_option}'"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed rubric scoring for job {self.job_id}: {e}", exc_info=True)
             raise
 
     def _update_job_status(self) -> None:

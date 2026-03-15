@@ -13,6 +13,7 @@ from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
+from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
 from src.query_generation.services.answer_generator import generate_answer_for_job
 from src.scoring.services.claim_processor import extract_and_check_claims
 from src.scoring.services.judge_scoring import score_answer
@@ -86,6 +87,10 @@ class QAJobProcessor:
             (QAJobStageEnum.scoring_answers, self._run_scoring),
         ]
 
+        # Rubric jobs skip claim processing (pipeline: answer → score only)
+        if job.rubric_id is not None:
+            stages = [(e, fn) for e, fn in stages if e != QAJobStageEnum.processing_answers]
+
         start_idx = self._get_start_index(job)
 
         if start_idx >= len(stages):
@@ -134,11 +139,13 @@ class QAJobProcessor:
         """
         Determine which pipeline stage to start from based on existing data.
 
-        Args:
-            job: QAJob to check
+        For rubric jobs (job.rubric_id set), the pipeline is:
+            [0] answer generation → [1] scoring (claims skipped)
+        For accuracy jobs, the pipeline is:
+            [0] answer generation → [1] claim processing → [2] scoring
 
         Returns:
-            Index into the stages list (0=answer gen, 1=claims, 2=scoring, 3=all done)
+            Index into the (possibly filtered) stages list, or len(stages) when all done.
         """
         # Check if answer exists
         answer = AnswerRepository.get_by_question_and_snapshot(
@@ -147,7 +154,16 @@ class QAJobProcessor:
         if not answer or not answer.answer_content:
             return 0  # answer generation
 
-        # Check if claims exist and are fully checked
+        if job.rubric_id is not None:
+            # Rubric pipeline (claim stage removed): scoring is at index 1
+            score = RubricAnswerScoreRepository.get_by_answer_rubric_judge(
+                self.db, answer.id, job.rubric_id, self.judge_id
+            )
+            if not score:
+                return 1  # scoring (index 1 in filtered stages)
+            return 2  # all done
+
+        # Accuracy pipeline: check claims then score
         claims = AnswerClaimRepository.get_by_answer(self.db, answer.id)
         if not claims:
             return 1  # claim processing
@@ -238,6 +254,7 @@ def get_or_create_qajobs_batch(
     judge_id: int,
     question_ids: List[int],
     job_ids: Optional[List[int]] = None,
+    rubric_id: Optional[int] = None,
 ) -> List[QAJob]:
     """
     Get or create QA job records for a batch of questions.
@@ -251,6 +268,7 @@ def get_or_create_qajobs_batch(
         judge_id: Judge ID for scoring
         question_ids: List of question IDs to process
         job_ids: Optional list of job IDs to resume (if provided, retrieves these jobs)
+        rubric_id: Optional rubric ID for rubric scoring jobs
 
     Returns:
         List of QAJob objects (created or retrieved from DB)
@@ -260,9 +278,14 @@ def get_or_create_qajobs_batch(
     if job_ids is None:
         # Create new jobs or get existing ones per question
         for qn_id in question_ids:
-            existing_job = QAJobRepository.get_by_snapshot_question_judge(
-                db, snapshot_id, qn_id, judge_id
-            )
+            if rubric_id is not None:
+                existing_job = QAJobRepository.get_by_snapshot_question_judge_rubric(
+                    db, snapshot_id, qn_id, judge_id, rubric_id
+                )
+            else:
+                existing_job = QAJobRepository.get_by_snapshot_question_judge(
+                    db, snapshot_id, qn_id, judge_id
+                )
 
             if existing_job:
                 # Job exists - retrieve as-is (status will be managed by .run())
@@ -276,10 +299,13 @@ def get_or_create_qajobs_batch(
                     "judge_id": judge_id,
                     "type": QAJobTypeEnum.claim_scoring_full,
                     "status": JobStatusEnum.running,
-                    "stage": QAJobStageEnum.starting
+                    "stage": QAJobStageEnum.starting,
                 }
 
-                # Check if answers/claims already exist for the current question + snapshot
+                if rubric_id is not None:
+                    job_data["rubric_id"] = rubric_id
+
+                # Check if answers already exist for the current question + snapshot
                 answer = AnswerRepository.get_by_question_and_snapshot(
                     db, qn_id, snapshot_id
                 )
@@ -307,6 +333,7 @@ async def run_qajobs_batch(
     judge_id: int,
     question_ids: List[int],
     job_ids: Optional[List[int]] = None,
+    rubric_id: Optional[int] = None,
 ) -> List[QAJob]:
     """
     Run QA jobs batch for multiple questions.
@@ -320,12 +347,13 @@ async def run_qajobs_batch(
         judge_id: Judge ID for scoring
         question_ids: List of question IDs to process
         job_ids: Optional list of job IDs to resume (None = check for existing or create new)
+        rubric_id: Optional rubric ID for rubric scoring jobs
 
     Returns:
         List of QAJob objects after processing
     """
     # Ensure job records exist for all questions (this should be idempotent)
-    qajobs = get_or_create_qajobs_batch(db, snapshot_id, judge_id, question_ids, job_ids)
+    qajobs = get_or_create_qajobs_batch(db, snapshot_id, judge_id, question_ids, job_ids, rubric_id)
 
     # Build mapping of question_id -> job_id
     qn2qajob = {job.question_id: job.id for job in qajobs if job}

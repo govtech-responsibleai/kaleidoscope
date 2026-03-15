@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy import and_, not_, exists
 from sqlalchemy.orm import Session, joinedload
 
-from src.common.database.models import Question, QAJob, Answer, AnswerScore, StatusEnum
+from src.common.database.models import Question, QAJob, Answer, AnswerScore, RubricAnswerScore, StatusEnum
 
 
 class QuestionRepository:
@@ -217,6 +217,42 @@ class QuestionRepository:
                 Question.target_id == target_id,
                 Question.status == StatusEnum.approved,
                 AnswerScore.id.is_(None)  # No score exists
+            )
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+    @staticmethod
+    def get_approved_questions_without_rubric_scores(
+        db: Session,
+        target_id: int,
+        snapshot_id: int,
+        judge_id: int,
+        rubric_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Question]:
+        """
+        Get approved questions that have answers but no rubric scores
+        for a specific snapshot/judge/rubric combo.
+        """
+        return (
+            db.query(Question)
+            .options(joinedload(Question.persona))
+            .join(Answer, and_(
+                Answer.question_id == Question.id,
+                Answer.snapshot_id == snapshot_id
+            ))
+            .outerjoin(RubricAnswerScore, and_(
+                RubricAnswerScore.answer_id == Answer.id,
+                RubricAnswerScore.judge_id == judge_id,
+                RubricAnswerScore.rubric_id == rubric_id
+            ))
+            .filter(
+                Question.target_id == target_id,
+                Question.status == StatusEnum.approved,
+                RubricAnswerScore.id.is_(None)
             )
             .offset(skip)
             .limit(limit)

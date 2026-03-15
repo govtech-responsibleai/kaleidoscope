@@ -92,6 +92,21 @@ def list_available_models():
     return AVAILABLE_MODELS
 
 
+@router.get("/judges/by-category/{category}", response_model=List[JudgeResponse])
+def list_judges_by_category(
+    category: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Get judges for a specific rubric category.
+
+    Returns judges whose category matches the given value OR whose category is 'common'.
+    This gives exactly the 3 evaluators for a custom rubric (1 specialist + 2 common).
+    """
+    judges = JudgeRepository.get_by_category(db, category)
+    return judges
+
+
 @router.get("/judges/{judge_id}", response_model=JudgeResponse)
 def get_judge(
     judge_id: int,

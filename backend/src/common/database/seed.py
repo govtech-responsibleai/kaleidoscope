@@ -52,7 +52,8 @@ def _require_model(value: str) -> str:
 BASELINE_MODEL_MAP = {
     0: "litellm_proxy/gemini-2.5-flash-lite", 
     1: "litellm_proxy/gemini-3-flash-preview", 
-    2: "azure/gpt-5-nano-2025-08-07"
+    2: "azure/gpt-5-nano-2025-08-07",
+    3: "azure/gpt-5-mini-2025-08-07"
 }
 
 DEFAULT_JUDGES = [
@@ -63,6 +64,7 @@ DEFAULT_JUDGES = [
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": True,
         "is_editable": False,
+        "category": "common",
     },
     {
         "name": "Baseline Evaluator 2",
@@ -71,6 +73,7 @@ DEFAULT_JUDGES = [
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": False,
         "is_editable": False,
+        "category": "accuracy",
     },
     {
         "name": "Baseline Evaluator 3",
@@ -79,6 +82,34 @@ DEFAULT_JUDGES = [
         "judge_type": JudgeTypeEnum.claim_based,
         "is_baseline": False,
         "is_editable": False,
+        "category": "common",
+    },
+    {
+        "name": "Voice Evaluator",
+        "model_name": _require_model(BASELINE_MODEL_MAP[1]),
+        "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
+        "judge_type": JudgeTypeEnum.response_level,
+        "is_baseline": False,
+        "is_editable": False,
+        "category": "voice",
+    },
+    {
+        "name": "Relevancy Evaluator",
+        "model_name": _require_model(BASELINE_MODEL_MAP[3]),
+        "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[3]]['label'],
+        "judge_type": JudgeTypeEnum.response_level,
+        "is_baseline": False,
+        "is_editable": False,
+        "category": "relevancy",
+    },
+    {
+        "name": "Default Evaluator",
+        "model_name": _require_model(BASELINE_MODEL_MAP[1]),
+        "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
+        "judge_type": JudgeTypeEnum.response_level,
+        "is_baseline": False,
+        "is_editable": False,
+        "category": "default",
     },
 ]
 
@@ -88,7 +119,7 @@ def seed_default_judges(db: Session) -> None:
     Seed default judges into the database.
 
     This function is idempotent - it will only create judges that don't already exist
-    based on their model_name.
+    based on their (model_name, category) combination.
 
     Args:
         db: Database session
@@ -96,11 +127,12 @@ def seed_default_judges(db: Session) -> None:
     logger.info("Seeding default judges...")
 
     existing_judges = JudgeRepository.get_all(db)
-    existing_models = {judge.model_name for judge in existing_judges}
+    existing_combos = {(judge.model_name, judge.category) for judge in existing_judges}
 
     created_count = 0
     for config in DEFAULT_JUDGES:
-        if config["model_name"] in existing_models:
+        combo = (config["model_name"], config["category"])
+        if combo in existing_combos:
             logger.debug(f"Judge '{config['name']}' already exists, skipping")
             continue
 
@@ -113,9 +145,10 @@ def seed_default_judges(db: Session) -> None:
             "judge_type": config["judge_type"],
             "is_baseline": config["is_baseline"],
             "is_editable": config["is_editable"],
+            "category": config["category"],
         }
         JudgeRepository.create(db, judge_data)
-        existing_models.add(config["model_name"])
+        existing_combos.add(combo)
         created_count += 1
         logger.info(f"Created judge: {config['name']}")
 

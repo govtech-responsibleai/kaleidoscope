@@ -13,10 +13,10 @@ VALID_CATEGORIES = {"accuracy", "voice", "relevancy", "default"}
 
 SYSTEM_PROMPT = """You are a rubric classifier. Given a rubric name and criteria, classify it into exactly one of these categories:
 
-- accuracy: factual correctness, truthfulness, hallucination avoidance, citation correctness
-- voice: tone, style, brand personality, formality, empathy, communication style
-- relevancy: on-topic responses, addressing the question asked, focus and conciseness
-- default: anything that does not clearly fit accuracy, voice, or relevancy (e.g. formatting, safety, length)
+- accuracy: Anything related to the truthfulness or correctness of the information provided. This includes factual accuracy, hallucination detection, citation verification, data correctness, consistency with source material, or any rubric that evaluates whether the content is true, supported, or verifiable.
+- voice: Anything related to how the response communicates, independent of whether it is correct. This includes tone, writing style, formality level, empathy, professionalism, brand voice, personality, readability, clarity of language, politeness, verbosity, or any rubric that evaluates the manner or style of communication.
+- relevancy: Anything related to whether the response addresses what was asked and stays on topic. This includes topicality, completeness relative to the question, specificity, helpfulness, actionability, scope appropriateness, or any rubric that evaluates whether the answer is useful and responsive to the user's actual needs.
+- default: Use this only when the rubric clearly does not fit any of the above three categories. Examples include formatting requirements, safety/compliance, response length constraints, or structural rules.
 
 Reply with only one word from: accuracy, voice, relevancy, default"""
 
@@ -33,7 +33,7 @@ def classify_rubric(name: str, criteria: str) -> str:
         str: One of: "accuracy", "voice", "relevancy", "default"
     """
     try:
-        llm_client = LLMClient(model="gpt-5-nano")
+        llm_client = LLMClient(model="litellm_proxy/gemini-2.5-flash-lite")
         prompt = f"Rubric name: {name}\nCriteria: {criteria or 'No criteria provided'}"
         response = llm_client.generate(
             prompt=prompt,

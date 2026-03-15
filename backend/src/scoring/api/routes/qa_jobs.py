@@ -10,12 +10,17 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db, SessionLocal
-from src.common.database.repositories import QAJobRepository, SnapshotRepository, JudgeRepository
+from src.common.database.repositories import (
+    QAJobRepository, SnapshotRepository, JudgeRepository, TargetRubricRepository
+)
+from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
 from src.common.models import (
     QAJobStart,
     QAJobPauseRequest,
     QAJobResponse,
-    QAJobDetailResponse
+    QAJobDetailResponse,
+    RubricQAJobStart,
+    RubricAnswerScoreResponse,
 )
 from src.scoring.services.qa_job_processor import (
     get_or_create_qajobs_batch,
@@ -225,6 +230,77 @@ def list_qa_jobs_by_judge(
 
     jobs = QAJobRepository.get_by_snapshot_and_judge(db, snapshot_id, judge_id)
     return jobs
+
+
+@router.post("/snapshots/{snapshot_id}/rubric-qa-jobs/start", response_model=List[QAJobResponse])
+async def start_rubric_qa_jobs(
+    snapshot_id: int,
+    request: RubricQAJobStart,
+    db: Session = Depends(get_db)
+):
+    """
+    Start rubric QA jobs for a batch of questions.
+
+    Creates QAJob records with rubric_id set and processes them in the background.
+    The pipeline skips claim extraction (answer → rubric score directly).
+    """
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Snapshot {snapshot_id} not found")
+
+    judge = JudgeRepository.get_by_id(db, request.judge_id)
+    if not judge:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Judge {request.judge_id} not found")
+
+    rubric = TargetRubricRepository.get_by_id(db, request.rubric_id)
+    if not rubric:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {request.rubric_id} not found")
+
+    try:
+        jobs = get_or_create_qajobs_batch(
+            db=db,
+            snapshot_id=snapshot_id,
+            judge_id=request.judge_id,
+            question_ids=request.question_ids,
+            rubric_id=request.rubric_id,
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create rubric QA job records: {str(e)}"
+        )
+
+    async def runner():
+        def sync_work():
+            db = SessionLocal()
+            try:
+                asyncio.run(run_qajobs_batch(
+                    db=db,
+                    snapshot_id=snapshot_id,
+                    judge_id=request.judge_id,
+                    question_ids=request.question_ids,
+                    rubric_id=request.rubric_id,
+                ))
+            finally:
+                db.close()
+        await run_in_threadpool(sync_work)
+
+    asyncio.create_task(runner())
+
+    return jobs
+
+
+@router.get("/answers/{answer_id}/rubric-scores", response_model=List[RubricAnswerScoreResponse])
+def get_rubric_scores_for_answer(
+    answer_id: int,
+    rubric_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get all rubric judge scores for a specific answer and rubric.
+    """
+    scores = RubricAnswerScoreRepository.get_by_answer_and_rubric(db, answer_id, rubric_id)
+    return scores
 
 
 @router.get("/qa-jobs/{job_id}", response_model=QAJobDetailResponse)
