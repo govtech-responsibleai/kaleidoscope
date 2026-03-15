@@ -268,6 +268,7 @@ export interface QAJob {
   question_id: number;
   answer_id: number | null;
   judge_id: number;
+  rubric_id: number | null;
   type: string;
   status: JobStatus;
   stage: QAJobStageEnum;
@@ -396,8 +397,19 @@ export interface JudgeConfig {
   is_editable: boolean;
   params: Record<string, any>;
   prompt_template?: string;
+  category: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface RubricAnswerScore {
+  id: number;
+  answer_id: number;
+  rubric_id: number;
+  judge_id: number;
+  option_chosen: string;
+  explanation: string;
+  created_at: string;
 }
 
 export interface JudgeCreate {

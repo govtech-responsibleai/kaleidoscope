@@ -24,10 +24,11 @@ import {
   QAJob,
   QAJobStageEnum,
   JobStatus,
-  QAMap, 
-  QARecord
+  QAMap,
+  QARecord,
+  TargetRubricResponse,
 } from "@/lib/types";
-import { answerApi, qaJobApi, questionApi } from "@/lib/api";
+import { answerApi, judgeApi, qaJobApi, questionApi, rubricQAJobApi } from "@/lib/api";
 
 interface QAJobControlProps {
   snapshotId: number | null;
@@ -36,7 +37,9 @@ interface QAJobControlProps {
   setQaJobs: React.Dispatch<React.SetStateAction<QAJob[]>>;
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
+  rubrics?: TargetRubricResponse[];
   onError?: (message: string) => void;
+  onRubricJobsCompleteChange?: (complete: boolean) => void;
 }
 
 type ControlState = "start" | "pause" | "resume" | "disabled";
@@ -65,10 +68,14 @@ export default function QAJobControl({
   setQaJobs,
   qaMap,
   setQaMap,
+  rubrics,
   onError,
+  onRubricJobsCompleteChange,
 }: QAJobControlProps) {
   const [jobInAction, setJobInAction] = useState(false); // To prevent double submits of a job request
   const [loadingInitialData, setLoadingInitialData] = useState(true); // Wait for the first set of data to be ready
+  const [rubricJobsFired, setRubricJobsFired] = useState(false); // Track if rubric jobs have been fired this session
+  const [rubricJobsComplete, setRubricJobsComplete] = useState(false); // Track if all rubric jobs have completed
   const pollingIntervalRef = useRef<number | null>(null);
   const qaMapRef = useRef<QAMap>({});
   const activeSnapshotIdRef = useRef<number | null>(null);
@@ -83,6 +90,11 @@ export default function QAJobControl({
   const notifyError = useCallback((message: string) => {
     onErrorRef.current?.(message);
   }, []);
+
+  // Propagate rubricJobsComplete to parent
+  useEffect(() => {
+    onRubricJobsCompleteChange?.(rubricJobsComplete);
+  }, [rubricJobsComplete, onRubricJobsCompleteChange]);
 
   // refs don't trigger re-renders
   useEffect(() => {
@@ -136,92 +148,68 @@ export default function QAJobControl({
     return groups;
   }, [qaJobs]);
 
-  const updateQaMapEntry = useCallback(
-    (questionId: number, partial: Partial<QARecord>) => {
-      setQaMap((prev) => {
-        const base = prev[questionId] || { questionId };
-        return {
-          ...prev,
-          [questionId]: {
-            ...base,
-            ...partial,
-          },
-        };
-      });
-    },
-    [setQaMap]
-  );
+  // Fetch helpers — return partial QARecord data without calling setQaMap.
+  // The hydrate effect collects all partials and applies them in a single batch.
 
-  // Check if answer/claims/scoring data already exists 
-  
-  const ensureAnswerLoaded = useCallback(
-    async (job: QAJob) => {
-      if (!job.answer_id) return;
-      if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+  const fetchAnswer = useCallback(
+    async (job: QAJob): Promise<Partial<QARecord> | null> => {
+      if (!job.answer_id) return null;
       const entry = qaMapRef.current[job.question_id];
       if (entry?.answer && entry.answer.id === job.answer_id && entry.answer.answer_content) {
-        return;
+        return null;
       }
-
       try {
         const response = await answerApi.get(job.answer_id);
-        if (job.snapshot_id !== activeSnapshotIdRef.current) return;
-        updateQaMapEntry(job.question_id, { answer: response.data });
+        return { answer: response.data };
       } catch (err) {
         console.error("Failed to fetch answer:", err);
         notifyError("Unable to load answers for this snapshot.");
+        return null;
       }
     },
-    [updateQaMapEntry, notifyError]
+    [notifyError]
   );
 
-  const ensureClaimsLoaded = useCallback(
-    async (job: QAJob) => {
-      if (!job.answer_id || !baselineJudgeId) return;
-      if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+  const fetchClaims = useCallback(
+    async (job: QAJob): Promise<Partial<QARecord> | null> => {
+      if (!job.answer_id || !baselineJudgeId) return null;
       const entry = qaMapRef.current[job.question_id];
       if (entry?.claims && entry.claims.length > 0) {
-        return;
+        return null;
       }
-
       try {
         const response = await answerApi.getClaims(job.answer_id, baselineJudgeId);
         const claims = response.data.claims.map(({ score, ...claim }) => claim);
         const claimScores = response.data.claims
           .map((item) => item.score)
           .filter((score): score is NonNullable<typeof score> => Boolean(score));
-        if (job.snapshot_id !== activeSnapshotIdRef.current) return;
-        updateQaMapEntry(job.question_id, { claims, claimScores });
+        return { claims, claimScores };
       } catch (err) {
         console.error("Failed to fetch claims:", err);
         notifyError("Unable to load claim data.");
+        return null;
       }
     },
-    [baselineJudgeId, updateQaMapEntry, notifyError]
+    [baselineJudgeId, notifyError]
   );
 
-  const ensureScoreLoaded = useCallback(
-    async (job: QAJob) => {
-      if (!job.answer_id || !baselineJudgeId) return;
-      if (job.snapshot_id !== activeSnapshotIdRef.current) return;
+  const fetchScore = useCallback(
+    async (job: QAJob): Promise<Partial<QARecord> | null> => {
+      if (!job.answer_id || !baselineJudgeId) return null;
       const entry = qaMapRef.current[job.question_id];
       if (entry?.answerScore) {
-        return;
+        return null;
       }
-
       try {
         const response = await answerApi.getScores(job.answer_id, baselineJudgeId);
-        if (job.snapshot_id !== activeSnapshotIdRef.current) return;
-        updateQaMapEntry(job.question_id, {
-          answerScore: response.data,
-          claimScores: response.data.claim_scores,
-        });
+        return { answerScore: response.data, claimScores: response.data.claim_scores };
       } catch (err) {
         console.error("Failed to fetch score:", err);
         notifyError("Unable to load judge scores.");
+        return null;
       }
     },
-    [baselineJudgeId, updateQaMapEntry, notifyError]
+    [baselineJudgeId, notifyError]
   );
 
   // Load existing answers and jobs when snapshot changes
@@ -244,12 +232,23 @@ export default function QAJobControl({
         if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
 
         // Get all jobs for this snapshot and (baseline) judge
+        const allJobs = jobsResponse.data;
         const baselineJobs = baselineJudgeId
-          ? jobsResponse.data.filter(
-              (job) => job.judge_id === baselineJudgeId
-            )
-          : jobsResponse.data;
+          ? allJobs.filter((job) => job.judge_id === baselineJudgeId)
+          : allJobs;
         setQaJobs(baselineJobs);
+
+        // Check if rubric jobs are already complete (returning to a finished snapshot)
+        const baselineDone = baselineJobs.length > 0 &&
+          baselineJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED);
+        if (baselineDone) {
+          const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
+          const rubricJobs = allJobs.filter((j) => j.rubric_id !== null);
+          const rubricsDone = !hasNonAccuracyRubrics ||
+            (rubricJobs.length > 0 &&
+              rubricJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED));
+          setRubricJobsComplete(rubricsDone);
+        }
 
         const answers = answersResponse.data.answers;
 
@@ -292,6 +291,7 @@ export default function QAJobControl({
               answer,
             };
           });
+          qaMapRef.current = initial;
           return initial;
         });
         console.log("Loaded initial data...");
@@ -351,7 +351,8 @@ export default function QAJobControl({
     };
   }, [snapshotId, baselineJudgeId, qaJobs]);
 
-  // Update QA data as jobs progress depending on their STAGE
+  // Update QA data as jobs progress depending on their STAGE.
+  // Fetches all missing data in parallel and applies a single batched setQaMap.
   useEffect(() => {
     if (!snapshotId) {
       return;
@@ -360,31 +361,55 @@ export default function QAJobControl({
     let cancelled = false;
 
     const hydrate = async () => {
-      for (const job of qaJobs) {
-        if (cancelled) break;
+      // Collect all fetch promises keyed by questionId
+      const updates: { questionId: number; promise: Promise<Partial<QARecord> | null> }[] = [];
 
-        // No answer yet
+      for (const job of qaJobs) {
         if (!job.answer_id) continue;
 
-        // Answer done, no claims/scores yet
         if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS) {
-          console.log("Hydrating job at stage:", job.stage);
-          await ensureAnswerLoaded(job);
-          
-        // Answer/claims done, no scores yet
+          updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
         } else if (job.stage === QAJobStageEnum.SCORING_ANSWERS) {
-          console.log("Hydrating job at stage:", job.stage);
-          await ensureAnswerLoaded(job);
-          await ensureClaimsLoaded(job);
-        
-        // Answer/claims/scores done
+          updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
+          updates.push({ questionId: job.question_id, promise: fetchClaims(job) });
         } else if (job.stage === QAJobStageEnum.COMPLETED) {
-          console.log("Hydrating job at stage:", job.stage);
-          await ensureAnswerLoaded(job);
-          await ensureClaimsLoaded(job);
-          await ensureScoreLoaded(job);
+          updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
+          updates.push({ questionId: job.question_id, promise: fetchClaims(job) });
+          updates.push({ questionId: job.question_id, promise: fetchScore(job) });
         }
       }
+
+      if (updates.length === 0) return;
+
+      // Resolve all fetches in parallel
+      const results = await Promise.all(
+        updates.map(async ({ questionId, promise }) => ({
+          questionId,
+          partial: await promise,
+        }))
+      );
+
+      if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
+
+      // Merge all non-null results into a single qaMap update
+      const merged: Record<number, Partial<QARecord>> = {};
+      for (const { questionId, partial } of results) {
+        if (!partial) continue;
+        merged[questionId] = { ...merged[questionId], ...partial };
+      }
+
+      if (Object.keys(merged).length === 0) return;
+
+      setQaMap((prev) => {
+        const next = { ...prev };
+        for (const [qidStr, partial] of Object.entries(merged)) {
+          const qid = Number(qidStr);
+          const base = next[qid] || { questionId: qid };
+          next[qid] = { ...base, ...partial };
+        }
+        qaMapRef.current = next;
+        return next;
+      });
     };
 
     hydrate();
@@ -392,7 +417,7 @@ export default function QAJobControl({
     return () => {
       cancelled = true;
     };
-  }, [qaJobs, snapshotId, ensureAnswerLoaded, ensureClaimsLoaded, ensureScoreLoaded]);
+  }, [qaJobs, snapshotId, fetchAnswer, fetchClaims, fetchScore, setQaMap]);
 
   // Polling control functions
   const stopPolling = useCallback(() => {
@@ -407,17 +432,42 @@ export default function QAJobControl({
     try {
       const response = await qaJobApi.list(snapshotId);
       console.log("Current job list...", response);
-      const baselineJobs = response.data.filter(
+      const allJobs = response.data;
+
+      const baselineJobs = allJobs.filter(
         (job) => job.judge_id === baselineJudgeId
       );
       setQaJobs(baselineJobs);
 
-      // Stop polling if all jobs are done
-      const allDone = baselineJobs.every(
+      const baselineDone = baselineJobs.every(
         (job) => job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED
       );
-      if (allDone && baselineJobs.length > 0) {
-        stopPolling();
+
+      if (baselineDone && baselineJobs.length > 0) {
+        // Auto-fire rubric jobs once baseline completes
+        if (!rubricJobsFired) {
+          setRubricJobsFired(true);
+          const answeredIds = Object.values(qaMapRef.current)
+            .filter((e) => e.answer)
+            .map((e) => e.questionId);
+          if (answeredIds.length > 0) {
+            console.log("Baseline complete — auto-firing rubric jobs for", answeredIds.length, "answered questions");
+            fireRubricJobs(answeredIds);
+          }
+        }
+
+        // Check rubric job completion
+        const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
+        const rubricJobs = allJobs.filter((j) => j.rubric_id !== null);
+        const rubricsDone = !hasNonAccuracyRubrics ||
+          (rubricJobs.length > 0 &&
+            rubricJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED));
+        setRubricJobsComplete(rubricsDone);
+
+        // Only stop polling when baseline AND rubric jobs are all done
+        if (rubricsDone) {
+          stopPolling();
+        }
       }
     } catch (err) {
       console.error("Failed to poll job status:", err);
@@ -471,6 +521,7 @@ export default function QAJobControl({
               answer,
             };
           });
+          qaMapRef.current = next;
           return next;
         });
         if (!cancelled) {
@@ -490,8 +541,10 @@ export default function QAJobControl({
     };
   }, [snapshotId, qaMap, setQaMap]);
 
-  // Cleanup polling on unmount or snapshot/judge change
+  // Reset rubric jobs state and cleanup polling on snapshot/judge change
   useEffect(() => {
+    setRubricJobsFired(false);
+    setRubricJobsComplete(false);
     return () => {
       stopPolling();
     };
@@ -545,6 +598,17 @@ export default function QAJobControl({
         return (
           <Chip
             label={`Pending: (${questionsWithoutAnswers.length}) new questions found.`}
+            color="warning"
+            size="small"
+          />
+        );
+      }
+      const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
+      if (hasNonAccuracyRubrics && !rubricJobsComplete) {
+        return (
+          <Chip
+            icon={<CircularProgress size={14} />}
+            label="Scoring custom metrics..."
             color="warning"
             size="small"
           />
@@ -619,10 +683,46 @@ export default function QAJobControl({
 
   const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && questionsWithoutAnswers.length === 0;
 
+  // Fire rubric jobs for all answered questions (fire-and-forget).
+  // Fetches judges on-demand so we don't depend on pre-loaded state.
+  const fireRubricJobs = useCallback(async (allQuestionIds: number[]) => {
+    if (!snapshotId || !rubrics || allQuestionIds.length === 0) return;
+    const nonAccuracyRubrics = rubrics.filter((r) => r.category !== "accuracy");
+    if (nonAccuracyRubrics.length === 0) return;
+
+    for (const rubric of nonAccuracyRubrics) {
+      try {
+        const resp = await judgeApi.getByCategory(rubric.category);
+        const judges = resp.data;
+        // Only fire the category-specific specialist judge, not the 2 common judges.
+        // Users can manually run common judges from the scoring tab if desired.
+        const specialistJudges = judges.filter((j) => j.category !== "common");
+        await Promise.allSettled(
+          specialistJudges.map((judge) =>
+            rubricQAJobApi.start(snapshotId, {
+              judge_id: judge.id,
+              question_ids: allQuestionIds,
+              rubric_id: rubric.id,
+            }).catch((err) => {
+              console.error(`Failed to start rubric job for rubric ${rubric.id}, judge ${judge.id}:`, err);
+            })
+          )
+        );
+      } catch (err) {
+        console.error(`Failed to fetch judges for rubric category ${rubric.category}:`, err);
+      }
+    }
+  }, [snapshotId, rubrics]);
+
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {
     if (!snapshotId || !baselineJudgeId) return;
     console.log("calling handleStart");
+
+    // All question IDs to potentially rubric-score (answered + new)
+    const answeredQuestionIds = Object.values(qaMap)
+      .filter((entry) => entry.answer)
+      .map((entry) => entry.questionId);
 
     // Check for failed jobs that need restarting
     const failedJobs = qaJobs.filter((job) => job.status === JobStatus.FAILED);
@@ -635,10 +735,11 @@ export default function QAJobControl({
           judge_id: baselineJudgeId,
           question_ids: failedJobs.map((job) => job.question_id),
           job_ids: failedJobs.map((job) => job.id),
-
         });
         setQaJobs(response.data);
         startPolling();
+        // Fire rubric jobs only for already-answered questions (failed baseline jobs don't have answers yet)
+        fireRubricJobs(answeredQuestionIds);
       } catch (err) {
         console.error("Failed to restart failed QA jobs:", err);
         notifyError("Failed to restart failed QA jobs.");
@@ -651,16 +752,20 @@ export default function QAJobControl({
         const response = await qaJobApi.start(snapshotId, {
           judge_id: baselineJudgeId,
           question_ids: questionsWithoutAnswers,
-
         });
         setQaJobs(response.data);
         startPolling();
+        // Fire rubric jobs only for already-answered questions (new questions don't have answers yet)
+        fireRubricJobs(answeredQuestionIds);
       } catch (err) {
         console.error("Failed to start QA jobs:", err);
         notifyError("Failed to start QA jobs.");
       } finally {
         setJobInAction(false);
       }
+    } else {
+      // No new baseline questions but user may want to run rubric jobs for already-answered questions
+      fireRubricJobs(answeredQuestionIds);
     }
   };
 
@@ -722,8 +827,7 @@ export default function QAJobControl({
           disabled={
             controlState === "disabled" ||
             jobInAction ||
-            loadingInitialData ||
-            isScoringComplete
+            loadingInitialData
           }
           startIcon={
             jobInAction ? (

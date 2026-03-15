@@ -27,6 +27,7 @@ import {
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import JudgeCards from "@/components/scoring/JudgeCards";
+import RubricJudgeCard from "@/components/scoring/RubricJudgeCard";
 import CreateJudgeDialog from "@/components/scoring/CreateJudgeDialog";
 import ResultsTable from "@/components/scoring/ResultsTable";
 import SnapshotAccuracyCard from "@/components/shared/SnapshotAccuracyCard";
@@ -47,6 +48,7 @@ import {
   annotationApi,
   questionApi,
   targetRubricApi,
+  rubricQAJobApi,
 } from "@/lib/api";
 
 export default function ScoringPage() {
@@ -66,6 +68,8 @@ export default function ScoringPage() {
   const [judgesLoading, setJudgesLoading] = useState(true);
 
   const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
+  // rubricJudges: rubric_id → list of judges for that rubric category
+  const [rubricJudges, setRubricJudges] = useState<Record<number, JudgeConfig[]>>({});
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | "duplicate">("create");
@@ -200,7 +204,23 @@ export default function ScoringPage() {
   useEffect(() => {
     fetchSnapshots();
     fetchJudges();
-    targetRubricApi.list(targetId).then((res) => setRubrics(res.data)).catch(() => {});
+    targetRubricApi.list(targetId).then(async (res) => {
+      const rubricList = res.data;
+      setRubrics(rubricList);
+      // Fetch judges for each rubric category
+      const judgesMap: Record<number, JudgeConfig[]> = {};
+      await Promise.all(
+        rubricList.map(async (rubric) => {
+          try {
+            const resp = await judgeApi.getByCategory(rubric.category);
+            judgesMap[rubric.id] = resp.data;
+          } catch {
+            judgesMap[rubric.id] = [];
+          }
+        })
+      );
+      setRubricJudges(judgesMap);
+    }).catch(() => {});
   }, [fetchSnapshots, fetchJudges]);
 
   useEffect(() => {
@@ -241,6 +261,25 @@ export default function ScoringPage() {
       return response.data;
     } catch {
       setError("Unable to start judge run.");
+      return null;
+    }
+  };
+
+  const handleRubricJobStart = async (judgeId: number, rubricId: number): Promise<QAJob[] | null> => {
+    if (!selectedSnapshotId) { setError("Select a snapshot to run judges."); return null; }
+    try {
+      // Use rubric-specific endpoint so common judges aren't blocked by accuracy scores
+      const questionsResponse = await questionApi.listApprovedWithoutRubricScores(selectedSnapshotId, judgeId, rubricId);
+      const questionIds = questionsResponse.data.map((q) => q.id);
+      if (questionIds.length === 0) { setError("All questions already scored for this rubric judge."); return null; }
+      const response = await rubricQAJobApi.start(selectedSnapshotId, {
+        judge_id: judgeId,
+        question_ids: questionIds,
+        rubric_id: rubricId,
+      });
+      return response.data;
+    } catch {
+      setError("Unable to start rubric judge run.");
       return null;
     }
   };
@@ -371,7 +410,7 @@ export default function ScoringPage() {
               <EvaluatorSection
                 title="Accuracy Evaluators"
                 description="Evaluators that measure factual accuracy against your knowledge base."
-                judges={judges}
+                judges={judges.filter((j) => j.category === "accuracy" || j.category === "common")}
                 snapshotId={selectedSnapshotId}
                 scrollContainerRef={judgeCardsRef}
                 questionsWithoutScores={questionsWithoutScores}
@@ -389,19 +428,41 @@ export default function ScoringPage() {
                 onScrollRight={() => handleScrollJudgeCards("right")}
               />
 
-              {/* Custom rubric evaluator stubs */}
-              {rubrics.map((rubric) => (
-                <Accordion key={rubric.id} variant="outlined" disableGutters>
-                  <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                    <Typography fontWeight={600}>{rubric.name} Evaluators</Typography>
-                  </AccordionSummary>
-                  <AccordionDetails>
-                    <Typography variant="body2" color="text.secondary">
-                      No evaluators configured for this rubric yet. Custom rubric evaluators will appear here once added.
-                    </Typography>
-                  </AccordionDetails>
-                </Accordion>
-              ))}
+              {/* Per-rubric evaluator sections */}
+              {rubrics.map((rubric) => {
+                const rJudges = rubricJudges[rubric.id] ?? [];
+                if (rubric.category === "accuracy") {
+                  return (
+                    <Accordion key={rubric.id} variant="outlined" disableGutters>
+                      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <Typography fontWeight={600}>{rubric.name} Evaluators</Typography>
+                      </AccordionSummary>
+                      <AccordionDetails>
+                        <Typography variant="body2" color="text.secondary">
+                          Claim-level scoring — coming soon
+                        </Typography>
+                      </AccordionDetails>
+                    </Accordion>
+                  );
+                }
+                // Sort: specialist (category-specific) judge first, then common judges
+                const sortedJudges = [...rJudges].sort((a, b) =>
+                  (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
+                );
+                return (
+                  <RubricEvaluatorSection
+                    key={rubric.id}
+                    title={`${rubric.name} Evaluators`}
+                    judges={sortedJudges}
+                    rubricCategory={rubric.category}
+                    snapshotId={selectedSnapshotId}
+                    rubricId={rubric.id}
+                    hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
+                    onJobStart={(judgeId) => handleRubricJobStart(judgeId, rubric.id)}
+                    onJobComplete={handleJobComplete}
+                  />
+                );
+              })}
             </Stack>
           )}
 
@@ -444,6 +505,60 @@ export default function ScoringPage() {
         itemName={judgeToDelete?.name}
       />
     </Box>
+  );
+}
+
+// ── Rubric evaluator section (no add/edit/delete controls) ─────────────────
+interface RubricEvaluatorSectionProps {
+  title: string;
+  judges: JudgeConfig[];
+  rubricCategory: string;
+  snapshotId: number;
+  rubricId: number;
+  hasQuestionsWithoutAnswers: boolean;
+  onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
+  onJobComplete: () => void;
+}
+
+function RubricEvaluatorSection({
+  title, judges, rubricCategory, snapshotId, rubricId,
+  hasQuestionsWithoutAnswers,
+  onJobStart, onJobComplete,
+}: RubricEvaluatorSectionProps) {
+  return (
+    <Accordion variant="outlined" disableGutters>
+      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+        <Typography fontWeight={600}>{title}</Typography>
+      </AccordionSummary>
+      <AccordionDetails sx={{ pt: 1 }}>
+        <Box
+          sx={{
+            display: "flex",
+            gap: 2,
+            overflowX: "auto",
+            pb: 1,
+          }}
+        >
+          {judges.map((judge) => (
+            <RubricJudgeCard
+              key={judge.id}
+              judge={judge}
+              rubricCategory={rubricCategory}
+              snapshotId={snapshotId}
+              rubricId={rubricId}
+              hasQuestionsWithoutAnswers={hasQuestionsWithoutAnswers}
+              onJobStart={onJobStart}
+              onJobComplete={onJobComplete}
+            />
+          ))}
+          {judges.length === 0 && (
+            <Typography variant="body2" color="text.secondary">
+              No evaluators configured for this rubric.
+            </Typography>
+          )}
+        </Box>
+      </AccordionDetails>
+    </Accordion>
   );
 }
 

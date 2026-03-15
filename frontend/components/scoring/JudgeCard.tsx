@@ -57,13 +57,14 @@ export default function JudgeCard({
     onJobCompleteRef.current = onJobComplete;
   }, [onJobComplete]);
 
-  // Fetch jobs for this specific judge
+  // Fetch accuracy-only jobs for this judge (exclude rubric jobs)
   const fetchJobs = useCallback(async (): Promise<QAJob[]> => {
     if (!snapshotId) return [];
     try {
       const response = await qaJobApi.listByJudge(snapshotId, judge.id);
-      setJobs(response.data);
-      return response.data;
+      const accuracyJobs = response.data.filter((j) => j.rubric_id === null);
+      setJobs(accuracyJobs);
+      return accuracyJobs;
     } catch (error) {
       console.error("Failed to fetch jobs:", error);
       return [];
@@ -85,10 +86,11 @@ export default function JudgeCard({
       try {
         console.log(`[JudgeCard ${judge.name}] Polling jobs for snapshot ${snapshotId}, judge ${judge.id}`);
         const response = await qaJobApi.listByJudge(snapshotId, judge.id);
-        const currentJobs = response.data;
+        // Only track accuracy jobs (exclude rubric jobs)
+        const currentJobs = response.data.filter((j: QAJob) => j.rubric_id === null);
 
         const completedCount = currentJobs.filter((j: QAJob) => j.status === JobStatus.COMPLETED).length;
-        console.log(`[JudgeCard ${judge.name}] Fetched ${currentJobs.length} jobs, ${completedCount} completed`, currentJobs.map((j: QAJob) => j.status));
+        console.log(`[JudgeCard ${judge.name}] Fetched ${currentJobs.length} accuracy jobs, ${completedCount} completed`, currentJobs.map((j: QAJob) => j.status));
 
         setJobs(currentJobs);
 

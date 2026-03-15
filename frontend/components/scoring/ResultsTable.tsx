@@ -42,8 +42,9 @@ import {
   QuestionScope,
   TargetRubricResponse,
   AnswerRubricLabel,
+  RubricAnswerScore,
 } from "@/lib/types";
-import { questionApi, personaApi, metricsApi, annotationApi } from "@/lib/api";
+import { questionApi, personaApi, metricsApi, annotationApi, rubricScoreApi, judgeApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
 import LabelCell from "./LabelCell";
 import { QAFilter, JudgeFilter } from "./filters";
@@ -110,6 +111,11 @@ export default function ResultsTable({
 
   // Rubric labels: answerId -> rubricId -> option_value
   const [rubricLabelsMap, setRubricLabelsMap] = useState<Record<number, Record<number, string>>>({});
+
+  // rubricJudgeScores: answerId -> judgeId -> option_chosen (for rubric tabs)
+  const [rubricJudgeScoresMap, setRubricJudgeScoresMap] = useState<Record<number, Record<number, string>>>({});
+  // judges for the active rubric tab
+  const [activeRubricJudges, setActiveRubricJudges] = useState<JudgeConfig[]>([]);
 
   const rowsPerPage = 10;
 
@@ -272,6 +278,39 @@ export default function ResultsTable({
     }
   };
 
+  // Fetch rubric judge scores and judges when a custom rubric tab is active
+  useEffect(() => {
+    if (activeRubricId === null || results.length === 0) {
+      setRubricJudgeScoresMap({});
+      setActiveRubricJudges([]);
+      return;
+    }
+    const activeRubric = rubrics.find((r) => r.id === activeRubricId);
+    if (!activeRubric) return;
+
+    // Fetch judges for this rubric category
+    judgeApi.getByCategory(activeRubric.category)
+      .then((res) => setActiveRubricJudges(res.data))
+      .catch(() => setActiveRubricJudges([]));
+
+    // Fetch rubric scores for all answers
+    const answerIds = results.map((r) => r.answer_id);
+    Promise.all(
+      answerIds.map((id) =>
+        rubricScoreApi.getForAnswer(id, activeRubricId)
+          .then((res) => ({ answerId: id, scores: res.data as RubricAnswerScore[] }))
+          .catch(() => ({ answerId: id, scores: [] as RubricAnswerScore[] }))
+      )
+    ).then((entries) => {
+      const map: Record<number, Record<number, string>> = {};
+      entries.forEach(({ answerId, scores }) => {
+        map[answerId] = {};
+        scores.forEach((s) => { map[answerId][s.judge_id] = s.option_chosen; });
+      });
+      setRubricJudgeScoresMap(map);
+    });
+  }, [activeRubricId, results, rubrics]);
+
   // Rubric tab strip (Accuracy + custom rubrics)
   const rubricTabValue = activeRubricId === null ? 0 : rubrics.findIndex((r) => r.id === activeRubricId) + 1;
 
@@ -385,6 +424,15 @@ export default function ResultsTable({
                     <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{judge.name}</Typography>
                   </TableCell>
                 ))}
+              {/* Rubric judge columns (only for active rubric tab) */}
+              {activeRubricId !== null && activeRubricJudges.map((judge) => (
+                <TableCell
+                  key={judge.id}
+                  sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px" }}
+                >
+                  <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{judge.name}</Typography>
+                </TableCell>
+              ))}
             </TableRow>
           </TableHead>
 
@@ -427,7 +475,8 @@ export default function ResultsTable({
 
               const isExpanded = expandedRows.has(result.answer_id);
               const answerRubricLabels = rubricLabelsMap[result.answer_id] ?? {};
-              const totalColSpan = 4 + rubrics.length + (activeRubricId === null ? selectedJudges.size : 0);
+              const rubricJudgeLabels = rubricJudgeScoresMap[result.answer_id] ?? {};
+              const totalColSpan = 4 + rubrics.length + (activeRubricId === null ? selectedJudges.size : activeRubricJudges.length);
 
               return (
                 <React.Fragment key={result.answer_id}>
@@ -485,6 +534,19 @@ export default function ResultsTable({
                           </TableCell>
                         );
                       })}
+                    {/* Rubric judge score cells (active rubric tab only) */}
+                    {activeRubricId !== null && activeRubricJudges.map((judge) => {
+                      const val = rubricJudgeLabels[judge.id];
+                      return (
+                        <TableCell key={judge.id} align="center">
+                          {val ? (
+                            <Chip label={val} size="small" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />
+                          ) : (
+                            <Typography variant="caption" color="text.disabled">—</Typography>
+                          )}
+                        </TableCell>
+                      );
+                    })}
                   </TableRow>
 
                   <TableRow>

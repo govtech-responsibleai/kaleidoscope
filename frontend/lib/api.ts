@@ -53,6 +53,7 @@ import {
   TargetRubricResponse,
   AnswerRubricLabel,
   AnswerRubricLabelUpsert,
+  RubricAnswerScore,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -265,6 +266,11 @@ export const questionApi = {
     api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-scores`, {
       params: { judge_id: judgeId },
     }),
+
+  listApprovedWithoutRubricScores: (snapshotId: number, judgeId: number, rubricId: number) =>
+    api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-rubric-scores`, {
+      params: { judge_id: judgeId, rubric_id: rubricId },
+    }),
 };
 
 // KB Document endpoints
@@ -411,6 +417,9 @@ export const judgeApi = {
 
   listAvailableModels: () =>
     api.get<JudgeModelOption[]>("/judges/available-models"),
+
+  getByCategory: (category: string) =>
+    api.get<JudgeConfig[]>(`/judges/by-category/${category}`),
 };
 
 // QA Job endpoints
@@ -475,6 +484,20 @@ export const adminApi = {
 
   deleteUser: (username: string) =>
     api.delete<{ message: string }>(`/auth/admin/delete-user-jwt/${username}`),
+};
+
+// Rubric QA Job endpoints
+export const rubricQAJobApi = {
+  start: (snapshotId: number, data: { judge_id: number; question_ids: number[]; rubric_id: number }) =>
+    api.post<QAJob[]>(`/snapshots/${snapshotId}/rubric-qa-jobs/start`, data),
+};
+
+// Rubric score endpoints
+export const rubricScoreApi = {
+  getForAnswer: (answerId: number, rubricId: number) =>
+    api.get<RubricAnswerScore[]>(`/answers/${answerId}/rubric-scores`, {
+      params: { rubric_id: rubricId },
+    }),
 };
 
 export const targetRubricApi = {

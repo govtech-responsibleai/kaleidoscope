@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Alert,
   Box,
@@ -8,6 +8,7 @@ import {
   Chip,
   CircularProgress,
   Paper,
+  Skeleton,
   Stack,
   Tab,
   Tabs,
@@ -19,7 +20,8 @@ import {
   ArrowBack as ArrowBackIcon,
   ArrowForward as ArrowForwardIcon,
 } from "@mui/icons-material";
-import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse } from "@/lib/types";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, RubricAnswerScore } from "@/lib/types";
+import { rubricScoreApi } from "@/lib/api";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
@@ -47,11 +49,55 @@ export default function QAContent({
   rubrics,
 }: QAContentProps) {
   const [activeTab, setActiveTab] = useState(0);
+  const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
+  const [rubricScoresLoading, setRubricScoresLoading] = useState(false);
 
   // Reset tab when question changes
   React.useEffect(() => {
     setActiveTab(0);
   }, [question?.id]);
+
+  // Fetch rubric scores when a custom rubric tab is active and an answer exists.
+  // Polls every 5s until scores arrive, then stops.
+  useEffect(() => {
+    const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
+    const answerId = qaEntry?.answer?.id;
+    if (!activeRubric || !answerId) {
+      setRubricScores([]);
+      return;
+    }
+
+    let cancelled = false;
+    let pollTimer: number | null = null;
+
+    const fetchScores = async () => {
+      try {
+        if (!cancelled) setRubricScoresLoading(true);
+        const res = await rubricScoreApi.getForAnswer(answerId, activeRubric.id);
+        if (cancelled) return;
+        setRubricScores(res.data);
+        setRubricScoresLoading(false);
+        // If no scores yet, keep polling
+        if (res.data.length === 0) {
+          pollTimer = window.setTimeout(fetchScores, 5000);
+        }
+      } catch {
+        if (!cancelled) {
+          setRubricScores([]);
+          setRubricScoresLoading(false);
+          // Retry on error too
+          pollTimer = window.setTimeout(fetchScores, 5000);
+        }
+      }
+    };
+
+    fetchScores();
+
+    return () => {
+      cancelled = true;
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+    };
+  }, [activeTab, rubrics, qaEntry?.answer?.id]);
 
   const answer = qaEntry?.answer;
   const claims = qaEntry?.claims ?? [];
@@ -214,6 +260,35 @@ export default function QAContent({
               ))}
             </Stack>
           )}
+
+          {/* Rubric judge verdict */}
+          <Box sx={{ mt: 2, pt: 1.5, borderTop: 1, borderColor: "divider" }}>
+            <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
+              Judge Verdict
+            </Typography>
+            {rubricScoresLoading ? (
+              <Skeleton variant="rounded" width={160} height={24} />
+            ) : rubricScores.length === 0 ? (
+              <Typography variant="caption" color="text.disabled">No judge score yet.</Typography>
+            ) : (
+              <Stack spacing={1}>
+                {rubricScores.map((score) => (
+                  <Box key={score.id}>
+                    <Chip
+                      label={score.option_chosen}
+                      size="small"
+                      variant="outlined"
+                      color="primary"
+                      sx={{ mb: 0.5 }}
+                    />
+                    <Typography variant="caption" color="text.secondary" display="block">
+                      {score.explanation}
+                    </Typography>
+                  </Box>
+                ))}
+              </Stack>
+            )}
+          </Box>
         </Box>
       )}
 
