@@ -29,6 +29,7 @@ interface JudgeCardProps {
   onEdit: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
+  labelOverrideCount: number;
 }
 
 export default function JudgeCard({
@@ -41,6 +42,7 @@ export default function JudgeCard({
   onEdit,
   onDuplicate,
   onDelete,
+  labelOverrideCount,
 }: JudgeCardProps) {
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [alignment, setAlignment] = useState<JudgeAlignment | null>(null);
@@ -158,7 +160,7 @@ export default function JudgeCard({
     if ((isCompleted || hasAllScores) && snapshotId && !isRunning) {
       fetchMetrics();
     }
-  }, [isCompleted, hasAllScores, isRunning, snapshotId, judge.id, jobs.length]);
+  }, [isCompleted, hasAllScores, isRunning, snapshotId, judge.id, jobs.length, labelOverrideCount]);
 
   const fetchMetrics = async () => {
     setLoadingMetrics(true);

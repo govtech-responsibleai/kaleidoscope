@@ -64,7 +64,16 @@ npm run dev
 
 The application will be available at [http://localhost:3000](http://localhost:3000)
 
-**Note:** You'll be redirected to `/login`. Get credentials from your admin (users are created via backend scripts).
+**Note:** You'll be redirected to `/login`. Create a user account via the backend first:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/admin/create-user \
+  -H "X-Admin-Key: <your-ADMIN_API_KEY-from-backend-.env>" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "dev", "password": "yourpassword", "is_admin": false}'
+```
+
+See the [backend README](../kaleidoscope-backend/README.md) for full auth setup details.
 
 ### 4. Build for Production
 
@@ -81,6 +90,10 @@ kaleidoscope-frontend/
 │   ├── layout.tsx               # Root layout with MUI theme & navigation
 │   ├── page.tsx                 # Home page (target list)
 │   ├── globals.css              # Global CSS styles
+│   ├── login/                   # Login page
+│   │   └── page.tsx
+│   ├── admin/                   # Admin panel
+│   │   └── page.tsx
 │   └── targets/[id]/            # Dynamic route for target details
 │       ├── layout.tsx           # Target layout with tabs
 │       ├── page.tsx             # Target overview (default tab)
@@ -88,8 +101,12 @@ kaleidoscope-frontend/
 │       │   └── page.tsx         # Questions list & management
 │       ├── annotation/
 │       │   └── page.tsx         # Annotation workflow page
-│       └── scoring/
-│           └── page.tsx         # Scoring & judge management page
+│       ├── scoring/
+│       │   └── page.tsx         # Scoring & judge management page
+│       ├── metrics/
+│       │   └── page.tsx         # Detailed metrics & judge alignment
+│       └── report/
+│           └── page.tsx         # PDF report generation & export
 ├── components/                  # React components
 │   ├── Navigation.tsx           # Sidebar navigation
 │   ├── GenerateEvalsModal.tsx   # Modal for persona/question generation (with input style selector)
@@ -601,19 +618,25 @@ To switch back to local development, set `NEXT_PUBLIC_API_DOMAIN` back to `http:
 ## Architecture Notes
 
 ### Page Navigation
-The application uses a tabbed interface for target details with 4 main tabs:
+The application uses a tabbed interface for target details with 6 main tabs:
 - **Overview Tab**: Target metadata, statistics, and document management
 - **Questions Tab**: Question list with filtering and generation
 - **Annotation Tab**: Snapshot-based answer generation and human annotation
 - **Scoring Tab**: Multi-judge evaluation and results export
+- **Metrics Tab**: Detailed judge alignment metrics across snapshots
+- **Report Tab**: PDF report generation and export of evaluation results
 
 Navigation flow:
 ```
 Home (/)
-  → Target Overview (/targets/[id])
-      ├─→ Questions (/targets/[id]/questions)
-      ├─→ Annotation (/targets/[id]/annotation)
-      └─→ Scoring (/targets/[id]/scoring)
+  ├─→ Login (/login)
+  ├─→ Admin (/admin)
+  └─→ Target Overview (/targets/[id])
+        ├─→ Questions (/targets/[id]/questions)
+        ├─→ Annotation (/targets/[id]/annotation)
+        ├─→ Scoring (/targets/[id]/scoring)
+        ├─→ Metrics (/targets/[id]/metrics)
+        └─→ Report (/targets/[id]/report)
 ```
 
 ### State Management

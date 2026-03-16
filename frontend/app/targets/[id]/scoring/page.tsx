@@ -82,6 +82,9 @@ export default function ScoringPage() {
   const [snapshotMetric, setSnapshotMetric] = useState<SnapshotMetric | null>(null);
   const [snapshotMetricLoading, setSnapshotMetricLoading] = useState(false);
 
+  // Incremented on label override to signal JudgeCards to refetch metrics
+  const [labelOverrideCount, setLabelOverrideCount] = useState(0);
+
   // UI state
   const [error, setError] = useState<string | null>(null);
   const judgeCardsRef = useRef<HTMLDivElement | null>(null);
@@ -338,6 +341,8 @@ export default function ScoringPage() {
       fetchResults(selectedSnapshotId),
       fetchSnapshotMetrics(),
     ]);
+    // Signal JudgeCards to refetch their alignment/accuracy
+    setLabelOverrideCount((c) => c + 1);
   }, [selectedSnapshotId, fetchResults, fetchSnapshotMetrics]);
 
   // Handle delete judge
@@ -439,7 +444,15 @@ export default function ScoringPage() {
                       <strong>Incomplete Questions:</strong>
                       <Box component="ul" sx={{ mt: 0, mb: 0, pl: 2 }}>
                         {unannotatedIds.map((id) => (
-                          <li key={id}>Q{id}</li>
+                          <li key={id}>
+                            <Box
+                              component="a"
+                              onClick={() => router.push(`/targets/${targetId}/annotation?snapshot=${selectedSnapshotId}&question=${id}`)}
+                              sx={{ color: "primary.main", cursor: "pointer", textDecoration: "underline", "&:hover": { color: "primary.dark" } }}
+                            >
+                              Q{id}
+                            </Box>
+                          </li>
                         ))}
                       </Box>
                     </Box>
@@ -538,6 +551,7 @@ export default function ScoringPage() {
                   onEditJudge={(judge) => handleOpenDialog("edit", judge)}
                   onDuplicateJudge={(judge) => handleOpenDialog("duplicate", judge)}
                   onDeleteJudge={handleDeleteJudge}
+                  labelOverrideCount={labelOverrideCount}
                 />
               </Paper>
             </Stack>
@@ -552,6 +566,7 @@ export default function ScoringPage() {
             ) : (
               <ResultsTable
                 results={results}
+                targetId={targetId}
                 snapshotId={selectedSnapshotId}
                 judges={judges}
                 onLabelChange={handleLabelChange}

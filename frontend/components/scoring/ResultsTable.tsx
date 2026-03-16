@@ -40,6 +40,7 @@ import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 
 interface ResultsTableProps {
   results: ResultRow[];
+  targetId: number;
   snapshotId: number;
   judges: JudgeConfig[];
   onLabelChange?: () => void;
@@ -105,6 +106,7 @@ const truncate = (value: string, length: number) => {
 
 export default function ResultsTable({
   results,
+  targetId,
   snapshotId,
   judges,
   onLabelChange,
@@ -416,6 +418,7 @@ export default function ResultsTable({
           <TableHead>
             <TableRow>
               <TableCell sx={{ width: "5%" }} />
+              <TableCell sx={{ width: "5%" }}>ID</TableCell>
               <TableCell sx={{ width: "35%" }}>Question</TableCell>
               <TableCell sx={{ width: "35%" }}>Answer</TableCell>
               <TableCell sx={{ width: "100px" }}>
@@ -527,6 +530,22 @@ export default function ResultsTable({
                     </TableCell>
 
                     <TableCell>
+                      <Typography
+                        variant="body2"
+                        component="a"
+                        href={`/targets/${targetId}/annotation?snapshot=${snapshotId}&question=${result.question_id}`}
+                        sx={{
+                          color: "primary.main",
+                          cursor: "pointer",
+                          textDecoration: "none",
+                          "&:hover": { textDecoration: "underline" },
+                        }}
+                      >
+                        Q{result.question_id}
+                      </Typography>
+                    </TableCell>
+
+                    <TableCell>
                       <Typography variant="subtitle2">
                         {truncate(result.question_text ?? "", 160)}
                       </Typography>
@@ -571,7 +590,7 @@ export default function ResultsTable({
                   </TableRow>
 
                   <TableRow>
-                    <TableCell style={{ padding: 0 }} colSpan={4 + selectedJudges.size}>
+                    <TableCell style={{ padding: 0 }} colSpan={5 + selectedJudges.size}>
                       <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                         <ResultsTableExpandedRow
                           result={result}

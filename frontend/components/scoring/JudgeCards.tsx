@@ -16,6 +16,7 @@ interface JudgeCardsProps {
   onEditJudge: (judge: JudgeConfig) => void;
   onDuplicateJudge: (judge: JudgeConfig) => void;
   onDeleteJudge: (judge: JudgeConfig) => void;
+  labelOverrideCount: number;
 }
 
 export default function JudgeCards({
@@ -29,6 +30,7 @@ export default function JudgeCards({
   onEditJudge,
   onDuplicateJudge,
   onDeleteJudge,
+  labelOverrideCount,
 }: JudgeCardsProps) {
 
   return (
@@ -65,6 +67,7 @@ export default function JudgeCards({
             onEdit={() => onEditJudge(judge)}
             onDuplicate={() => onDuplicateJudge(judge)}
             onDelete={() => onDeleteJudge(judge)}
+            labelOverrideCount={labelOverrideCount}
           />
         ))}
       </Stack>

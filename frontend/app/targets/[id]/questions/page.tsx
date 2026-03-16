@@ -63,6 +63,7 @@ export default function QuestionsPage() {
   const [similarQuestionsMap, setSimilarQuestionsMap] = useState<Record<number, QuestionResponse[]>>({});
   const [processingQuestionId, setProcessingQuestionId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bulkApproving, setBulkApproving] = useState(false);
 
   // Edit mode state
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
@@ -260,6 +261,22 @@ export default function QuestionsPage() {
       setError(`Failed to ${action} question. Please try again.`);
     } finally {
       setProcessingQuestionId(null);
+    }
+  };
+
+  const handleBulkApprove = async () => {
+    setBulkApproving(true);
+    try {
+      await questionApi.bulkApprove(newQuestions.map(q => q.id));
+      setNewQuestions([]);
+      setJobStatus(null);
+      setSimilarQuestionsMap({});
+      await fetchData();
+    } catch (error) {
+      console.error("Failed to bulk approve questions:", error);
+      setError("Failed to approve all questions. Please try again.");
+    } finally {
+      setBulkApproving(false);
     }
   };
 
@@ -474,9 +491,22 @@ export default function QuestionsPage() {
 
             {jobStatus === "ready_for_review" && (
               <>
-                <Alert severity="info" sx={{ mb: 2 }}>
-                  Questions generated. Scroll down to accept or reject.
-                </Alert>
+                <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                  <Alert severity="info" sx={{ flex: 1, mr: 2 }}>
+                    Questions generated. Scroll down to accept or reject.
+                  </Alert>
+                  {newQuestions.length > 1 && (
+                    <Button
+                      variant="contained"
+                      color="success"
+                      startIcon={bulkApproving ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />}
+                      onClick={handleBulkApprove}
+                      disabled={bulkApproving || processingQuestionId !== null}
+                    >
+                      Approve All ({newQuestions.length})
+                    </Button>
+                  )}
+                </Box>
 
                 {newQuestions.map((newQ) => {
                   const isEditing = editingQuestionId === newQ.id;
