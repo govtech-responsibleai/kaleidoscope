@@ -8,17 +8,21 @@ import {
   CardContent,
   CircularProgress,
   Stack,
+  Tooltip,
   Typography,
 } from "@mui/material";
-import { JudgeConfig, JobStatus, QAJob } from "@/lib/types";
-import { qaJobApi } from "@/lib/api";
+import { InfoOutlined as InfoOutlinedIcon } from "@mui/icons-material";
+import { JudgeConfig, JobStatus, QAJob, RubricJudgeAlignment, RubricJudgeAccuracy } from "@/lib/types";
+import { qaJobApi, metricsApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 
 interface RubricJudgeCardProps {
   judge: JudgeConfig;
+  displayName: string;
   rubricCategory: string;
   snapshotId: number;
   rubricId: number;
+  bestOption: string;
   hasQuestionsWithoutAnswers: boolean;
   onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
   onJobComplete: () => void;
@@ -26,9 +30,11 @@ interface RubricJudgeCardProps {
 
 export default function RubricJudgeCard({
   judge,
+  displayName,
   rubricCategory,
   snapshotId,
   rubricId,
+  bestOption,
   hasQuestionsWithoutAnswers,
   onJobStart,
   onJobComplete,
@@ -37,6 +43,10 @@ export default function RubricJudgeCard({
   const [isPolling, setIsPolling] = useState(false);
   const pollingRef = useRef<number | null>(null);
   const onJobCompleteRef = useRef(onJobComplete);
+
+  const [alignment, setAlignment] = useState<RubricJudgeAlignment | null>(null);
+  const [accuracy, setAccuracy] = useState<RubricJudgeAccuracy | null>(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(false);
 
   useEffect(() => {
     onJobCompleteRef.current = onJobComplete;
@@ -55,6 +65,22 @@ export default function RubricJudgeCard({
       return [];
     }
   }, [snapshotId, judge.id]);
+
+  const fetchMetrics = useCallback(async () => {
+    setLoadingMetrics(true);
+    try {
+      const [alignmentRes, accuracyRes] = await Promise.all([
+        metricsApi.getRubricAlignment(snapshotId, judge.id, rubricId).catch(() => null),
+        metricsApi.getRubricAccuracy(snapshotId, judge.id, rubricId, bestOption).catch(() => null),
+      ]);
+      setAlignment(alignmentRes?.data ?? null);
+      setAccuracy(accuracyRes?.data ?? null);
+    } catch {
+      // ignore
+    } finally {
+      setLoadingMetrics(false);
+    }
+  }, [snapshotId, judge.id, rubricId, bestOption]);
 
   const startPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -80,6 +106,7 @@ export default function RubricJudgeCard({
             pollingRef.current = null;
           }
           setIsPolling(false);
+          await fetchMetrics();
           onJobCompleteRef.current();
         }
       } catch {
@@ -89,7 +116,7 @@ export default function RubricJudgeCard({
 
     poll();
     pollingRef.current = window.setInterval(poll, 5000);
-  }, [snapshotId, judge.id, rubricId]);
+  }, [snapshotId, judge.id, rubricId, fetchMetrics]);
 
   useEffect(() => {
     return () => {
@@ -103,6 +130,8 @@ export default function RubricJudgeCard({
   useEffect(() => {
     setJobs([]);
     setIsPolling(false);
+    setAlignment(null);
+    setAccuracy(null);
     if (pollingRef.current) {
       window.clearInterval(pollingRef.current);
       pollingRef.current = null;
@@ -113,14 +142,19 @@ export default function RubricJudgeCard({
     fetchJobs();
   }, [fetchJobs]);
 
-  const isSpecialist = judge.category === rubricCategory;
-  const displayName = isSpecialist ? "Recommended Judge" : judge.name;
-
   const isRunning = isPolling || rubricJobs.some((j) => j.status === JobStatus.RUNNING);
   const isCompleted =
     rubricJobs.length > 0 && rubricJobs.every((j) => j.status === JobStatus.COMPLETED);
+  const hasAllScores = rubricJobs.length > 0;
   const completedCount = rubricJobs.filter((j) => j.status === JobStatus.COMPLETED).length;
   const totalJobs = rubricJobs.length;
+
+  // Fetch metrics when completed
+  useEffect(() => {
+    if ((isCompleted || hasAllScores) && snapshotId && !isRunning) {
+      fetchMetrics();
+    }
+  }, [isCompleted, hasAllScores, isRunning, snapshotId, fetchMetrics]);
 
   const handleRun = async () => {
     const createdJobs = await onJobStart(judge.id);
@@ -158,21 +192,56 @@ export default function RubricJudgeCard({
           </Box>
         </Stack>
 
-        <Box sx={{ mt: 2, mb: 2, minHeight: 56 }}>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-            {isRunning
-              ? `Running: ${completedCount}/${totalJobs} questions`
-              : isCompleted
-              ? "Evaluation complete"
-              : "Run this evaluator to score responses"}
-          </Typography>
-        </Box>
+        <Stack spacing={1} sx={{ mt: 2, flexGrow: 1 }}>
+          <Box>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
+              {accuracy
+                ? `This judge rates your target at`
+                : (isRunning ? `Running: ${completedCount}/${totalJobs} questions` : "Run this judge to see score")}
+            </Typography>
+            <Stack direction="row" spacing={0.5} alignItems="baseline">
+              <Typography variant="h4" fontWeight={700} color={accuracy ? "primary.main" : "text.disabled"}>
+                {accuracy ? `${(accuracy.score * 100).toFixed(1)}%` : "--%"}
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                {bestOption || "score"}
+              </Typography>
+            </Stack>
+
+            {/* Reliability */}
+            {alignment ? (
+              <Stack
+                direction="row"
+                spacing={0.5}
+                alignItems="center"
+                sx={{
+                  mt: 1,
+                  color: alignment.accuracy >= 0.5 ? "success.main" : "error.main"
+                }}
+              >
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  {alignment.accuracy >= 0.5 ? "✓" : "✗"} {(alignment.accuracy * 100).toFixed(0)}% reliability
+                </Typography>
+                <Tooltip
+                  title={`Measures how well this judge's choices match your rubric annotations (${alignment.sample_count} annotations). ≥50% is considered reliable.`}
+                >
+                  <InfoOutlinedIcon sx={{ fontSize: 16, cursor: "help" }} />
+                </Tooltip>
+              </Stack>
+            ) : (
+              <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>
+                --% reliability
+              </Typography>
+            )}
+          </Box>
+        </Stack>
 
         <Button
           variant="contained"
           fullWidth
+          sx={{ mt: 2 }}
           onClick={handleRun}
-          disabled={isRunning || isCompleted || hasQuestionsWithoutAnswers}
+          disabled={isRunning || isCompleted || hasQuestionsWithoutAnswers || loadingMetrics}
         >
           {isRunning ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>

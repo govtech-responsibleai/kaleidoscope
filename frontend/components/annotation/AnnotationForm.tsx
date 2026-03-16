@@ -6,6 +6,7 @@ import {
   Box,
   CircularProgress,
   Stack,
+  TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
@@ -70,9 +71,15 @@ interface CustomRubricRowProps {
   saving: boolean;
 }
 
+function getOptionColor(opt: string, rubric: TargetRubricResponse): { main: string; dark: string } {
+  const bestOption = rubric.best_option || rubric.options?.[0]?.option || "";
+  if (opt === bestOption) return { main: "success.main", dark: "success.dark" };
+  // If only 2 options, the non-positive is red; otherwise blue
+  if (rubric.options.length <= 2) return { main: "error.main", dark: "error.dark" };
+  return { main: "primary.main", dark: "primary.dark" };
+}
+
 function CustomRubricRow({ rubric, value, onChange, saving }: CustomRubricRowProps) {
-  // Colours cycle through a small palette for visual distinction
-  const palette = ["primary", "secondary", "warning", "info"] as const;
   return (
     <Box>
       <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
@@ -90,23 +97,26 @@ function CustomRubricRow({ rubric, value, onChange, saving }: CustomRubricRowPro
           onChange={(_, val) => { if (val !== null) onChange(val); }}
           sx={toggleSx}
         >
-          {rubric.options.map((opt, i) => (
-            <ToggleButton
-              key={opt.option}
-              value={opt.option}
-              disabled={saving}
-              sx={{
-                "&.Mui-selected": {
-                  bgcolor: `${palette[i % palette.length]}.main`,
-                  color: "white",
-                  borderColor: `${palette[i % palette.length]}.main`,
-                  "&:hover": { bgcolor: `${palette[i % palette.length]}.dark` },
-                },
-              }}
-            >
-              {opt.option}
-            </ToggleButton>
-          ))}
+          {rubric.options.map((opt) => {
+            const color = getOptionColor(opt.option, rubric);
+            return (
+              <ToggleButton
+                key={opt.option}
+                value={opt.option}
+                disabled={saving}
+                sx={{
+                  "&.Mui-selected": {
+                    bgcolor: color.main,
+                    color: "white",
+                    borderColor: color.main,
+                    "&:hover": { bgcolor: color.dark },
+                  },
+                }}
+              >
+                {opt.option}
+              </ToggleButton>
+            );
+          })}
         </ToggleButtonGroup>
       )}
     </Box>
@@ -132,6 +142,8 @@ export default function AnnotationForm({
   const [existingAnnotation, setExistingAnnotation] = useState<Annotation | null>(null);
   // Map rubricId → selected option string
   const [rubricLabels, setRubricLabels] = useState<Record<number, string>>({});
+  const [notes, setNotes] = useState("");
+  const [savingNotes, setSavingNotes] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingRubric, setSavingRubric] = useState<number | "accuracy" | null>(null);
 
@@ -140,6 +152,7 @@ export default function AnnotationForm({
       setAccuracyLabel(null);
       setExistingAnnotation(null);
       setRubricLabels({});
+      setNotes("");
       return;
     }
 
@@ -154,9 +167,11 @@ export default function AnnotationForm({
         if (annotationRes.status === "fulfilled") {
           setExistingAnnotation(annotationRes.value.data);
           setAccuracyLabel(annotationRes.value.data.label);
+          setNotes(annotationRes.value.data.notes ?? "");
         } else {
           setExistingAnnotation(null);
           setAccuracyLabel(null);
+          setNotes("");
         }
 
         if (rubricRes.status === "fulfilled") {
@@ -192,6 +207,20 @@ export default function AnnotationForm({
       console.error("Failed to save accuracy annotation:", err);
     } finally {
       setSavingRubric(null);
+    }
+  };
+
+  const handleNotesSave = async (value: string) => {
+    if (!answer || !existingAnnotation) return;
+    if (value === (existingAnnotation.notes ?? "")) return;
+    setSavingNotes(true);
+    try {
+      await annotationApi.update(existingAnnotation.id, { answer_id: answer.id, label: accuracyLabel!, notes: value });
+      setExistingAnnotation((prev) => prev ? { ...prev, notes: value } : prev);
+    } catch (err) {
+      console.error("Failed to save notes:", err);
+    } finally {
+      setSavingNotes(false);
     }
   };
 
@@ -269,6 +298,25 @@ export default function AnnotationForm({
                 saving={savingRubric === rubric.id}
               />
             ))}
+
+            <Box>
+              <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
+                Comments
+              </Typography>
+              <TextField
+                multiline
+                minRows={2}
+                maxRows={6}
+                fullWidth
+                size="small"
+                placeholder="Add notes about this annotation..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                onBlur={(e) => handleNotesSave(e.target.value)}
+                disabled={!existingAnnotation || savingNotes}
+                helperText={!existingAnnotation ? "Set an accuracy label first to enable comments." : undefined}
+              />
+            </Box>
           </Stack>
         )}
       </Stack>

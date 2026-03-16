@@ -31,6 +31,7 @@ export default function AnnotationPage() {
   const [error, setError] = useState<string | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [rubricJobsComplete, setRubricJobsComplete] = useState(false);
+  const [rubricPendingQuestions, setRubricPendingQuestions] = useState<Set<number>>(new Set());
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
     setSelectedSnapshotId(snapshotId);
@@ -207,6 +208,7 @@ export default function AnnotationPage() {
         rubrics={rubrics}
         onError={(message) => setError(message)}
         onRubricJobsCompleteChange={setRubricJobsComplete}
+        onRubricPendingQuestionsChange={setRubricPendingQuestions}
       />
 
       {error && (
@@ -226,7 +228,7 @@ export default function AnnotationPage() {
         qaMap={qaMap}
         setQaMap={setQaMap}
         rubrics={rubrics}
-        rubricJobsComplete={rubricJobsComplete}
+        rubricPendingQuestions={rubricPendingQuestions}
       />
     </Box>
   );

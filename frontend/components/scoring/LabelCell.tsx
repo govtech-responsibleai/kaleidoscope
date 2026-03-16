@@ -180,7 +180,7 @@ export default function LabelCell({
         {/* Right: Edit and reset icons */}
         <Box display="flex" alignItems="center" gap={0.5}>
           {aggregatedAccuracy?.is_edited && (
-            <Tooltip title="Reset to evaluator suggestion">
+            <Tooltip title="Reset to judge suggestion">
               <IconButton
                 size="small"
                 onClick={handleReset}

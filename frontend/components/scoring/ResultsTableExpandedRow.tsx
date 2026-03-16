@@ -9,6 +9,7 @@ import {
   Stack,
   Tab,
   Tabs,
+  Tooltip,
   Typography,
 } from "@mui/material";
 import {
@@ -19,8 +20,9 @@ import {
   QuestionResponse,
   PersonaResponse,
   TargetRubricResponse,
+  RubricAnswerScore,
 } from "@/lib/types";
-import { answerApi, questionApi, personaApi } from "@/lib/api";
+import { answerApi, questionApi, personaApi, rubricScoreApi, judgeApi } from "@/lib/api";
 import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
 
 interface ResultsTableExpandedRowProps {
@@ -116,8 +118,41 @@ export default function ResultsTableExpandedRow({
     fetchClaims();
   }, [result.answer_id, claimBasedJudges]);
 
+  // Rubric scores and judges for custom rubric tabs
+  const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
+  const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
+
+  useEffect(() => {
+    const activeRubric = localActiveRubricId !== null ? rubrics.find((r) => r.id === localActiveRubricId) : null;
+    if (!activeRubric || !result.answer_id) {
+      setRubricScores([]);
+      setRubricJudges([]);
+      return;
+    }
+
+    judgeApi.getByCategory(activeRubric.category)
+      .then((res) => setRubricJudges(res.data))
+      .catch(() => setRubricJudges([]));
+
+    rubricScoreApi.getForAnswer(result.answer_id, activeRubric.id)
+      .then((res) => setRubricScores(res.data))
+      .catch(() => setRubricScores([]));
+  }, [localActiveRubricId, rubrics, result.answer_id]);
+
   const tabValue = localActiveRubricId === null ? 0 : rubrics.findIndex((r) => r.id === localActiveRubricId) + 1;
   const activeRubric = localActiveRubricId !== null ? rubrics.find((r) => r.id === localActiveRubricId) : null;
+
+  // Determine the best_option and recommended judge verdict for answer highlighting
+  const bestOption = activeRubric?.best_option || activeRubric?.options?.[0]?.option || "";
+  const recommendedJudge = useMemo(
+    () => rubricJudges.find((j) => j.category !== "common"),
+    [rubricJudges]
+  );
+  const recommendedScore = useMemo(
+    () => recommendedJudge ? rubricScores.find((s) => s.judge_id === recommendedJudge.id) : undefined,
+    [rubricScores, recommendedJudge]
+  );
+  const isPositiveVerdict = recommendedScore ? recommendedScore.option_chosen === bestOption : null;
 
   return (
     <Box sx={{ py: 2, px: 4, bgcolor: "grey.50", borderTop: 1, borderColor: "divider" }}>
@@ -163,10 +198,12 @@ export default function ResultsTableExpandedRow({
 
           <Box display="flex" justifyContent="flex-start">
             <Box sx={{
-              maxWidth: { xs: "100%", sm: "85%" }, px: 1, py: 0.5,
+              maxWidth: { xs: "100%", sm: "85%" },
+              ...(localActiveRubricId === null && { px: 1, py: 0.5 }),
               borderRadius: "30px 30px 30px 0",
               border: (theme) => `1px solid ${theme.palette.divider}`,
               bgcolor: "white",
+              overflow: "hidden",
             }}>
               {loading && (
                 <Box sx={{ display: "flex", alignItems: "center", gap: 1, p: 2 }}>
@@ -175,6 +212,7 @@ export default function ResultsTableExpandedRow({
                 </Box>
               )}
               {error && <Alert severity="error" sx={{ m: 1 }}>{error}</Alert>}
+              {/* Accuracy tab: claim-level highlighting */}
               {!loading && !error && localActiveRubricId === null && claimsData && claimsData.claims.length > 0 && (
                 <ClaimHighlighter
                   answerContent={result.answer_content}
@@ -184,27 +222,112 @@ export default function ResultsTableExpandedRow({
                   selectedJudgeIds={selectedClaimBasedJudgeIds}
                 />
               )}
-              {!loading && !error && (localActiveRubricId !== null || !claimsData || claimsData.claims.length === 0) && (
+              {/* Accuracy tab: no claims fallback */}
+              {!loading && !error && localActiveRubricId === null && (!claimsData || claimsData.claims.length === 0) && (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, whiteSpace: "pre-wrap" }}>
                   {result.answer_content}
                 </Typography>
+              )}
+              {/* Custom rubric tab: whole-response highlighting with hover tooltip */}
+              {localActiveRubricId !== null && (
+                <Tooltip
+                  title={
+                    rubricScores.length === 0 ? "No judge scores yet" : (
+                      <Stack spacing={1}>
+                        {(() => {
+                          const sorted = [...rubricJudges].sort((a, b) =>
+                            (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
+                          );
+                          let secondaryIdx = 0;
+                          return sorted.map((judge) => {
+                            const score = rubricScores.find((s) => s.judge_id === judge.id);
+                            if (!score) return null;
+                            const displayName = judge.category !== "common" ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+                            const isPositive = score.option_chosen === bestOption;
+                            return (
+                              <Box
+                                key={judge.id}
+                                sx={{
+                                  p: 1,
+                                  borderRadius: 1,
+                                  bgcolor: isPositive ? "rgba(99, 199, 125, 0.15)" : "rgba(255, 99, 99, 0.15)",
+                                  borderLeft: 3,
+                                  borderColor: isPositive ? "success.main" : "error.main",
+                                }}
+                              >
+                                <Typography
+                                  variant="caption"
+                                  fontWeight={600}
+                                  sx={{ color: isPositive ? "rgba(144, 238, 144, 1)" : "rgba(255, 182, 182, 1)" }}
+                                >
+                                  {displayName}: {score.option_chosen}
+                                </Typography>
+                                {score.explanation && (
+                                  <Typography variant="body2" sx={{ mt: 0.5, fontSize: "0.75rem" }}>
+                                    {score.explanation}
+                                  </Typography>
+                                )}
+                              </Box>
+                            );
+                          });
+                        })()}
+                      </Stack>
+                    )
+                  }
+                  placement="top"
+                  arrow
+                  slotProps={{
+                    tooltip: { sx: { fontSize: "0.8rem", px: 1.5, py: 1, maxWidth: 480 } },
+                    arrow: { sx: { fontSize: 14 } },
+                  }}
+                >
+                  <Box sx={{
+                    px: 3, py: 2,
+                    cursor: "default",
+                    transition: "background-color 0.2s ease",
+                    ...(isPositiveVerdict === true && {
+                      bgcolor: "rgba(46, 125, 50, 0.08)",
+                      borderLeft: "3px solid",
+                      borderLeftColor: "success.main",
+                      "&:hover": { bgcolor: "rgba(46, 125, 50, 0.15)" },
+                    }),
+                    ...(isPositiveVerdict === false && {
+                      bgcolor: "rgba(211, 47, 47, 0.08)",
+                      borderLeft: "3px solid",
+                      borderLeftColor: "error.main",
+                      "&:hover": { bgcolor: "rgba(211, 47, 47, 0.15)" },
+                    }),
+                    ...(isPositiveVerdict === null && {
+                      bgcolor: "rgba(0, 0, 0, 0.04)",
+                      "&:hover": { bgcolor: "rgba(0, 0, 0, 0.08)" },
+                    }),
+                  }}>
+                    <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>
+                      {result.answer_content}
+                    </Typography>
+                  </Box>
+                </Tooltip>
               )}
             </Box>
           </Box>
         </Stack>
 
-        {/* Rubric detail panel */}
+        {/* Custom rubric: human annotation + criteria */}
         {activeRubric && (
           <Box sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "white" }}>
             <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 1 }}>
               {activeRubric.name} — Annotation
             </Typography>
 
-            {/* Human annotation label */}
             {answerRubricLabels[activeRubric.id] ? (
               <Box sx={{ mb: 1.5 }}>
                 <Typography variant="caption" color="text.secondary">Human label: </Typography>
-                <Chip label={answerRubricLabels[activeRubric.id]} size="small" color="primary" sx={{ ml: 0.5 }} />
+                <Chip
+                  label={answerRubricLabels[activeRubric.id]}
+                  size="small"
+                  color={answerRubricLabels[activeRubric.id] === bestOption ? "success" : activeRubric.options.length <= 2 ? "error" : "primary"}
+                  sx={{ ml: 0.5 }}
+                />
               </Box>
             ) : (
               <Typography variant="body2" color="text.disabled" sx={{ mb: 1.5, fontStyle: "italic" }}>
@@ -212,7 +335,6 @@ export default function ResultsTableExpandedRow({
               </Typography>
             )}
 
-            {/* Rubric criteria */}
             {activeRubric.criteria && (
               <Box>
                 <Typography variant="caption" fontWeight={600} color="text.secondary">Criteria</Typography>
@@ -220,7 +342,6 @@ export default function ResultsTableExpandedRow({
               </Box>
             )}
 
-            {/* Options */}
             {activeRubric.options.length > 0 && (
               <Stack spacing={0.5} sx={{ mt: 1.5 }}>
                 {activeRubric.options.map((opt) => (
@@ -230,7 +351,9 @@ export default function ResultsTableExpandedRow({
                       fontWeight={700}
                       sx={{
                         minWidth: 80,
-                        color: answerRubricLabels[activeRubric.id] === opt.option ? "primary.main" : "text.secondary",
+                        color: answerRubricLabels[activeRubric.id] === opt.option
+                          ? (opt.option === bestOption ? "success.main" : activeRubric.options.length <= 2 ? "error.main" : "primary.main")
+                          : "text.secondary",
                       }}
                     >
                       {opt.option}

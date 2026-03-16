@@ -11,6 +11,7 @@ interface JudgeCardsProps {
   questionsWithoutScores: Record<number, number>;
   hasQuestionsWithoutAnswers: boolean;
   scrollContainerRef?: React.Ref<HTMLDivElement>;
+  getDisplayName?: (judge: JudgeConfig) => string;
   onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
   onJobComplete: () => void;
   onEditJudge: (judge: JudgeConfig) => void;
@@ -24,6 +25,7 @@ export default function JudgeCards({
   questionsWithoutScores,
   hasQuestionsWithoutAnswers,
   scrollContainerRef,
+  getDisplayName,
   onJobStart,
   onJobComplete,
   onEditJudge,
@@ -57,6 +59,7 @@ export default function JudgeCards({
           <JudgeCard
             key={judge.id}
             judge={judge}
+            displayName={getDisplayName?.(judge)}
             snapshotId={snapshotId}
             questionsWithoutScores={questionsWithoutScores[judge.id] || 0}
             hasQuestionsWithoutAnswers={hasQuestionsWithoutAnswers}

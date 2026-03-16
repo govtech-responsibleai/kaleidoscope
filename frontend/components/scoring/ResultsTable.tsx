@@ -13,8 +13,6 @@ import {
   IconButton,
   Paper,
   Stack,
-  Tab,
-  Tabs,
   Table,
   TableBody,
   TableCell,
@@ -251,6 +249,12 @@ export default function ResultsTable({
     return { reliableJudges: reliable, excludedJudges: excluded };
   }, [results, judges]);
 
+  // All accuracy (claim_based) judges — shown in table columns regardless of reliability
+  const accuracyJudges = useMemo(
+    () => [...judges].filter((j) => j.judge_type === "claim_based").sort((a, b) => Number(b.is_baseline) - Number(a.is_baseline)),
+    [judges]
+  );
+
   React.useEffect(() => {
     setSelectedJudges(new Set(reliableJudges.map((j) => j.id)));
   }, [reliableJudges]);
@@ -311,23 +315,29 @@ export default function ResultsTable({
     });
   }, [activeRubricId, results, rubrics]);
 
-  // Rubric tab strip (Accuracy + custom rubrics)
-  const rubricTabValue = activeRubricId === null ? 0 : rubrics.findIndex((r) => r.id === activeRubricId) + 1;
-
   return (
     <Box>
-      {/* Rubric tabs strip */}
+      {/* Rubric pill toggles */}
       {rubrics.length > 0 && (
-        <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-          <Tabs
-            value={rubricTabValue}
-            onChange={(_, v) => setActiveRubricId(v === 0 ? null : rubrics[v - 1].id)}
-            sx={{ "& .MuiTab-root": { fontSize: "0.8rem", textTransform: "none", fontWeight: 500, minHeight: 40, py: 0 } }}
-          >
-            <Tab label="Accuracy" />
-            {rubrics.map((r) => <Tab key={r.id} label={r.name} />)}
-          </Tabs>
-        </Box>
+        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+          <Chip
+            label="Accuracy"
+            onClick={() => setActiveRubricId(null)}
+            variant={activeRubricId === null ? "filled" : "outlined"}
+            color={activeRubricId === null ? "primary" : "default"}
+            sx={{ fontWeight: 600, fontSize: "0.85rem", height: 36, px: 1 }}
+          />
+          {rubrics.map((r) => (
+            <Chip
+              key={r.id}
+              label={r.name}
+              onClick={() => setActiveRubricId(r.id)}
+              variant={activeRubricId === r.id ? "filled" : "outlined"}
+              color={activeRubricId === r.id ? "primary" : "default"}
+              sx={{ fontWeight: 600, fontSize: "0.85rem", height: 36, px: 1 }}
+            />
+          ))}
+        </Stack>
       )}
 
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
@@ -374,7 +384,7 @@ export default function ResultsTable({
 
       {excludedJudges.length > 0 && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Excluded evaluators (not reliable): {excludedJudges.map(j => j.name).join(", ")}
+          Excluded judges (not reliable): {excludedJudges.map(j => j.name).join(", ")}
         </Alert>
       )}
 
@@ -385,54 +395,64 @@ export default function ResultsTable({
               <TableCell sx={{ width: "5%" }} />
               <TableCell sx={{ width: "30%" }}>Question</TableCell>
               <TableCell sx={{ width: "30%" }}>Answer</TableCell>
-              {/* Accuracy label column */}
-              <TableCell sx={{ width: "100px" }}>
-                <TableHeaderFilter
-                  label="Accuracy"
-                  options={labelFilterOptions}
-                  value={selectedLabels}
-                  onChange={(labels) => { setSelectedLabels(labels); setPage(0); }}
-                  allSelectedLabel="All Labels"
-                />
-              </TableCell>
-              {/* Custom rubric columns */}
-              {rubrics.map((rubric) => (
-                <TableCell
-                  key={rubric.id}
-                  sx={{
-                    width: "90px", textAlign: "center", whiteSpace: "normal",
-                    wordBreak: "break-word", padding: "8px 4px",
-                    cursor: "pointer",
-                    bgcolor: activeRubricId === rubric.id ? "action.selected" : "transparent",
-                    fontWeight: activeRubricId === rubric.id ? 700 : 400,
-                  }}
-                  onClick={() => setActiveRubricId(activeRubricId === rubric.id ? null : rubric.id)}
-                >
-                  <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem", fontWeight: "inherit" }}>
-                    {rubric.name}
-                  </Typography>
+              {/* Accuracy label column (Accuracy tab) */}
+              {activeRubricId === null && (
+                <TableCell sx={{ width: "100px" }}>
+                  <TableHeaderFilter
+                    label="Accuracy"
+                    options={labelFilterOptions}
+                    value={selectedLabels}
+                    onChange={(labels) => { setSelectedLabels(labels); setPage(0); }}
+                    allSelectedLabel="All Labels"
+                  />
                 </TableCell>
-              ))}
-              {/* Judge columns (only for Accuracy tab) */}
-              {activeRubricId === null && reliableJudges
-                .filter((judge) => selectedJudges.has(judge.id))
-                .map((judge) => (
+              )}
+              {/* Human label column (custom rubric tab) */}
+              {activeRubricId !== null && (() => {
+                const activeRubric = rubrics.find((r) => r.id === activeRubricId);
+                return activeRubric ? (
                   <TableCell
-                    key={judge.id}
-                    sx={{ width: "70px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px" }}
+                    sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px", fontWeight: 700 }}
                   >
-                    <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{judge.name}</Typography>
+                    <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem", fontWeight: 700 }}>
+                      {activeRubric.name}
+                    </Typography>
                   </TableCell>
-                ))}
-              {/* Rubric judge columns (only for active rubric tab) */}
-              {activeRubricId !== null && activeRubricJudges.map((judge) => (
-                <TableCell
-                  key={judge.id}
-                  sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px" }}
-                >
-                  <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{judge.name}</Typography>
-                </TableCell>
-              ))}
+                ) : null;
+              })()}
+              {/* Judge columns (Accuracy tab): all claim_based judges sorted baseline first */}
+              {activeRubricId === null && (() => {
+                let secondaryIdx = 0;
+                return accuracyJudges.map((judge) => {
+                  const displayName = judge.is_baseline ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+                  return (
+                    <TableCell
+                      key={judge.id}
+                      sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px" }}
+                    >
+                      <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{displayName}</Typography>
+                    </TableCell>
+                  );
+                });
+              })()}
+              {/* Rubric judge columns (custom rubric tab): sorted recommended first */}
+              {activeRubricId !== null && (() => {
+                const sorted = [...activeRubricJudges].sort((a, b) =>
+                  (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
+                );
+                let secondaryIdx = 0;
+                return sorted.map((judge) => {
+                  const displayName = judge.category !== "common" ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+                  return (
+                    <TableCell
+                      key={judge.id}
+                      sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px" }}
+                    >
+                      <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{displayName}</Typography>
+                    </TableCell>
+                  );
+                });
+              })()}
             </TableRow>
           </TableHead>
 
@@ -452,8 +472,8 @@ export default function ResultsTable({
                 chipLabel = aggregatedAccuracy.label ? "Accurate" : "Inaccurate";
                 chipColor = aggregatedAccuracy.label ? "success" : "error";
               } else if (selectedJudges.size === 0) {
-                chipLabel = "No evaluators selected"; chipColor = "warning";
-                helperText = "Please select at least one evaluator.";
+                chipLabel = "No judges selected"; chipColor = "warning";
+                helperText = "Please select at least one judge.";
               } else {
                 const selLabels: boolean[] = [];
                 reliableJudges.forEach((judge) => {
@@ -476,7 +496,10 @@ export default function ResultsTable({
               const isExpanded = expandedRows.has(result.answer_id);
               const answerRubricLabels = rubricLabelsMap[result.answer_id] ?? {};
               const rubricJudgeLabels = rubricJudgeScoresMap[result.answer_id] ?? {};
-              const totalColSpan = 4 + rubrics.length + (activeRubricId === null ? selectedJudges.size : activeRubricJudges.length);
+              // expand/question/answer + label column + judge columns
+              const totalColSpan = activeRubricId === null
+                ? 4 + accuracyJudges.length
+                : 4 + activeRubricJudges.length;
 
               return (
                 <React.Fragment key={result.answer_id}>
@@ -495,58 +518,69 @@ export default function ResultsTable({
                       <Typography variant="body2" color="text.secondary">{truncate(result.answer_content, 160)}</Typography>
                     </TableCell>
 
-                    {/* Accuracy label */}
-                    <TableCell>
-                      <LabelCell
-                        answerId={result.answer_id}
-                        aggregatedAccuracy={aggregatedAccuracy}
-                        chipLabel={chipLabel}
-                        chipColor={chipColor}
-                        helperText={helperText}
-                        onLabelChange={onLabelChange}
-                      />
-                    </TableCell>
+                    {/* Accuracy label (Accuracy tab) */}
+                    {activeRubricId === null && (
+                      <TableCell>
+                        <LabelCell
+                          answerId={result.answer_id}
+                          aggregatedAccuracy={aggregatedAccuracy}
+                          chipLabel={chipLabel}
+                          chipColor={chipColor}
+                          helperText={helperText}
+                          onLabelChange={onLabelChange}
+                        />
+                      </TableCell>
+                    )}
 
-                    {/* Custom rubric label cells */}
-                    {rubrics.map((rubric) => {
-                      const val = answerRubricLabels[rubric.id];
+                    {/* Human label (custom rubric tab) */}
+                    {activeRubricId !== null && (() => {
+                      const val = answerRubricLabels[activeRubricId];
+                      const ar = rubrics.find((r) => r.id === activeRubricId);
+                      const best = ar?.best_option || ar?.options?.[0]?.option || "";
+                      const chipColor = !val ? undefined : val === best ? "success" as const : (ar && ar.options.length <= 2) ? "error" as const : "primary" as const;
                       return (
-                        <TableCell key={rubric.id} align="center">
+                        <TableCell align="center">
                           {val ? (
-                            <Chip label={val} size="small" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />
+                            <Chip label={val} size="small" color={chipColor} sx={{ fontSize: "0.7rem", height: 20 }} />
                           ) : (
                             <Typography variant="caption" color="text.disabled">—</Typography>
                           )}
                         </TableCell>
                       );
-                    })}
+                    })()}
 
-                    {/* Judge columns (Accuracy tab only) */}
-                    {activeRubricId === null && reliableJudges
-                      .filter((judge) => selectedJudges.has(judge.id))
-                      .map((judge) => {
-                        const label = evaluatorMap.get(judge.name);
-                        return (
-                          <TableCell key={judge.id} align="center">
-                            {label === true ? <CheckCircleIcon color="success" fontSize="small" /> :
-                             label === false ? <CancelIcon color="error" fontSize="small" /> :
-                             <Typography variant="caption" color="text.secondary">--</Typography>}
-                          </TableCell>
-                        );
-                      })}
-                    {/* Rubric judge score cells (active rubric tab only) */}
-                    {activeRubricId !== null && activeRubricJudges.map((judge) => {
-                      const val = rubricJudgeLabels[judge.id];
+                    {/* Judge columns (Accuracy tab): all claim_based judges */}
+                    {activeRubricId === null && accuracyJudges.map((judge) => {
+                      const label = evaluatorMap.get(judge.name);
                       return (
                         <TableCell key={judge.id} align="center">
-                          {val ? (
-                            <Chip label={val} size="small" variant="outlined" sx={{ fontSize: "0.7rem", height: 20 }} />
-                          ) : (
-                            <Typography variant="caption" color="text.disabled">—</Typography>
-                          )}
+                          {label === true ? <CheckCircleIcon color="success" fontSize="small" /> :
+                           label === false ? <CancelIcon color="error" fontSize="small" /> :
+                           <Typography variant="caption" color="text.secondary">--</Typography>}
                         </TableCell>
                       );
                     })}
+                    {/* Rubric judge score cells (custom rubric tab): sorted recommended first */}
+                    {activeRubricId !== null && (() => {
+                      const ar = rubrics.find((r) => r.id === activeRubricId);
+                      const best = ar?.best_option || ar?.options?.[0]?.option || "";
+                      const sorted = [...activeRubricJudges].sort((a, b) =>
+                        (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
+                      );
+                      return sorted.map((judge) => {
+                        const val = rubricJudgeLabels[judge.id];
+                        const chipColor = !val ? undefined : val === best ? "success" as const : (ar && ar.options.length <= 2) ? "error" as const : "primary" as const;
+                        return (
+                          <TableCell key={judge.id} align="center">
+                            {val ? (
+                              <Chip label={val} size="small" color={chipColor} sx={{ fontSize: "0.7rem", height: 20 }} />
+                            ) : (
+                              <Typography variant="caption" color="text.disabled">—</Typography>
+                            )}
+                          </TableCell>
+                        );
+                      });
+                    })()}
                   </TableRow>
 
                   <TableRow>

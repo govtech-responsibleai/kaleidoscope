@@ -2,6 +2,9 @@
 
 import React, { useState, useEffect } from "react";
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Alert,
   Box,
   Button,
@@ -10,8 +13,6 @@ import {
   Paper,
   Skeleton,
   Stack,
-  Tab,
-  Tabs,
   Typography,
 } from "@mui/material";
 import {
@@ -19,9 +20,10 @@ import {
   Cancel as CancelIcon,
   ArrowBack as ArrowBackIcon,
   ArrowForward as ArrowForwardIcon,
+  ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
-import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, RubricAnswerScore } from "@/lib/types";
-import { rubricScoreApi } from "@/lib/api";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, RubricAnswerScore, JudgeConfig } from "@/lib/types";
+import { rubricScoreApi, judgeApi } from "@/lib/api";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
@@ -51,21 +53,27 @@ export default function QAContent({
   const [activeTab, setActiveTab] = useState(0);
   const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
   const [rubricScoresLoading, setRubricScoresLoading] = useState(false);
+  const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
 
   // Reset tab when question changes
   React.useEffect(() => {
     setActiveTab(0);
   }, [question?.id]);
 
-  // Fetch rubric scores when a custom rubric tab is active and an answer exists.
-  // Polls every 5s until scores arrive, then stops.
+  // Fetch rubric judges and scores when a custom rubric tab is active and an answer exists.
   useEffect(() => {
     const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
     const answerId = qaEntry?.answer?.id;
     if (!activeRubric || !answerId) {
       setRubricScores([]);
+      setRubricJudges([]);
       return;
     }
+
+    // Fetch judges for the rubric's category
+    judgeApi.getByCategory(activeRubric.category)
+      .then((res) => setRubricJudges(res.data))
+      .catch(() => setRubricJudges([]));
 
     let cancelled = false;
     let pollTimer: number | null = null;
@@ -77,7 +85,6 @@ export default function QAContent({
         if (cancelled) return;
         setRubricScores(res.data);
         setRubricScoresLoading(false);
-        // If no scores yet, keep polling
         if (res.data.length === 0) {
           pollTimer = window.setTimeout(fetchScores, 5000);
         }
@@ -85,7 +92,6 @@ export default function QAContent({
         if (!cancelled) {
           setRubricScores([]);
           setRubricScoresLoading(false);
-          // Retry on error too
           pollTimer = window.setTimeout(fetchScores, 5000);
         }
       }
@@ -119,13 +125,25 @@ export default function QAContent({
     return { totalCheckworthy: checkworthyIds.size, scored, inaccurate };
   }, [claims, claimScores]);
 
+  const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
+
+  // For custom rubric tabs, only show the recommended (non-common) judge
+  const recommendedJudge = React.useMemo(
+    () => rubricJudges.find((j) => j.category !== "common"),
+    [rubricJudges]
+  );
+  const recommendedScore = React.useMemo(
+    () => recommendedJudge ? rubricScores.find((s) => s.judge_id === recommendedJudge.id) : undefined,
+    [rubricScores, recommendedJudge]
+  );
+
   if (!answer) {
-    let message = "Waiting for chatbot answer to be generated before running baseline judge.";
+    let message = "Waiting for chatbot answer to be generated before running primary judge.";
     if (job) {
       if (job.stage === QAJobStageEnum.STARTING || job.stage === QAJobStageEnum.GENERATING_ANSWERS) {
         message = "Chatbot is generating an answer for this question.";
       } else if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS || job.stage === QAJobStageEnum.SCORING_ANSWERS) {
-        message = "Baseline judge is generating an evaluation for the chatbot answer.";
+        message = "Primary judge is generating an evaluation for the chatbot answer.";
       }
     }
     return (
@@ -137,8 +155,6 @@ export default function QAContent({
       </Stack>
     );
   }
-
-  const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
 
   if (!question) {
     return (
@@ -186,109 +202,135 @@ export default function QAContent({
 
       <QAJobProgress job={job} />
 
-      {/* Rubric tabs */}
-      <Tabs
-        value={activeTab}
-        onChange={(_, val) => setActiveTab(val)}
-        variant="scrollable"
-        scrollButtons="auto"
-        sx={{
-          borderBottom: 1,
-          borderColor: "divider",
-          bgcolor: "grey.50",
-          minHeight: 40,
-          "& .MuiTab-root": { minHeight: 40, py: 0, fontSize: "0.8rem", textTransform: "none", fontWeight: 500 },
-        }}
-      >
-        <Tab label="Accuracy" />
-        {rubrics.map((r) => (
-          <Tab key={r.id} label={r.name} />
-        ))}
-      </Tabs>
-
-      {/* Tab panel: judge reasoning for Accuracy */}
-      {activeTab === 0 && answerScore && (
-        <Stack
-          direction="row"
-          spacing={2}
-          alignItems="center"
-          sx={{ p: 2, borderBottom: 1, borderColor: "divider", bgcolor: "grey.50" }}
-        >
+      {/* Rubric pill toggles */}
+      <Stack direction="row" spacing={1} sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider", bgcolor: "grey.50" }}>
+        <Chip
+          label="Accuracy"
+          onClick={() => setActiveTab(0)}
+          variant={activeTab === 0 ? "filled" : "outlined"}
+          color={activeTab === 0 ? "primary" : "default"}
+          sx={{ fontWeight: 600, fontSize: "0.85rem", height: 36, px: 1 }}
+        />
+        {rubrics.map((r, i) => (
           <Chip
-            icon={answerScore.overall_label ? <CheckCircleIcon fontSize="small" /> : <CancelIcon fontSize="small" />}
-            label={`Baseline: ${answerScore.overall_label ? "Accurate" : "Inaccurate"}`}
-            color={answerScore.overall_label ? "success" : "error"}
-            size="small"
+            key={r.id}
+            label={r.name}
+            onClick={() => setActiveTab(i + 1)}
+            variant={activeTab === i + 1 ? "filled" : "outlined"}
+            color={activeTab === i + 1 ? "primary" : "default"}
+            sx={{ fontWeight: 600, fontSize: "0.85rem", height: 36, px: 1 }}
           />
-          <Alert
-            severity="info"
-            sx={{ flex: 1, "& .MuiAlert-message": { width: "100%" }, py: 0.5, px: 1.5 }}
-          >
-            <Typography variant="body2" color="info.dark">
-              {claimScoreSummary.totalCheckworthy === 0
-                ? "No claims found, answer defaults to accurate."
-                : claimScoreSummary.scored === 0
-                  ? "Claims are still waiting on judge scores."
-                  : claimScoreSummary.inaccurate > 0
-                    ? `${claimScoreSummary.inaccurate}/${claimScoreSummary.scored} claim(s) unsupported — marked inaccurate.`
-                    : `All ${claimScoreSummary.scored} claims supported — marked accurate.`}
-            </Typography>
-          </Alert>
-        </Stack>
+        ))}
+      </Stack>
+
+      {/* Tab panel: Accuracy */}
+      {activeTab === 0 && (
+        <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+          <Accordion disableGutters elevation={0} sx={{ bgcolor: "grey.50", "&::before": { display: "none" } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="overline" color="text.secondary">Rubric Criteria</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              <Typography variant="body2" sx={{ mb: 1 }}>
+                Is the response factually accurate based on the knowledge base?
+              </Typography>
+              <Stack spacing={0.5}>
+                <Box sx={{ display: "flex", gap: 1 }}>
+                  <Typography variant="caption" fontWeight={700} sx={{ minWidth: 80 }}>Accurate</Typography>
+                  <Typography variant="caption" color="text.secondary">The response accurately reflects the source information.</Typography>
+                </Box>
+                <Box sx={{ display: "flex", gap: 1 }}>
+                  <Typography variant="caption" fontWeight={700} sx={{ minWidth: 80 }}>Inaccurate</Typography>
+                  <Typography variant="caption" color="text.secondary">The response contains factual errors or omissions.</Typography>
+                </Box>
+              </Stack>
+            </AccordionDetails>
+          </Accordion>
+
+          <Accordion disableGutters elevation={0} sx={{ bgcolor: "grey.50", "&::before": { display: "none" } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Typography variant="overline" color="text.secondary">Judge Verdict</Typography>
+                {answerScore && (
+                  <Chip
+                    icon={answerScore.overall_label ? <CheckCircleIcon fontSize="small" /> : <CancelIcon fontSize="small" />}
+                    label={answerScore.overall_label ? "Accurate" : "Inaccurate"}
+                    color={answerScore.overall_label ? "success" : "error"}
+                    size="small"
+                  />
+                )}
+              </Stack>
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              {answerScore ? (
+                <Typography variant="body2" color="text.secondary">
+                  {claimScoreSummary.totalCheckworthy === 0
+                    ? "No claims found, answer defaults to accurate."
+                    : claimScoreSummary.scored === 0
+                      ? "Claims are still waiting on judge scores."
+                      : claimScoreSummary.inaccurate > 0
+                        ? `${claimScoreSummary.inaccurate}/${claimScoreSummary.scored} claim(s) unsupported — marked inaccurate.`
+                        : `All ${claimScoreSummary.scored} claims supported — marked accurate.`}
+                </Typography>
+              ) : (
+                <Typography variant="caption" color="text.disabled">No judge score yet.</Typography>
+              )}
+            </AccordionDetails>
+          </Accordion>
+        </Box>
       )}
 
-      {/* Tab panel: custom rubric criteria */}
+      {/* Tab panel: custom rubric */}
       {activeTab > 0 && activeRubric && (
-        <Box sx={{ px: 3, py: 2, borderBottom: 1, borderColor: "divider", bgcolor: "grey.50" }}>
-          <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-            Rubric Criteria
-          </Typography>
-          <Typography variant="body2" sx={{ mb: activeRubric.options.length > 0 ? 1.5 : 0 }}>
-            {activeRubric.criteria || <em>No criteria defined.</em>}
-          </Typography>
-          {activeRubric.options.length > 0 && (
-            <Stack spacing={0.5}>
-              {activeRubric.options.map((opt) => (
-                <Box key={opt.option} sx={{ display: "flex", gap: 1 }}>
-                  <Typography variant="caption" fontWeight={700} sx={{ minWidth: 80 }}>
-                    {opt.option}
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    {opt.description}
-                  </Typography>
-                </Box>
-              ))}
-            </Stack>
-          )}
+        <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
+          <Accordion disableGutters elevation={0} sx={{ bgcolor: "grey.50", "&::before": { display: "none" } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography variant="overline" color="text.secondary">Rubric Criteria</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              <Typography variant="body2" sx={{ mb: activeRubric.options.length > 0 ? 1.5 : 0 }}>
+                {activeRubric.criteria || <em>No criteria defined.</em>}
+              </Typography>
+              {activeRubric.options.length > 0 && (
+                <Stack spacing={0.5}>
+                  {activeRubric.options.map((opt) => (
+                    <Box key={opt.option} sx={{ display: "flex", gap: 1 }}>
+                      <Typography variant="caption" fontWeight={700} sx={{ minWidth: 80 }}>{opt.option}</Typography>
+                      <Typography variant="caption" color="text.secondary">{opt.description}</Typography>
+                    </Box>
+                  ))}
+                </Stack>
+              )}
+            </AccordionDetails>
+          </Accordion>
 
-          {/* Rubric judge verdict */}
-          <Box sx={{ mt: 2, pt: 1.5, borderTop: 1, borderColor: "divider" }}>
-            <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 0.5 }}>
-              Judge Verdict
-            </Typography>
-            {rubricScoresLoading ? (
-              <Skeleton variant="rounded" width={160} height={24} />
-            ) : rubricScores.length === 0 ? (
-              <Typography variant="caption" color="text.disabled">No judge score yet.</Typography>
-            ) : (
-              <Stack spacing={1}>
-                {rubricScores.map((score) => (
-                  <Box key={score.id}>
+          <Accordion disableGutters elevation={0} sx={{ bgcolor: "grey.50", "&::before": { display: "none" } }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Stack direction="row" spacing={1.5} alignItems="center">
+                <Typography variant="overline" color="text.secondary">Judge Verdict</Typography>
+                {recommendedScore && activeRubric && (() => {
+                  const best = activeRubric.best_option || activeRubric.options?.[0]?.option || "";
+                  const isPositive = recommendedScore.option_chosen === best;
+                  return (
                     <Chip
-                      label={score.option_chosen}
+                      label={recommendedScore.option_chosen}
                       size="small"
-                      variant="outlined"
-                      color="primary"
-                      sx={{ mb: 0.5 }}
+                      color={isPositive ? "success" : activeRubric.options.length <= 2 ? "error" : "primary"}
                     />
-                    <Typography variant="caption" color="text.secondary" display="block">
-                      {score.explanation}
-                    </Typography>
-                  </Box>
-                ))}
+                  );
+                })()}
               </Stack>
-            )}
-          </Box>
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              {rubricScoresLoading ? (
+                <Skeleton variant="rounded" width={160} height={24} />
+              ) : !recommendedScore ? (
+                <Typography variant="caption" color="text.disabled">No judge score yet.</Typography>
+              ) : (
+                <Typography variant="caption" color="text.secondary">{recommendedScore.explanation}</Typography>
+              )}
+            </AccordionDetails>
+          </Accordion>
         </Box>
       )}
 
@@ -338,7 +380,7 @@ export default function QAContent({
                   border: (theme) => `1px solid ${theme.palette.divider}`,
                 }}
               >
-                {claims.length > 0 ? (
+                {activeTab === 0 && claims.length > 0 ? (
                   <ClaimHighlighter
                     answerContent={answer.answer_content}
                     claims={claims}

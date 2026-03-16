@@ -511,6 +511,30 @@ export interface SnapshotMetric {
 
 export type SnapshotMetricsResponse = SnapshotMetric[];
 
+// Rubric metrics types
+export interface RubricJudgeAlignment {
+  accuracy: number;
+  sample_count: number;
+}
+
+export interface RubricJudgeAccuracy {
+  score: number;
+  total_answers: number;
+  best_option_count: number;
+  best_option: string;
+}
+
+export interface RubricSnapshotMetric {
+  rubric_id: number;
+  rubric_name: string;
+  aggregated_score: number;
+  total_answers: number;
+  best_option: string;
+  best_option_count: number;
+  aligned_judges: AlignedJudge[];
+  judge_alignment_range: { min: number; max: number } | null;
+}
+
 export interface ConfusionMatrix {
   matrix: {
     typical_in_kb: number;
@@ -561,12 +585,14 @@ export interface TargetRubricCreate {
   name: string;
   criteria: string;
   options: RubricOption[];
+  best_option?: string | null;
 }
 
 export interface TargetRubricUpdate {
   name?: string;
   criteria?: string;
   options?: RubricOption[];
+  best_option?: string | null;
 }
 
 export type RubricCategory = "accuracy" | "voice" | "relevancy" | "default";
@@ -577,6 +603,7 @@ export interface TargetRubricResponse {
   name: string;
   criteria: string;
   options: RubricOption[];
+  best_option: string | null;
   position: number;
   category: RubricCategory;
   created_at: string;

@@ -47,7 +47,7 @@ export default function JudgeFilter({
         size="small"
         sx={{ px: 1.5, height: "40px", fontWeight: 400, borderColor: "rgba(0, 0, 0, 0.2)", }}
       >
-        Evaluators ({selectedJudgeIds.size}/{reliableJudges.length})
+        Judges ({selectedJudgeIds.size}/{reliableJudges.length})
       </Button>
 
       <Menu

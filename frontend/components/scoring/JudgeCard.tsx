@@ -21,6 +21,7 @@ import { getModelIcon } from "@/lib/modelIcons";
 
 interface JudgeCardProps {
   judge: JudgeConfig;
+  displayName?: string;
   snapshotId: number;
   questionsWithoutScores: number;
   hasQuestionsWithoutAnswers: boolean;
@@ -33,6 +34,7 @@ interface JudgeCardProps {
 
 export default function JudgeCard({
   judge,
+  displayName,
   snapshotId,
   questionsWithoutScores,
   hasQuestionsWithoutAnswers,
@@ -217,7 +219,7 @@ export default function JudgeCard({
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
             <Typography variant="h6" noWrap sx={{ textOverflow: "ellipsis" }}>
-              {judge.name}
+              {displayName || judge.name}
             </Typography>
             <Stack direction="row" spacing={0.5} alignItems="center">
               {getModelIcon(judge.model_name) && (
@@ -245,8 +247,8 @@ export default function JudgeCard({
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
               {accuracy
-                ? "This evaluator rates your target at"
-                : (isRunning ? `Running: ${completedCount}/${totalJobs} questions` : "Run this evaluator to see accuracy")}
+                ? "This judge rates your target at"
+                : (isRunning ? `Running: ${completedCount}/${totalJobs} questions` : "Run this judge to see accuracy")}
             </Typography>
             <Stack direction="row" spacing={0.5} alignItems="baseline">
               <Typography variant="h4" fontWeight={700} color={accuracy ? "primary.main" : "text.disabled"}>
@@ -277,7 +279,7 @@ export default function JudgeCard({
                   {alignment.f1 >= 0.5 ? "✓" : "✗"} {(alignment.f1 * 100).toFixed(0)}% reliability
                 </Typography>
                 <Tooltip
-                  title={`Measures how well this evaluator's judgments match your annotations (F1 score from ${alignment.sample_count} annotations). ≥50% is considered reliable.`}
+                  title={`Measures how well this judge's judgments match your annotations (F1 score from ${alignment.sample_count} annotations). ≥50% is considered reliable.`}
                 >
                   <InfoOutlinedIcon
                     sx={{
@@ -309,7 +311,7 @@ export default function JudgeCard({
           ) : questionsWithoutScores > 0 ? (
             totalJobs === 0 ? "Run" : `Update (${questionsWithoutScores} new question${questionsWithoutScores > 1 ? "s" : ""})`
           ) : jobs.length === 0 ? (
-            "Run Evaluator"
+            "Run Judge"
           ) : (
             "Completed"
           )}

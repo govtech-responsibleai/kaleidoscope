@@ -100,6 +100,10 @@ function MultiJudgeTooltipContent({
     return <Typography variant="body2">No judge scores available</Typography>;
   }
 
+  // Sort: baseline (recommended) first, then secondary
+  const sorted = [...agreement.scores].sort((a, b) => Number(b.judge.is_baseline) - Number(a.judge.is_baseline));
+  let secondaryIdx = 0;
+
   return (
     <Stack spacing={1}>
       {agreement.status === "disagree" && (
@@ -110,33 +114,36 @@ function MultiJudgeTooltipContent({
           </Typography>
         </Stack>
       )}
-      {agreement.scores.map(({ judge, score }) => (
-        <Box
-          key={judge.id}
-          sx={{
-            p: 1,
-            borderRadius: 1,
-            bgcolor: score.label
-              ? "rgba(99, 199, 125, 0.15)"
-              : "rgba(255, 99, 99, 0.15)",
-            borderLeft: 3,
-            borderColor: score.label ? "success.main" : "error.main",
-          }}
-        >
-          <Typography
-            variant="caption"
-            fontWeight={600}
-            sx={{ color: score.label ? "rgba(144, 238, 144, 1)" : "rgba(255, 182, 182, 1)" }}
+      {sorted.map(({ judge, score }) => {
+        const displayName = judge.is_baseline ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+        return (
+          <Box
+            key={judge.id}
+            sx={{
+              p: 1,
+              borderRadius: 1,
+              bgcolor: score.label
+                ? "rgba(99, 199, 125, 0.15)"
+                : "rgba(255, 99, 99, 0.15)",
+              borderLeft: 3,
+              borderColor: score.label ? "success.main" : "error.main",
+            }}
           >
-            {judge.name}: {score.label ? "Accurate" : "Inaccurate"}
-          </Typography>
-          {score.explanation && (
-            <Typography variant="body2" sx={{ mt: 0.5, fontSize: "0.75rem" }}>
-              {score.explanation}
+            <Typography
+              variant="caption"
+              fontWeight={600}
+              sx={{ color: score.label ? "rgba(144, 238, 144, 1)" : "rgba(255, 182, 182, 1)" }}
+            >
+              {displayName}: {score.label ? "Accurate" : "Inaccurate"}
             </Typography>
-          )}
-        </Box>
-      ))}
+            {score.explanation && (
+              <Typography variant="body2" sx={{ mt: 0.5, fontSize: "0.75rem" }}>
+                {score.explanation}
+              </Typography>
+            )}
+          </Box>
+        );
+      })}
     </Stack>
   );
 }

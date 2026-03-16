@@ -31,8 +31,10 @@ interface QAListProps {
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
   rubrics: TargetRubricResponse[];
-  rubricJobsComplete?: boolean;
+  rubricPendingQuestions?: Set<number>;
 }
+
+const EMPTY_SET = new Set<number>();
 
 export default function QAList({
   targetId,
@@ -41,7 +43,7 @@ export default function QAList({
   qaMap,
   setQaMap,
   rubrics,
-  rubricJobsComplete = true,
+  rubricPendingQuestions = EMPTY_SET,
 }: QAListProps) {
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
   const [personaMap, setPersonaMap] = useState<Record<number, PersonaResponse>>({});
@@ -472,7 +474,7 @@ export default function QAList({
                     question={question}
                     answer={answer}
                     job={jobByQuestionId[question.id] ?? null}
-                    rubricJobsComplete={rubricJobsComplete}
+                    rubricJobsComplete={!rubricPendingQuestions.has(question.id)}
                     isActive={question.id === activeQuestionId}
                     isChecked={answer ? draftSelections.has(answer.id) : false}
                     onToggleSelection={() =>

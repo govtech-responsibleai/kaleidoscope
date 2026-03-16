@@ -39,6 +39,7 @@ import {
   QAJob,
   SnapshotMetric,
   TargetRubricResponse,
+  RubricSnapshotMetric,
 } from "@/lib/types";
 import {
   snapshotApi,
@@ -87,6 +88,9 @@ export default function ScoringPage() {
 
   const [snapshotMetric, setSnapshotMetric] = useState<SnapshotMetric | null>(null);
   const [snapshotMetricLoading, setSnapshotMetricLoading] = useState(false);
+
+  const [rubricMetrics, setRubricMetrics] = useState<RubricSnapshotMetric[]>([]);
+  const [rubricMetricsLoading, setRubricMetricsLoading] = useState(false);
 
   const [error, setError] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState(0); // 0 = Scores, 1 = Error Analysis
@@ -177,6 +181,19 @@ export default function ScoringPage() {
     }
   }, [targetId, selectedSnapshotId]);
 
+  const fetchRubricMetrics = useCallback(async () => {
+    if (!selectedSnapshotId) return;
+    setRubricMetricsLoading(true);
+    try {
+      const response = await metricsApi.getRubricSnapshotMetrics(targetId, selectedSnapshotId);
+      setRubricMetrics(response.data);
+    } catch {
+      setRubricMetrics([]);
+    } finally {
+      setRubricMetricsLoading(false);
+    }
+  }, [targetId, selectedSnapshotId]);
+
   const fetchQuestionsWithoutAnswers = useCallback(async (snapshotId: number) => {
     const baselineJudge = judges.find((j) => j.is_baseline);
     if (!baselineJudge) { setQuestionsWithoutAnswers(0); return; }
@@ -229,6 +246,7 @@ export default function ScoringPage() {
     setQuestionsWithoutAnswers(0);
     setQuestionsWithoutScores({});
     setSnapshotMetric(null);
+    setRubricMetrics([]);
     if (selectedSnapshotId) {
       checkAnnotationCompletion(selectedSnapshotId);
       fetchQuestionsWithoutAnswers(selectedSnapshotId);
@@ -240,8 +258,9 @@ export default function ScoringPage() {
     if (selectedSnapshotId && annotationStatus?.is_complete) {
       fetchResults(selectedSnapshotId);
       fetchSnapshotMetrics();
+      fetchRubricMetrics();
     }
-  }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics]);
+  }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics, fetchRubricMetrics]);
 
   const handleSnapshotSelect = (snapshotId: number | null) => updateSnapshotSelection(snapshotId);
 
@@ -286,8 +305,8 @@ export default function ScoringPage() {
 
   const handleJobComplete = useCallback(async () => {
     if (!selectedSnapshotId) return;
-    await Promise.all([fetchResults(selectedSnapshotId), fetchQuestionsWithoutScores(selectedSnapshotId), fetchSnapshotMetrics()]);
-  }, [selectedSnapshotId, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics]);
+    await Promise.all([fetchResults(selectedSnapshotId), fetchQuestionsWithoutScores(selectedSnapshotId), fetchSnapshotMetrics(), fetchRubricMetrics()]);
+  }, [selectedSnapshotId, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics, fetchRubricMetrics]);
 
   const handleOpenDialog = (mode: "create" | "edit" | "duplicate", judge?: JudgeConfig) => {
     setDialogMode(mode); setDialogJudge(judge || null); setDialogOpen(true);
@@ -383,7 +402,7 @@ export default function ScoringPage() {
         <Stack spacing={2}>
           {questionsWithoutAnswers > 0 && (
             <Alert severity="warning">
-              {questionsWithoutAnswers} new question{questionsWithoutAnswers > 1 ? "s" : ""} found. Run baseline judge in Annotations tab first.
+              {questionsWithoutAnswers} new question{questionsWithoutAnswers > 1 ? "s" : ""} found. Run primary judge in Annotations tab first.
             </Alert>
           )}
 
@@ -398,23 +417,45 @@ export default function ScoringPage() {
           {/* ── SCORES TAB ── */}
           {mainTab === 0 && (
             <Stack spacing={2}>
-              {/* Overall score card */}
-              <SnapshotAccuracyCard
-                snapshotMetric={snapshotMetric}
-                loading={snapshotMetricLoading}
-                emptyMessage="Run evaluators to see results"
-                showExplanatoryText
-              />
+              {/* Score gauges - side by side */}
+              <Stack direction="row" spacing={2} sx={{ overflowX: "auto", pb: 1 }}>
+                <Paper variant="outlined" sx={{ flex: "1 1 0", minWidth: 280, p: 2 }}>
+                  <SnapshotAccuracyCard
+                    snapshotMetric={snapshotMetric}
+                    loading={snapshotMetricLoading}
+                    emptyMessage="Run judges to see results"
+                    showExplanatoryText
+                  />
+                </Paper>
+                {rubrics.map((rubric) => {
+                  const rubricMetric = rubricMetrics.find((m) => m.rubric_id === rubric.id);
+                  return (
+                    <Paper key={rubric.id} variant="outlined" sx={{ flex: "1 1 0", minWidth: 280, p: 2 }}>
+                      <RubricScoreGauge
+                        rubric={rubric}
+                        metric={rubricMetric ?? null}
+                        loading={rubricMetricsLoading}
+                      />
+                    </Paper>
+                  );
+                })}
+              </Stack>
 
-              {/* Accuracy evaluators section (collapsible) */}
+              {/* Accuracy judges section (collapsible) */}
               <EvaluatorSection
-                title="Accuracy Evaluators"
-                description="Evaluators that measure factual accuracy against your knowledge base."
+                title="Accuracy Judges"
+                description="Judges that measure factual accuracy against your knowledge base."
                 judges={judges.filter((j) => j.category === "accuracy" || j.category === "common")}
                 snapshotId={selectedSnapshotId}
                 scrollContainerRef={judgeCardsRef}
                 questionsWithoutScores={questionsWithoutScores}
                 hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
+                getDisplayName={(j) => {
+                  if (j.is_baseline) return "Recommended Judge";
+                  const secondaryJudges = judges.filter((x) => (x.category === "accuracy" || x.category === "common") && !x.is_baseline && !x.is_editable);
+                  const idx = secondaryJudges.findIndex((x) => x.id === j.id);
+                  return `Secondary Judge ${idx + 1}`;
+                }}
                 onJobStart={handleJobStart}
                 onJobComplete={handleJobComplete}
                 onEditJudge={(j) => handleOpenDialog("edit", j)}
@@ -428,14 +469,14 @@ export default function ScoringPage() {
                 onScrollRight={() => handleScrollJudgeCards("right")}
               />
 
-              {/* Per-rubric evaluator sections */}
+              {/* Per-rubric judge sections */}
               {rubrics.map((rubric) => {
                 const rJudges = rubricJudges[rubric.id] ?? [];
                 if (rubric.category === "accuracy") {
                   return (
                     <Accordion key={rubric.id} variant="outlined" disableGutters>
                       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                        <Typography fontWeight={600}>{rubric.name} Evaluators</Typography>
+                        <Typography fontWeight={600}>{rubric.name} Judges</Typography>
                       </AccordionSummary>
                       <AccordionDetails>
                         <Typography variant="body2" color="text.secondary">
@@ -452,11 +493,12 @@ export default function ScoringPage() {
                 return (
                   <RubricEvaluatorSection
                     key={rubric.id}
-                    title={`${rubric.name} Evaluators`}
+                    title={`${rubric.name} Judges`}
                     judges={sortedJudges}
                     rubricCategory={rubric.category}
                     snapshotId={selectedSnapshotId}
                     rubricId={rubric.id}
+                    bestOption={rubric.best_option || rubric.options?.[0]?.option || ""}
                     hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
                     onJobStart={(judgeId) => handleRubricJobStart(judgeId, rubric.id)}
                     onJobComplete={handleJobComplete}
@@ -508,20 +550,21 @@ export default function ScoringPage() {
   );
 }
 
-// ── Rubric evaluator section (no add/edit/delete controls) ─────────────────
+// ── Rubric judge section (no add/edit/delete controls) ─────────────────
 interface RubricEvaluatorSectionProps {
   title: string;
   judges: JudgeConfig[];
   rubricCategory: string;
   snapshotId: number;
   rubricId: number;
+  bestOption: string;
   hasQuestionsWithoutAnswers: boolean;
   onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
   onJobComplete: () => void;
 }
 
 function RubricEvaluatorSection({
-  title, judges, rubricCategory, snapshotId, rubricId,
+  title, judges, rubricCategory, snapshotId, rubricId, bestOption,
   hasQuestionsWithoutAnswers,
   onJobStart, onJobComplete,
 }: RubricEvaluatorSectionProps) {
@@ -539,21 +582,35 @@ function RubricEvaluatorSection({
             pb: 1,
           }}
         >
-          {judges.map((judge) => (
-            <RubricJudgeCard
-              key={judge.id}
-              judge={judge}
-              rubricCategory={rubricCategory}
-              snapshotId={snapshotId}
-              rubricId={rubricId}
-              hasQuestionsWithoutAnswers={hasQuestionsWithoutAnswers}
-              onJobStart={onJobStart}
-              onJobComplete={onJobComplete}
-            />
-          ))}
+          {(() => {
+            let secondaryIdx = 0;
+            return judges.map((judge) => {
+              let name: string;
+              if (judge.category === rubricCategory) {
+                name = "Recommended Judge";
+              } else {
+                secondaryIdx++;
+                name = `Secondary Judge ${secondaryIdx}`;
+              }
+              return (
+                <RubricJudgeCard
+                  key={judge.id}
+                  judge={judge}
+                  displayName={name}
+                  rubricCategory={rubricCategory}
+                  snapshotId={snapshotId}
+                  rubricId={rubricId}
+                  bestOption={bestOption}
+                  hasQuestionsWithoutAnswers={hasQuestionsWithoutAnswers}
+                  onJobStart={onJobStart}
+                  onJobComplete={onJobComplete}
+                />
+              );
+            });
+          })()}
           {judges.length === 0 && (
             <Typography variant="body2" color="text.secondary">
-              No evaluators configured for this rubric.
+              No judges configured for this rubric.
             </Typography>
           )}
         </Box>
@@ -562,7 +619,7 @@ function RubricEvaluatorSection({
   );
 }
 
-// ── Collapsible evaluator section ──────────────────────────────────────────
+// ── Collapsible judge section ──────────────────────────────────────────
 interface EvaluatorSectionProps {
   title: string;
   description: string;
@@ -571,6 +628,7 @@ interface EvaluatorSectionProps {
   scrollContainerRef: React.Ref<HTMLDivElement>;
   questionsWithoutScores: Record<number, number>;
   hasQuestionsWithoutAnswers: boolean;
+  getDisplayName?: (judge: JudgeConfig) => string;
   onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
   onJobComplete: () => void;
   onEditJudge: (judge: JudgeConfig) => void;
@@ -583,7 +641,7 @@ interface EvaluatorSectionProps {
 
 function EvaluatorSection({
   title, description, judges, snapshotId, scrollContainerRef,
-  questionsWithoutScores, hasQuestionsWithoutAnswers,
+  questionsWithoutScores, hasQuestionsWithoutAnswers, getDisplayName,
   onJobStart, onJobComplete, onEditJudge, onDuplicateJudge, onDeleteJudge,
   onAddJudge, onScrollLeft, onScrollRight,
 }: EvaluatorSectionProps) {
@@ -616,6 +674,7 @@ function EvaluatorSection({
           scrollContainerRef={scrollContainerRef}
           questionsWithoutScores={questionsWithoutScores}
           hasQuestionsWithoutAnswers={hasQuestionsWithoutAnswers}
+          getDisplayName={getDisplayName}
           onJobStart={onJobStart}
           onJobComplete={onJobComplete}
           onEditJudge={onEditJudge}
@@ -624,5 +683,86 @@ function EvaluatorSection({
         />
       </AccordionDetails>
     </Accordion>
+  );
+}
+
+// ── Rubric score gauge (analogous to SnapshotAccuracyCard) ─────────────
+import AccuracyGauge from "@/components/shared/AccuracyGauge";
+
+function RubricScoreGauge({
+  rubric,
+  metric,
+  loading,
+}: {
+  rubric: TargetRubricResponse;
+  metric: RubricSnapshotMetric | null;
+  loading: boolean;
+}) {
+  if (loading) {
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="160px">
+          <CircularProgress />
+        </Box>
+      </Box>
+    );
+  }
+
+  if (!metric || metric.total_answers === 0) {
+    return (
+      <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+        <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
+          Overall {rubric.name}
+        </Typography>
+        <Typography variant="h2" fontWeight={700} color="text.disabled">
+          --%
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+          Run judges to see results
+        </Typography>
+      </Box>
+    );
+  }
+
+  const hasReliableJudges = metric.aligned_judges.length > 0;
+  const reliableJudgeCount = metric.aligned_judges.length;
+  const alignmentRange = metric.judge_alignment_range;
+
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
+      <Typography variant="h6" sx={{ mb: 1 }}>
+        Overall {rubric.name}
+      </Typography>
+
+      <AccuracyGauge
+        value={metric.aggregated_score}
+        size={300}
+        label={`% ${metric.best_option}`}
+      />
+
+      <Stack spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
+        {hasReliableJudges && alignmentRange ? (
+          <Typography variant="body2" color="text.secondary" textAlign="center">
+            from {reliableJudgeCount} judge{reliableJudgeCount !== 1 ? "s" : ""}{" "}
+            <Box component="span" sx={{ color: "success.main", fontWeight: 500 }}>
+              ({(alignmentRange.min * 100).toFixed(0)}%-{(alignmentRange.max * 100).toFixed(0)}% reliability)
+            </Box>
+          </Typography>
+        ) : (
+          <Typography variant="body2" color="text.secondary">
+            No reliable judges yet
+          </Typography>
+        )}
+      </Stack>
+
+      <Typography
+        variant="caption"
+        color="text.secondary"
+        textAlign="center"
+        sx={{ mt: 2, maxWidth: 350 }}
+      >
+        Score shows the % of answers where reliable judges chose &ldquo;{metric.best_option}&rdquo; via majority vote.
+      </Typography>
+    </Box>
   );
 }

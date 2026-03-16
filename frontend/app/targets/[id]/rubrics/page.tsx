@@ -12,11 +12,15 @@ import {
   Button,
   IconButton,
   CircularProgress,
+  Chip,
+  Tooltip,
 } from "@mui/material";
 import {
   EditOutlined as EditOutlinedIcon,
   Add as AddIcon,
   DeleteOutline as DeleteOutlineIcon,
+  CheckCircle as CheckCircleIcon,
+  CheckCircleOutline as CheckCircleOutlineIcon,
 } from "@mui/icons-material";
 import { targetRubricApi } from "@/lib/api";
 import { TargetRubricResponse, RubricOption } from "@/lib/types";
@@ -88,8 +92,18 @@ export default function RubricsPage() {
   };
 
   const removeOption = async (rubric: TargetRubricResponse, index: number) => {
+    const removed = rubric.options[index];
     const updated = rubric.options.filter((_, i) => i !== index);
-    const res = await targetRubricApi.update(targetId, rubric.id, { options: updated });
+    const patch: { options: RubricOption[]; best_option?: string | null } = { options: updated };
+    if (rubric.best_option === removed.option) {
+      patch.best_option = null;
+    }
+    const res = await targetRubricApi.update(targetId, rubric.id, patch);
+    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+  };
+
+  const saveBestOption = async (rubric: TargetRubricResponse, optionName: string) => {
+    const res = await targetRubricApi.update(targetId, rubric.id, { best_option: optionName });
     setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
   };
 
@@ -174,29 +188,52 @@ export default function RubricsPage() {
 
                 <Divider sx={{ mb: 2 }} />
 
-                {rubric.options.map((opt, i) => (
-                  <Box key={i} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
-                    <TextField
-                      label="Option"
-                      value={opt.option}
-                      size="small"
-                      sx={{ width: 140, flexShrink: 0 }}
-                      onChange={(e) => updateOptionField(rubric, i, "option", e.target.value)}
-                      onBlur={() => saveOptions(rubric, rubric.options)}
-                    />
-                    <TextField
-                      label="Description"
-                      value={opt.description}
-                      size="small"
-                      fullWidth
-                      onChange={(e) => updateOptionField(rubric, i, "description", e.target.value)}
-                      onBlur={() => saveOptions(rubric, rubric.options)}
-                    />
-                    <IconButton size="small" onClick={() => removeOption(rubric, i)}>
-                      <DeleteOutlineIcon fontSize="small" />
-                    </IconButton>
-                  </Box>
-                ))}
+                {rubric.options.map((opt, i) => {
+                  const isPositive = rubric.best_option === opt.option && opt.option !== "";
+                  return (
+                    <Box key={i} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
+                      <TextField
+                        placeholder="Option"
+                        value={opt.option}
+                        size="small"
+                        sx={{ width: 140, flexShrink: 0 }}
+                        onChange={(e) => updateOptionField(rubric, i, "option", e.target.value)}
+                        onBlur={() => saveOptions(rubric, rubric.options)}
+                      />
+                      <TextField
+                        placeholder="Description"
+                        value={opt.description}
+                        size="small"
+                        fullWidth
+                        onChange={(e) => updateOptionField(rubric, i, "description", e.target.value)}
+                        onBlur={() => saveOptions(rubric, rubric.options)}
+                      />
+                      <Tooltip
+                        title="The positive option is the ideal outcome. Scores measure how often judges choose this option."
+                        placement="top"
+                        arrow
+                      >
+                        <Chip
+                          icon={isPositive ? <CheckCircleIcon sx={{ fontSize: 16, color: "success.main" }} /> : <CheckCircleOutlineIcon sx={{ fontSize: 16 }} />}
+                          label="Positive"
+                          size="small"
+                          onClick={() => { if (opt.option) saveBestOption(rubric, opt.option); }}
+                          variant={isPositive ? "filled" : "outlined"}
+                          sx={{
+                            flexShrink: 0,
+                            cursor: "pointer",
+                            ...(isPositive
+                              ? { bgcolor: "rgba(46, 125, 50, 0.12)", color: "success.dark", borderColor: "transparent" }
+                              : { color: "text.disabled", borderColor: "divider" }),
+                          }}
+                        />
+                      </Tooltip>
+                      <IconButton size="small" onClick={() => removeOption(rubric, i)}>
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                  );
+                })}
 
                 <Button startIcon={<AddIcon />} size="small" sx={{ mt: 0.5 }} onClick={() => addOption(rubric)}>
                   Add Option

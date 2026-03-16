@@ -54,6 +54,9 @@ import {
   AnswerRubricLabel,
   AnswerRubricLabelUpsert,
   RubricAnswerScore,
+  RubricJudgeAlignment,
+  RubricJudgeAccuracy,
+  RubricSnapshotMetric,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -471,6 +474,19 @@ export const metricsApi = {
   getConfusionMatrix: (targetId: number, snapshotId?: number) =>
     api.get<ConfusionMatrix>(`/targets/${targetId}/confusion-matrix`, {
       params: snapshotId ? { snapshot_id: snapshotId } : undefined,
+    }),
+
+  getRubricAlignment: (snapshotId: number, judgeId: number, rubricId: number) =>
+    api.get<RubricJudgeAlignment>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/alignment`),
+
+  getRubricAccuracy: (snapshotId: number, judgeId: number, rubricId: number, bestOption: string) =>
+    api.get<RubricJudgeAccuracy>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/accuracy`, {
+      params: { best_option: bestOption },
+    }),
+
+  getRubricSnapshotMetrics: (targetId: number, snapshotId: number) =>
+    api.get<RubricSnapshotMetric[]>(`/targets/${targetId}/rubric-snapshot-metrics`, {
+      params: { snapshot_id: snapshotId },
     }),
 };
 

@@ -40,6 +40,7 @@ interface QAJobControlProps {
   rubrics?: TargetRubricResponse[];
   onError?: (message: string) => void;
   onRubricJobsCompleteChange?: (complete: boolean) => void;
+  onRubricPendingQuestionsChange?: (pendingQuestionIds: Set<number>) => void;
 }
 
 type ControlState = "start" | "pause" | "resume" | "disabled";
@@ -71,6 +72,7 @@ export default function QAJobControl({
   rubrics,
   onError,
   onRubricJobsCompleteChange,
+  onRubricPendingQuestionsChange,
 }: QAJobControlProps) {
   const [jobInAction, setJobInAction] = useState(false); // To prevent double submits of a job request
   const [loadingInitialData, setLoadingInitialData] = useState(true); // Wait for the first set of data to be ready
@@ -95,6 +97,45 @@ export default function QAJobControl({
   useEffect(() => {
     onRubricJobsCompleteChange?.(rubricJobsComplete);
   }, [rubricJobsComplete, onRubricJobsCompleteChange]);
+
+  const onRubricPendingQuestionsChangeRef = useRef(onRubricPendingQuestionsChange);
+  useEffect(() => {
+    onRubricPendingQuestionsChangeRef.current = onRubricPendingQuestionsChange;
+  }, [onRubricPendingQuestionsChange]);
+
+  /** Compute which question IDs still have pending rubric jobs and notify parent */
+  const updateRubricPendingQuestions = useCallback((allJobs: QAJob[]) => {
+    const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
+    if (!hasNonAccuracyRubrics) {
+      onRubricPendingQuestionsChangeRef.current?.(new Set());
+      return;
+    }
+    const rubricJobs = allJobs.filter((j) => j.rubric_id !== null);
+    // Group rubric jobs by question_id
+    const byQuestion = new Map<number, QAJob[]>();
+    for (const job of rubricJobs) {
+      const existing = byQuestion.get(job.question_id) ?? [];
+      existing.push(job);
+      byQuestion.set(job.question_id, existing);
+    }
+    const pending = new Set<number>();
+    for (const [questionId, jobs] of byQuestion) {
+      const allDone = jobs.every(
+        (j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED
+      );
+      if (!allDone) pending.add(questionId);
+    }
+    // Also include questions that have baseline jobs completed but no rubric jobs yet
+    // (rubric jobs haven't been created for them yet)
+    if (rubricJobs.length === 0) {
+      // No rubric jobs at all yet — all questions with baseline jobs are pending
+      const baselineCompleted = allJobs
+        .filter((j) => j.rubric_id === null && (j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED))
+        .map((j) => j.question_id);
+      for (const qid of baselineCompleted) pending.add(qid);
+    }
+    onRubricPendingQuestionsChangeRef.current?.(pending);
+  }, [rubrics]);
 
   // refs don't trigger re-renders
   useEffect(() => {
@@ -248,6 +289,7 @@ export default function QAJobControl({
             (rubricJobs.length > 0 &&
               rubricJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED));
           setRubricJobsComplete(rubricsDone);
+          updateRubricPendingQuestions(allJobs);
         }
 
         const answers = answersResponse.data.answers;
@@ -463,6 +505,7 @@ export default function QAJobControl({
           (rubricJobs.length > 0 &&
             rubricJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED));
         setRubricJobsComplete(rubricsDone);
+        updateRubricPendingQuestions(allJobs);
 
         // Only stop polling when baseline AND rubric jobs are all done
         if (rubricsDone) {
