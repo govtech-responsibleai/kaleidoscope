@@ -71,3 +71,29 @@ class ConfusionMatrixResponse(BaseModel):
     """Confusion matrix for inaccurate answers by question type and scope."""
     matrix: Dict[str, int]
     total_inaccurate: int
+
+
+class RubricJudgeAlignmentResponse(BaseModel):
+    """Alignment of a rubric judge with human labels on selected answers."""
+    accuracy: float  # % match with human labels
+    sample_count: int
+
+
+class RubricJudgeAccuracyResponse(BaseModel):
+    """Per-judge rubric scoring summary."""
+    score: float  # % of answers getting the best option
+    total_answers: int
+    best_option_count: int
+    best_option: str
+
+
+class RubricSnapshotMetric(BaseModel):
+    """Aggregated rubric metric for a snapshot."""
+    rubric_id: int
+    rubric_name: str
+    aggregated_score: float  # % of answers where majority chose best option
+    total_answers: int
+    best_option: str
+    best_option_count: int
+    aligned_judges: List[AlignedJudge] = []
+    judge_alignment_range: Optional[Dict[str, float]] = None

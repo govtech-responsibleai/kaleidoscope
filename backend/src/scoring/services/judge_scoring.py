@@ -338,7 +338,7 @@ class AnswerJudge:
     # Category-specific prompt templates for rubric scoring
     RUBRIC_TEMPLATE_MAP = {
         "voice": "voice_rubric_judge.md",
-        "relevancy": "relevancy_rubric_judge.md",
+        "relevance": "relevancy_rubric_judge.md",
         "default": "default_rubric_judge.md",
     }
 
@@ -346,7 +346,7 @@ class AnswerJudge:
         """
         Score an answer against a custom rubric using response-level judging.
 
-        Selects a category-specific prompt template (voice, relevancy, or default),
+        Selects a category-specific prompt template (voice, relevance, or default),
         calls LLM to pick one option, and stores the result in RubricAnswerScore.
         """
         template_name = self.RUBRIC_TEMPLATE_MAP.get(

@@ -48,3 +48,67 @@ class RubricAnswerScoreRepository:
             )
             .first()
         )
+
+    @staticmethod
+    def get_by_snapshot_and_rubric_and_judge(
+        db: Session, snapshot_id: int, rubric_id: int, judge_id: int
+    ) -> List[RubricAnswerScore]:
+        """Get all rubric scores for a judge on a rubric in a snapshot."""
+        from src.common.database.models import Answer
+        return (
+            db.query(RubricAnswerScore)
+            .join(Answer, RubricAnswerScore.answer_id == Answer.id)
+            .filter(
+                Answer.snapshot_id == snapshot_id,
+                RubricAnswerScore.rubric_id == rubric_id,
+                RubricAnswerScore.judge_id == judge_id,
+            )
+            .all()
+        )
+
+    @staticmethod
+    def get_by_snapshot_and_rubric_and_judge_selected(
+        db: Session, snapshot_id: int, rubric_id: int, judge_id: int
+    ) -> List[RubricAnswerScore]:
+        """Same but only for selected-for-annotation answers."""
+        from src.common.database.models import Answer
+        return (
+            db.query(RubricAnswerScore)
+            .join(Answer, RubricAnswerScore.answer_id == Answer.id)
+            .filter(
+                Answer.snapshot_id == snapshot_id,
+                Answer.is_selected_for_annotation == True,
+                RubricAnswerScore.rubric_id == rubric_id,
+                RubricAnswerScore.judge_id == judge_id,
+            )
+            .all()
+        )
+
+    @staticmethod
+    def get_human_labels_by_snapshot_selected(db: Session, snapshot_id: int, rubric_id: int):
+        """Get human rubric labels for selected answers in a snapshot."""
+        from src.common.database.models import Answer, AnswerRubricLabel
+        return (
+            db.query(AnswerRubricLabel)
+            .join(Answer, AnswerRubricLabel.answer_id == Answer.id)
+            .filter(
+                Answer.snapshot_id == snapshot_id,
+                Answer.is_selected_for_annotation == True,
+                AnswerRubricLabel.rubric_id == rubric_id,
+            )
+            .all()
+        )
+
+    @staticmethod
+    def get_human_labels_by_snapshot(db: Session, snapshot_id: int, rubric_id: int):
+        """Get ALL human rubric labels for answers in a snapshot."""
+        from src.common.database.models import Answer, AnswerRubricLabel
+        return (
+            db.query(AnswerRubricLabel)
+            .join(Answer, AnswerRubricLabel.answer_id == Answer.id)
+            .filter(
+                Answer.snapshot_id == snapshot_id,
+                AnswerRubricLabel.rubric_id == rubric_id,
+            )
+            .all()
+        )

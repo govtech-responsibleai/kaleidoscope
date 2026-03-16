@@ -498,7 +498,8 @@ class TargetRubric(Base):
     criteria = Column(Text, nullable=False, default="")
     options = Column(JSON, nullable=False, default=list)
     position = Column(Integer, nullable=False, default=0)
-    category = Column(String, nullable=False, default="default")  # "accuracy" | "voice" | "relevancy" | "default"
+    category = Column(String, nullable=False, default="default")  # "relevance" | "voice" | "default"
+    best_option = Column(String, nullable=True)  # user-specified positive option for scoring
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

@@ -15,6 +15,7 @@ from src.common.database.repositories.answer_score_repo import AnswerScoreReposi
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
+from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
 from src.common.database.models import AnswerScore
 from src.common.models.metrics import (
     AggregatedAnswerScore,
@@ -24,6 +25,9 @@ from src.common.models.metrics import (
     JudgeAccuracyResponse,
     TargetSnapshotMetric,
     ConfusionMatrixResponse,
+    RubricJudgeAlignmentResponse,
+    RubricJudgeAccuracyResponse,
+    RubricSnapshotMetric,
 )
 
 logger = logging.getLogger(__name__)
@@ -466,6 +470,178 @@ class MetricsService:
             total_inaccurate=total_inaccurate,
         )
 
+    def calculate_rubric_judge_alignment(
+        self, snapshot_id: int, judge_id: int, rubric_id: int
+    ) -> RubricJudgeAlignmentResponse:
+        """
+        Calculate how well a rubric judge agrees with human rubric labels on selected answers.
+        Returns accuracy (% exact match) and sample count.
+        """
+        human_labels = RubricAnswerScoreRepository.get_human_labels_by_snapshot_selected(
+            self.db, snapshot_id, rubric_id
+        )
+        judge_scores = RubricAnswerScoreRepository.get_by_snapshot_and_rubric_and_judge_selected(
+            self.db, snapshot_id, rubric_id, judge_id
+        )
+
+        if not human_labels or not judge_scores:
+            raise ValueError(f"No data for rubric alignment: judge {judge_id}, rubric {rubric_id}, snapshot {snapshot_id}")
+
+        human_map = {label.answer_id: label.option_value for label in human_labels}
+        judge_map = {score.answer_id: score.option_chosen for score in judge_scores}
+
+        matches = 0
+        total = 0
+        for answer_id in human_map:
+            if answer_id in judge_map:
+                total += 1
+                if human_map[answer_id] == judge_map[answer_id]:
+                    matches += 1
+
+        if total == 0:
+            raise ValueError(f"No overlapping data for rubric alignment")
+
+        accuracy = matches / total
+        return RubricJudgeAlignmentResponse(accuracy=round(accuracy, 3), sample_count=total)
+
+    def calculate_rubric_judge_accuracy(
+        self, snapshot_id: int, judge_id: int, rubric_id: int, best_option: str
+    ) -> RubricJudgeAccuracyResponse:
+        """
+        Calculate what % of answers this judge gave the best option for a rubric.
+        """
+        scores = RubricAnswerScoreRepository.get_by_snapshot_and_rubric_and_judge(
+            self.db, snapshot_id, rubric_id, judge_id
+        )
+
+        if not scores:
+            raise ValueError(f"No rubric scores for judge {judge_id}, rubric {rubric_id}, snapshot {snapshot_id}")
+
+        total = len(scores)
+        best_count = sum(1 for s in scores if s.option_chosen == best_option)
+        score = best_count / total if total > 0 else 0.0
+
+        return RubricJudgeAccuracyResponse(
+            score=round(score, 3),
+            total_answers=total,
+            best_option_count=best_count,
+            best_option=best_option,
+        )
+
+    def calculate_rubric_snapshot_metrics(
+        self, target_id: int, snapshot_id: int
+    ) -> List[RubricSnapshotMetric]:
+        """
+        Calculate aggregated rubric metrics for a snapshot.
+        For each rubric: determine reliable judges, aggregate via majority vote,
+        calculate % of answers getting best option.
+        """
+        from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
+
+        rubrics = TargetRubricRepository.get_by_target(self.db, target_id)
+        judges = JudgeRepository.get_all(self.db)
+        judge_map = {j.id: j.name for j in judges}
+
+        results = []
+        for rubric in rubrics:
+            options = rubric.options or []
+            if not options:
+                continue
+            # Use user-specified best_option if set, otherwise fall back to first option
+            if rubric.best_option:
+                best_option = rubric.best_option
+            else:
+                best_option = options[0].get("option", "") if isinstance(options[0], dict) else str(options[0])
+
+            # Find all judges that have scores for this rubric in this snapshot
+            from src.common.database.models import RubricAnswerScore, Answer
+            judge_rows = (
+                self.db.query(RubricAnswerScore.judge_id)
+                .join(Answer, RubricAnswerScore.answer_id == Answer.id)
+                .filter(Answer.snapshot_id == snapshot_id, RubricAnswerScore.rubric_id == rubric.id)
+                .distinct()
+                .all()
+            )
+            judge_ids_with_scores = {row[0] for row in judge_rows}
+
+            if not judge_ids_with_scores:
+                continue
+
+            # Calculate reliability for each judge
+            reliability_map = {}
+            for jid in judge_ids_with_scores:
+                try:
+                    alignment = self.calculate_rubric_judge_alignment(snapshot_id, jid, rubric.id)
+                    reliability_map[jid] = alignment.accuracy
+                except ValueError:
+                    reliability_map[jid] = 0.0
+
+            # Filter to reliable judges (>= 0.5)
+            aligned_judges = []
+            range_min = None
+            range_max = None
+            for jid, acc in reliability_map.items():
+                if acc >= 0.5:
+                    aligned_judges.append(AlignedJudge(
+                        judge_id=jid,
+                        name=judge_map.get(jid, "Unknown"),
+                        f1=round(acc, 3),
+                    ))
+                    if range_min is None or acc < range_min:
+                        range_min = acc
+                    if range_max is None or acc > range_max:
+                        range_max = acc
+
+            judge_alignment_range = None
+            if aligned_judges:
+                judge_alignment_range = {"min": range_min, "max": range_max}
+
+            # Aggregate: for each answer, get majority vote from judges
+            # Then count % getting best option
+            # Use reliable judges if available, otherwise fall back to all judges
+            reliable_judge_ids = {j.judge_id for j in aligned_judges}
+            scoring_judge_ids = reliable_judge_ids if reliable_judge_ids else judge_ids_with_scores
+
+            # Get all scores for this rubric+snapshot from scoring judges
+            all_scores = (
+                self.db.query(RubricAnswerScore)
+                .join(Answer, RubricAnswerScore.answer_id == Answer.id)
+                .filter(
+                    Answer.snapshot_id == snapshot_id,
+                    RubricAnswerScore.rubric_id == rubric.id,
+                    RubricAnswerScore.judge_id.in_(scoring_judge_ids),
+                )
+                .all()
+            )
+
+            # Group by answer_id, majority vote
+            answer_options = {}
+            for score in all_scores:
+                answer_options.setdefault(score.answer_id, []).append(score.option_chosen)
+
+            total_answers = len(answer_options)
+            best_count = 0
+            for aid, options_list in answer_options.items():
+                counter = Counter(options_list)
+                majority = counter.most_common(1)[0][0]
+                if majority == best_option:
+                    best_count += 1
+
+            agg_score = best_count / total_answers if total_answers > 0 else 0.0
+
+            results.append(RubricSnapshotMetric(
+                rubric_id=rubric.id,
+                rubric_name=rubric.name,
+                aggregated_score=round(agg_score, 3),
+                total_answers=total_answers,
+                best_option=best_option,
+                best_option_count=best_count,
+                aligned_judges=aligned_judges,
+                judge_alignment_range=judge_alignment_range,
+            ))
+
+        return results
+
 
 def calculate_judge_alignment(
     db: Session, snapshot_id: int, judge_id: int
@@ -481,3 +657,19 @@ def calculate_accuracy(
     """Calculate overall accuracy for a judge (convenience function)."""
     service = MetricsService(db)
     return service.calculate_accuracy(snapshot_id, judge_id)
+
+
+def calculate_rubric_judge_alignment(
+    db: Session, snapshot_id: int, judge_id: int, rubric_id: int
+) -> RubricJudgeAlignmentResponse:
+    """Calculate rubric judge alignment (convenience function)."""
+    service = MetricsService(db)
+    return service.calculate_rubric_judge_alignment(snapshot_id, judge_id, rubric_id)
+
+
+def calculate_rubric_judge_accuracy(
+    db: Session, snapshot_id: int, judge_id: int, rubric_id: int, best_option: str
+) -> RubricJudgeAccuracyResponse:
+    """Calculate rubric judge accuracy (convenience function)."""
+    service = MetricsService(db)
+    return service.calculate_rubric_judge_accuracy(snapshot_id, judge_id, rubric_id, best_option)

@@ -58,7 +58,7 @@ BASELINE_MODEL_MAP = {
 
 DEFAULT_JUDGES = [
     {
-        "name": "Baseline Evaluator 1",
+        "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[0]]['label'],
         "model_name": _require_model(BASELINE_MODEL_MAP[0]),
         "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[0]]['label'],
         "judge_type": JudgeTypeEnum.claim_based,
@@ -67,7 +67,7 @@ DEFAULT_JUDGES = [
         "category": "common",
     },
     {
-        "name": "Baseline Evaluator 2",
+        "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
         "model_name": _require_model(BASELINE_MODEL_MAP[1]),
         "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
         "judge_type": JudgeTypeEnum.claim_based,
@@ -76,7 +76,7 @@ DEFAULT_JUDGES = [
         "category": "accuracy",
     },
     {
-        "name": "Baseline Evaluator 3",
+        "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[2]]['label'],
         "model_name": _require_model(BASELINE_MODEL_MAP[2]),
         "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[2]]['label'],
         "judge_type": JudgeTypeEnum.claim_based,
@@ -85,7 +85,7 @@ DEFAULT_JUDGES = [
         "category": "common",
     },
     {
-        "name": "Voice Evaluator",
+        "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
         "model_name": _require_model(BASELINE_MODEL_MAP[1]),
         "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
         "judge_type": JudgeTypeEnum.response_level,
@@ -94,16 +94,16 @@ DEFAULT_JUDGES = [
         "category": "voice",
     },
     {
-        "name": "Relevancy Evaluator",
+        "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[3]]['label'],
         "model_name": _require_model(BASELINE_MODEL_MAP[3]),
         "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[3]]['label'],
         "judge_type": JudgeTypeEnum.response_level,
         "is_baseline": False,
         "is_editable": False,
-        "category": "relevancy",
+        "category": "relevance",
     },
     {
-        "name": "Default Evaluator",
+        "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
         "model_name": _require_model(BASELINE_MODEL_MAP[1]),
         "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
         "judge_type": JudgeTypeEnum.response_level,
@@ -127,7 +127,15 @@ def seed_default_judges(db: Session) -> None:
     logger.info("Seeding default judges...")
 
     existing_judges = JudgeRepository.get_all(db)
-    existing_combos = {(judge.model_name, judge.category) for judge in existing_judges}
+    existing_combos = {(judge.model_name, judge.category): judge for judge in existing_judges}
+
+    # Sync names of existing non-editable judges to match current config
+    for config in DEFAULT_JUDGES:
+        combo = (config["model_name"], config["category"])
+        existing = existing_combos.get(combo)
+        if existing and not existing.is_editable and existing.name != config["name"]:
+            logger.info(f"Renaming judge '{existing.name}' -> '{config['name']}'")
+            JudgeRepository.update(db, existing.id, {"name": config["name"]})
 
     created_count = 0
     for config in DEFAULT_JUDGES:
