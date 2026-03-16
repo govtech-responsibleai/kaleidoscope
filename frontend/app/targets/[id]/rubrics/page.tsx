@@ -12,7 +12,6 @@ import {
   Button,
   IconButton,
   CircularProgress,
-  Chip,
   Tooltip,
 } from "@mui/material";
 import {
@@ -188,10 +187,37 @@ export default function RubricsPage() {
 
                 <Divider sx={{ mb: 2 }} />
 
+                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
+                  Choose one option as the positive label for scoring.
+                </Typography>
+
+                {/* Column headers */}
+                <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
+                  <Box sx={{ width: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                        <Typography variant="caption" fontWeight={600} color="text.secondary">Positive label</Typography>
+                      </Box>
+                    </Tooltip>
+                  </Box>
+                  <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ width: 140, flexShrink: 0 }}>Label</Typography>
+                  <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>Description</Typography>
+                  <Box sx={{ width: 32, flexShrink: 0 }} />
+                </Box>
+
                 {rubric.options.map((opt, i) => {
                   const isPositive = rubric.best_option === opt.option && opt.option !== "";
                   return (
                     <Box key={i} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
+                      <Box
+                        sx={{ width: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                        onClick={() => { if (opt.option) saveBestOption(rubric, opt.option); }}
+                      >
+                        {isPositive
+                          ? <CheckCircleIcon sx={{ fontSize: 24, color: "success.main" }} />
+                          : <CheckCircleOutlineIcon sx={{ fontSize: 24, color: "text.disabled" }} />
+                        }
+                      </Box>
                       <TextField
                         placeholder="Option"
                         value={opt.option}
@@ -208,26 +234,6 @@ export default function RubricsPage() {
                         onChange={(e) => updateOptionField(rubric, i, "description", e.target.value)}
                         onBlur={() => saveOptions(rubric, rubric.options)}
                       />
-                      <Tooltip
-                        title="The positive option is the ideal outcome. Scores measure how often judges choose this option."
-                        placement="top"
-                        arrow
-                      >
-                        <Chip
-                          icon={isPositive ? <CheckCircleIcon sx={{ fontSize: 16, color: "success.main" }} /> : <CheckCircleOutlineIcon sx={{ fontSize: 16 }} />}
-                          label="Positive"
-                          size="small"
-                          onClick={() => { if (opt.option) saveBestOption(rubric, opt.option); }}
-                          variant={isPositive ? "filled" : "outlined"}
-                          sx={{
-                            flexShrink: 0,
-                            cursor: "pointer",
-                            ...(isPositive
-                              ? { bgcolor: "rgba(46, 125, 50, 0.12)", color: "success.dark", borderColor: "transparent" }
-                              : { color: "text.disabled", borderColor: "divider" }),
-                          }}
-                        />
-                      </Tooltip>
                       <IconButton size="small" onClick={() => removeOption(rubric, i)}>
                         <DeleteOutlineIcon fontSize="small" />
                       </IconButton>

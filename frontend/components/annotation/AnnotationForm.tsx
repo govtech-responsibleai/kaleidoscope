@@ -300,21 +300,27 @@ export default function AnnotationForm({
             ))}
 
             <Box>
-              <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
-                Comments
+              <Typography variant="subtitle2" color="primary" sx={{ mb: 1 }}>
+                Notes
               </Typography>
               <TextField
                 multiline
-                minRows={2}
+                minRows={3}
                 maxRows={6}
                 fullWidth
-                size="small"
-                placeholder="Add notes about this annotation..."
+                placeholder="Optional notes about your annotation"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 onBlur={(e) => handleNotesSave(e.target.value)}
                 disabled={!existingAnnotation || savingNotes}
-                helperText={!existingAnnotation ? "Set an accuracy label first to enable comments." : undefined}
+                helperText={!existingAnnotation ? "Set an accuracy label first to enable notes." : undefined}
+                sx={{
+                  "& .MuiOutlinedInput-root": {
+                    borderRadius: 2,
+                    borderColor: "primary.main",
+                    "& fieldset": { borderColor: "primary.main", borderWidth: 2 },
+                  },
+                }}
               />
             </Box>
           </Stack>
