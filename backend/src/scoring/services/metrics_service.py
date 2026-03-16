@@ -81,6 +81,13 @@ class MetricsService:
         # Create mapping of answer_id -> annotation label
         annotation_map = {ann.answer_id: ann.label for ann in annotations}
 
+        # Label overrides take precedence over annotations for ground truth
+        overrides = AnswerLabelOverrideRepository.get_by_snapshot(self.db, snapshot_id)
+        override_map = {o.answer_id: o.edited_label for o in overrides}
+        for answer_id, label in override_map.items():
+            if answer_id in annotation_map:
+                annotation_map[answer_id] = label
+
         # Create mapping of answer_id -> score label
         score_map = {score.answer_id: score.overall_label for score in scores}
 

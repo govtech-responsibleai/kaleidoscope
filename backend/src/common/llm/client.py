@@ -6,6 +6,7 @@ with automatic retry, error handling, and token tracking.
 """
 import asyncio
 import logging
+import threading
 from typing import Dict, List, Optional, Any, Type, TypeVar
 from pydantic import BaseModel
 import litellm
@@ -27,6 +28,12 @@ litellm.set_verbose = False  # Set to True for debugging
 class LLMClient:
     """Client for making LLM API calls using LiteLLM."""
 
+    # Class-level semaphore registry: one semaphore per model name.
+    # Shared across ALL LLMClient instances so concurrent batch jobs
+    # respect a single concurrency limit per provider/model.
+    _semaphores: dict[str, asyncio.Semaphore] = {}
+    _sem_lock = threading.Lock()
+
     def __init__(self, model: Optional[str] = None):
         """
         Initialize LLM client.
@@ -36,8 +43,13 @@ class LLMClient:
                    Defaults to settings.default_llm_model
         """
         self.model = model or settings.default_llm_model
-        # Semaphore to limit concurrent async requests (prevents rate limiting)
-        self._semaphore = asyncio.Semaphore(settings.llm_max_concurrent)
+        # Global per-model semaphore to limit concurrent async requests
+        with LLMClient._sem_lock:
+            if self.model not in LLMClient._semaphores:
+                LLMClient._semaphores[self.model] = asyncio.Semaphore(
+                    settings.llm_max_concurrent
+                )
+            self._semaphore = LLMClient._semaphores[self.model]
 
     @staticmethod
     def _extract_json_string(content: str) -> str:
@@ -328,6 +340,10 @@ class LLMClient:
 
             # Call async LLM with structured output (with semaphore to limit concurrency)
             async with self._semaphore:
+                logger.debug(
+                    f"Acquired semaphore for {self.model} "
+                    f"({self._semaphore._value} slots remaining)"
+                )
                 response = await litellm.acompletion(
                     model=self.model,
                     messages=messages,

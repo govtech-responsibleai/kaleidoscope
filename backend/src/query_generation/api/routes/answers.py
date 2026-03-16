@@ -230,6 +230,7 @@ def create_or_update_label_override(
         answer_id=answer_id,
         edited_label=override_data.edited_label
     )
+
     return override
 
 

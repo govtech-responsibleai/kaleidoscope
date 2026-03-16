@@ -30,8 +30,8 @@ BASELINE_PROMPT_TEMPLATE = _load_baseline_prompt()
 AVAILABLE_MODELS = [
     {"value": "litellm_proxy/gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite"},
     {"value": "litellm_proxy/gemini-2.5-flash", "label": "Gemini 2.5 Flash"},
-    {"value": "litellm_proxy/gemini-3-flash-preview", "label": "Gemini 3 Flash Preview"},
-    {"value": "litellm_proxy/gemini-3-pro-preview", "label": "Gemini 3 Pro Preview"},
+    {"value": "litellm_proxy/gemini-3.1-flash-lite-preview-global", "label": "Gemini 3.1 Flash Lite Preview"},
+    {"value": "litellm_proxy/gemini-3.1-pro-preview-global", "label": "Gemini 3.1 Pro Preview"},
     {"value": "azure/gpt-5-nano-2025-08-07", "label": "GPT-5 nano"},
     {"value": "azure/gpt-5-mini-2025-08-07", "label": "GPT-5 mini"},
     {"value": "azure/gpt-5-2025-08-07", "label": "GPT-5"},
@@ -51,7 +51,7 @@ def _require_model(value: str) -> str:
 
 BASELINE_MODEL_MAP = {
     0: "litellm_proxy/gemini-2.5-flash-lite", 
-    1: "litellm_proxy/gemini-3-flash-preview", 
+    1: "litellm_proxy/gemini-3.1-flash-lite-preview-global",
     2: "azure/gpt-5-nano-2025-08-07"
 }
 
