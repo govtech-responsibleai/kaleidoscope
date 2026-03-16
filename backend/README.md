@@ -205,8 +205,8 @@ environment:
 - **Gemini (requires `GEMINI_API_KEY`):**
   - `gemini/gemini-2.5-flash-lite` (default)
   - `gemini/gemini-2.5-flash`
-  - `gemini/gemini-3-flash-preview`
-  - `gemini/gemini-3-pro-preview`
+  - `gemini/gemini-3.1-flash-lite-preview-global`
+  - `gemini/gemini-3.1-pro-preview-global`
 
 - **OpenAI (requires `OPENAI_API_KEY`):**
   - `gpt-5-nano`
