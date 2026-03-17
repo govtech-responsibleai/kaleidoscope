@@ -25,7 +25,7 @@ import {
   Delete as DeleteIcon,
   InsertDriveFile as FileIcon,
 } from "@mui/icons-material";
-import { targetApi, kbDocumentApi } from "@/lib/api";
+import { targetApi, kbDocumentApi, webSearchApi } from "@/lib/api";
 import { TargetCreate, EndpointType } from "@/lib/types";
 
 interface CreateTargetModalProps {
@@ -135,6 +135,11 @@ export default function CreateTargetModal({
           }
         }
       }
+
+      // Trigger web search in background (fire-and-forget)
+      webSearchApi.trigger(targetId).catch((err) =>
+        console.warn("Web search trigger failed:", err)
+      );
 
       // Reset form
       setFormData({

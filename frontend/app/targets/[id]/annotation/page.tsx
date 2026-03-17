@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Alert, Box, CircularProgress, IconButton, Tooltip, Typography, Button } from "@mui/material";
+import { Alert, Box, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import CreateSnapshotDialog from "@/components/shared/CreateSnapshotDialog";
 import QAJobControl from "@/components/annotation/QAJobControl";
@@ -19,6 +19,7 @@ export default function AnnotationPage() {
 
   // Initialize from URL if available
   const snapshotIdFromUrl = searchParams.get("snapshot");
+  const questionIdFromUrl = searchParams.get("question");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
     snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null
@@ -32,6 +33,8 @@ export default function AnnotationPage() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [rubricJobsComplete, setRubricJobsComplete] = useState(false);
   const [rubricPendingQuestions, setRubricPendingQuestions] = useState<Set<number>>(new Set());
+  const [autoCreating, setAutoCreating] = useState(false);
+  const autoCreateAttempted = useRef(false);
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
     setSelectedSnapshotId(snapshotId);
@@ -50,6 +53,26 @@ export default function AnnotationPage() {
     try {
       const response = await snapshotApi.list(targetId);
       setSnapshots(response.data);
+
+      if (response.data.length === 0 && !autoCreateAttempted.current) {
+        autoCreateAttempted.current = true;
+        setAutoCreating(true);
+        try {
+          const createResponse = await snapshotApi.create({
+            target_id: targetId,
+            name: "Snapshot 1",
+          });
+          setSnapshots([createResponse.data]);
+          updateSnapshotSelection(createResponse.data.id);
+        } catch (err) {
+          console.error("Failed to auto-create snapshot:", err);
+          setError("Failed to create initial snapshot.");
+        } finally {
+          setAutoCreating(false);
+        }
+        return;
+      }
+
       const hasSelectedSnapshot = selectedSnapshotId !== null && response.data.some(
         (snapshot) => snapshot.id === selectedSnapshotId
       );
@@ -126,42 +149,14 @@ export default function AnnotationPage() {
     );
   }
 
-  // Show empty state if no snapshots exist
+  // Show loading state while auto-creating first snapshot
   if (snapshots.length === 0) {
     return (
-      <Box>
-        <Box
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          minHeight="40vh"
-          gap={2}
-          sx={{ maxWidth: 600, mx: "auto", textAlign: "center" }}
-        >
-          <Typography variant="h5" fontWeight={600}>
-            Generate a snapshot of answers for review
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
-            A snapshot captures your chatbot's answers to a set of questions at a specific point in time.
-            Create one to begin the annotation process and review your chatbot's responses.
-          </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => setCreateDialogOpen(true)}
-          >
-            Create Snapshot
-          </Button>
-        </Box>
-
-        <CreateSnapshotDialog
-          open={createDialogOpen}
-          targetId={targetId}
-          existingSnapshots={snapshots}
-          onClose={() => setCreateDialogOpen(false)}
-          onSuccess={handleSnapshotCreated}
-        />
+      <Box sx={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: "40vh", flexDirection: "column", gap: 2 }}>
+        <CircularProgress />
+        <Typography variant="body1" color="text.secondary">
+          Setting up your first snapshot...
+        </Typography>
       </Box>
     );
   }
@@ -229,6 +224,7 @@ export default function AnnotationPage() {
         setQaMap={setQaMap}
         rubrics={rubrics}
         rubricPendingQuestions={rubricPendingQuestions}
+        initialQuestionId={questionIdFromUrl ? Number(questionIdFromUrl) : null}
       />
     </Box>
   );

@@ -6,7 +6,9 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . ./
-RUN npm run build
+
+# Next.js inlines NEXT_PUBLIC_* at build time, so load .env.default before building
+RUN set -a && . ./.env.default && npm run build
 
 FROM gdssingapore/airbase:node-22
 WORKDIR /app

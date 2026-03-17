@@ -92,6 +92,9 @@ export default function ScoringPage() {
   const [rubricMetrics, setRubricMetrics] = useState<RubricSnapshotMetric[]>([]);
   const [rubricMetricsLoading, setRubricMetricsLoading] = useState(false);
 
+  // Incremented on label override to signal JudgeCards to refetch metrics
+  const [labelOverrideCount, setLabelOverrideCount] = useState(0);
+
   const [error, setError] = useState<string | null>(null);
   const [mainTab, setMainTab] = useState(0); // 0 = Scores, 1 = Error Analysis
 
@@ -315,6 +318,7 @@ export default function ScoringPage() {
   const handleLabelChange = useCallback(async () => {
     if (!selectedSnapshotId) return;
     await Promise.all([fetchResults(selectedSnapshotId), fetchSnapshotMetrics()]);
+    setLabelOverrideCount((c) => c + 1);
   }, [selectedSnapshotId, fetchResults, fetchSnapshotMetrics]);
 
   const handleExportSnapshot = async () => {
@@ -380,23 +384,35 @@ export default function ScoringPage() {
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>
       ) : !annotationStatus?.is_complete ? (
         <Alert severity="info">
-          {annotationStatus ? (() => {
-            const totalSelected = annotationStatus.selected_ids.length;
-            const totalAnnotated = annotationStatus.selected_and_annotated_ids.length;
-            const annotatedSet = new Set(annotationStatus.selected_and_annotated_ids);
-            const unannotatedIds = annotationStatus.selected_ids.filter(id => !annotatedSet.has(id));
-            return <>
-              {`Complete all ${totalSelected} annotations to view scoring. (${totalAnnotated} / ${totalSelected} done)`}
-              {unannotatedIds.length > 0 && (
-                <Box sx={{ mt: 1 }}>
-                  <strong>Unannotated:</strong>
-                  <Box component="ul" sx={{ mt: 0, mb: 0, pl: 2 }}>
-                    {unannotatedIds.map((id) => <li key={id}>Q{id}</li>)}
-                  </Box>
-                </Box>
-              )}
-            </>;
-          })() : "Complete annotations to view scoring."}
+          {annotationStatus
+            ? (() => {
+                const totalSelected = annotationStatus.selected_ids.length;
+                const totalAnnotated = annotationStatus.selected_and_annotated_ids.length;
+                const annotatedSet = new Set(annotationStatus.selected_and_annotated_ids);
+                const unannotatedIds = annotationStatus.selected_ids.filter(id => !annotatedSet.has(id));
+                return <>
+                  {`Complete all ${totalSelected} annotations in the annotation tab to view scoring. (${totalAnnotated} / ${totalSelected} completed)`}
+                  {unannotatedIds.length > 0 && (
+                    <Box sx={{ mt: 1 }}>
+                      <strong>Incomplete Questions:</strong>
+                      <Box component="ul" sx={{ mt: 0, mb: 0, pl: 2 }}>
+                        {unannotatedIds.map((id) => (
+                          <li key={id}>
+                            <Box
+                              component="a"
+                              onClick={() => router.push(`/targets/${targetId}/annotation?snapshot=${selectedSnapshotId}&question=${id}`)}
+                              sx={{ color: "primary.main", cursor: "pointer", textDecoration: "underline", "&:hover": { color: "primary.dark" } }}
+                            >
+                              Q{id}
+                            </Box>
+                          </li>
+                        ))}
+                      </Box>
+                    </Box>
+                  )}
+                </>;
+              })()
+            : "Complete annotations in the annotation tab to view scoring."}
         </Alert>
       ) : (
         <Stack spacing={2}>
@@ -515,6 +531,7 @@ export default function ScoringPage() {
             ) : (
               <ResultsTable
                 results={results}
+                targetId={targetId}
                 snapshotId={selectedSnapshotId}
                 judges={judges}
                 rubrics={rubrics}
@@ -584,10 +601,12 @@ function RubricEvaluatorSection({
         >
           {(() => {
             let secondaryIdx = 0;
+            let recommendedAssigned = false;
             return judges.map((judge) => {
               let name: string;
-              if (judge.category === rubricCategory) {
+              if (judge.category === rubricCategory && !recommendedAssigned) {
                 name = "Recommended Judge";
+                recommendedAssigned = true;
               } else {
                 secondaryIdx++;
                 name = `Secondary Judge ${secondaryIdx}`;

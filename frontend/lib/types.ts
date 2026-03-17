@@ -84,6 +84,14 @@ export interface PersonaBase {
   use_case?: string;
 }
 
+export interface PersonaCreate {
+  target_id: number;
+  title: string;
+  info?: string;
+  style?: string;
+  use_case?: string;
+}
+
 export interface PersonaUpdate {
   title?: string;
   info?: string;
@@ -114,16 +122,24 @@ export enum QuestionScope {
   OUT_KB = "out_kb",
 }
 
+export enum InputStyle {
+  BRIEF = "brief",
+  REGULAR = "regular",
+  DETAILED = "detailed",
+}
+
 export interface QuestionBase {
   text: string;
   type: QuestionType | null;
   scope: QuestionScope | null;
+  input_style?: InputStyle | null;
 }
 
 export interface QuestionUpdate {
   text?: string;
   type?: QuestionType | null;
   scope?: QuestionScope | null;
+  input_style?: InputStyle | null;
 }
 
 export interface QuestionResponse extends QuestionBase {
@@ -161,6 +177,7 @@ export interface JobCreate {
   count_requested: number;
   model_used?: string;
   persona_ids?: number[];
+  input_style?: InputStyle;
 }
 
 export interface JobResponse {

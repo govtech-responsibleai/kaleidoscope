@@ -7,9 +7,9 @@ The platform automates the creation of diverse evaluation questions across user 
 ## Features
 
 - **Target Application Management**: Create and manage target applications with detailed configuration
-- **Knowledge Base Management**: Upload, view, and manage documents (PDF, DOCX, TXT, MD) for each target
-- **Persona Generation**: Automatically generate user personas for testing with approval workflow
-- **Question Generation**: Generate evaluation questions based on selected personas
+- **Knowledge Base Management**: Upload, view, and manage documents (PDF, DOCX, TXT, MD) for each target with informational guidance text
+- **Persona Generation**: Automatically generate user personas with Singapore contextualisation and audience handling, plus manual creation and Nemotron sampling
+- **Question Generation**: Generate evaluation questions with configurable input style (brief/regular/detailed) and automatic web search context
 - **Question Review**: Review newly generated questions with automatic similarity detection
 - **Advanced Filtering**: Filter questions by persona, type (typical/edge), and scope (in KB/out of KB)
 - **Snapshot Management**: Version control for chatbot iterations to track improvements over time
@@ -64,7 +64,16 @@ npm run dev
 
 The application will be available at [http://localhost:3000](http://localhost:3000)
 
-**Note:** You'll be redirected to `/login`. Get credentials from your admin (users are created via backend scripts).
+**Note:** You'll be redirected to `/login`. Create a user account via the backend first:
+
+```bash
+curl -X POST http://localhost:8000/api/v1/auth/admin/create-user \
+  -H "X-Admin-Key: <your-ADMIN_API_KEY-from-backend-.env>" \
+  -H "Content-Type: application/json" \
+  -d '{"username": "dev", "password": "yourpassword", "is_admin": false}'
+```
+
+See the [backend README](../kaleidoscope-backend/README.md) for full auth setup details.
 
 ### 4. Build for Production
 
@@ -81,6 +90,10 @@ kaleidoscope-frontend/
 │   ├── layout.tsx               # Root layout with MUI theme & navigation
 │   ├── page.tsx                 # Home page (target list)
 │   ├── globals.css              # Global CSS styles
+│   ├── login/                   # Login page
+│   │   └── page.tsx
+│   ├── admin/                   # Admin panel
+│   │   └── page.tsx
 │   └── targets/[id]/            # Dynamic route for target details
 │       ├── layout.tsx           # Target layout with tabs
 │       ├── page.tsx             # Target overview (default tab)
@@ -88,11 +101,17 @@ kaleidoscope-frontend/
 │       │   └── page.tsx         # Questions list & management
 │       ├── annotation/
 │       │   └── page.tsx         # Annotation workflow page
-│       └── scoring/
-│           └── page.tsx         # Scoring & judge management page
+│       ├── scoring/
+│       │   └── page.tsx         # Scoring & judge management page
+│       ├── metrics/
+│       │   └── page.tsx         # Detailed metrics & judge alignment
+│       └── report/
+│           └── page.tsx         # PDF report generation & export
 ├── components/                  # React components
 │   ├── Navigation.tsx           # Sidebar navigation
-│   ├── GenerateEvalsModal.tsx   # Modal for persona/question generation
+│   ├── GenerateEvalsModal.tsx   # Modal for persona/question generation (with input style selector)
+│   ├── personas/               # Persona generation components
+│   ├── questions/              # Question generation components
 │   ├── overview/                # Overview page components
 │   │   ├── CreateTargetModal.tsx        # Modal for creating targets
 │   │   ├── DocumentList.tsx             # Knowledge base document management
@@ -188,6 +207,8 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
   - Click "Generate Questions" when ready
 
 - **Step 2: Generate Questions**
+  - Select **Input Style**: brief (terse, slang), regular (natural language), or detailed (professional)
+  - System automatically runs web search for contextual grounding (indicator shown in UI)
   - System generates questions for selected personas
   - Real-time polling for job completion
   - Status updates displayed in modal
@@ -311,9 +332,11 @@ The frontend integrates with the Kaleidoscope backend API:
 ### Persona Endpoints
 - `GET /personas/:id` - Get single persona
 - `PUT /personas/:id` - Update persona
+- `POST /personas` - Manually create a persona
 - `POST /personas/:id/approve` - Approve single persona
 - `POST /personas/:id/reject` - Reject single persona
 - `POST /personas/bulk-approve` - Approve multiple personas
+- `POST /personas/sample-nemotron` - Sample general personas from Nemotron dataset
 - `GET /personas/:id/questions` - List questions for persona
 
 ### Question Endpoints
@@ -533,14 +556,6 @@ To switch back to local development, set `NEXT_PUBLIC_API_DOMAIN` back to `http:
 ### Notes
 - `middleware.ts` configures CSP (Content Security Policy) headers for Next.js. 
 
-## Future Enhancements
-
-- [ ] Question and persona editing capabilities
-- [ ] Batch operations for questions (bulk delete, bulk edit)
-- [ ] Question versioning and history tracking
-- [ ] Multi-turn evaluation workflow 
-- [ ] Bias-adjusted judge accuracy
-
 ## Troubleshooting
 
 ### Cannot connect to backend
@@ -603,19 +618,25 @@ To switch back to local development, set `NEXT_PUBLIC_API_DOMAIN` back to `http:
 ## Architecture Notes
 
 ### Page Navigation
-The application uses a tabbed interface for target details with 4 main tabs:
+The application uses a tabbed interface for target details with 6 main tabs:
 - **Overview Tab**: Target metadata, statistics, and document management
 - **Questions Tab**: Question list with filtering and generation
 - **Annotation Tab**: Snapshot-based answer generation and human annotation
 - **Scoring Tab**: Multi-judge evaluation and results export
+- **Metrics Tab**: Detailed judge alignment metrics across snapshots
+- **Report Tab**: PDF report generation and export of evaluation results
 
 Navigation flow:
 ```
 Home (/)
-  → Target Overview (/targets/[id])
-      ├─→ Questions (/targets/[id]/questions)
-      ├─→ Annotation (/targets/[id]/annotation)
-      └─→ Scoring (/targets/[id]/scoring)
+  ├─→ Login (/login)
+  ├─→ Admin (/admin)
+  └─→ Target Overview (/targets/[id])
+        ├─→ Questions (/targets/[id]/questions)
+        ├─→ Annotation (/targets/[id]/annotation)
+        ├─→ Scoring (/targets/[id]/scoring)
+        ├─→ Metrics (/targets/[id]/metrics)
+        └─→ Report (/targets/[id]/report)
 ```
 
 ### State Management

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -32,6 +32,7 @@ interface QAListProps {
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
   rubrics: TargetRubricResponse[];
   rubricPendingQuestions?: Set<number>;
+  initialQuestionId?: number | null;
 }
 
 const EMPTY_SET = new Set<number>();
@@ -44,6 +45,7 @@ export default function QAList({
   setQaMap,
   rubrics,
   rubricPendingQuestions = EMPTY_SET,
+  initialQuestionId,
 }: QAListProps) {
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
   const [personaMap, setPersonaMap] = useState<Record<number, PersonaResponse>>({});
@@ -134,6 +136,8 @@ export default function QAList({
     return index;
   }, [qaMap]);
 
+  const initialQuestionHandled = useRef(false);
+
   const jobByQuestionId = useMemo(() => {
     const map: Record<number, QAJob | null> = {};
     qaJobs.forEach((job) => {
@@ -172,9 +176,24 @@ export default function QAList({
     return orderedQuestions;
   }, [filterMode, orderedQuestions, questionAnswerMap, savedSelections]);
 
+  // Set initial active question from URL param once questions are loaded
+  useEffect(() => {
+    if (initialQuestionId && !initialQuestionHandled.current && displayedQuestions.length > 0) {
+      if (displayedQuestions.some((q) => q.id === initialQuestionId)) {
+        setActiveQuestionId(initialQuestionId);
+        initialQuestionHandled.current = true;
+      }
+    }
+  }, [initialQuestionId, displayedQuestions]);
+
   useEffect(() => {
     if (displayedQuestions.length === 0) {
       setActiveQuestionId(null);
+      return;
+    }
+
+    // Don't override if we're still waiting to apply initialQuestionId
+    if (initialQuestionId && !initialQuestionHandled.current) {
       return;
     }
 
@@ -444,7 +463,7 @@ export default function QAList({
           </Stack>
 
           <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
-            You don't need to annotate all - just a representative sample
+            Annotate the selected questions below. Select more to improve evaluation robustness.
           </Typography>
         </Stack>
 

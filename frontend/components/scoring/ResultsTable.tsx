@@ -50,6 +50,7 @@ import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 
 interface ResultsTableProps {
   results: ResultRow[];
+  targetId: number;
   snapshotId: number;
   judges: JudgeConfig[];
   rubrics: TargetRubricResponse[];
@@ -89,7 +90,7 @@ const truncate = (value: string, length: number) => {
 };
 
 export default function ResultsTable({
-  results, snapshotId, judges, rubrics, onLabelChange,
+  results, targetId, snapshotId, judges, rubrics, onLabelChange,
 }: ResultsTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
@@ -393,6 +394,7 @@ export default function ResultsTable({
           <TableHead>
             <TableRow>
               <TableCell sx={{ width: "5%" }} />
+              <TableCell sx={{ width: "5%" }}>ID</TableCell>
               <TableCell sx={{ width: "30%" }}>Question</TableCell>
               <TableCell sx={{ width: "30%" }}>Answer</TableCell>
               {/* Accuracy label column (Accuracy tab) */}
@@ -441,8 +443,15 @@ export default function ResultsTable({
                   (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
                 );
                 let secondaryIdx = 0;
+                let recommendedAssigned = false;
                 return sorted.map((judge) => {
-                  const displayName = judge.category !== "common" ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+                  let displayName: string;
+                  if (judge.category !== "common" && !recommendedAssigned) {
+                    displayName = "Recommended Judge";
+                    recommendedAssigned = true;
+                  } else {
+                    displayName = `Secondary Judge ${++secondaryIdx}`;
+                  }
                   return (
                     <TableCell
                       key={judge.id}
@@ -498,8 +507,8 @@ export default function ResultsTable({
               const rubricJudgeLabels = rubricJudgeScoresMap[result.answer_id] ?? {};
               // expand/question/answer + label column + judge columns
               const totalColSpan = activeRubricId === null
-                ? 4 + accuracyJudges.length
-                : 4 + activeRubricJudges.length;
+                ? 5 + accuracyJudges.length
+                : 5 + activeRubricJudges.length;
 
               return (
                 <React.Fragment key={result.answer_id}>
@@ -508,6 +517,22 @@ export default function ResultsTable({
                       <IconButton size="small" onClick={() => toggleRow(result.answer_id)}>
                         {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                       </IconButton>
+                    </TableCell>
+
+                    <TableCell>
+                      <Typography
+                        variant="body2"
+                        component="a"
+                        href={`/targets/${targetId}/annotation?snapshot=${snapshotId}&question=${result.question_id}`}
+                        sx={{
+                          color: "primary.main",
+                          cursor: "pointer",
+                          textDecoration: "none",
+                          "&:hover": { textDecoration: "underline" },
+                        }}
+                      >
+                        Q{result.question_id}
+                      </Typography>
                     </TableCell>
 
                     <TableCell>

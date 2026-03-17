@@ -31,6 +31,9 @@ import {
   DeleteOutline as DeleteIcon,
   Visibility as VisibilityIcon,
   VisibilityOff as VisibilityOffIcon,
+  Casino as GenerateIcon,
+  ContentCopy as CopyIcon,
+  CheckCircleOutline as CheckIcon,
 } from "@mui/icons-material";
 import { useRouter } from "next/navigation";
 import { adminApi, authApi } from "@/lib/api";
@@ -52,6 +55,17 @@ export default function AdminPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [createdCreds, setCreatedCreds] = useState<{ username: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const generatePassword = () => {
+    const chars = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*";
+    const password = Array.from(crypto.getRandomValues(new Uint8Array(14)))
+      .map((b) => chars[b % chars.length])
+      .join("");
+    setNewPassword(password);
+    setShowPassword(true);
+  };
 
   // Delete dialog
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -86,11 +100,7 @@ export default function AdminPage() {
         password: newPassword,
         is_admin: newIsAdmin,
       });
-      setCreateOpen(false);
-      setNewUsername("");
-      setNewPassword("");
-      setNewIsAdmin(false);
-      setShowPassword(false);
+      setCreatedCreds({ username: newUsername, password: newPassword });
       await fetchUsers();
     } catch (err: any) {
       setCreateError(err?.response?.data?.detail || "Failed to create user");
@@ -118,6 +128,16 @@ export default function AdminPage() {
     setNewPassword("");
     setNewIsAdmin(false);
     setShowPassword(false);
+    setCreatedCreds(null);
+    setCopied(false);
+  };
+
+  const handleCopyCreds = async () => {
+    if (!createdCreds) return;
+    const text = `Username: ${createdCreds.username}\nPassword: ${createdCreds.password}`;
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   if (loading) {
@@ -262,65 +282,111 @@ export default function AdminPage() {
 
       {/* Create User Dialog */}
       <Dialog open={createOpen} onClose={handleCloseCreate} maxWidth="xs" fullWidth>
-        <DialogTitle>Create User</DialogTitle>
+        <DialogTitle>{createdCreds ? "User Created" : "Create User"}</DialogTitle>
         <DialogContent>
-          {createError && (
-            <Alert severity="error" sx={{ mb: 2 }}>
-              {createError}
-            </Alert>
-          )}
-          <TextField
-            autoFocus
-            label="Username"
-            fullWidth
-            margin="normal"
-            value={newUsername}
-            onChange={(e) => setNewUsername(e.target.value)}
-          />
-          <TextField
-            label="Password"
-            type={showPassword ? "text" : "password"}
-            fullWidth
-            margin="normal"
-            value={newPassword}
-            onChange={(e) => setNewPassword(e.target.value)}
-            slotProps={{
-              input: {
-                endAdornment: (
-                  <InputAdornment position="end">
-                    <IconButton
-                      onClick={() => setShowPassword(!showPassword)}
-                      edge="end"
-                      size="small"
-                      tabIndex={-1}
-                    >
-                      {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
-                    </IconButton>
-                  </InputAdornment>
-                ),
-              },
-            }}
-          />
-          <FormControlLabel
-            control={
-              <Checkbox
-                checked={newIsAdmin}
-                onChange={(e) => setNewIsAdmin(e.target.checked)}
+          {createdCreds ? (
+            <Box>
+              <Alert severity="success" sx={{ mb: 2 }}>
+                User <strong>{createdCreds.username}</strong> created successfully.
+              </Alert>
+              <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+                Copy these credentials now — the password cannot be retrieved later.
+              </Typography>
+              <Paper
+                variant="outlined"
+                sx={{ p: 2, fontFamily: "monospace", fontSize: 14, bgcolor: "grey.50" }}
+              >
+                <Box>Username: {createdCreds.username}</Box>
+                <Box>Password: {createdCreds.password}</Box>
+              </Paper>
+              <Button
+                startIcon={copied ? <CheckIcon /> : <CopyIcon />}
+                onClick={handleCopyCreds}
+                sx={{ mt: 1.5 }}
+                color={copied ? "success" : "primary"}
+              >
+                {copied ? "Copied!" : "Copy credentials"}
+              </Button>
+            </Box>
+          ) : (
+            <>
+              {createError && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {createError}
+                </Alert>
+              )}
+              <TextField
+                autoFocus
+                label="Username"
+                fullWidth
+                margin="normal"
+                value={newUsername}
+                onChange={(e) => setNewUsername(e.target.value)}
               />
-            }
-            label="Admin privileges"
-            sx={{ mt: 1, ml: -0.25 }}
-          />
+              <TextField
+                label="Password"
+                type={showPassword ? "text" : "password"}
+                fullWidth
+                margin="normal"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                slotProps={{
+                  input: {
+                    endAdornment: (
+                      <InputAdornment position="end">
+                        <Tooltip title="Generate password" arrow>
+                          <IconButton
+                            onClick={generatePassword}
+                            edge="end"
+                            size="small"
+                            tabIndex={-1}
+                          >
+                            <GenerateIcon fontSize="small" />
+                          </IconButton>
+                        </Tooltip>
+                        <IconButton
+                          onClick={() => setShowPassword(!showPassword)}
+                          edge="end"
+                          size="small"
+                          tabIndex={-1}
+                        >
+                          {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                        </IconButton>
+                      </InputAdornment>
+                    ),
+                  },
+                }}
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={newIsAdmin}
+                    onChange={(e) => setNewIsAdmin(e.target.checked)}
+                  />
+                }
+                label="Admin privileges"
+                sx={{ mt: 1, ml: -0.25 }}
+              />
+            </>
+          )}
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseCreate}>Cancel</Button>
-          <Button
-            variant="contained"
-            onClick={handleCreate}
-            disabled={creating || !newUsername || !newPassword}
-          >
-            {creating ? "Creating..." : "Create"}
-          </Button>
+          {createdCreds ? (
+            <Button variant="contained" onClick={handleCloseCreate}>
+              Done
+            </Button>
+          ) : (
+            <>
+              <Button onClick={handleCloseCreate}>Cancel</Button>
+              <Button
+                variant="contained"
+                onClick={handleCreate}
+                disabled={creating || !newUsername || !newPassword}
+              >
+                {creating ? "Creating..." : "Create"}
+              </Button>
+            </>
+          )}
         </DialogActions>
       </Dialog>
 
