@@ -20,6 +20,7 @@ import {
   DeleteOutline as DeleteOutlineIcon,
   CheckCircle as CheckCircleIcon,
   CheckCircleOutline as CheckCircleOutlineIcon,
+  HelpOutline as HelpOutlineIcon,
 } from "@mui/icons-material";
 import { targetRubricApi } from "@/lib/api";
 import { TargetRubricResponse, RubricOption } from "@/lib/types";
@@ -187,16 +188,13 @@ export default function RubricsPage() {
 
                 <Divider sx={{ mb: 2 }} />
 
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 1.5 }}>
-                  Choose one option as the positive label for scoring.
-                </Typography>
-
                 {/* Column headers */}
                 <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
-                  <Box sx={{ width: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5 }}>
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
                         <Typography variant="caption" fontWeight={600} color="text.secondary">Positive label</Typography>
+                        <HelpOutlineIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                       </Box>
                     </Tooltip>
                   </Box>
@@ -210,7 +208,7 @@ export default function RubricsPage() {
                   return (
                     <Box key={i} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
                       <Box
-                        sx={{ width: 40, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                        sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
                         onClick={() => { if (opt.option) saveBestOption(rubric, opt.option); }}
                       >
                         {isPositive
@@ -231,6 +229,7 @@ export default function RubricsPage() {
                         value={opt.description}
                         size="small"
                         fullWidth
+                        multiline
                         onChange={(e) => updateOptionField(rubric, i, "description", e.target.value)}
                         onBlur={() => saveOptions(rubric, rubric.options)}
                       />
