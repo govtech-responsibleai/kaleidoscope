@@ -239,10 +239,17 @@ export default function ResultsTableExpandedRow({
                             (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
                           );
                           let secondaryIdx = 0;
+                          let recommendedAssigned = false;
                           return sorted.map((judge) => {
                             const score = rubricScores.find((s) => s.judge_id === judge.id);
                             if (!score) return null;
-                            const displayName = judge.category !== "common" ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+                            let displayName: string;
+                            if (judge.category !== "common" && !recommendedAssigned) {
+                              displayName = "Recommended Judge";
+                              recommendedAssigned = true;
+                            } else {
+                              displayName = `Secondary Judge ${++secondaryIdx}`;
+                            }
                             const isPositive = score.option_chosen === bestOption;
                             return (
                               <Box
