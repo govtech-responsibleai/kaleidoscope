@@ -85,15 +85,6 @@ DEFAULT_JUDGES = [
         "category": "common",
     },
     {
-        "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
-        "model_name": _require_model(BASELINE_MODEL_MAP[1]),
-        "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[1]]['label'],
-        "judge_type": JudgeTypeEnum.response_level,
-        "is_baseline": False,
-        "is_editable": False,
-        "category": "voice",
-    },
-    {
         "name": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[3]]['label'],
         "model_name": _require_model(BASELINE_MODEL_MAP[3]),
         "model_label": AVAILABLE_MODEL_MAP[BASELINE_MODEL_MAP[3]]['label'],
