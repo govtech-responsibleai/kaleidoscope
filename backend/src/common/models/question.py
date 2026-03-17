@@ -21,6 +21,13 @@ class QuestionScope(str, Enum):
     out_kb = "out_kb"
 
 
+class InputStyle(str, Enum):
+    """Input style for questions."""
+    brief = "brief"
+    regular = "regular"
+    detailed = "detailed"
+
+
 class QuestionSource(str, Enum):
     """Source of question creation."""
     job_generated = "job_generated"
@@ -32,6 +39,7 @@ class QuestionBase(BaseModel):
     text: str = Field(..., description="The question text")
     type: Optional[QuestionType] = Field(None, description="Type of question (typical or edge)")
     scope: Optional[QuestionScope] = Field(None, description="Scope relative to KB (in_kb or out_kb)")
+    input_style: Optional[InputStyle] = Field(None, description="Input style (brief, regular, detailed)")
 
 
 class QuestionListOutput(BaseModel):
@@ -47,6 +55,7 @@ class QuestionUpdate(BaseModel):
     text: Optional[str] = None
     type: Optional[QuestionType] = None
     scope: Optional[QuestionScope] = None
+    input_style: Optional[InputStyle] = None
 
 
 class QuestionResponse(QuestionBase):

@@ -3,14 +3,303 @@ Unit tests for QuestionGenerator service.
 """
 
 import pytest
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
+from types import SimpleNamespace
 
+from src.common.database.models import JobStatusEnum
+from src.common.models import QuestionBase, QuestionListOutput, QuestionScope, QuestionType
 from src.query_generation.services.question_generator import (
+    QuestionGenerator,
     cosine_similarity,
-    get_question_embedding,
     find_similar_questions,
-    find_similar_questions_batch
+    find_similar_questions_batch,
+    get_question_embedding,
 )
+
+def _make_llm_result(n=2):
+    """Create a fake QuestionListOutput + metadata tuple."""
+    questions = [
+        QuestionBase(text=f"Question {i}?", type=QuestionType.typical, scope=QuestionScope.in_kb)
+        for i in range(n)
+    ]
+    result = QuestionListOutput(questions=questions)
+    metadata = {
+        "prompt_tokens": 100,
+        "completion_tokens": 50,
+        "total_cost": 0.001,
+        "model": "gpt-4o-mini",
+    }
+    return result, metadata
+
+
+def _make_generator(test_db, sample_job, sample_target, count_requested=None):
+    with patch.object(QuestionGenerator, '__init__', lambda self, *a, **kw: None):
+        gen = QuestionGenerator.__new__(QuestionGenerator)
+        gen.db = test_db
+        gen.job_id = sample_job.id
+        gen.job = sample_job
+        if count_requested is not None:
+            gen.job.count_requested = count_requested
+        gen.target = sample_target
+        gen.persona_ids = None
+        gen.sample_questions = []
+        gen.input_style = "regular"
+        gen.cost_tracker = MagicMock()
+        gen.cost_tracker.get_summary.return_value = {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0,
+        }
+        gen.llm_client = MagicMock()
+        gen.llm_client.generate_structured.return_value = _make_llm_result(1)
+        return gen
+
+
+@pytest.mark.unit
+class TestQuestionGenerator:
+    """Unit tests for question generation logic."""
+
+    def test_generate_no_kb_uses_only_out_kb_combos(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """Without KB content, only out_kb combinations should be used (2 combos)."""
+        gen = _make_generator(test_db, sample_job, sample_target)
+        gen.llm_client.generate_structured.side_effect = [
+            _make_llm_result(2),
+            _make_llm_result(1),
+        ]
+
+        # Patch KB to return empty
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ) as mock_jr:
+            mock_kb.get_compiled_text.return_value = ""  # No KB content
+            mock_persona.get_approved_by_target.return_value = [sample_personas[0]]
+            mock_qr.get_approved_by_target.return_value = []
+            mock_qr.create_many.return_value = []
+
+            result = gen.generate()
+
+        # Only 2 buckets are active without KB for one persona.
+        assert gen.llm_client.generate_structured.call_count == 2
+        assert len(result) == 3
+
+    def test_generate_with_kb_uses_weighted_combos(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """With KB content, questions are distributed per weighted ratios (70/10/15/5)."""
+        # Use 20 questions so all 4 combos get at least 1
+        gen = _make_generator(test_db, sample_job, sample_target, count_requested=20)
+        # Return enough questions per call to satisfy allocation
+        gen.llm_client.generate_structured.return_value = _make_llm_result(20)
+
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ) as mock_jr:
+            mock_kb.get_compiled_text.return_value = "Some KB content here"
+            mock_persona.get_approved_by_target.return_value = [sample_personas[0]]
+            mock_qr.get_approved_by_target.return_value = []
+            mock_qr.create_many.return_value = []
+
+            result = gen.generate()
+
+        # All 4 combos should have at least 1 question with 20 total
+        assert gen.llm_client.generate_structured.call_count == 4
+        assert len(result) == 20
+
+    def test_generate_truncates_over_generated_bucket(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """Over-generated buckets should be truncated to the allocated count."""
+        gen = _make_generator(test_db, sample_job, sample_target, count_requested=1)
+        gen._save_questions = MagicMock(return_value=[])
+        gen.llm_client.generate_structured.return_value = _make_llm_result(3)
+
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ) as mock_jr:
+            mock_kb.get_compiled_text.return_value = ""
+            mock_persona.get_approved_by_target.return_value = [sample_personas[0]]
+            mock_qr.get_approved_by_target.return_value = []
+
+            result = gen.generate()
+
+        saved_questions = gen._save_questions.call_args[0][0]
+        assert len(saved_questions) == 1
+        assert len(result) == 1
+
+    def test_generate_under_generated_bucket_logs_warning(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """Under-generated buckets should be kept and logged as a warning."""
+        # With no KB ratios (80/20) and 1 persona, requesting 4:
+        # typical/out_kb gets 3, edge/out_kb gets 1.
+        # LLM returns 1 per call, so typical bucket under-generates (expected 3, got 1).
+        gen = _make_generator(test_db, sample_job, sample_target, count_requested=4)
+        gen._save_questions = MagicMock(return_value=[])
+        gen.llm_client.generate_structured.return_value = _make_llm_result(1)
+
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ) as mock_jr, patch(
+            "src.query_generation.services.question_generator.logger"
+        ) as mock_logger:
+            mock_kb.get_compiled_text.return_value = ""
+            mock_persona.get_approved_by_target.return_value = [sample_personas[0]]
+            mock_qr.get_approved_by_target.return_value = []
+
+            result = gen.generate()
+
+        # 2 buckets, LLM returns 1 each = 2 total
+        assert len(result) == 2
+        # typical/out_kb bucket under-generated (expected 3, got 1) = 1 warning
+        assert mock_logger.warning.call_count == 1
+
+    def test_allocate_question_counts_respects_ratios(self, test_db, sample_job, sample_target):
+        """Allocation should distribute questions according to weighted ratios."""
+        gen = _make_generator(test_db, sample_job, sample_target)
+        personas = [SimpleNamespace(id=1, title="A")]
+        ratios = {
+            ("typical", "in_kb"): 0.70,
+            ("typical", "out_kb"): 0.10,
+            ("edge", "in_kb"): 0.15,
+            ("edge", "out_kb"): 0.05,
+        }
+
+        allocations = gen._allocate_question_counts(
+            personas=personas,
+            ratios=ratios,
+            num_questions=20
+        )
+
+        counts = {(q_type.value, q_scope.value): count for _, q_type, q_scope, count in allocations}
+        assert counts[("typical", "in_kb")] == 14
+        assert counts[("edge", "in_kb")] == 3
+        assert counts[("typical", "out_kb")] == 2
+        assert counts[("edge", "out_kb")] == 1
+        assert sum(count for _, _, _, count in allocations) == 20
+
+    def test_allocate_question_counts_distributes_across_personas(self, test_db, sample_job, sample_target):
+        """Allocation should distribute each combo's count evenly across personas."""
+        gen = _make_generator(test_db, sample_job, sample_target)
+        personas = [
+            SimpleNamespace(id=1, title="A"),
+            SimpleNamespace(id=2, title="B"),
+        ]
+        ratios = {("typical", "out_kb"): 0.80, ("edge", "out_kb"): 0.20}
+
+        allocations = gen._allocate_question_counts(
+            personas=personas,
+            ratios=ratios,
+            num_questions=10
+        )
+
+        assert sum(count for _, _, _, count in allocations) == 10
+
+    def test_allocate_question_counts_raises_when_num_questions_less_than_personas(
+        self, test_db, sample_job, sample_target
+    ):
+        """Allocation should enforce at least one question per persona."""
+        gen = _make_generator(test_db, sample_job, sample_target)
+        personas = [
+            SimpleNamespace(id=1, title="A"),
+            SimpleNamespace(id=2, title="B"),
+            SimpleNamespace(id=3, title="C"),
+        ]
+
+        with pytest.raises(ValueError, match="at least one question per persona"):
+            gen._allocate_question_counts(
+                personas=personas,
+                ratios={("typical", "out_kb"): 1.0},
+                num_questions=2
+            )
+
+    def test_generate_multi_persona_uses_allocated_counts(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """generate() should batch by allocated bucket counts, not raw persona x combo count."""
+        gen = _make_generator(test_db, sample_job, sample_target, count_requested=3)
+        gen.job.persona_id = None
+        gen.persona_ids = [sample_personas[0].id, sample_personas[1].id]
+        rendered_counts = []
+
+        def fake_render_prompt(*args, **kwargs):
+            rendered_counts.append(kwargs["num_questions"])
+            return "prompt"
+
+        gen._render_prompt = MagicMock(side_effect=fake_render_prompt)
+
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ) as mock_jr:
+            mock_kb.get_compiled_text.return_value = ""
+            mock_persona.get_by_id.side_effect = lambda db, pid: (
+                sample_personas[0] if pid == sample_personas[0].id else sample_personas[1]
+            )
+            mock_qr.get_approved_by_target.return_value = []
+            mock_qr.create_many.return_value = []
+
+            result = gen.generate()
+
+        assert rendered_counts == [1, 1, 1]
+        assert gen.llm_client.generate_structured.call_count == 3
+        assert len(result) == 3
+
+    def test_generate_failure_sets_job_failed(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """If LLM call fails, job should be set to failed status."""
+        gen = _make_generator(test_db, sample_job, sample_target)
+        gen.llm_client.generate_structured.side_effect = RuntimeError("LLM down")
+
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ) as mock_jr:
+            mock_kb.get_compiled_text.return_value = ""
+            mock_persona.get_approved_by_target.return_value = [sample_personas[0]]
+            mock_qr.get_approved_by_target.return_value = []
+
+            with pytest.raises(RuntimeError, match="LLM down"):
+                gen.generate()
+
+        # Verify job was marked failed
+        mock_jr.update_status.assert_called()
+        call_args = mock_jr.update_status.call_args
+        assert call_args[1]["status"] == JobStatusEnum.failed or call_args[0][2] == JobStatusEnum.failed
 
 
 @pytest.mark.unit
@@ -75,7 +364,7 @@ class TestQuestionSimilarity:
 
         assert embedding_result == [0.1, 0.2, 0.3, 0.4, 0.5]
         mock_embedding.assert_called_once_with(
-            model="gemini/text-embedding-004",
+            model="gemini/gemini-embedding-001",
             input=["What is AI?"]
         )
 

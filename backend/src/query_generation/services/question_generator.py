@@ -13,13 +13,20 @@ from litellm import embedding
 
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
-from src.common.models import QuestionListOutput, QuestionBase
+from src.common.config import get_settings
+from src.common.models import (
+    QuestionBase,
+    QuestionListOutput,
+    QuestionScope,
+    QuestionType,
+)
 from src.common.database.repositories import (
     TargetRepository,
     PersonaRepository,
     QuestionRepository,
     JobRepository,
-    KBDocumentRepository
+    KBDocumentRepository,
+    WebDocumentRepository,
 )
 from src.common.database.models import Persona, JobStatusEnum, QuestionSourceEnum
 
@@ -34,7 +41,8 @@ class QuestionGenerator:
         db: Session,
         job_id: int,
         persona_ids: Optional[List[int]] = None,
-        sample_questions: Optional[List[str]] = None
+        sample_questions: Optional[List[str]] = None,
+        input_style: Optional[str] = None
     ):
         """
         Initialize question generator.
@@ -44,11 +52,13 @@ class QuestionGenerator:
             job_id: Job ID for this generation run
             persona_ids: Optional list of persona IDs to generate for (overrides job config)
             sample_questions: Optional list of example questions
+            input_style: Input style (brief, regular, detailed). Defaults to regular.
         """
         self.db = db
         self.job_id = job_id
         self.persona_ids = persona_ids  # Store for later use
         self.sample_questions = sample_questions or []
+        self.input_style = input_style or "regular"
         self.cost_tracker = CostTracker(job_id=job_id)
 
         # Load job
@@ -109,72 +119,86 @@ class QuestionGenerator:
                 raise ValueError("No personas found for question generation")
 
             all_questions_data = []
+            batch_questions_text = []  # Accumulate texts to avoid overlap across buckets
+
+            # Get web search context from stored WebDocuments
+            web_text = WebDocumentRepository.get_compiled_context(
+                self.db, self.target.id
+            )
 
             # Get compiled KB text once (more efficient than retrieving per combination)
             kb_text = KBDocumentRepository.get_compiled_text(self.db, self.target.id)
             has_kb_content = kb_text is not None and kb_text.strip() != ""
 
-            # Define all combinations of type and scope
-            question_combinations = [
-                ("typical", "in_kb"),
-                ("typical", "out_kb"),
-                ("edge", "in_kb"),
-                ("edge", "out_kb")
-            ]
-
-            # Filter out in_kb questions if there's no KB content
-            if not has_kb_content:
-                question_combinations = [
-                    (q_type, q_scope) for q_type, q_scope in question_combinations
-                    if q_scope != "in_kb"
-                ]
-                logger.info("No KB content available, skipping in_kb questions")
+            # Get question type/scope ratios from config
+            settings = get_settings()
+            if has_kb_content:
+                ratios = settings.question_ratios_with_kb
+            else:
+                ratios = settings.question_ratios_no_kb
+                logger.info("No KB content available, using no-KB ratios")
 
             # Pre-fetch data used across persona loop to avoid N+1 queries
             approved_questions = QuestionRepository.get_approved_by_target(
                 self.db,
                 self.target.id
             )
-            approved_personas = PersonaRepository.get_approved_by_target(
-                self.db,
-                self.target.id
+            allocations = self._allocate_question_counts(
+                personas=personas,
+                ratios=ratios,
+                num_questions=self.job.count_requested
             )
 
-            # Generate questions for each persona
-            for persona in personas:
-                logger.info(f"Generating questions for persona {persona.id}: {persona.title}")
+            # Generate questions for each allocated persona/type/scope bucket
+            for persona, question_type, question_scope, num_questions in allocations:
+                logger.info(
+                    f"Generating {num_questions} {question_type.value}/{question_scope.value} questions "
+                    f"for persona {persona.id}: {persona.title}"
+                )
 
-                # Generate questions for each combination of type and scope
-                for question_type, question_scope in question_combinations:
-                    logger.info(f"Generating {question_type}/{question_scope} questions for persona {persona.id}")
+                prompt = self._render_prompt(
+                    persona,
+                    approved_questions,
+                    kb_text,
+                    web_text,
+                    question_type=question_type,
+                    question_scope=question_scope,
+                    num_questions=num_questions,
+                    batch_questions=batch_questions_text,
+                )
 
-                    # Render prompt for this specific combination
-                    prompt = self._render_prompt(
-                        persona,
-                        approved_questions,
-                        kb_text,
-                        question_type=question_type,
-                        question_scope=question_scope,
-                        num_combinations=len(question_combinations),
-                        num_approved_personas=len(approved_personas)
+                question_list, metadata = self.llm_client.generate_structured(
+                    prompt=prompt,
+                    response_model=QuestionListOutput,
+                    temperature=0.8,
+                    max_tokens=4000
+                )
+
+                self.cost_tracker.add_call(metadata)
+
+                actual_count = len(question_list.questions)
+                if actual_count < num_questions:
+                    logger.warning(
+                        "LLM under-generated questions for persona %s %s/%s: "
+                        "expected %s, got %s",
+                        persona.id,
+                        question_type.value,
+                        question_scope.value,
+                        num_questions,
+                        actual_count,
                     )
+                    questions_to_save = question_list.questions
+                else:
+                    questions_to_save = question_list.questions[:num_questions]
 
-                    # Call LLM with structured output
-                    question_list, metadata = self.llm_client.generate_structured(
-                        prompt=prompt,
-                        response_model=QuestionListOutput,
-                        temperature=0.8,
-                        max_tokens=4000
-                    )
+                logger.info(
+                    f"Generated {len(questions_to_save)} {question_type.value}/{question_scope.value} "
+                    f"questions for persona {persona.id}"
+                )
 
-                    # Track costs
-                    self.cost_tracker.add_call(metadata)
-
-                    logger.info(f"Generated {len(question_list.questions)} {question_type}/{question_scope} questions for persona {persona.id}")
-
-                    # Save questions
-                    saved_questions = self._save_questions(question_list.questions, persona.id)
-                    all_questions_data.extend([q.model_dump() for q in question_list.questions])
+                self._save_questions(questions_to_save, persona.id)
+                all_questions_data.extend([q.model_dump() for q in questions_to_save])
+                batch_questions_text.extend([q.text for q in questions_to_save])
 
             # Update job status
             self._update_job_status(JobStatusEnum.completed)
@@ -193,10 +217,11 @@ class QuestionGenerator:
         persona: Any,
         approved_questions: List[Any],
         kb_text: Optional[str],
-        question_type: str,
-        question_scope: str,
-        num_combinations: int = 4,
-        num_approved_personas: int = 1
+        web_text: str,
+        question_type: QuestionType,
+        question_scope: QuestionScope,
+        num_questions: int,
+        batch_questions: Optional[List[str]] = None,
     ) -> str:
         """
         Render the question generation prompt template.
@@ -205,10 +230,11 @@ class QuestionGenerator:
             persona: Persona to generate questions for
             approved_questions: List of approved questions to avoid duplicates
             kb_text: Compiled KB text from documents (retrieved once in generate())
-            question_type: Type of questions ("typical" or "edge")
-            question_scope: Scope of questions ("in_kb" or "out_kb")
-            num_combinations: Number of active type/scope combinations
-            num_approved_personas: Pre-fetched count of approved personas
+            web_text: Formatted web search results for grounding
+            question_type: Type of questions
+            question_scope: Scope of questions
+            num_questions: Number of questions to request for this persona/type/scope bucket
+            batch_questions: Questions already generated in this batch (to avoid overlap)
 
         Returns:
             Rendered prompt string
@@ -216,18 +242,10 @@ class QuestionGenerator:
         # Prepare approved questions for template
         approved_questions_text = [q.text for q in approved_questions]
 
-        # Calculate how many questions to generate per combination
-        if self.job.persona_id:
-            # Single persona: divide by active combinations
-            questions_to_generate = max(1, self.job.count_requested // num_combinations)
-        else:
-            # Multiple personas: divide by number of personas AND active combinations
-            total_combinations = num_approved_personas * num_combinations
-            questions_to_generate = max(1, self.job.count_requested // total_combinations)
-
-        # Render template
+        # Render template based on input style
+        template_name = f"question_generation_{self.input_style}.md"
         prompt = render_template(
-            "question_generation.md",
+            template_name,
             chatbot_name=self.target.name,
             purpose=self.target.purpose or "Not specified",
             target_users=self.target.target_users or "General users",
@@ -238,15 +256,73 @@ class QuestionGenerator:
                 "style": persona.style,
                 "use_case": persona.use_case
             },
-            question_type=question_type,
-            question_scope=question_scope,
+            question_type=question_type.value,
+            question_scope=question_scope.value,
             kb_text=kb_text,
+            web_text=web_text,
             sample_questions=self.sample_questions,
             approved_questions=approved_questions_text if approved_questions_text else None,
-            questions_to_generate=questions_to_generate
+            batch_questions=batch_questions if batch_questions else None,
+            num_questions=num_questions,
         )
 
         return prompt
+
+    def _allocate_question_counts(
+        self,
+        personas: List[Any],
+        ratios: dict,
+        num_questions: int
+    ) -> List[Tuple[Any, QuestionType, QuestionScope, int]]:
+        """
+        Allocate total questions across persona/type/scope buckets using weighted ratios.
+
+        Args:
+            personas: List of personas to distribute across
+            ratios: Dict mapping (type_str, scope_str) -> weight, from config
+            num_questions: Total number of questions to generate
+
+        Returns:
+            List of (persona, question_type, question_scope, count) tuples
+        """
+        if num_questions < len(personas):
+            raise ValueError(
+                f"Question generation requires at least one question per persona: "
+                f"requested {num_questions} for {len(personas)} personas"
+            )
+
+        # Convert string keys to enum pairs and compute per-combo counts
+        type_map = {v.value: v for v in QuestionType}
+        scope_map = {v.value: v for v in QuestionScope}
+
+        combo_counts: list[tuple[QuestionType, QuestionScope, int]] = []
+        total_weight = sum(ratios.values())
+        allocated = 0
+
+        for (type_str, scope_str), weight in ratios.items():
+            count = round(num_questions * weight / total_weight)
+            combo_counts.append((type_map[type_str], scope_map[scope_str], count))
+            allocated += count
+
+        # Adjust rounding errors on the largest bucket
+        diff = num_questions - allocated
+        if diff != 0 and combo_counts:
+            max_idx = max(range(len(combo_counts)), key=lambda i: combo_counts[i][2])
+            q_type, q_scope, count = combo_counts[max_idx]
+            combo_counts[max_idx] = (q_type, q_scope, count + diff)
+
+        # Distribute each combo's count evenly across personas
+        results: list[tuple[Any, QuestionType, QuestionScope, int]] = []
+        for q_type, q_scope, total_for_combo in combo_counts:
+            if total_for_combo <= 0:
+                continue
+            base, remainder = divmod(total_for_combo, len(personas))
+            for i, persona in enumerate(personas):
+                count = base + (1 if i < remainder else 0)
+                if count > 0:
+                    results.append((persona, q_type, q_scope, count))
+
+        return results
 
     def _save_questions(self, questions: List[QuestionBase], persona_id: int) -> List[Any]:
         """
@@ -270,6 +346,7 @@ class QuestionGenerator:
                 "text": question.text,
                 "type": question.type.value if hasattr(question.type, 'value') else question.type,
                 "scope": question.scope.value if hasattr(question.scope, 'value') else question.scope,
+                "input_style": self.input_style,
                 "status": "pending"
             })
 
@@ -307,7 +384,8 @@ def generate_questions_for_job(
     db: Session,
     job_id: int,
     persona_ids: Optional[List[int]] = None,
-    sample_questions: Optional[List[str]] = None
+    sample_questions: Optional[List[str]] = None,
+    input_style: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Generate questions for a job (convenience function).
@@ -317,6 +395,7 @@ def generate_questions_for_job(
         job_id: Job ID
         persona_ids: Optional list of persona IDs to generate for (overrides job config)
         sample_questions: Optional list of example questions
+        input_style: Input style (brief, regular, detailed). Defaults to regular.
 
     Returns:
         List of generated question dictionaries
@@ -325,14 +404,15 @@ def generate_questions_for_job(
         db,
         job_id,
         persona_ids=persona_ids,
-        sample_questions=sample_questions
+        sample_questions=sample_questions,
+        input_style=input_style
     )
     return generator.generate()
 
 
 # Question Similarity Functions
 
-def get_question_embedding(text: str, model: str = "gemini/text-embedding-004") -> List[float]:
+def get_question_embedding(text: str, model: str = "gemini/gemini-embedding-001") -> List[float]:
     """
     Get embedding vector for a question text using Gemini's embedding model.
 
@@ -382,7 +462,7 @@ def find_similar_questions_batch(
     query_texts: List[Tuple[int, str]],
     candidate_texts: List[Tuple[int, str]],
     threshold: float = 0.7,
-    model: str = "gemini/text-embedding-004"
+    model: str = "gemini/gemini-embedding-001"
 ) -> Dict[int, List[Tuple[int, float]]]:
     """
     Find similar questions for multiple queries using matrix multiplication.
@@ -477,7 +557,7 @@ def find_similar_questions(
     query_text: str,
     candidate_texts: List[Tuple[int, str]],
     threshold: float = 0.7,
-    model: str = "gemini/text-embedding-004"
+    model: str = "gemini/gemini-embedding-001"
 ) -> List[Tuple[int, float]]:
     """
     Find similar questions from a list of candidates using cosine similarity.

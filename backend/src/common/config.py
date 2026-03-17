@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     litellm_proxy_api_key: Optional[str] = None
     litellm_proxy_api_base: Optional[str] = None
 
+    # Web Search (Serper API)
+    serper_api_key: Optional[str] = None
+
     # LLM Retry and Rate Limiting
     llm_num_retries: int = 3  # Number of retries for 429/503/timeout errors
     llm_max_concurrent: int = 5  # Max concurrent async LLM calls (prevents rate limiting) 
@@ -49,6 +52,18 @@ class Settings(BaseSettings):
     # Generation Defaults
     default_persona_count: int = 5
     default_question_count: int = 10
+
+    # Question type/scope distribution ratios
+    question_ratios_with_kb: dict = {
+        ("typical", "in_kb"): 0.70,
+        ("typical", "out_kb"): 0.10,
+        ("edge", "in_kb"): 0.15,
+        ("edge", "out_kb"): 0.05,
+    }
+    question_ratios_no_kb: dict = {
+        ("typical", "out_kb"): 0.80,
+        ("edge", "out_kb"): 0.20,
+    }
 
     class Config:
         env_file = ".env"

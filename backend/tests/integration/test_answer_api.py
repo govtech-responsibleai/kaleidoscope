@@ -251,3 +251,123 @@ class TestLabelOverrideAPI:
             f"/api/v1/answers/{sample_answer.id}/label-override"
         )
         assert get_response.status_code == 404
+
+
+@pytest.mark.integration
+class TestLabelOverrideReliability:
+    """Tests that label overrides affect judge reliability via alignment calculation."""
+
+    def test_override_does_not_modify_annotation(self, test_client, test_db, sample_answer):
+        """Label override should not create or modify annotations."""
+        from src.common.database.models import Annotation
+
+        test_client.put(
+            f"/api/v1/answers/{sample_answer.id}/label-override",
+            json={"edited_label": False}
+        )
+
+        annotation = test_db.query(Annotation).filter(
+            Annotation.answer_id == sample_answer.id
+        ).first()
+        assert annotation is None
+
+    def test_delete_override_preserves_annotation(self, test_client, test_db, sample_answer):
+        """Deleting a label override should not touch the original annotation."""
+        from src.common.database.models import Annotation
+
+        # Create annotation directly (as if from Annotations tab)
+        annotation = Annotation(answer_id=sample_answer.id, label=False, notes="Original notes")
+        test_db.add(annotation)
+        test_db.commit()
+
+        # Create and delete override
+        test_client.put(
+            f"/api/v1/answers/{sample_answer.id}/label-override",
+            json={"edited_label": True}
+        )
+        test_client.delete(
+            f"/api/v1/answers/{sample_answer.id}/label-override"
+        )
+
+        # Annotation should still exist with original values
+        test_db.refresh(annotation)
+        assert annotation.label is False
+        assert annotation.notes == "Original notes"
+
+    def test_override_takes_precedence_in_alignment(
+        self, test_client, test_db, sample_answer, sample_judge_claim_based
+    ):
+        """
+        Override should take precedence over annotation in judge alignment.
+        Annotation says Inaccurate, override says Accurate, judge says Accurate
+        → alignment should use override (match).
+        """
+        from src.common.database.models import Annotation, AnswerScore
+
+        sample_answer.is_selected_for_annotation = True
+        test_db.commit()
+
+        # Annotation: Inaccurate
+        annotation = Annotation(answer_id=sample_answer.id, label=False, notes="Test")
+        test_db.add(annotation)
+
+        # Judge: Accurate
+        score = AnswerScore(
+            answer_id=sample_answer.id,
+            judge_id=sample_judge_claim_based.id,
+            overall_label=True,
+            explanation="Judge thinks accurate"
+        )
+        test_db.add(score)
+        test_db.commit()
+
+        # Without override: judge (True) vs annotation (False) = mismatch
+        response = test_client.get(
+            f"/api/v1/snapshots/{sample_answer.snapshot_id}/judges/{sample_judge_claim_based.id}/alignment"
+        )
+        assert response.status_code == 200
+        assert response.json()["accuracy"] == 0.0
+
+        # Override to Accurate (True) — now matches judge
+        test_client.put(
+            f"/api/v1/answers/{sample_answer.id}/label-override",
+            json={"edited_label": True}
+        )
+
+        response = test_client.get(
+            f"/api/v1/snapshots/{sample_answer.snapshot_id}/judges/{sample_judge_claim_based.id}/alignment"
+        )
+        assert response.status_code == 200
+        assert response.json()["accuracy"] == 1.0
+
+    def test_override_on_unselected_answer_no_reliability_impact(
+        self, test_client, test_db, sample_answer, sample_judge_claim_based
+    ):
+        """
+        Override on unselected answer should not affect reliability
+        (no annotation exists for alignment, and answer is not selected).
+        """
+        from src.common.database.models import AnswerScore
+
+        sample_answer.is_selected_for_annotation = False
+        test_db.commit()
+
+        score = AnswerScore(
+            answer_id=sample_answer.id,
+            judge_id=sample_judge_claim_based.id,
+            overall_label=True,
+            explanation="Judge thinks accurate"
+        )
+        test_db.add(score)
+        test_db.commit()
+
+        test_client.put(
+            f"/api/v1/answers/{sample_answer.id}/label-override",
+            json={"edited_label": False}
+        )
+
+        # No selected annotations exist → 400
+        response = test_client.get(
+            f"/api/v1/snapshots/{sample_answer.snapshot_id}/judges/{sample_judge_claim_based.id}/alignment"
+        )
+        assert response.status_code == 400

@@ -24,9 +24,10 @@ class JobStatus(str, Enum):
 class JobCreate(BaseModel):
     """Request model for creating a generation job."""
     target_id: int = Field(..., description="Target ID for the generation job")
-    count_requested: int = Field(..., description="Number of items to generate", gt=0)
+    count_requested: Optional[int] = Field(None, description="Number of items to generate. Defaults to DEFAULT_QUESTION_COUNT from settings.", gt=0)
     model_used: Optional[str] = Field(None, description="LLM model to use. If not specified, uses the configured default model.")
     persona_ids: Optional[List[int]] = Field(None, description="List of persona IDs (for question generation only). If not provided, generates for all approved personas.")
+    input_style: Optional[str] = Field(None, description="Input style for question generation (brief, regular, detailed). Defaults to regular.")
     sample_personas: Optional[List[str]] = Field(None, description="Optional list of example persona descriptions (for persona generation only)")
     sample_questions: Optional[List[str]] = Field(None, description="Optional list of example questions (for question generation only)")
 

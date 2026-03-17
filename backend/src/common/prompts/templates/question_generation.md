@@ -44,6 +44,17 @@ The following is the knowledge base content. {% if question_scope == "in_kb" %}G
 Note: No knowledge base content provided.
 {% endif %}
 
+{% if web_text %}
+## Web Search Context
+The following is contextual information gathered from web searches about the agency and its domain. Based on your knowledge of the context retrieved from the web, use this to make questions realistic and grounded in real-world context.
+
+Do NOT treat this as the bot's knowledge base. This is background information to help you write better questions.
+
+```
+{{web_text}}
+```
+{% endif %}
+
 {% if sample_questions %}
 ## Sample Questions
 {% for question in sample_questions %}
@@ -61,7 +72,7 @@ No previously approved questions yet - this is the first generation.
 {% endif %}
 
 ## Requirements
-Generate {{questions_to_generate}} questions that:
+Generate {{num_questions}} questions that:
 - Match the persona's communication style and tone
 - Reflect realistic scenarios the persona would encounter
 - Use appropriate technical depth for the persona's expertise level

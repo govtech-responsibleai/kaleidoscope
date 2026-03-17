@@ -21,6 +21,15 @@ from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
 from src.common.models import CheckworthyResult
+from src.scoring.services.claim_processor_steps import (
+    ClaimTransform,
+    ClaimFilter,
+    ClaimSplitNewlines,
+    ClaimMergeCodeBlocks,
+    ClaimShiftBracketGroups,
+    ClaimShortFilter,
+    ClaimCitationFilter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +64,17 @@ class ClaimProcessor:
         # Lazily initialize LLM client so tests can override after instantiation
         self._llm_model_name = "gemini/gemini-2.5-flash-lite"
         self.llm_client = None
+
+        # --- Pipeline steps (add new steps here) ---
+        self.transforms: List[ClaimTransform] = [
+            ClaimSplitNewlines(),
+            ClaimMergeCodeBlocks(),
+            ClaimShiftBracketGroups(),
+        ]
+        self.filters: List[ClaimFilter] = [
+            ClaimShortFilter(),
+            ClaimCitationFilter(),
+        ]
 
     async def process(self) -> None:
         """
@@ -125,8 +145,8 @@ class ClaimProcessor:
             raise ImportError("nltk is required for claim extraction. Install nltk to run claim processing.")
         sentences = nltk.sent_tokenize(answer.answer_content)
 
-        # Postprocess claims to fix edge cases
-        sentences = self._postprocess_claims(sentences)
+        # Apply transforms pipeline
+        sentences = self._apply_transforms(sentences)
 
         # Create AnswerClaim records
         claims = []
@@ -161,10 +181,11 @@ class ClaimProcessor:
             logger.warning(f"No claims found for answer {answer_id}")
             return
 
-        # Run checkworthy checks asynchronously for all claims
+        # Run checkworthy checks asynchronously for all claims.
+        # Pass full claims list + index so each check can build surrounding context.
         tasks = [
-            self._check_single_claim(claim)
-            for claim in claims
+            self._check_single_claim(claim, idx, claims)
+            for idx, claim in enumerate(claims)
         ]
 
         await asyncio.gather(*tasks)
@@ -172,40 +193,47 @@ class ClaimProcessor:
         checkworthy_count = sum(1 for claim in claims if claim.checkworthy)
         logger.info(f"Checked {len(claims)} claims for answer {answer_id}. {checkworthy_count} are checkworthy.")
 
-    async def _check_single_claim(self, claim: AnswerClaim) -> None:
+    async def _check_single_claim(
+        self, claim: AnswerClaim, idx: int, all_claims: List[AnswerClaim]
+    ) -> None:
         """
-        Check if a single claim is checkworthy using LLM.
+        Check if a single claim is checkworthy using filters, then LLM.
 
-        Claims shorter than 20 characters are automatically marked as not checkworthy
-        without calling the LLM (sanity check to filter out very short claims).
+        Runs each ClaimFilter in order. If any filter returns False, the claim
+        is marked not checkworthy without calling the LLM.
 
         Args:
             claim: AnswerClaim to check
+            idx: Index of this claim in the full claims list
+            all_claims: All claims for the answer (used to build surrounding context)
         """
-        MIN_CLAIM_LENGTH = 20
+        # Run filters pipeline
+        for f in self.filters:
+            result = f.check(claim.claim_text)
+            if result is False:
+                AnswerClaimRepository.update_checkworthy(
+                    self.db, claim.id, checkworthy=False, checked_at=datetime.utcnow()
+                )
+                logger.debug(f"Claim {claim.id} filtered by {f.name}: not checkworthy")
+                return
 
-        # Skip LLM check for very short claims (sanity check)
-        if len(claim.claim_text) < MIN_CLAIM_LENGTH:
-            AnswerClaimRepository.update_checkworthy(
-                self.db, claim.id, checkworthy=False, checked_at=datetime.utcnow()
-            )
-            logger.debug(f"Claim {claim.id} marked as not checkworthy (too short: {len(claim.claim_text)} chars)")
-            return
+        # Build surrounding context so the LLM can see where the claim sits
+        # in the response (e.g. to identify headers, labels, or structural text).
+        claim_context = self._build_claim_context(idx, all_claims)
 
-        # Render prompt
+        # No filter matched — call LLM
         prompt = render_template(
             "checkworthy.md",
-            claim_text=claim.claim_text,
-            system_prompt=self._system_prompt
+            system_prompt=self._system_prompt,
+            claim_context=claim_context,
         )
 
-        # Call LLM
         try:
             client = self._get_llm_client()
             result, metadata = await client.generate_structured_async(
                 prompt=prompt,
                 response_model=CheckworthyResult,
-                temperature=0.7
+                temperature=0.0
             )
 
             # Track costs
@@ -226,6 +254,62 @@ class ClaimProcessor:
             )
             logger.warning(f"Claim {claim.id} marked as checkworthy=True due to error (will be judged)")
 
+    @staticmethod
+    def _build_claim_context(
+        idx: int, all_claims: List[AnswerClaim], window: int = 2
+    ) -> str:
+        """
+        Build a short surrounding-context string for a claim.
+
+        This gives the LLM visibility into where the claim sits in the
+        response — helping it identify headers, structural labels, or
+        other non-substantive text that shouldn't be treated as claims.
+
+        Args:
+            idx: Index of the current claim in all_claims
+            all_claims: Full ordered list of claims for the answer
+            window: Number of claims before/after to include
+
+        Returns:
+            A string with surrounding claims and the current claim
+            highlighted with >>> <<< markers.
+        """
+        before = [c.claim_text for c in all_claims[max(0, idx - window):idx]]
+        after = [c.claim_text for c in all_claims[idx + 1:idx + 1 + window]]
+        current = f">>> {all_claims[idx].claim_text} <<<"
+        parts = before + [current] + after
+        return " ... ".join(parts)
+
+    def _apply_transforms(self, claims: List[str]) -> List[str]:
+        """
+        Apply all ClaimTransform steps in order with validation.
+
+        Args:
+            claims: List of claim strings from NLTK sentence tokenizer
+
+        Returns:
+            Transformed list of claim strings
+
+        Raises:
+            ValueError: If transforms lose or add characters
+        """
+        original_joined = "".join(claims)
+
+        for transform in self.transforms:
+            claims = transform.transform(claims)
+
+        # Validation — ensure no characters were lost or added
+        joined = "".join(claims)
+        if joined != original_joined:
+            logger.error(
+                f"Transform validation failed. "
+                f"Expected {len(original_joined)} chars, got {len(joined)}. "
+                f"Original: {original_joined!r}, Joined: {joined!r}"
+            )
+            raise ValueError("Transform validation failed: character mismatch")
+
+        return claims
+
     def _update_job_status(self) -> None:
         """Update job costs in database."""
         summary = self.cost_tracker.get_summary()
@@ -242,116 +326,6 @@ class ClaimProcessor:
         )
 
         logger.info(f"Updated QAJob {self.job_id} costs: ${summary['total_cost']:.4f}")
-
-    def _postprocess_claims(self, claims: List[str]) -> List[str]:
-        """
-        Postprocess extracted claims to handle shortcomings of NLTK.
-
-        This function applies two transformations in order:
-        1. Split claims containing newlines, keeping the newline with the first part
-        2. Shift leading complete bracket groups from claims to the previous claim
-
-        Args:
-            claims: List of claim strings from NLTK sentence tokenizer
-
-        Returns:
-            List of postprocessed claim strings
-
-        Raises:
-            ValueError: If postprocessing loses or adds characters from input claims
-        """
-        # Save original input for validation
-        original_joined = "".join(claims)
-
-        # STEP 1: Split by line breaks
-        result = []
-        for claim in claims:
-            if "\n" in claim:
-                parts = claim.split("\n")
-                # Add newline to all parts except the last
-                for i, part in enumerate(parts[:-1]):
-                    result.append(part + "\n")
-                # Add last part without newline
-                if parts[-1]:  # Only add if not empty
-                    result.append(parts[-1])
-            else:
-                result.append(claim)
-        claims = result
-
-        # STEP 2: Shift complete bracket groups
-        for i in range(1, len(claims)):  # Start at index 1 (skip first claim)
-            current_claim = claims[i]
-
-            # Find all complete bracket groups at start
-            bracket_content = self._find_complete_bracket_groups(current_claim)
-
-            if bracket_content:
-                # Shift to previous claim
-                claims[i - 1] = claims[i - 1] + bracket_content
-                claims[i] = current_claim[len(bracket_content):]
-
-        # STEP 3: Validation - ensure no characters were lost or added during postprocessing
-        joined = "".join(claims)
-        if joined != original_joined:
-            logger.error(
-                f"Postprocessing validation failed. "
-                f"Expected {len(original_joined)} chars, got {len(joined)}. "
-                f"Original: {original_joined!r}, Joined: {joined!r}"
-            )
-            raise ValueError("Postprocessing validation failed: character mismatch")
-
-        return claims
-
-    def _find_complete_bracket_groups(self, text: str) -> str:
-        """
-        Find all consecutive complete bracket groups at the start of text.
-
-        A bracket group is complete if it has an opening bracket and any closing bracket.
-        Handles nested brackets by tracking depth. Stops at first incomplete group.
-
-        Args:
-            text: Input text to check for leading bracket groups
-
-        Returns:
-            The bracket content to shift (e.g., "(first) (second) "), or empty string if none.
-
-        Examples:
-            "(a) (b) rest" -> "(a) (b) "
-            "(nested (inner) end)" -> "(nested (inner) end)"
-            "(incomplete" -> ""
-        """
-        OPENING_BRACKETS = frozenset('([{<')
-        CLOSING_BRACKETS = frozenset(')]}>')
-
-        pos = 0
-        shifted_content = ""
-
-        while pos < len(text):
-            # Check if current position starts with opening bracket
-            if pos >= len(text) or text[pos] not in OPENING_BRACKETS:
-                break  # No more bracket groups at start
-
-            # Find the matching closing bracket (any type)
-            depth = 0
-            start = pos
-            found_closing = False
-
-            for i in range(pos, len(text)):
-                if text[i] in OPENING_BRACKETS:
-                    depth += 1
-                elif text[i] in CLOSING_BRACKETS:
-                    depth -= 1
-                    if depth == 0:
-                        # Found complete bracket group
-                        shifted_content += text[start:i+1]
-                        pos = i + 1
-                        found_closing = True
-                        break
-
-            if not found_closing:
-                break  # Incomplete bracket group, stop
-
-        return shifted_content
 
     def _get_llm_client(self):
         """Create or return the cached LLM client."""

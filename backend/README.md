@@ -116,7 +116,7 @@ Tokens expire after 3 days.
 ```bash
 # 1. Set up environment
 cp .env.example .env
-# Edit .env and add your GEMINI_API_KEY (for Gemini Flash)
+# Edit .env and add your GEMINI_API_KEY (for Gemini Flash) and SERPER_API_KEY (for web search)
 
 # 2. Start services
 docker-compose up -d
@@ -144,7 +144,7 @@ pip install -r requirements.txt
 **2. Configure Environment:**
 ```bash
 cp .env.example .env
-# Edit .env with your settings
+# Edit .env with your settings (GEMINI_API_KEY, SERPER_API_KEY, JWT_SECRET_KEY, etc.)
 ```
 
 **3. Setup Database:**
@@ -163,7 +163,7 @@ API will be available at:
 
 ## LLM Configuration
 
-The API uses **Google Gemini 2.5 Flash Lite** by default (`gemini/gemini-2.5-flash-lite`) via LiteLLM for text generation, and **Gemini Text Embedding 004** (`gemini/text-embedding-004`) for semantic similarity.
+The API uses **Google Gemini 2.5 Flash Lite** by default (`gemini/gemini-2.5-flash-lite`) via LiteLLM for text generation, and **Gemini Embedding 001** (`gemini/gemini-embedding-001`) for semantic similarity. **Web search** is powered by [Serper API](https://serper.dev) (requires `SERPER_API_KEY`).
 
 ### Default Model
 
@@ -205,8 +205,8 @@ environment:
 - **Gemini (requires `GEMINI_API_KEY`):**
   - `gemini/gemini-2.5-flash-lite` (default)
   - `gemini/gemini-2.5-flash`
-  - `gemini/gemini-3-flash-preview`
-  - `gemini/gemini-3-pro-preview`
+  - `gemini/gemini-3.1-flash-lite-preview-global`
+  - `gemini/gemini-3.1-pro-preview-global`
 
 - **OpenAI (requires `OPENAI_API_KEY`):**
   - `gpt-5-nano`
@@ -264,6 +264,7 @@ GET    /api/v1/jobs/{id}/questions        - Get questions from job
 GET    /api/v1/personas/{id}              - Get persona
 GET    /api/v1/personas/{id}/questions    - List questions for persona
 PUT    /api/v1/personas/{id}              - Update persona
+POST   /api/v1/personas                    - Manually create a persona (auto-approved)
 POST   /api/v1/personas/{id}/approve      - Approve persona
 POST   /api/v1/personas/{id}/reject       - Reject persona
 POST   /api/v1/personas/bulk-approve      - Bulk approve personas
@@ -464,13 +465,29 @@ curl -X POST http://localhost:8000/api/v1/jobs/personas \
 curl http://localhost:8000/api/v1/jobs/1 | jq
 ```
 
+Persona generation includes **Singapore contextualisation** (demographics, challenges, multicultural context) and **vague audience handling** (interprets "everyone" or "all officers" in context of the target application).
+
 #### 2.3 List Generated Personas
 
 ```bash
 curl http://localhost:8000/api/v1/jobs/1/personas | jq
 ```
 
-#### 2.4 Alternative: Sample General Personas (Nemotron)
+#### 2.4 Manually Create Persona
+
+```bash
+curl -X POST http://localhost:8000/api/v1/personas \
+  -H "Content-Type: application/json" \
+  -d '{
+    "target_id": 1,
+    "title": "Senior HR Officer",
+    "info": "10 years experience in government HR",
+    "style": "formal",
+    "use_case": "Policy clarification"
+  }' | jq
+```
+
+#### 2.5 Alternative: Sample General Personas (Nemotron)
 
 Instead of LLM generation, sample from NVIDIA's [Nemotron-Personas-Singapore](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Singapore) dataset (~148K personas):
 
@@ -482,7 +499,7 @@ curl -X POST http://localhost:8000/api/v1/personas/sample-nemotron \
 
 First call downloads and caches the dataset; subsequent calls are instant. Duplicate titles are auto-suffixed.
 
-#### 2.5 Approve Personas
+#### 2.6 Approve Personas
 
 ```bash
 # Approve individual persona
@@ -500,7 +517,12 @@ curl -X POST http://localhost:8000/api/v1/personas/bulk-approve \
 
 #### 3.1 Generate Questions
 
-Questions are generated with **type** (typical/edge) and **scope** (in_kb/out_kb) attributes based on uploaded KB documents.
+Questions are generated with **type** (typical/edge) and **scope** (in_kb/out_kb) attributes based on uploaded KB documents. The generation pipeline includes:
+
+- **Input Style**: Controls question tone/verbosity — `brief` (terse, slang), `regular` (natural language, default), or `detailed` (professional, complete sentences)
+- **Web Search Context**: Automatically queries the web (via Serper API) for contextual information about the target agency/domain, and feeds results into the prompt for more realistic, grounded questions
+- **Singapore Contextualisation**: Prompts are tailored to produce questions relevant to Singapore government agencies and policies
+- **Deduplication**: New questions are checked against existing questions in the current batch to reduce duplicates
 
 **Note:** Question generation runs asynchronously. The endpoint returns immediately with `status="running"`.
 
@@ -511,17 +533,19 @@ curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -d '{
     "target_id": 1,
     "count_requested": 1,
-    "model_used": "gemini/gemini-2.5-flash-lite"
+    "model_used": "gemini/gemini-2.5-flash-lite",
+    "input_style": "regular"
   }' | jq
 # Returns immediately with status="running" and job_id
 
-# Or generate questions for specific personas
+# Or generate questions for specific personas with brief style
 curl -X POST http://localhost:8000/api/v1/jobs/questions \
   -H "Content-Type: application/json" \
   -d '{
     "target_id": 1,
     "count_requested": 10,
     "model_used": "gemini/gemini-2.5-flash-lite",
+    "input_style": "brief",
     "persona_ids": [1, 3, 5]
   }' | jq
 ```
@@ -550,7 +574,7 @@ curl -X POST http://localhost:8000/api/v1/questions/bulk-approve \
 
 #### 3.4 Find Similar Questions (Optional)
 
-Find semantically similar questions using **Gemini Text Embedding 004** for deduplication.
+Find semantically similar questions using **Gemini Embedding 001** for deduplication.
 
 ```bash
 curl -X POST http://localhost:8000/api/v1/questions/similar \

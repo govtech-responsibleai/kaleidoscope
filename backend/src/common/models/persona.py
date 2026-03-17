@@ -38,6 +38,15 @@ class PersonaListOutput(BaseModel):
     )
 
 
+class PersonaCreate(BaseModel):
+    """Request model for manually creating a persona."""
+    target_id: int = Field(..., description="Target ID to associate persona with")
+    title: str = Field(..., description="Title of the persona")
+    info: Optional[str] = Field(None, description="Background and role context")
+    style: Optional[str] = Field(None, description="Communication style")
+    use_case: Optional[str] = Field(None, description="Use case for engaging with chatbot")
+
+
 class PersonaUpdate(BaseModel):
     """Request model for updating a persona."""
     title: Optional[str] = None

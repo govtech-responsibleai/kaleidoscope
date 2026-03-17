@@ -22,7 +22,7 @@ from src.common.database.seed import seed_default_judges
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
 
 # Import routers from query generation
-from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
+from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, web_documents, answers
 
 # Import routers from scoring
 from src.scoring.api.routes import snapshots, judges, qa_jobs, annotations, metrics
@@ -116,6 +116,7 @@ app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", ta
 app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"], dependencies=[Depends(get_scoped_db)])
 app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"], dependencies=[Depends(get_scoped_db)])
 app.include_router(kb_documents.router, prefix=settings.api_prefix, tags=["Knowledge Base"], dependencies=[Depends(get_scoped_db)])
+app.include_router(web_documents.router, prefix=settings.api_prefix, tags=["Web Documents"], dependencies=[Depends(get_scoped_db)])
 app.include_router(answers.router, prefix=f"{settings.api_prefix}/answers", tags=["Answers"], dependencies=[Depends(get_scoped_db)])
 
 # Include routers from scoring service (all require auth + user scoping)
