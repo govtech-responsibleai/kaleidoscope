@@ -6,14 +6,12 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import SnapshotRepository, JudgeRepository, TargetRepository
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.models.metrics import (
     AggregatedResult,
     ConfusionMatrixResponse,
     JudgeAccuracyResponse,
     JudgeAlignmentResponse,
-    RubricJudgeAlignmentResponse,
-    RubricJudgeAccuracyResponse,
-    RubricSnapshotMetric,
     TargetSnapshotMetric,
 )
 from src.scoring.services.metrics_service import MetricsService
@@ -281,7 +279,7 @@ def get_confusion_matrix(
 
 @router.get(
     "/snapshots/{snapshot_id}/judges/{judge_id}/rubrics/{rubric_id}/alignment",
-    response_model=RubricJudgeAlignmentResponse,
+    response_model=JudgeAlignmentResponse,
 )
 def get_rubric_judge_alignment(
     snapshot_id: int,
@@ -302,9 +300,19 @@ def get_rubric_judge_alignment(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Judge {judge_id} not found",
         )
+    rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not rubric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rubric {rubric_id} not found",
+        )
+    best_option = rubric.best_option
+    if not best_option:
+        options = rubric.options or []
+        best_option = options[0].get("option", "") if options and isinstance(options[0], dict) else str(options[0]) if options else ""
     try:
         service = MetricsService(db)
-        return service.calculate_rubric_judge_alignment(snapshot_id, judge_id, rubric_id)
+        return service.calculate_rubric_judge_alignment(snapshot_id, judge_id, rubric_id, best_option)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -314,13 +322,12 @@ def get_rubric_judge_alignment(
 
 @router.get(
     "/snapshots/{snapshot_id}/judges/{judge_id}/rubrics/{rubric_id}/accuracy",
-    response_model=RubricJudgeAccuracyResponse,
+    response_model=JudgeAccuracyResponse,
 )
 def get_rubric_judge_accuracy(
     snapshot_id: int,
     judge_id: int,
     rubric_id: int,
-    best_option: str = Query(...),
     db: Session = Depends(get_db),
 ):
     """Calculate rubric judge accuracy (% of answers getting the best option)."""
@@ -336,6 +343,16 @@ def get_rubric_judge_accuracy(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Judge {judge_id} not found",
         )
+    rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not rubric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rubric {rubric_id} not found",
+        )
+    best_option = rubric.best_option
+    if not best_option:
+        options = rubric.options or []
+        best_option = options[0].get("option", "") if options and isinstance(options[0], dict) else str(options[0]) if options else ""
     try:
         service = MetricsService(db)
         return service.calculate_rubric_judge_accuracy(snapshot_id, judge_id, rubric_id, best_option)
@@ -348,7 +365,7 @@ def get_rubric_judge_accuracy(
 
 @router.get(
     "/targets/{target_id}/rubric-snapshot-metrics",
-    response_model=List[RubricSnapshotMetric],
+    response_model=List[TargetSnapshotMetric],
 )
 def get_rubric_snapshot_metrics(
     target_id: int,

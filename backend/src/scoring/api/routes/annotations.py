@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import AnnotationRepository, AnswerRepository, SnapshotRepository
-from src.common.database.models import AnswerRubricLabel
+from src.common.database.models import RubricAnnotation
 from src.common.models import (
     AnnotationCreate,
     AnnotationUpdate,
@@ -20,11 +20,11 @@ from src.common.models import (
 )
 
 
-class AnswerRubricLabelUpsert(BaseModel):
+class RubricAnnotationUpsert(BaseModel):
     option_value: str
 
 
-class AnswerRubricLabelResponse(BaseModel):
+class RubricAnnotationResponse(BaseModel):
     id: int
     answer_id: int
     rubric_id: int
@@ -289,8 +289,8 @@ def delete_annotation(
         )
 
 
-@router.get("/answers/{answer_id}/rubric-labels", response_model=List[AnswerRubricLabelResponse])
-def get_rubric_labels_for_answer(
+@router.get("/answers/{answer_id}/rubric-annotations", response_model=List[RubricAnnotationResponse])
+def get_rubric_annotations_for_answer(
     answer_id: int,
     db: Session = Depends(get_db)
 ):
@@ -298,14 +298,14 @@ def get_rubric_labels_for_answer(
     answer = AnswerRepository.get_by_id(db, answer_id)
     if not answer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Answer {answer_id} not found")
-    return db.query(AnswerRubricLabel).filter(AnswerRubricLabel.answer_id == answer_id).all()
+    return db.query(RubricAnnotation).filter(RubricAnnotation.answer_id == answer_id).all()
 
 
-@router.put("/answers/{answer_id}/rubric-labels/{rubric_id}", response_model=AnswerRubricLabelResponse)
-def upsert_rubric_label(
+@router.put("/answers/{answer_id}/rubric-annotations/{rubric_id}", response_model=RubricAnnotationResponse)
+def upsert_rubric_annotation(
     answer_id: int,
     rubric_id: int,
-    data: AnswerRubricLabelUpsert,
+    data: RubricAnnotationUpsert,
     db: Session = Depends(get_db)
 ):
     """Create or update a custom rubric label for an answer."""
@@ -313,9 +313,9 @@ def upsert_rubric_label(
     if not answer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Answer {answer_id} not found")
 
-    existing = db.query(AnswerRubricLabel).filter(
-        AnswerRubricLabel.answer_id == answer_id,
-        AnswerRubricLabel.rubric_id == rubric_id
+    existing = db.query(RubricAnnotation).filter(
+        RubricAnnotation.answer_id == answer_id,
+        RubricAnnotation.rubric_id == rubric_id
     ).first()
 
     if existing:
@@ -325,7 +325,7 @@ def upsert_rubric_label(
         db.refresh(existing)
         return existing
     else:
-        label = AnswerRubricLabel(answer_id=answer_id, rubric_id=rubric_id, option_value=data.option_value)
+        label = RubricAnnotation(answer_id=answer_id, rubric_id=rubric_id, option_value=data.option_value)
         db.add(label)
         db.commit()
         db.refresh(label)

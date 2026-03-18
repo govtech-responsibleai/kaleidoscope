@@ -11,20 +11,25 @@ src/
 │   ├── database/               # Database layer
 │   │   ├── connection.py       # SQLAlchemy setup
 │   │   ├── models.py           # ORM models
-│   │   └── repositories/       # CRUD operations
+│   │   ├── repositories/       # CRUD operations
+│   │   └── migrations/         # Manual migration scripts
 │   ├── llm/                    # LLM client and tracking
 │   │   ├── client.py           # LiteLLM wrapper
 │   │   ├── cost_tracker.py     # Cost tracking
 │   │   └── instrumentation.py  # Phoenix instrumentation
 │   ├── models/                 # Pydantic models
 │   ├── prompts/                # Prompt templates (Jinja2)
-│   └── services/               # Common services (document processing)
+│   └── services/               # Common services (document processing, rubric classification)
 │
-└── query_generation/           # Query generation module
+├── query_generation/           # Query generation module
+│   ├── api/
+│   │   └── routes/            # API endpoints (targets, jobs, personas, questions, KB)
+│   └── services/              # Business logic
+│
+└── scoring/                    # Scoring module
     ├── api/
-    │   ├── main.py            # FastAPI app
-    │   └── routes/            # API endpoints
-    └── services/              # Business logic
+    │   └── routes/            # API endpoints (snapshots, answers, judges, qa_jobs, annotations, metrics)
+    └── services/              # Business logic (judge scoring, claim processing, metrics)
 ```
 
 ## Authentication
@@ -311,7 +316,12 @@ GET    /api/v1/answers/{answer_id}/scores/{judge_id}            - Get answer sco
 GET    /api/v1/answers/{answer_id}/claims                       - Get answer claims with scores
 PUT    /api/v1/answers/{answer_id}/selection                    - Toggle answer selection
 PUT    /api/v1/answers/bulk-selection                           - Bulk update answer selection
-PUT    /api/v1/snapshots/{snapshot_id}answers/select-default     - Bulk update answer selection
+PUT    /api/v1/snapshots/{snapshot_id}/answers/select-default   - Auto-select 20% of answers for annotation
+
+# Label overrides (manual corrections to aggregated labels)
+GET    /api/v1/answers/{answer_id}/label-override               - Get label override for an answer
+PUT    /api/v1/answers/{answer_id}/label-override               - Create or update a label override
+DELETE /api/v1/answers/{answer_id}/label-override               - Delete a label override (reset to judge consensus)
 ```
 
 ### Snapshots
@@ -331,20 +341,41 @@ GET    /api/v1/snapshots/{snapshot_id}/questions/approved/without-scores   - Get
 
 ### Judges
 
-Judges are LLM-based evaluators that assess answer accuracy. Two types are supported:
+Judges are LLM-based evaluators that assess answer quality. Two evaluation types are supported:
 
 - **Claim-based**: Extracts claims from answers, evaluates each claim, then aggregates to overall label
 - **Response-level**: Evaluates the entire answer holistically in a single LLM call
+
+Judges have a **category** that determines which evaluation dimension they serve:
+
+- `accuracy` — evaluates factual accuracy against knowledge base (default)
+- `relevance` — evaluates how relevant the response is to the question
+- `voice` — evaluates tone, style, and communication quality
+- `common` — general-purpose judges that participate in all rubric evaluations
 
 ```
 GET    /api/v1/judges                                 - List all judges
 POST   /api/v1/judges                                 - Create custom judge
 GET    /api/v1/judges/baseline                        - Get baseline judge
-GET    /api/v1/judges/available-models                - Get baseline judge
+GET    /api/v1/judges/available-models                - List available LLM models
+GET    /api/v1/judges/by-category/{category}          - Get judges for a rubric category (includes common judges)
 GET    /api/v1/judges/{judge_id}                      - Get judge details
 PUT    /api/v1/judges/{judge_id}                      - Update judge (if editable)
 DELETE /api/v1/judges/{judge_id}                      - Delete judge (if editable)
 ```
+
+### Custom Rubrics
+
+Define custom evaluation criteria per target beyond accuracy (e.g., relevance, tone, helpfulness). Each rubric has a set of options the judge can choose from.
+
+```
+GET    /api/v1/targets/{target_id}/rubrics             - List all rubrics for target
+POST   /api/v1/targets/{target_id}/rubrics             - Create a rubric (auto-classified into category)
+PUT    /api/v1/targets/{target_id}/rubrics/{rubric_id} - Update a rubric
+DELETE /api/v1/targets/{target_id}/rubrics/{rubric_id} - Delete a rubric
+```
+
+When a rubric is created, it is automatically classified into a category (`relevance`, `voice`, or `default`) using an LLM. This determines which judges are assigned to evaluate it.
 
 ### QA Jobs
 
@@ -355,17 +386,19 @@ QA Jobs orchestrate the automated scoring pipeline:
 3. **Score Answer**: Use judge LLM to evaluate accuracy
 
 ```
-POST   /api/v1/snapshots/{snapshot_id}/qa-jobs/start  - Start QA jobs batch (async)
-POST   /api/v1/qa-jobs/pause                          - Pause running jobs
-GET    /api/v1/snapshots/{snapshot_id}/qa-jobs        - List QA jobs for snapshot
-GET    /api/v1/qa-jobs/{job_id}                       - Get job details with costs
+POST   /api/v1/snapshots/{snapshot_id}/qa-jobs/start         - Start accuracy QA jobs (async)
+POST   /api/v1/snapshots/{snapshot_id}/rubric-qa-jobs/start  - Start rubric evaluation jobs (async)
+POST   /api/v1/qa-jobs/pause                                 - Pause running jobs
+GET    /api/v1/snapshots/{snapshot_id}/qa-jobs               - List QA jobs for snapshot
+GET    /api/v1/qa-jobs/{job_id}                              - Get job details with costs
 ```
 
 ### Annotations
 
-Manual annotations allow humans to label answer accuracy for judge validation.
+Manual annotations allow humans to label answers for judge validation. Accuracy annotations use a boolean label (accurate/inaccurate), while rubric annotations select from the rubric's defined options.
 
 ```
+# Accuracy annotations
 POST   /api/v1/annotations                                       - Create single annotation
 POST   /api/v1/annotations/bulk                                  - Bulk create annotations
 GET    /api/v1/snapshots/{snapshot_id}/annotations               - List annotations for snapshot
@@ -374,6 +407,13 @@ GET    /api/v1/answers/{answer_id}/annotations                   - Get annotatio
 GET    /api/v1/annotations/{annotation_id}                       - Get annotation by ID
 PUT    /api/v1/annotations/{annotation_id}                       - Update annotation
 DELETE /api/v1/annotations/{annotation_id}                       - Delete annotation
+
+# Rubric annotations
+GET    /api/v1/answers/{answer_id}/rubric-annotations            - Get all rubric annotations for an answer
+PUT    /api/v1/answers/{answer_id}/rubric-annotations/{rubric_id} - Upsert a rubric annotation
+
+# Rubric scores (LLM judge results)
+GET    /api/v1/answers/{answer_id}/rubric-scores?rubric_id={id}  - Get judge scores for an answer+rubric
 ```
 
 ### Metrics
@@ -381,11 +421,17 @@ DELETE /api/v1/annotations/{annotation_id}                       - Delete annota
 Calculate judge performance and export results.
 
 ```
+# Accuracy metrics
 GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/alignment   - Calculate judge alignment (F1, precision, recall, accuracy)
 GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/accuracy    - Calculate chatbot accuracy per judge
 GET    /api/v1/snapshots/{snapshot_id}/results                       - Get aggregated results with majority vote
 POST   /api/v1/snapshots/{snapshot_id}/export                        - Export results as CSV
 GET    /api/v1/targets/{target_id}/snapshot-metrics                  - Get aggregated metrics for all snapshots of a target
+
+# Rubric metrics
+GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/rubrics/{rubric_id}/alignment  - Rubric judge alignment (F1 against human annotations)
+GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/rubrics/{rubric_id}/accuracy   - Rubric judge accuracy (% best option)
+GET    /api/v1/targets/{target_id}/rubric-snapshot-metrics?snapshot_id={id}             - Aggregated rubric metrics for a snapshot
 ```
 
 ## End-to-End Evaluation Workflow
@@ -814,27 +860,31 @@ curl http://localhost:8000/api/v1/targets/1/snapshot-metrics | jq
 
 Returns:
 ```json
-{
-  "snapshots": [
-    {
-      "snapshot_id": 1,
-      "snapshot_name": "v1.0",
-      "created_at": "2025-01-15T10:30:00Z",
-      "aggregated_accuracy": 0.73,
-      "total_answers": 100,
-      "judge_alignment_range": {"min": 0.85, "max": 0.92},
-      "has_aligned_judges": true,
-      "reliable_judge_count": 2
-    }
-  ]
-}
+[
+  {
+    "snapshot_id": 1,
+    "snapshot_name": "v1.0",
+    "created_at": "2025-01-15T10:30:00Z",
+    "aggregated_accuracy": 0.73,
+    "total_answers": 100,
+    "accurate_count": 73,
+    "inaccurate_count": 20,
+    "pending_count": 7,
+    "edited_count": 2,
+    "judge_alignment_range": {"min": 0.85, "max": 0.92},
+    "aligned_judges": [
+      {"judge_id": 1, "name": "Baseline Judge", "f1": 0.85}
+    ]
+  }
+]
 ```
 
 **Metrics explanation:**
 - `aggregated_accuracy`: Overall accuracy based on majority vote across aligned judges
-- `judge_alignment_range`: F1 score range of judges that aligned with human annotations (F1 ≥ 0.7)
-- `has_aligned_judges`: Whether any judges achieved alignment threshold
-- `reliable_judge_count`: Number of judges with F1 ≥ 0.7
+- `accurate_count` / `inaccurate_count` / `pending_count`: Breakdown by aggregated label
+- `edited_count`: Answers with manual label overrides
+- `judge_alignment_range`: F1 score range of aligned judges (F1 ≥ 0.5)
+- `aligned_judges`: List of judges that met the alignment threshold
 
 ## Observability with Phoenix
 

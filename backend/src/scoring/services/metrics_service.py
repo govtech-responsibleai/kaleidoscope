@@ -25,9 +25,6 @@ from src.common.models.metrics import (
     JudgeAccuracyResponse,
     TargetSnapshotMetric,
     ConfusionMatrixResponse,
-    RubricJudgeAlignmentResponse,
-    RubricJudgeAccuracyResponse,
-    RubricSnapshotMetric,
 )
 
 logger = logging.getLogger(__name__)
@@ -478,11 +475,12 @@ class MetricsService:
         )
 
     def calculate_rubric_judge_alignment(
-        self, snapshot_id: int, judge_id: int, rubric_id: int
-    ) -> RubricJudgeAlignmentResponse:
+        self, snapshot_id: int, judge_id: int, rubric_id: int, best_option: str
+    ) -> JudgeAlignmentResponse:
         """
         Calculate how well a rubric judge agrees with human rubric labels on selected answers.
-        Returns accuracy (% exact match) and sample count.
+        Treats best_option as the positive class (True), all others as negative (False).
+        Returns f1, precision, recall, accuracy, and sample_count.
         """
         human_labels = RubricAnswerScoreRepository.get_human_labels_by_snapshot_selected(
             self.db, snapshot_id, rubric_id
@@ -497,25 +495,36 @@ class MetricsService:
         human_map = {label.answer_id: label.option_value for label in human_labels}
         judge_map = {score.answer_id: score.option_chosen for score in judge_scores}
 
-        matches = 0
-        total = 0
+        # Convert to binary: best_option → True, anything else → False
+        y_true = []
+        y_pred = []
         for answer_id in human_map:
             if answer_id in judge_map:
-                total += 1
-                if human_map[answer_id] == judge_map[answer_id]:
-                    matches += 1
+                y_true.append(human_map[answer_id] == best_option)
+                y_pred.append(judge_map[answer_id] == best_option)
 
-        if total == 0:
+        if not y_true:
             raise ValueError(f"No overlapping data for rubric alignment")
 
-        accuracy = matches / total
-        return RubricJudgeAlignmentResponse(accuracy=round(accuracy, 3), sample_count=total)
+        f1 = f1_score(y_true, y_pred, average="macro", pos_label=True, zero_division=0)
+        precision = precision_score(y_true, y_pred, average="binary", pos_label=True, zero_division=0)
+        recall = recall_score(y_true, y_pred, average="binary", pos_label=True, zero_division=0)
+        acc = accuracy_score(y_true, y_pred)
+
+        return JudgeAlignmentResponse(
+            f1=round(f1, 3),
+            precision=round(precision, 3),
+            recall=round(recall, 3),
+            accuracy=round(acc, 3),
+            sample_count=len(y_true),
+        )
 
     def calculate_rubric_judge_accuracy(
         self, snapshot_id: int, judge_id: int, rubric_id: int, best_option: str
-    ) -> RubricJudgeAccuracyResponse:
+    ) -> JudgeAccuracyResponse:
         """
         Calculate what % of answers this judge gave the best option for a rubric.
+        best_option is treated as "accurate" (positive label).
         """
         scores = RubricAnswerScoreRepository.get_by_snapshot_and_rubric_and_judge(
             self.db, snapshot_id, rubric_id, judge_id
@@ -525,23 +534,22 @@ class MetricsService:
             raise ValueError(f"No rubric scores for judge {judge_id}, rubric {rubric_id}, snapshot {snapshot_id}")
 
         total = len(scores)
-        best_count = sum(1 for s in scores if s.option_chosen == best_option)
-        score = best_count / total if total > 0 else 0.0
+        accurate_count = sum(1 for s in scores if s.option_chosen == best_option)
+        accuracy = accurate_count / total if total > 0 else 0.0
 
-        return RubricJudgeAccuracyResponse(
-            score=round(score, 3),
+        return JudgeAccuracyResponse(
+            accuracy=round(accuracy, 3),
             total_answers=total,
-            best_option_count=best_count,
-            best_option=best_option,
+            accurate_count=accurate_count,
         )
 
     def calculate_rubric_snapshot_metrics(
         self, target_id: int, snapshot_id: int
-    ) -> List[RubricSnapshotMetric]:
+    ) -> List[TargetSnapshotMetric]:
         """
         Calculate aggregated rubric metrics for a snapshot.
         For each rubric: determine reliable judges, aggregate via majority vote,
-        calculate % of answers getting best option.
+        calculate % of answers getting best option (treated as "accurate").
         """
         from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 
@@ -574,12 +582,12 @@ class MetricsService:
             if not judge_ids_with_scores:
                 continue
 
-            # Calculate reliability for each judge
+            # Calculate reliability for each judge (now using f1 via binary classification)
             reliability_map = {}
             for jid in judge_ids_with_scores:
                 try:
-                    alignment = self.calculate_rubric_judge_alignment(snapshot_id, jid, rubric.id)
-                    reliability_map[jid] = alignment.accuracy
+                    alignment = self.calculate_rubric_judge_alignment(snapshot_id, jid, rubric.id, best_option)
+                    reliability_map[jid] = alignment.f1
                 except ValueError:
                     reliability_map[jid] = 0.0
 
@@ -587,29 +595,26 @@ class MetricsService:
             aligned_judges = []
             range_min = None
             range_max = None
-            for jid, acc in reliability_map.items():
-                if acc >= 0.5:
+            for jid, f1_val in reliability_map.items():
+                if f1_val >= 0.5:
                     aligned_judges.append(AlignedJudge(
                         judge_id=jid,
                         name=judge_map.get(jid, "Unknown"),
-                        f1=round(acc, 3),
+                        f1=round(f1_val, 3),
                     ))
-                    if range_min is None or acc < range_min:
-                        range_min = acc
-                    if range_max is None or acc > range_max:
-                        range_max = acc
+                    if range_min is None or f1_val < range_min:
+                        range_min = f1_val
+                    if range_max is None or f1_val > range_max:
+                        range_max = f1_val
 
             judge_alignment_range = None
             if aligned_judges:
                 judge_alignment_range = {"min": range_min, "max": range_max}
 
-            # Aggregate: for each answer, get majority vote from judges
-            # Then count % getting best option
-            # Use reliable judges if available, otherwise fall back to all judges
+            # Aggregate: for each answer, get majority vote from reliable judges
             reliable_judge_ids = {j.judge_id for j in aligned_judges}
             scoring_judge_ids = reliable_judge_ids if reliable_judge_ids else judge_ids_with_scores
 
-            # Get all scores for this rubric+snapshot from scoring judges
             all_scores = (
                 self.db.query(RubricAnswerScore)
                 .join(Answer, RubricAnswerScore.answer_id == Answer.id)
@@ -627,22 +632,31 @@ class MetricsService:
                 answer_options.setdefault(score.answer_id, []).append(score.option_chosen)
 
             total_answers = len(answer_options)
-            best_count = 0
+            accurate_count = 0
+            inaccurate_count = 0
+            pending_count = 0
             for aid, options_list in answer_options.items():
                 counter = Counter(options_list)
-                majority = counter.most_common(1)[0][0]
-                if majority == best_option:
-                    best_count += 1
+                most_common = counter.most_common()
+                if len(most_common) > 1 and most_common[0][1] == most_common[1][1]:
+                    pending_count += 1  # tied vote
+                elif most_common[0][0] == best_option:
+                    accurate_count += 1
+                else:
+                    inaccurate_count += 1
 
-            agg_score = best_count / total_answers if total_answers > 0 else 0.0
+            agg_accuracy = accurate_count / total_answers if total_answers > 0 else 0.0
 
-            results.append(RubricSnapshotMetric(
+            results.append(TargetSnapshotMetric(
+                snapshot_id=snapshot_id,
                 rubric_id=rubric.id,
                 rubric_name=rubric.name,
-                aggregated_score=round(agg_score, 3),
+                aggregated_accuracy=round(agg_accuracy, 3),
                 total_answers=total_answers,
-                best_option=best_option,
-                best_option_count=best_count,
+                accurate_count=accurate_count,
+                inaccurate_count=inaccurate_count,
+                pending_count=pending_count,
+                edited_count=0,
                 aligned_judges=aligned_judges,
                 judge_alignment_range=judge_alignment_range,
             ))
@@ -667,16 +681,16 @@ def calculate_accuracy(
 
 
 def calculate_rubric_judge_alignment(
-    db: Session, snapshot_id: int, judge_id: int, rubric_id: int
-) -> RubricJudgeAlignmentResponse:
+    db: Session, snapshot_id: int, judge_id: int, rubric_id: int, best_option: str
+) -> JudgeAlignmentResponse:
     """Calculate rubric judge alignment (convenience function)."""
     service = MetricsService(db)
-    return service.calculate_rubric_judge_alignment(snapshot_id, judge_id, rubric_id)
+    return service.calculate_rubric_judge_alignment(snapshot_id, judge_id, rubric_id, best_option)
 
 
 def calculate_rubric_judge_accuracy(
     db: Session, snapshot_id: int, judge_id: int, rubric_id: int, best_option: str
-) -> RubricJudgeAccuracyResponse:
+) -> JudgeAccuracyResponse:
     """Calculate rubric judge accuracy (convenience function)."""
     service = MetricsService(db)
     return service.calculate_rubric_judge_accuracy(snapshot_id, judge_id, rubric_id, best_option)
