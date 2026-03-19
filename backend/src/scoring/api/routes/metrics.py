@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import SnapshotRepository, JudgeRepository, TargetRepository
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.models.metrics import (
     AggregatedResult,
     ConfusionMatrixResponse,
@@ -273,4 +274,122 @@ def get_confusion_matrix(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+
+@router.get(
+    "/snapshots/{snapshot_id}/judges/{judge_id}/rubrics/{rubric_id}/alignment",
+    response_model=JudgeAlignmentResponse,
+)
+def get_rubric_judge_alignment(
+    snapshot_id: int,
+    judge_id: int,
+    rubric_id: int,
+    db: Session = Depends(get_db),
+):
+    """Calculate rubric judge alignment with human labels on selected answers."""
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found",
+        )
+    judge = JudgeRepository.get_by_id(db, judge_id)
+    if not judge:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Judge {judge_id} not found",
+        )
+    rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not rubric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rubric {rubric_id} not found",
+        )
+    best_option = rubric.best_option
+    if not best_option:
+        options = rubric.options or []
+        best_option = options[0].get("option", "") if options and isinstance(options[0], dict) else str(options[0]) if options else ""
+    try:
+        service = MetricsService(db)
+        return service.calculate_rubric_judge_alignment(snapshot_id, judge_id, rubric_id, best_option)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.get(
+    "/snapshots/{snapshot_id}/judges/{judge_id}/rubrics/{rubric_id}/accuracy",
+    response_model=JudgeAccuracyResponse,
+)
+def get_rubric_judge_accuracy(
+    snapshot_id: int,
+    judge_id: int,
+    rubric_id: int,
+    db: Session = Depends(get_db),
+):
+    """Calculate rubric judge accuracy (% of answers getting the best option)."""
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found",
+        )
+    judge = JudgeRepository.get_by_id(db, judge_id)
+    if not judge:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Judge {judge_id} not found",
+        )
+    rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not rubric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rubric {rubric_id} not found",
+        )
+    best_option = rubric.best_option
+    if not best_option:
+        options = rubric.options or []
+        best_option = options[0].get("option", "") if options and isinstance(options[0], dict) else str(options[0]) if options else ""
+    try:
+        service = MetricsService(db)
+        return service.calculate_rubric_judge_accuracy(snapshot_id, judge_id, rubric_id, best_option)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.get(
+    "/targets/{target_id}/rubric-snapshot-metrics",
+    response_model=List[TargetSnapshotMetric],
+)
+def get_rubric_snapshot_metrics(
+    target_id: int,
+    snapshot_id: int = Query(...),
+    db: Session = Depends(get_db),
+):
+    """Get aggregated rubric metrics for a specific snapshot."""
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target {target_id} not found",
+        )
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found",
+        )
+    try:
+        service = MetricsService(db)
+        return service.calculate_rubric_snapshot_metrics(target_id, snapshot_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
         )

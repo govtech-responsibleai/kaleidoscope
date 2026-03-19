@@ -73,7 +73,8 @@ from src.common.models.judge import (
     JudgeUpdate,
     JudgeResponse,
     ClaimJudgmentResult,
-    ResponseJudgmentResult
+    ResponseJudgmentResult,
+    RubricJudgmentResult,
 )
 from src.common.models.answer_claim import (
     AnswerClaimResponse,
@@ -101,11 +102,19 @@ from src.common.models.qa_job import (
     QAJobPauseRequest,
     QAJobResponse,
     QAJobDetailResponse,
-    QAJobListResponse
+    QAJobListResponse,
+    RubricQAJobStart,
 )
+from src.common.models.rubric_answer_score import RubricAnswerScoreResponse
 from src.common.models.answer_label_override import (
     AnswerLabelOverrideCreate,
     AnswerLabelOverrideResponse
+)
+from src.common.models.target_rubric import (
+    RubricOption,
+    TargetRubricCreate,
+    TargetRubricUpdate,
+    TargetRubricResponse,
 )
 from src.common.models.web_search import (
     SearchQueryListOutput,
@@ -113,6 +122,7 @@ from src.common.models.web_search import (
     SearchResult,
     SearchResultsOutput
 )
+
 from src.common.models.metrics import (
     AggregationMethod,
     AggregatedAnswerScore,
@@ -190,6 +200,7 @@ __all__ = [
     "JudgeResponse",
     "ClaimJudgmentResult",
     "ResponseJudgmentResult",
+    "RubricJudgmentResult",
     # AnswerClaim
     "AnswerClaimResponse",
     "AnswerClaimListResponse",
@@ -214,6 +225,9 @@ __all__ = [
     "QAJobResponse",
     "QAJobDetailResponse",
     "QAJobListResponse",
+    "RubricQAJobStart",
+    # RubricAnswerScore
+    "RubricAnswerScoreResponse",
     # AnswerLabelOverride
     "AnswerLabelOverrideCreate",
     "AnswerLabelOverrideResponse",
@@ -231,4 +245,9 @@ __all__ = [
     "JudgeAccuracyResponse",
     "TargetSnapshotMetric",
     "ConfusionMatrixResponse",
+    # TargetRubric
+    "RubricOption",
+    "TargetRubricCreate",
+    "TargetRubricUpdate",
+    "TargetRubricResponse",
 ]

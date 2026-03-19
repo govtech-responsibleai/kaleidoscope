@@ -410,3 +410,35 @@ def get_approved_questions_without_scores(
         limit=limit
     )
     return questions
+
+
+@router.get("/snapshots/{snapshot_id}/questions/approved/without-rubric-scores", response_model=List[QuestionResponse])
+def get_approved_questions_without_rubric_scores(
+    snapshot_id: int,
+    judge_id: int,
+    rubric_id: int,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db)
+):
+    """
+    Get approved questions that have answers but no rubric scores
+    for this snapshot/judge/rubric combination.
+    """
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    questions = QuestionRepository.get_approved_questions_without_rubric_scores(
+        db,
+        target_id=snapshot.target_id,
+        snapshot_id=snapshot_id,
+        judge_id=judge_id,
+        rubric_id=rubric_id,
+        skip=skip,
+        limit=limit
+    )
+    return questions

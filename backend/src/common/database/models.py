@@ -5,9 +5,10 @@ SQLAlchemy ORM models for the database schema.
 from datetime import datetime
 from sqlalchemy import (
     Boolean, Column, Integer, String, Text, DateTime, ForeignKey,
-    Enum, Float, UniqueConstraint, JSON, func
+    Enum, Float, UniqueConstraint, JSON, func, Index
 )
 from sqlalchemy.orm import relationship
+from sqlalchemy.sql import text
 import enum
 
 from src.common.database.connection import Base
@@ -132,6 +133,7 @@ class Target(Base):
     kb_documents = relationship("KnowledgeBaseDocument", back_populates="target", cascade="all, delete-orphan")
     web_documents = relationship("WebDocument", back_populates="target", cascade="all, delete-orphan")
     snapshots = relationship("Snapshot", back_populates="target", cascade="all, delete-orphan")
+    custom_rubrics = relationship("TargetRubric", back_populates="target", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Target(id={self.id}, name='{self.name}', user_id={self.user_id})>"
@@ -259,6 +261,8 @@ class Answer(Base):
     question = relationship("Question", back_populates="answers")
     claims = relationship("AnswerClaim", back_populates="answer", cascade="all, delete-orphan")
     scores = relationship("AnswerScore", back_populates="answer", cascade="all, delete-orphan")
+    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="answer", cascade="all, delete-orphan")
+    rubric_annotations = relationship("RubricAnnotation", back_populates="answer", cascade="all, delete-orphan")
     annotation = relationship("Annotation", back_populates="answer", uselist=False, cascade="all, delete-orphan")
 
     # Unique constraint: one answer per question per snapshot
@@ -347,6 +351,7 @@ class QAJob(Base):
     question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
     judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=True, index=True)
     answer_id = Column(Integer, ForeignKey("answers.id", ondelete="SET NULL"), nullable=True, index=True)
+    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Fields
     type = Column(Enum(QAJobTypeEnum), nullable=False, index=True)
@@ -365,9 +370,12 @@ class QAJob(Base):
     answer = relationship("Answer", back_populates="qa_jobs")
     judge = relationship("Judge", back_populates="qa_jobs")
 
-    # Unique constraint: one job per (snapshot, question, judge) combination
+    # Partial unique indexes: accuracy jobs (rubric_id IS NULL) and rubric jobs (rubric_id IS NOT NULL)
     __table_args__ = (
-        UniqueConstraint('snapshot_id', 'question_id', 'judge_id', name='uix_snapshot_question_judge'),
+        Index('uix_accuracy_jobs', 'snapshot_id', 'question_id', 'judge_id',
+              unique=True, postgresql_where=text('rubric_id IS NULL')),
+        Index('uix_rubric_jobs', 'snapshot_id', 'question_id', 'judge_id', 'rubric_id',
+              unique=True, postgresql_where=text('rubric_id IS NOT NULL')),
     )
 
     def __repr__(self):
@@ -392,11 +400,13 @@ class Judge(Base):
     judge_type = Column(Enum(JudgeTypeEnum), nullable=False)
     is_baseline = Column(Boolean, default=False, nullable=False)
     is_editable = Column(Boolean, default=True, nullable=False)
+    category = Column(String, nullable=False, default="accuracy")
 
     # Relationships
     owner = relationship("User", back_populates="judges")
     qa_jobs = relationship("QAJob", back_populates="judge")
     answer_scores = relationship("AnswerScore", back_populates="judge")
+    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="judge")
 
 
 
@@ -507,3 +517,74 @@ class AnswerLabelOverride(Base):
 
     # Relationships
     answer = relationship("Answer")
+
+
+class TargetRubric(Base):
+    """Custom evaluation rubric for a target."""
+    __tablename__ = "target_rubrics"
+
+    id = Column(Integer, primary_key=True, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, index=True)
+    name = Column(String, nullable=False)
+    criteria = Column(Text, nullable=False, default="")
+    options = Column(JSON, nullable=False, default=list)
+    position = Column(Integer, nullable=False, default=0)
+    category = Column(String, nullable=False, default="default")  # "relevance" | "voice" | "default"
+    best_option = Column(String, nullable=True)  # user-specified positive option for scoring
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relationships
+    target = relationship("Target", back_populates="custom_rubrics")
+    rubric_annotations = relationship("RubricAnnotation", back_populates="rubric", cascade="all, delete-orphan")
+    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="rubric", cascade="all, delete-orphan")
+
+
+class RubricAnnotation(Base):
+    """Per-rubric human annotation for a single answer."""
+    __tablename__ = "rubric_annotations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
+    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="CASCADE"), nullable=False, index=True)
+    option_value = Column(String, nullable=False)  # The selected option text
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("answer_id", "rubric_id", name="uix_rubric_annotation"),
+    )
+
+    # Relationships
+    answer = relationship("Answer", back_populates="rubric_annotations")
+    rubric = relationship("TargetRubric", back_populates="rubric_annotations")
+
+    def __repr__(self):
+        return f"<RubricAnnotation(id={self.id}, answer_id={self.answer_id}, rubric_id={self.rubric_id})>"
+
+
+class RubricAnswerScore(Base):
+    """LLM judge score for a custom rubric on a single answer."""
+    __tablename__ = "rubric_answer_scores"
+
+    id = Column(Integer, primary_key=True, index=True)
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
+    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="CASCADE"), nullable=False, index=True)
+    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=False, index=True)
+    option_chosen = Column(String, nullable=False)
+    explanation = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("answer_id", "rubric_id", "judge_id", name="uix_answer_rubric_judge_score"),
+    )
+
+    # Relationships
+    answer = relationship("Answer", back_populates="rubric_answer_scores")
+    rubric = relationship("TargetRubric", back_populates="rubric_answer_scores")
+    judge = relationship("Judge", back_populates="rubric_answer_scores")
+
+    def __repr__(self):
+        return f"<RubricAnswerScore(id={self.id}, answer_id={self.answer_id}, rubric_id={self.rubric_id})>"

@@ -23,6 +23,7 @@ class JudgeCreate(BaseModel):
     judge_type: JudgeType = Field(..., description="Type of judging (claim_based or response_level)")
     is_baseline: bool = Field(default=False, description="Whether this is the baseline judge")
     is_editable: bool = Field(default=True, description="Whether this judge can be edited/deleted")
+    category: str = Field(default="default", description="Judge category: accuracy, relevance, voice, or default")
 
 
 class JudgeUpdate(BaseModel):
@@ -33,6 +34,7 @@ class JudgeUpdate(BaseModel):
     prompt_template: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
     judge_type: Optional[JudgeType] = None
+    category: Optional[str] = None
 
 
 class JudgeResponse(BaseModel):
@@ -46,6 +48,7 @@ class JudgeResponse(BaseModel):
     judge_type: JudgeType
     is_baseline: bool
     is_editable: bool
+    category: str = "default"
 
     class Config:
         from_attributes = True
@@ -61,3 +64,9 @@ class ResponseJudgmentResult(BaseModel):
     """Pydantic model for response-level judge response."""
     label: bool = Field(..., description="True if response is overall accurate, False if inaccurate")
     reasoning: str = Field(..., description="Detailed explanation of the judgment")
+
+
+class RubricJudgmentResult(BaseModel):
+    """Pydantic model for rubric-based judge response."""
+    chosen_option: str = Field(..., description="Exactly one option value from the rubric options list")
+    explanation: str = Field(..., description="1-2 sentence explanation of why this option was chosen")

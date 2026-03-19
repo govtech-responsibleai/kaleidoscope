@@ -11,6 +11,7 @@ from src.common.database.connection import Base
 from src.common.database.models import (
     Target, Job, Persona, Question, Answer, AnswerClaim, AnswerScore, AnswerClaimScore,
     Annotation, QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
+    TargetRubric, RubricAnnotation,
     StatusEnum, JobTypeEnum, JobStatusEnum, QAJobTypeEnum, QAJobStageEnum, JudgeTypeEnum,
     QuestionTypeEnum, QuestionScopeEnum
 )
@@ -94,7 +95,7 @@ def test_client(test_db_factory):
     from fastapi import FastAPI
     from src.common.config import get_settings
     from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
-    from src.scoring.api.routes import snapshots, metrics
+    from src.scoring.api.routes import snapshots, metrics, annotations, qa_jobs
     from src.common.database.connection import get_db
 
     settings = get_settings()
@@ -117,6 +118,8 @@ def test_client(test_db_factory):
     # Answers and metrics routers
     test_app.include_router(answers.router, prefix=f"{settings.api_prefix}/answers", tags=["Answers"])
     test_app.include_router(metrics.router, prefix=f"{settings.api_prefix}", tags=["Metrics"])
+    test_app.include_router(annotations.router, prefix=f"{settings.api_prefix}", tags=["Annotations"])
+    test_app.include_router(qa_jobs.router, prefix=f"{settings.api_prefix}", tags=["QA Jobs"])
 
     # Override database dependency to use test session factory
     def override_get_db():
@@ -741,3 +744,49 @@ def auth_client(test_db_factory, test_user):
     client = TestClient(test_app)
     yield client
     test_app.dependency_overrides.clear()
+
+
+# ============================================================================
+# Rubric Fixtures
+# ============================================================================
+
+@pytest.fixture
+def sample_rubric(test_db, sample_target):
+    """Create a valid rubric with 2 options and best_option set."""
+    rubric = TargetRubric(
+        target_id=sample_target.id,
+        name="Tone of Voice",
+        criteria="Evaluate the tone of the response",
+        options=[
+            {"option": "Professional", "description": "Formal and professional tone"},
+            {"option": "Casual", "description": "Informal and casual tone"},
+        ],
+        best_option="Professional",
+        category="voice",
+        position=0,
+    )
+    test_db.add(rubric)
+    test_db.commit()
+    test_db.refresh(rubric)
+    return rubric
+
+
+@pytest.fixture
+def sample_rubric_second(test_db, sample_target):
+    """Create a second rubric on the same target for multi-rubric tests."""
+    rubric = TargetRubric(
+        target_id=sample_target.id,
+        name="Response Relevance",
+        criteria="Is the response relevant to the question?",
+        options=[
+            {"option": "Relevant", "description": "Directly answers the question"},
+            {"option": "Irrelevant", "description": "Does not address the question"},
+        ],
+        best_option="Relevant",
+        category="default",
+        position=1,
+    )
+    test_db.add(rubric)
+    test_db.commit()
+    test_db.refresh(rubric)
+    return rubric

@@ -57,6 +57,8 @@ class TargetSnapshotMetric(BaseModel):
     snapshot_id: Optional[int] = None
     snapshot_name: Optional[str] = None
     created_at: Optional[str] = None
+    rubric_id: Optional[int] = None
+    rubric_name: Optional[str] = None
     aggregated_accuracy: float
     total_answers: int
     accurate_count: int
@@ -71,3 +73,5 @@ class ConfusionMatrixResponse(BaseModel):
     """Confusion matrix for inaccurate answers by question type and scope."""
     matrix: Dict[str, int]
     total_inaccurate: int
+
+

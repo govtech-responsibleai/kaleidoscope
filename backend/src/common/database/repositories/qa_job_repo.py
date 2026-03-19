@@ -74,13 +74,35 @@ class QAJobRepository:
         question_id: int,
         judge_id: int
     ) -> Optional[QAJob]:
-        """Get QA job for a specific snapshot, question, and judge combination."""
+        """Get accuracy QA job for a specific snapshot, question, and judge (rubric_id IS NULL)."""
         return (
             db.query(QAJob)
             .filter(
                 QAJob.snapshot_id == snapshot_id,
                 QAJob.question_id == question_id,
-                QAJob.judge_id == judge_id
+                QAJob.judge_id == judge_id,
+                QAJob.rubric_id.is_(None),
+            )
+            .order_by(QAJob.updated_at.desc())
+            .first()
+        )
+
+    @staticmethod
+    def get_by_snapshot_question_judge_rubric(
+        db: Session,
+        snapshot_id: int,
+        question_id: int,
+        judge_id: int,
+        rubric_id: int,
+    ) -> Optional[QAJob]:
+        """Get rubric QA job for a specific (snapshot, question, judge, rubric) combination."""
+        return (
+            db.query(QAJob)
+            .filter(
+                QAJob.snapshot_id == snapshot_id,
+                QAJob.question_id == question_id,
+                QAJob.judge_id == judge_id,
+                QAJob.rubric_id == rubric_id,
             )
             .order_by(QAJob.updated_at.desc())
             .first()

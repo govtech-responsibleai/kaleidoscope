@@ -4,6 +4,7 @@ API routes for Target management.
 
 import io
 import json
+import logging
 import zipfile
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -11,11 +12,14 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository
-from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse
+from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository, RubricAnswerScoreRepository
+from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse
 from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
 from src.common.services.export_service import ExportService, ExportFormat
+from src.common.services.rubric_classifier import classify_rubric
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -424,6 +428,93 @@ def export_snapshot(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
+
+
+@router.get("/{target_id}/rubrics", response_model=List[TargetRubricResponse])
+def list_rubrics(
+    target_id: int,
+    db: Session = Depends(get_db)
+):
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
+    return TargetRubricRepository.get_by_target(db, target_id)
+
+
+@router.post("/{target_id}/rubrics", response_model=TargetRubricResponse, status_code=status.HTTP_201_CREATED)
+def create_rubric(
+    target_id: int,
+    rubric: TargetRubricCreate,
+    db: Session = Depends(get_db)
+):
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
+    data = rubric.model_dump()
+    data["options"] = [o.model_dump() for o in rubric.options]
+    data["category"] = classify_rubric(rubric.name, rubric.criteria)
+    # Validate best_option consistency (completeness enforced at scoring time)
+    if data.get("best_option") and len(data["options"]) > 0:
+        option_names = [o["option"] for o in data["options"]]
+        if data["best_option"] not in option_names:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
+    return TargetRubricRepository.create(db, target_id, data)
+
+
+@router.put("/{target_id}/rubrics/{rubric_id}", response_model=TargetRubricResponse)
+def update_rubric(
+    target_id: int,
+    rubric_id: int,
+    rubric_update: TargetRubricUpdate,
+    db: Session = Depends(get_db)
+):
+    data = rubric_update.model_dump(exclude_unset=True)
+    if "options" in data and data["options"] is not None:
+        data["options"] = [o.model_dump() if hasattr(o, "model_dump") else o for o in data["options"]]
+    # Validate best_option consistency (don't block incremental edits — completeness is enforced at scoring time)
+    if "best_option" in data and data["best_option"] is not None:
+        existing = TargetRubricRepository.get_by_id(db, rubric_id)
+        if not existing:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+        merged_options = data.get("options", [o if isinstance(o, dict) else {"option": o.option, "description": o.description} for o in existing.options])
+        option_names = [o["option"] if isinstance(o, dict) else o.option for o in merged_options]
+        if data["best_option"] not in option_names:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
+    # Invalidate existing scores when options change (old option_chosen values become stale)
+    if "options" in data and data["options"] is not None:
+        existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+        if not existing_rubric:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+        old_options = {o.option if hasattr(o, "option") else o["option"] for o in existing_rubric.options}
+        new_options = {o["option"] for o in data["options"]}
+        if old_options != new_options:
+            deleted = RubricAnswerScoreRepository.delete_scores_and_jobs_by_rubric(db, rubric_id)
+            if deleted:
+                logger.info(f"Rubric {rubric_id} options changed — purged {deleted} stale scores and associated jobs")
+
+    if "name" in data or "criteria" in data:
+        # Need to fetch existing rubric to get current name/criteria for classification
+        existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+        if not existing_rubric:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+        name = data.get("name", existing_rubric.name)
+        criteria = data.get("criteria", existing_rubric.criteria)
+        data["category"] = classify_rubric(name, criteria)
+    rubric = TargetRubricRepository.update(db, rubric_id, data)
+    if not rubric:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+    return rubric
+
+
+@router.delete("/{target_id}/rubrics/{rubric_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_rubric(
+    target_id: int,
+    rubric_id: int,
+    db: Session = Depends(get_db)
+):
+    success = TargetRubricRepository.delete(db, rubric_id)
+    if not success:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
 
 
 @router.get("/{target_id}/export-all")
