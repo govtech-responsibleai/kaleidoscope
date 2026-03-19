@@ -39,7 +39,6 @@ import {
   QAJob,
   SnapshotMetric,
   TargetRubricResponse,
-  RubricSnapshotMetric,
 } from "@/lib/types";
 import {
   snapshotApi,
@@ -89,7 +88,7 @@ export default function ScoringPage() {
   const [snapshotMetric, setSnapshotMetric] = useState<SnapshotMetric | null>(null);
   const [snapshotMetricLoading, setSnapshotMetricLoading] = useState(false);
 
-  const [rubricMetrics, setRubricMetrics] = useState<RubricSnapshotMetric[]>([]);
+  const [rubricMetrics, setRubricMetrics] = useState<SnapshotMetric[]>([]);
   const [rubricMetricsLoading, setRubricMetricsLoading] = useState(false);
 
   // Incremented on label override to signal JudgeCards to refetch metrics
@@ -460,18 +459,13 @@ export default function ScoringPage() {
               {/* Accuracy judges section (collapsible) */}
               <EvaluatorSection
                 title="Accuracy Judges"
-                description="Judges that measure factual accuracy against your knowledge base."
-                judges={judges.filter((j) => j.category === "accuracy" || j.category === "common")}
+                description="Judges that detect hallucinations and verify claims are supported by the provided context."
+                judges={judges.filter((j) => j.category === "accuracy")}
                 snapshotId={selectedSnapshotId}
                 scrollContainerRef={judgeCardsRef}
                 questionsWithoutScores={questionsWithoutScores}
                 hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
-                getDisplayName={(j) => {
-                  if (j.is_baseline) return "Recommended Judge";
-                  const secondaryJudges = judges.filter((x) => (x.category === "accuracy" || x.category === "common") && !x.is_baseline && !x.is_editable);
-                  const idx = secondaryJudges.findIndex((x) => x.id === j.id);
-                  return `Secondary Judge ${idx + 1}`;
-                }}
+                getDisplayName={(j) => j.name}
                 onJobStart={handleJobStart}
                 onJobComplete={handleJobComplete}
                 onEditJudge={(j) => handleOpenDialog("edit", j)}
@@ -483,6 +477,7 @@ export default function ScoringPage() {
                 onAddJudge={() => handleOpenDialog("create")}
                 onScrollLeft={() => handleScrollJudgeCards("left")}
                 onScrollRight={() => handleScrollJudgeCards("right")}
+                labelOverrideCount={labelOverrideCount}
               />
 
               {/* Per-rubric judge sections */}
@@ -502,15 +497,11 @@ export default function ScoringPage() {
                     </Accordion>
                   );
                 }
-                // Sort: specialist (category-specific) judge first, then common judges
-                const sortedJudges = [...rJudges].sort((a, b) =>
-                  (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
-                );
                 return (
                   <RubricEvaluatorSection
                     key={rubric.id}
                     title={`${rubric.name} Judges`}
-                    judges={sortedJudges}
+                    judges={rJudges}
                     rubricCategory={rubric.category}
                     snapshotId={selectedSnapshotId}
                     rubricId={rubric.id}
@@ -600,22 +591,12 @@ function RubricEvaluatorSection({
           }}
         >
           {(() => {
-            let secondaryIdx = 0;
-            let recommendedAssigned = false;
             return judges.map((judge) => {
-              let name: string;
-              if (judge.category === rubricCategory && !recommendedAssigned) {
-                name = "Recommended Judge";
-                recommendedAssigned = true;
-              } else {
-                secondaryIdx++;
-                name = `Secondary Judge ${secondaryIdx}`;
-              }
               return (
                 <RubricJudgeCard
                   key={judge.id}
                   judge={judge}
-                  displayName={name}
+                  displayName={judge.name}
                   rubricCategory={rubricCategory}
                   snapshotId={snapshotId}
                   rubricId={rubricId}
@@ -656,13 +637,14 @@ interface EvaluatorSectionProps {
   onAddJudge: () => void;
   onScrollLeft: () => void;
   onScrollRight: () => void;
+  labelOverrideCount: number;
 }
 
 function EvaluatorSection({
   title, description, judges, snapshotId, scrollContainerRef,
   questionsWithoutScores, hasQuestionsWithoutAnswers, getDisplayName,
   onJobStart, onJobComplete, onEditJudge, onDuplicateJudge, onDeleteJudge,
-  onAddJudge, onScrollLeft, onScrollRight,
+  onAddJudge, onScrollLeft, onScrollRight, labelOverrideCount,
 }: EvaluatorSectionProps) {
   return (
     <Accordion defaultExpanded variant="outlined" disableGutters>
@@ -699,6 +681,7 @@ function EvaluatorSection({
           onEditJudge={onEditJudge}
           onDuplicateJudge={onDuplicateJudge}
           onDeleteJudge={onDeleteJudge}
+          labelOverrideCount={labelOverrideCount}
         />
       </AccordionDetails>
     </Accordion>
@@ -714,7 +697,7 @@ function RubricScoreGauge({
   loading,
 }: {
   rubric: TargetRubricResponse;
-  metric: RubricSnapshotMetric | null;
+  metric: SnapshotMetric | null;
   loading: boolean;
 }) {
   if (loading) {
@@ -754,9 +737,9 @@ function RubricScoreGauge({
       </Typography>
 
       <AccuracyGauge
-        value={metric.aggregated_score}
+        value={metric.aggregated_accuracy}
         size={300}
-        label={`% ${metric.best_option}`}
+        label={`% ${rubric.best_option || rubric.options?.[0]?.option || "best option"}`}
       />
 
       <Stack spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
@@ -780,7 +763,7 @@ function RubricScoreGauge({
         textAlign="center"
         sx={{ mt: 2, maxWidth: 350 }}
       >
-        Score shows the % of answers where reliable judges chose &ldquo;{metric.best_option}&rdquo; via majority vote.
+        Score shows the % of answers where reliable judges chose &ldquo;{rubric.best_option || rubric.options?.[0]?.option || "best option"}&rdquo; via majority vote.
       </Typography>
     </Box>
   );

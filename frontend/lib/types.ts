@@ -519,38 +519,19 @@ export interface SnapshotMetric {
   snapshot_id: number;
   snapshot_name: string;
   created_at: string;
+  rubric_id?: number | null;
+  rubric_name?: string | null;
   aggregated_accuracy: number;
   total_answers: number;
+  accurate_count: number;
+  inaccurate_count: number;
+  pending_count: number;
   edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
   aligned_judges: AlignedJudge[];
 }
 
 export type SnapshotMetricsResponse = SnapshotMetric[];
-
-// Rubric metrics types
-export interface RubricJudgeAlignment {
-  accuracy: number;
-  sample_count: number;
-}
-
-export interface RubricJudgeAccuracy {
-  score: number;
-  total_answers: number;
-  best_option_count: number;
-  best_option: string;
-}
-
-export interface RubricSnapshotMetric {
-  rubric_id: number;
-  rubric_name: string;
-  aggregated_score: number;
-  total_answers: number;
-  best_option: string;
-  best_option_count: number;
-  aligned_judges: AlignedJudge[];
-  judge_alignment_range: { min: number; max: number } | null;
-}
 
 export interface ConfusionMatrix {
   matrix: {
@@ -578,16 +559,18 @@ export interface QARecord {
 
 export type QAMap = Record<number, QARecord>;
 
-// Rubric annotation label types
-export interface AnswerRubricLabelUpsert {
+// Rubric annotation types
+export interface RubricAnnotationUpsert {
   option_value: string;
+  notes?: string;
 }
 
-export interface AnswerRubricLabel {
+export interface RubricAnnotation {
   id: number;
   answer_id: number;
   rubric_id: number;
   option_value: string;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 }

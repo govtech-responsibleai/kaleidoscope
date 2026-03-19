@@ -145,7 +145,7 @@ export default function ResultsTableExpandedRow({
   // Determine the best_option and recommended judge verdict for answer highlighting
   const bestOption = activeRubric?.best_option || activeRubric?.options?.[0]?.option || "";
   const recommendedJudge = useMemo(
-    () => rubricJudges.find((j) => j.category !== "common"),
+    () => rubricJudges[0] ?? null,
     [rubricJudges]
   );
   const recommendedScore = useMemo(
@@ -235,21 +235,10 @@ export default function ResultsTableExpandedRow({
                     rubricScores.length === 0 ? "No judge scores yet" : (
                       <Stack spacing={1}>
                         {(() => {
-                          const sorted = [...rubricJudges].sort((a, b) =>
-                            (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
-                          );
-                          let secondaryIdx = 0;
-                          let recommendedAssigned = false;
-                          return sorted.map((judge) => {
+                          return rubricJudges.map((judge) => {
                             const score = rubricScores.find((s) => s.judge_id === judge.id);
                             if (!score) return null;
-                            let displayName: string;
-                            if (judge.category !== "common" && !recommendedAssigned) {
-                              displayName = "Recommended Judge";
-                              recommendedAssigned = true;
-                            } else {
-                              displayName = `Secondary Judge ${++secondaryIdx}`;
-                            }
+                            const displayName = judge.name;
                             const isPositive = score.option_chosen === bestOption;
                             return (
                               <Box

@@ -12,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { InfoOutlined as InfoOutlinedIcon } from "@mui/icons-material";
-import { JudgeConfig, JobStatus, QAJob, RubricJudgeAlignment, RubricJudgeAccuracy } from "@/lib/types";
+import { JudgeConfig, JobStatus, QAJob, JudgeAlignment, JudgeAccuracy } from "@/lib/types";
 import { qaJobApi, metricsApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 
@@ -44,8 +44,8 @@ export default function RubricJudgeCard({
   const pollingRef = useRef<number | null>(null);
   const onJobCompleteRef = useRef(onJobComplete);
 
-  const [alignment, setAlignment] = useState<RubricJudgeAlignment | null>(null);
-  const [accuracy, setAccuracy] = useState<RubricJudgeAccuracy | null>(null);
+  const [alignment, setAlignment] = useState<JudgeAlignment | null>(null);
+  const [accuracy, setAccuracy] = useState<JudgeAccuracy | null>(null);
   const [loadingMetrics, setLoadingMetrics] = useState(false);
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export default function RubricJudgeCard({
     try {
       const [alignmentRes, accuracyRes] = await Promise.all([
         metricsApi.getRubricAlignment(snapshotId, judge.id, rubricId).catch(() => null),
-        metricsApi.getRubricAccuracy(snapshotId, judge.id, rubricId, bestOption).catch(() => null),
+        metricsApi.getRubricAccuracy(snapshotId, judge.id, rubricId).catch(() => null),
       ]);
       setAlignment(alignmentRes?.data ?? null);
       setAccuracy(accuracyRes?.data ?? null);
@@ -80,7 +80,7 @@ export default function RubricJudgeCard({
     } finally {
       setLoadingMetrics(false);
     }
-  }, [snapshotId, judge.id, rubricId, bestOption]);
+  }, [snapshotId, judge.id, rubricId]);
 
   const startPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -201,7 +201,7 @@ export default function RubricJudgeCard({
             </Typography>
             <Stack direction="row" spacing={0.5} alignItems="baseline">
               <Typography variant="h4" fontWeight={700} color={accuracy ? "primary.main" : "text.disabled"}>
-                {accuracy ? `${(accuracy.score * 100).toFixed(1)}%` : "--%"}
+                {accuracy ? `${(accuracy.accuracy * 100).toFixed(1)}%` : "--%"}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 {bestOption || "score"}
@@ -216,11 +216,11 @@ export default function RubricJudgeCard({
                 alignItems="center"
                 sx={{
                   mt: 1,
-                  color: alignment.accuracy >= 0.5 ? "success.main" : "error.main"
+                  color: alignment.f1 >= 0.5 ? "success.main" : "error.main"
                 }}
               >
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  {alignment.accuracy >= 0.5 ? "✓" : "✗"} {(alignment.accuracy * 100).toFixed(0)}% reliability
+                  {alignment.f1 >= 0.5 ? "✓" : "✗"} {(alignment.f1 * 100).toFixed(0)}% reliability
                 </Typography>
                 <Tooltip
                   title={`Measures how well this judge's choices match your rubric annotations (${alignment.sample_count} annotations). ≥50% is considered reliable.`}

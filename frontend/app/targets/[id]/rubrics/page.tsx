@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
+  Alert,
   Box,
   Typography,
   Card,
@@ -24,10 +25,11 @@ import {
 } from "@mui/icons-material";
 import { targetRubricApi } from "@/lib/api";
 import { TargetRubricResponse, RubricOption } from "@/lib/types";
+import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 
 const accuracyOptions = [
-  { option: "Accurate", description: "The response accurately reflects the source information." },
-  { option: "Inaccurate", description: "The response contains factual errors or omissions." },
+  { option: "Accurate", description: "All claims are supported by the provided context." },
+  { option: "Inaccurate", description: "One or more claims are not supported or hallucinated." },
 ];
 
 export default function RubricsPage() {
@@ -36,6 +38,8 @@ export default function RubricsPage() {
 
   const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
   const [loading, setLoading] = useState(true);
+  const [rubricToDelete, setRubricToDelete] = useState<TargetRubricResponse | null>(null);
+  const [touchedRubrics, setTouchedRubrics] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     targetRubricApi.list(targetId).then((res) => {
@@ -45,12 +49,20 @@ export default function RubricsPage() {
   }, [targetId]);
 
   const addRubric = async () => {
+    // Optimistic: show placeholder immediately, replace with real data after API responds
+    const tempId = -Date.now();
+    const placeholder: TargetRubricResponse = {
+      id: tempId, target_id: targetId, name: "", criteria: "",
+      options: [], best_option: null, position: 0, category: "custom",
+      created_at: "", updated_at: "",
+    };
+    setRubrics((prev) => [...prev, placeholder]);
     const res = await targetRubricApi.create(targetId, {
-      name: "New Rubric",
+      name: "",
       criteria: "",
       options: [],
     });
-    setRubrics((prev) => [...prev, res.data]);
+    setRubrics((prev) => prev.map((r) => (r.id === tempId ? res.data : r)));
   };
 
   const removeRubric = async (rubricId: number) => {
@@ -107,6 +119,24 @@ export default function RubricsPage() {
     setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
   };
 
+  const getRubricErrors = (rubric: TargetRubricResponse): string[] => {
+    const errors: string[] = [];
+    if (rubric.options.length < 2) errors.push("Add at least 2 options");
+    if (!rubric.best_option || !rubric.options.some((o) => o.option === rubric.best_option))
+      errors.push("Select an ideal outcome");
+    return errors;
+  };
+
+  const markTouched = (rubricId: number) => {
+    setTouchedRubrics((prev) => new Set(prev).add(rubricId));
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!rubricToDelete) return;
+    await targetRubricApi.delete(targetId, rubricToDelete.id);
+    setRubrics((prev) => prev.filter((r) => r.id !== rubricToDelete.id));
+  };
+
   return (
     <Box>
       <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
@@ -120,14 +150,13 @@ export default function RubricsPage() {
             <Typography variant="subtitle1" fontWeight={600} color="text.disabled">
               Accuracy
             </Typography>
-            <IconButton size="small" disabled>
-              <EditOutlinedIcon fontSize="small" />
-            </IconButton>
           </Box>
 
+          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+            Criteria
+          </Typography>
           <TextField
-            label="Criteria"
-            value="Is the response factually accurate based on the knowledge base?"
+            value="Are the claims in the response supported by the provided context, or do they contain hallucinations?"
             fullWidth
             disabled
             multiline
@@ -137,16 +166,32 @@ export default function RubricsPage() {
 
           <Divider sx={{ mb: 2 }} />
 
+          {/* Column headers */}
+          <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
+            <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
+                  <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
+                  <HelpOutlineIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                </Box>
+              </Tooltip>
+            </Box>
+            <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ width: 140, flexShrink: 0 }}>Label</Typography>
+            <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>Description</Typography>
+          </Box>
+
           {accuracyOptions.map(({ option, description }) => (
-            <Box key={option} sx={{ display: "flex", gap: 1.5, mb: 1.5 }}>
-              <TextField label="Option" value={option} disabled size="small" sx={{ width: 140, flexShrink: 0 }} />
-              <TextField label="Description" value={description} disabled size="small" fullWidth />
+            <Box key={option} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
+              <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                {option === "Accurate"
+                  ? <CheckCircleIcon sx={{ fontSize: 24, color: "success.main" }} />
+                  : <CheckCircleOutlineIcon sx={{ fontSize: 24, color: "text.disabled" }} />
+                }
+              </Box>
+              <TextField value={option} disabled size="small" sx={{ width: 140, flexShrink: 0 }} />
+              <TextField value={description} disabled size="small" fullWidth />
             </Box>
           ))}
-
-          <Button startIcon={<AddIcon />} disabled size="small" sx={{ mt: 0.5 }}>
-            Add Option
-          </Button>
         </CardContent>
       </Card>
 
@@ -159,26 +204,47 @@ export default function RubricsPage() {
         <CircularProgress size={24} />
       ) : (
         <>
-          {rubrics.map((rubric) => (
-            <Card key={rubric.id} variant="outlined" sx={{ mb: 2 }}>
+          {rubrics.map((rubric) => {
+            const errors = getRubricErrors(rubric);
+            const showErrors = touchedRubrics.has(rubric.id) && errors.length > 0;
+            return (
+            <Card
+              key={rubric.id}
+              variant="outlined"
+              sx={{ mb: 2, ...(showErrors && { borderColor: "error.main" }) }}
+              onBlur={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  markTouched(rubric.id);
+                }
+              }}
+            >
               <CardContent>
+                {showErrors && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    Incomplete rubric: {errors.join(" and ").toLowerCase()} to use in scoring.
+                  </Alert>
+                )}
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
                   <TextField
                     defaultValue={rubric.name}
+                    placeholder="Enter rubric name..."
                     variant="standard"
                     size="small"
                     onBlur={(e) => saveName(rubric, e.target.value)}
                     inputProps={{ style: { fontWeight: 600, fontSize: "1rem" } }}
                     sx={{ flexGrow: 1, mr: 1 }}
                   />
-                  <IconButton size="small" onClick={() => removeRubric(rubric.id)}>
+                  <IconButton size="small" onClick={() => setRubricToDelete(rubric)}>
                     <DeleteOutlineIcon fontSize="small" />
                   </IconButton>
                 </Box>
 
+                <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                  Criteria
+                </Typography>
                 <TextField
-                  label="Criteria"
                   defaultValue={rubric.criteria}
+                  placeholder="Describe your evaluation criteria"
                   fullWidth
                   multiline
                   size="small"
@@ -193,7 +259,7 @@ export default function RubricsPage() {
                   <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
                       <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
-                        <Typography variant="caption" fontWeight={600} color="text.secondary">Positive label</Typography>
+                        <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
                         <HelpOutlineIcon sx={{ fontSize: 14, color: "text.disabled" }} />
                       </Box>
                     </Tooltip>
@@ -245,13 +311,22 @@ export default function RubricsPage() {
                 </Button>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
 
           <Button variant="outlined" startIcon={<AddIcon />} onClick={addRubric} sx={{ mt: 1 }}>
             Add Rubric
           </Button>
         </>
       )}
+
+      <ConfirmDeleteDialog
+        open={rubricToDelete !== null}
+        onClose={() => setRubricToDelete(null)}
+        onConfirm={handleConfirmDelete}
+        title="Delete Rubric"
+        itemName={rubricToDelete?.name || "this rubric"}
+      />
     </Box>
   );
 }

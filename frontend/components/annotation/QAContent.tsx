@@ -127,9 +127,9 @@ export default function QAContent({
 
   const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
 
-  // For custom rubric tabs, only show the recommended (non-common) judge
+  // For custom rubric tabs, show the first (recommended) judge
   const recommendedJudge = React.useMemo(
-    () => rubricJudges.find((j) => j.category !== "common"),
+    () => rubricJudges[0] ?? null,
     [rubricJudges]
   );
   const recommendedScore = React.useMemo(

@@ -737,9 +737,9 @@ export default function QAJobControl({
       try {
         const resp = await judgeApi.getByCategory(rubric.category);
         const judges = resp.data;
-        // Only fire the first category-specific specialist judge (recommended), not the common judges.
+        // Fire the first (recommended) judge for this category.
         // Users can manually run additional judges from the scoring tab if desired.
-        const specialistJudges = judges.filter((j) => j.category !== "common").slice(0, 1);
+        const specialistJudges = judges.slice(0, 1);
         await Promise.allSettled(
           specialistJudges.map((judge) =>
             rubricQAJobApi.start(snapshotId, {

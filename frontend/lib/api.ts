@@ -52,12 +52,10 @@ import {
   TargetRubricCreate,
   TargetRubricUpdate,
   TargetRubricResponse,
-  AnswerRubricLabel,
-  AnswerRubricLabelUpsert,
+  RubricAnnotation,
+  RubricAnnotationUpsert,
   RubricAnswerScore,
-  RubricJudgeAlignment,
-  RubricJudgeAccuracy,
-  RubricSnapshotMetric,
+  SnapshotMetric,
 } from "./types";
 
 // API base URL - can be configured via environment variable
@@ -399,11 +397,11 @@ export const annotationApi = {
   getCompletionStatus: (snapshotId: number) =>
     api.get<AnnotationCompletionStatus>(`/snapshots/${snapshotId}/annotations/completion-status`),
 
-  getRubricLabels: (answerId: number) =>
-    api.get<AnswerRubricLabel[]>(`/answers/${answerId}/rubric-labels`),
+  getRubricAnnotations: (answerId: number) =>
+    api.get<RubricAnnotation[]>(`/answers/${answerId}/rubric-annotations`),
 
-  upsertRubricLabel: (answerId: number, rubricId: number, data: AnswerRubricLabelUpsert) =>
-    api.put<AnswerRubricLabel>(`/answers/${answerId}/rubric-labels/${rubricId}`, data),
+  upsertRubricAnnotation: (answerId: number, rubricId: number, data: RubricAnnotationUpsert) =>
+    api.put<RubricAnnotation>(`/answers/${answerId}/rubric-annotations/${rubricId}`, data),
 };
 
 // Judge endpoints
@@ -490,15 +488,13 @@ export const metricsApi = {
     }),
 
   getRubricAlignment: (snapshotId: number, judgeId: number, rubricId: number) =>
-    api.get<RubricJudgeAlignment>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/alignment`),
+    api.get<JudgeAlignment>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/alignment`),
 
-  getRubricAccuracy: (snapshotId: number, judgeId: number, rubricId: number, bestOption: string) =>
-    api.get<RubricJudgeAccuracy>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/accuracy`, {
-      params: { best_option: bestOption },
-    }),
+  getRubricAccuracy: (snapshotId: number, judgeId: number, rubricId: number) =>
+    api.get<JudgeAccuracy>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/accuracy`),
 
   getRubricSnapshotMetrics: (targetId: number, snapshotId: number) =>
-    api.get<RubricSnapshotMetric[]>(`/targets/${targetId}/rubric-snapshot-metrics`, {
+    api.get<SnapshotMetric[]>(`/targets/${targetId}/rubric-snapshot-metrics`, {
       params: { snapshot_id: snapshotId },
     }),
 };

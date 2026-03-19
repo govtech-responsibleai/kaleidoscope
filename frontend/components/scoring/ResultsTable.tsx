@@ -39,7 +39,7 @@ import {
   QuestionType,
   QuestionScope,
   TargetRubricResponse,
-  AnswerRubricLabel,
+  RubricAnnotation,
   RubricAnswerScore,
 } from "@/lib/types";
 import { questionApi, personaApi, metricsApi, annotationApi, rubricScoreApi, judgeApi } from "@/lib/api";
@@ -159,12 +159,12 @@ export default function ResultsTable({
       const answerIds = results.map((r) => r.answer_id);
       try {
         const responses = await Promise.all(
-          answerIds.map((id) => annotationApi.getRubricLabels(id).then((r) => ({ answerId: id, labels: r.data })))
+          answerIds.map((id) => annotationApi.getRubricAnnotations(id).then((r) => ({ answerId: id, labels: r.data })))
         );
         const map: Record<number, Record<number, string>> = {};
         responses.forEach(({ answerId, labels }) => {
           map[answerId] = {};
-          (labels as AnswerRubricLabel[]).forEach((l) => {
+          (labels as RubricAnnotation[]).forEach((l) => {
             map[answerId][l.rubric_id] = l.option_value;
           });
         });
@@ -426,7 +426,7 @@ export default function ResultsTable({
               {activeRubricId === null && (() => {
                 let secondaryIdx = 0;
                 return accuracyJudges.map((judge) => {
-                  const displayName = judge.is_baseline ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+                  const displayName = judge.name;
                   return (
                     <TableCell
                       key={judge.id}
@@ -439,19 +439,8 @@ export default function ResultsTable({
               })()}
               {/* Rubric judge columns (custom rubric tab): sorted recommended first */}
               {activeRubricId !== null && (() => {
-                const sorted = [...activeRubricJudges].sort((a, b) =>
-                  (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
-                );
-                let secondaryIdx = 0;
-                let recommendedAssigned = false;
-                return sorted.map((judge) => {
-                  let displayName: string;
-                  if (judge.category !== "common" && !recommendedAssigned) {
-                    displayName = "Recommended Judge";
-                    recommendedAssigned = true;
-                  } else {
-                    displayName = `Secondary Judge ${++secondaryIdx}`;
-                  }
+                return activeRubricJudges.map((judge) => {
+                  const displayName = judge.name;
                   return (
                     <TableCell
                       key={judge.id}
@@ -589,10 +578,7 @@ export default function ResultsTable({
                     {activeRubricId !== null && (() => {
                       const ar = rubrics.find((r) => r.id === activeRubricId);
                       const best = ar?.best_option || ar?.options?.[0]?.option || "";
-                      const sorted = [...activeRubricJudges].sort((a, b) =>
-                        (a.category === "common" ? 1 : 0) - (b.category === "common" ? 1 : 0)
-                      );
-                      return sorted.map((judge) => {
+                      return activeRubricJudges.map((judge) => {
                         const val = rubricJudgeLabels[judge.id];
                         const chipColor = !val ? undefined : val === best ? "success" as const : (ar && ar.options.length <= 2) ? "error" as const : "primary" as const;
                         return (

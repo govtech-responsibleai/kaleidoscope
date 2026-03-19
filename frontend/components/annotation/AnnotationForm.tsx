@@ -5,13 +5,14 @@ import {
   Alert,
   Box,
   CircularProgress,
+  Link,
   Stack,
   TextField,
   ToggleButton,
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import { Answer, Annotation, AnswerRubricLabel, TargetRubricResponse } from "@/lib/types";
+import { Answer, Annotation, RubricAnnotation, TargetRubricResponse } from "@/lib/types";
 import { annotationApi } from "@/lib/api";
 
 // Shared toggle styles
@@ -28,13 +29,64 @@ const toggleSx = {
   },
 };
 
+interface NoteFieldProps {
+  value: string;
+  onChange: (val: string) => void;
+  onBlur: (val: string) => void;
+  disabled?: boolean;
+}
+
+function NoteField({ value, onChange, onBlur, disabled }: NoteFieldProps) {
+  const [open, setOpen] = useState(false);
+  const hasContent = value.length > 0;
+
+  if (!open && !hasContent) {
+    return (
+      <Link
+        component="button"
+        variant="caption"
+        underline="hover"
+        color="text.secondary"
+        onClick={() => setOpen(true)}
+        sx={{ mt: 0.5, display: "inline-block" }}
+      >
+        + Add note
+      </Link>
+    );
+  }
+
+  return (
+    <TextField
+      autoFocus={!hasContent}
+      multiline
+      minRows={1}
+      maxRows={4}
+      fullWidth
+      size="small"
+      placeholder="Add a note..."
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={(e) => {
+        onBlur(e.target.value);
+        if (e.target.value.length === 0) setOpen(false);
+      }}
+      disabled={disabled}
+      sx={{ mt: 0.75, "& .MuiOutlinedInput-root": { borderRadius: 1.5 } }}
+    />
+  );
+}
+
 interface AccuracyRowProps {
   value: boolean | null;
   onChange: (val: boolean) => void;
   saving: boolean;
+  notes: string;
+  onNotesChange: (val: string) => void;
+  onNotesSave: (val: string) => void;
+  notesDisabled?: boolean;
 }
 
-function AccuracyRow({ value, onChange, saving }: AccuracyRowProps) {
+function AccuracyRow({ value, onChange, saving, notes, onNotesChange, onNotesSave, notesDisabled }: AccuracyRowProps) {
   return (
     <Box>
       <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
@@ -60,6 +112,7 @@ function AccuracyRow({ value, onChange, saving }: AccuracyRowProps) {
         <ToggleButton value="accurate" disabled={saving}>Accurate</ToggleButton>
         <ToggleButton value="inaccurate" disabled={saving}>Inaccurate</ToggleButton>
       </ToggleButtonGroup>
+      <NoteField value={notes} onChange={onNotesChange} onBlur={onNotesSave} disabled={notesDisabled} />
     </Box>
   );
 }
@@ -69,6 +122,9 @@ interface CustomRubricRowProps {
   value: string | null;
   onChange: (val: string) => void;
   saving: boolean;
+  notes: string;
+  onNotesChange: (val: string) => void;
+  onNotesSave: (val: string) => void;
 }
 
 function getOptionColor(opt: string, rubric: TargetRubricResponse): { main: string; dark: string } {
@@ -79,7 +135,7 @@ function getOptionColor(opt: string, rubric: TargetRubricResponse): { main: stri
   return { main: "primary.main", dark: "primary.dark" };
 }
 
-function CustomRubricRow({ rubric, value, onChange, saving }: CustomRubricRowProps) {
+function CustomRubricRow({ rubric, value, onChange, saving, notes, onNotesChange, onNotesSave }: CustomRubricRowProps) {
   return (
     <Box>
       <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.75 }}>
@@ -119,6 +175,7 @@ function CustomRubricRow({ rubric, value, onChange, saving }: CustomRubricRowPro
           })}
         </ToggleButtonGroup>
       )}
+      <NoteField value={notes} onChange={onNotesChange} onBlur={onNotesSave} />
     </Box>
   );
 }
@@ -142,8 +199,8 @@ export default function AnnotationForm({
   const [existingAnnotation, setExistingAnnotation] = useState<Annotation | null>(null);
   // Map rubricId → selected option string
   const [rubricLabels, setRubricLabels] = useState<Record<number, string>>({});
-  const [notes, setNotes] = useState("");
-  const [savingNotes, setSavingNotes] = useState(false);
+  const [accuracyNotes, setAccuracyNotes] = useState("");
+  const [rubricNotes, setRubricNotes] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(false);
   const [savingRubric, setSavingRubric] = useState<number | "accuracy" | null>(null);
 
@@ -152,7 +209,8 @@ export default function AnnotationForm({
       setAccuracyLabel(null);
       setExistingAnnotation(null);
       setRubricLabels({});
-      setNotes("");
+      setAccuracyNotes("");
+      setRubricNotes({});
       return;
     }
 
@@ -161,27 +219,31 @@ export default function AnnotationForm({
       try {
         const [annotationRes, rubricRes] = await Promise.allSettled([
           annotationApi.getByAnswer(answer.id),
-          annotationApi.getRubricLabels(answer.id),
+          annotationApi.getRubricAnnotations(answer.id),
         ]);
 
         if (annotationRes.status === "fulfilled") {
           setExistingAnnotation(annotationRes.value.data);
           setAccuracyLabel(annotationRes.value.data.label);
-          setNotes(annotationRes.value.data.notes ?? "");
+          setAccuracyNotes(annotationRes.value.data.notes ?? "");
         } else {
           setExistingAnnotation(null);
           setAccuracyLabel(null);
-          setNotes("");
+          setAccuracyNotes("");
         }
 
         if (rubricRes.status === "fulfilled") {
-          const map: Record<number, string> = {};
-          rubricRes.value.data.forEach((rl: AnswerRubricLabel) => {
-            map[rl.rubric_id] = rl.option_value;
+          const labelMap: Record<number, string> = {};
+          const notesMap: Record<number, string> = {};
+          rubricRes.value.data.forEach((rl: RubricAnnotation) => {
+            labelMap[rl.rubric_id] = rl.option_value;
+            notesMap[rl.rubric_id] = rl.notes ?? "";
           });
-          setRubricLabels(map);
+          setRubricLabels(labelMap);
+          setRubricNotes(notesMap);
         } else {
           setRubricLabels({});
+          setRubricNotes({});
         }
       } finally {
         setLoading(false);
@@ -210,17 +272,25 @@ export default function AnnotationForm({
     }
   };
 
-  const handleNotesSave = async (value: string) => {
+  const handleAccuracyNotesSave = async (value: string) => {
     if (!answer || !existingAnnotation) return;
     if (value === (existingAnnotation.notes ?? "")) return;
-    setSavingNotes(true);
     try {
       await annotationApi.update(existingAnnotation.id, { answer_id: answer.id, label: accuracyLabel!, notes: value });
       setExistingAnnotation((prev) => prev ? { ...prev, notes: value } : prev);
     } catch (err) {
-      console.error("Failed to save notes:", err);
-    } finally {
-      setSavingNotes(false);
+      console.error("Failed to save accuracy notes:", err);
+    }
+  };
+
+  const handleRubricNotesSave = async (rubricId: number, value: string) => {
+    if (!answer) return;
+    const currentOption = rubricLabels[rubricId];
+    if (!currentOption) return;
+    try {
+      await annotationApi.upsertRubricAnnotation(answer.id, rubricId, { option_value: currentOption, notes: value });
+    } catch (err) {
+      console.error("Failed to save rubric notes:", err);
     }
   };
 
@@ -229,7 +299,7 @@ export default function AnnotationForm({
     setRubricLabels((prev) => ({ ...prev, [rubricId]: optionValue }));
     setSavingRubric(rubricId);
     try {
-      await annotationApi.upsertRubricLabel(answer.id, rubricId, { option_value: optionValue });
+      await annotationApi.upsertRubricAnnotation(answer.id, rubricId, { option_value: optionValue });
     } catch (err) {
       console.error("Failed to save rubric label:", err);
     } finally {
@@ -288,41 +358,23 @@ export default function AnnotationForm({
               value={accuracyLabel}
               onChange={handleAccuracyChange}
               saving={savingRubric === "accuracy"}
+              notes={accuracyNotes}
+              onNotesChange={setAccuracyNotes}
+              onNotesSave={handleAccuracyNotesSave}
+              notesDisabled={!existingAnnotation}
             />
-            {rubrics.map((rubric) => (
+            {rubrics.filter((r) => r.options.length >= 2 && !!r.best_option).map((rubric) => (
               <CustomRubricRow
                 key={rubric.id}
                 rubric={rubric}
                 value={rubricLabels[rubric.id] ?? null}
                 onChange={(val) => handleRubricChange(rubric.id, val)}
                 saving={savingRubric === rubric.id}
+                notes={rubricNotes[rubric.id] ?? ""}
+                onNotesChange={(val) => setRubricNotes((prev) => ({ ...prev, [rubric.id]: val }))}
+                onNotesSave={(val) => handleRubricNotesSave(rubric.id, val)}
               />
             ))}
-
-            <Box>
-              <Typography variant="subtitle2" color="primary" sx={{ mb: 1 }}>
-                Notes
-              </Typography>
-              <TextField
-                multiline
-                minRows={3}
-                maxRows={6}
-                fullWidth
-                placeholder="Optional notes about your annotation"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                onBlur={(e) => handleNotesSave(e.target.value)}
-                disabled={!existingAnnotation || savingNotes}
-                helperText={!existingAnnotation ? "Set an accuracy label first to enable notes." : undefined}
-                sx={{
-                  "& .MuiOutlinedInput-root": {
-                    borderRadius: 2,
-                    borderColor: "primary.main",
-                    "& fieldset": { borderColor: "primary.main", borderWidth: 2 },
-                  },
-                }}
-              />
-            </Box>
           </Stack>
         )}
       </Stack>

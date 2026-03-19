@@ -102,8 +102,6 @@ function MultiJudgeTooltipContent({
 
   // Sort: baseline (recommended) first, then secondary
   const sorted = [...agreement.scores].sort((a, b) => Number(b.judge.is_baseline) - Number(a.judge.is_baseline));
-  let secondaryIdx = 0;
-
   return (
     <Stack spacing={1}>
       {agreement.status === "disagree" && (
@@ -115,7 +113,7 @@ function MultiJudgeTooltipContent({
         </Stack>
       )}
       {sorted.map(({ judge, score }) => {
-        const displayName = judge.is_baseline ? "Recommended Judge" : `Secondary Judge ${++secondaryIdx}`;
+        const displayName = judge.name;
         return (
           <Box
             key={judge.id}
