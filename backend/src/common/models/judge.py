@@ -23,7 +23,7 @@ class JudgeCreate(BaseModel):
     judge_type: JudgeType = Field(..., description="Type of judging (claim_based or response_level)")
     is_baseline: bool = Field(default=False, description="Whether this is the baseline judge")
     is_editable: bool = Field(default=True, description="Whether this judge can be edited/deleted")
-    category: str = Field(default="default", description="Judge category: relevance, voice, default, or common")
+    category: str = Field(default="default", description="Judge category: accuracy, relevance, voice, or default")
 
 
 class JudgeUpdate(BaseModel):

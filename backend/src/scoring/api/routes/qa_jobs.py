@@ -256,6 +256,16 @@ async def start_rubric_qa_jobs(
     if not rubric:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {request.rubric_id} not found")
 
+    # Validate rubric completeness before starting scoring
+    rubric_options = rubric.options if rubric.options else []
+    if len(rubric_options) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric must have at least 2 options to run scoring")
+    if not rubric.best_option:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric must have a best_option selected to run scoring")
+    option_names = [o.option if hasattr(o, "option") else o["option"] for o in rubric_options]
+    if rubric.best_option not in option_names:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric best_option does not match any option")
+
     try:
         jobs = get_or_create_qajobs_batch(
             db=db,

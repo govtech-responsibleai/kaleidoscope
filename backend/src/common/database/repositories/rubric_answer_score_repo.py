@@ -5,7 +5,7 @@ Repository for RubricAnswerScore database operations.
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from src.common.database.models import RubricAnswerScore
+from src.common.database.models import RubricAnswerScore, QAJob
 
 
 class RubricAnswerScoreRepository:
@@ -112,3 +112,26 @@ class RubricAnswerScoreRepository:
             )
             .all()
         )
+
+    @staticmethod
+    def delete_scores_and_jobs_by_rubric(db: Session, rubric_id: int) -> int:
+        """Delete all judge scores and QA jobs for a rubric.
+
+        Called when rubric options change so stale option_chosen values
+        don't linger in the database.
+
+        Args:
+            db: Database session
+            rubric_id: The rubric whose scores/jobs should be purged
+
+        Returns:
+            Number of scores deleted
+        """
+        score_count = (
+            db.query(RubricAnswerScore)
+            .filter(RubricAnswerScore.rubric_id == rubric_id)
+            .delete()
+        )
+        db.query(QAJob).filter(QAJob.rubric_id == rubric_id).delete()
+        db.commit()
+        return score_count

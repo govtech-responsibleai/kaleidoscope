@@ -5,7 +5,7 @@ Repository for Annotation database operations.
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from src.common.database.models import Annotation, Answer
+from src.common.database.models import Annotation, Answer, Snapshot, TargetRubric, RubricAnnotation
 
 
 class AnnotationRepository:
@@ -79,7 +79,7 @@ class AnnotationRepository:
     @staticmethod
     def check_annotation_completion(db: Session, snapshot_id: int) -> dict:
         """
-        Check if all selected answers have been annotated.
+        Check if all selected answers have been annotated (accuracy + all rubrics).
 
         Args:
             db: Database session
@@ -105,7 +105,7 @@ class AnnotationRepository:
         )
         selected_ids = [row[0] for row in selected_rows]
 
-        # Get question IDs of selected answers that have annotations
+        # Get question IDs of selected answers that have accuracy annotations
         annotated_rows = (
             db.query(Answer.question_id)
             .join(Annotation)
@@ -117,8 +117,46 @@ class AnnotationRepository:
         )
         selected_and_annotated_ids = [row[0] for row in annotated_rows]
 
-        # Calculate completion status
-        is_complete = len(selected_ids) > 0 and len(selected_ids) == len(selected_and_annotated_ids)
+        accuracy_complete = len(selected_ids) > 0 and len(selected_ids) == len(selected_and_annotated_ids)
+
+        # Check rubric annotations: every selected answer must have a
+        # RubricAnnotation for each rubric belonging to this target.
+        rubrics_complete = True
+        target_id = (
+            db.query(Snapshot.target_id)
+            .filter(Snapshot.id == snapshot_id)
+            .scalar()
+        )
+        if target_id and selected_ids:
+            rubric_ids = [
+                r[0] for r in
+                db.query(TargetRubric.id)
+                .filter(TargetRubric.target_id == target_id)
+                .all()
+            ]
+            if rubric_ids:
+                # Get answer IDs for selected answers
+                selected_answer_ids = [
+                    r[0] for r in
+                    db.query(Answer.id)
+                    .filter(
+                        Answer.snapshot_id == snapshot_id,
+                        Answer.is_selected_for_annotation == True,
+                    )
+                    .all()
+                ]
+                expected = len(selected_answer_ids) * len(rubric_ids)
+                actual = (
+                    db.query(RubricAnnotation)
+                    .filter(
+                        RubricAnnotation.answer_id.in_(selected_answer_ids),
+                        RubricAnnotation.rubric_id.in_(rubric_ids),
+                    )
+                    .count()
+                )
+                rubrics_complete = actual >= expected
+
+        is_complete = accuracy_complete and rubrics_complete
         completion_percentage = (
             (len(selected_and_annotated_ids) / len(selected_ids) * 100)
             if len(selected_ids) > 0

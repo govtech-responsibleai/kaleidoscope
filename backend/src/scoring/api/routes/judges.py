@@ -100,8 +100,8 @@ def list_judges_by_category(
     """
     Get judges for a specific rubric category.
 
-    Returns judges whose category matches the given value OR whose category is 'common'.
-    This gives exactly the 3 evaluators for a custom rubric (1 specialist + 2 common).
+    Returns judges whose category exactly matches the given value.
+    Each category has 3 dedicated judges seeded at startup.
     """
     judges = JudgeRepository.get_by_category(db, category)
     return judges

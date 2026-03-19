@@ -57,10 +57,10 @@ class JudgeRepository:
 
     @staticmethod
     def get_by_category(db: Session, category: str) -> List[Judge]:
-        """Get judges that match a given category or are 'common' judges."""
+        """Get judges that match a given category."""
         return (
             db.query(Judge)
-            .filter(Judge.category.in_([category, "common"]))
+            .filter(Judge.category == category)
             .all()
         )
 
