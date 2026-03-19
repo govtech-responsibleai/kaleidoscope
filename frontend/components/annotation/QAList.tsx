@@ -16,7 +16,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse } from "@/lib/types";
+import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse, TargetRubricResponse } from "@/lib/types";
 import { answerApi, questionApi, personaApi } from "@/lib/api";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
@@ -30,8 +30,12 @@ interface QAListProps {
   qaJobs: QAJob[];
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
+  rubrics: TargetRubricResponse[];
+  rubricPendingQuestions?: Set<number>;
   initialQuestionId?: number | null;
 }
+
+const EMPTY_SET = new Set<number>();
 
 export default function QAList({
   targetId,
@@ -39,6 +43,8 @@ export default function QAList({
   qaJobs,
   qaMap,
   setQaMap,
+  rubrics,
+  rubricPendingQuestions = EMPTY_SET,
   initialQuestionId,
 }: QAListProps) {
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
@@ -487,6 +493,7 @@ export default function QAList({
                     question={question}
                     answer={answer}
                     job={jobByQuestionId[question.id] ?? null}
+                    rubricJobsComplete={!rubricPendingQuestions.has(question.id)}
                     isActive={question.id === activeQuestionId}
                     isChecked={answer ? draftSelections.has(answer.id) : false}
                     onToggleSelection={() =>
@@ -517,6 +524,7 @@ export default function QAList({
           onNext={handleNext}
           prevDisabled={prevDisabled}
           nextDisabled={nextDisabled}
+          rubrics={rubrics}
         />
       </Paper>
 
@@ -530,6 +538,7 @@ export default function QAList({
           onAnnotationSaved={handleAnnotationSaved}
           showHelperAlert={showHelperAlert}
           onDismissHelperAlert={() => setHelperAlertDismissed(true)}
+          rubrics={rubrics}
         />
       </Box>
     </Box>

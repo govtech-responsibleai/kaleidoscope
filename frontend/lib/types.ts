@@ -285,6 +285,7 @@ export interface QAJob {
   question_id: number;
   answer_id: number | null;
   judge_id: number;
+  rubric_id: number | null;
   type: string;
   status: JobStatus;
   stage: QAJobStageEnum;
@@ -413,8 +414,19 @@ export interface JudgeConfig {
   is_editable: boolean;
   params: Record<string, any>;
   prompt_template?: string;
+  category: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface RubricAnswerScore {
+  id: number;
+  answer_id: number;
+  rubric_id: number;
+  judge_id: number;
+  option_chosen: string;
+  explanation: string;
+  created_at: string;
 }
 
 export interface JudgeCreate {
@@ -507,8 +519,13 @@ export interface SnapshotMetric {
   snapshot_id: number;
   snapshot_name: string;
   created_at: string;
+  rubric_id?: number | null;
+  rubric_name?: string | null;
   aggregated_accuracy: number;
   total_answers: number;
+  accurate_count: number;
+  inaccurate_count: number;
+  pending_count: number;
   edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
   aligned_judges: AlignedJudge[];
@@ -541,6 +558,57 @@ export interface QARecord {
 }
 
 export type QAMap = Record<number, QARecord>;
+
+// Rubric annotation types
+export interface RubricAnnotationUpsert {
+  option_value: string;
+  notes?: string;
+}
+
+export interface RubricAnnotation {
+  id: number;
+  answer_id: number;
+  rubric_id: number;
+  option_value: string;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Rubric types
+export interface RubricOption {
+  option: string;
+  description: string;
+}
+
+export interface TargetRubricCreate {
+  name: string;
+  criteria: string;
+  options: RubricOption[];
+  best_option?: string | null;
+}
+
+export interface TargetRubricUpdate {
+  name?: string;
+  criteria?: string;
+  options?: RubricOption[];
+  best_option?: string | null;
+}
+
+export type RubricCategory = "accuracy" | "voice" | "relevancy" | "default";
+
+export interface TargetRubricResponse {
+  id: number;
+  target_id: number;
+  name: string;
+  criteria: string;
+  options: RubricOption[];
+  best_option: string | null;
+  position: number;
+  category: RubricCategory;
+  created_at: string;
+  updated_at: string;
+}
 
 // Admin / User Management types
 export interface UserResponse {

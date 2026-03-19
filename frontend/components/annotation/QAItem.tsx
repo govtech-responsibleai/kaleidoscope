@@ -24,13 +24,14 @@ interface QAItemProps {
   question: QuestionResponse;
   answer: Answer | null;
   job: QAJob | null;
+  rubricJobsComplete?: boolean;
   isActive: boolean;
   isChecked: boolean;
   onToggleSelection: () => void;
   onSelect: () => void;
 }
 
-const getStageLabel = (job: QAJob | null): string => {
+const getStageLabel = (job: QAJob | null, rubricJobsComplete = true): string => {
   if (!job) {
     return "Not Started";
   }
@@ -51,6 +52,9 @@ const getStageLabel = (job: QAJob | null): string => {
   }
 
   if (job.status === JobStatus.COMPLETED) {
+    if (!rubricJobsComplete) {
+      return "Scoring metrics";
+    }
     return "Completed";
   }
 
@@ -65,9 +69,13 @@ const getStageLabel = (job: QAJob | null): string => {
   return "Pending";
 };
 
-const getStageColor = (job: QAJob | null): "default" | "warning" | "success" | "error" | "info" => {
+const getStageColor = (job: QAJob | null, rubricJobsComplete = true): "default" | "warning" | "success" | "error" | "info" => {
   if (!job) {
     return "default";
+  }
+
+  if (job.status === JobStatus.COMPLETED && !rubricJobsComplete) {
+    return "warning";
   }
 
   switch (job.status) {
@@ -93,6 +101,7 @@ export default function QAItem({
   question,
   answer,
   job,
+  rubricJobsComplete = true,
   isActive,
   isChecked,
   onToggleSelection,
@@ -140,16 +149,16 @@ export default function QAItem({
                   <Tooltip title={job.error_message}>
                     <Chip
                       size="small"
-                      label={getStageLabel(job)}
-                      color={getStageColor(job)}
+                      label={getStageLabel(job, rubricJobsComplete)}
+                      color={getStageColor(job, rubricJobsComplete)}
                       variant="outlined"
                     />
                   </Tooltip>
                 ) : (
                   <Chip
                     size="small"
-                    label={getStageLabel(job)}
-                    color={getStageColor(job)}
+                    label={getStageLabel(job, rubricJobsComplete)}
+                    color={getStageColor(job, rubricJobsComplete)}
                     variant="outlined"
                   />
                 )}

@@ -15,9 +15,12 @@ The platform automates the creation of diverse evaluation questions across user 
 - **Snapshot Management**: Version control for chatbot iterations to track improvements over time
 - **Answer Generation & Annotation**: Automated collection of chatbot responses with claim-based evaluation
 - **Judge-Assisted Labeling**: Claim highlighting with explanations to assist human annotation
-- **Multi-Judge Scoring**: Run multiple judge configurations to compare evaluation approaches
-- **Judge Alignment Metrics**: F1 score, precision, recall comparing judge vs. human annotations
-- **Results Export**: Export evaluation results to CSV for analysis and reporting
+- **Custom Rubric Evaluation**: Define custom evaluation criteria (relevance, tone, etc.) with configurable options per target
+- **Rubric Annotation**: Human annotation for custom rubrics alongside accuracy labeling
+- **Multi-Judge Scoring**: Run multiple judge configurations for accuracy and rubric evaluation with category-based judge assignment
+- **Judge Alignment Metrics**: F1 score, precision, recall comparing judge vs. human annotations (for both accuracy and rubric judges)
+- **Label Overrides**: Manually correct aggregated accuracy labels when judge consensus is wrong
+- **Results Export**: Export evaluation results to CSV or ZIP (with evaluator JSON) for analysis and reporting
 - **Real-time Job Polling**: Automatic polling for generation, annotation, and scoring jobs with status updates
 
 ## Tech Stack
@@ -127,7 +130,8 @@ kaleidoscope-frontend/
 │   │   └── AnnotationForm.tsx   # Manual annotation form
 │   ├── scoring/                 # Scoring page components
 │   │   ├── JudgeCards.tsx       # Horizontal scrollable judge list
-│   │   ├── JudgeCard.tsx        # Individual judge card with metrics
+│   │   ├── JudgeCard.tsx        # Individual judge card with metrics (accuracy)
+│   │   ├── RubricJudgeCard.tsx  # Judge card for custom rubric evaluation
 │   │   ├── CreateJudgeDialog.tsx # Create/edit/duplicate judge modal
 │   │   └── ResultsTable.tsx     # Aggregated results table with export
 │   └── shared/                  # Shared components
@@ -258,6 +262,7 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
     - **Hover Explanations**: Tooltip shows judge's reasoning for each claim
     - **Judge's Overall Label**: Aggregated assessment (Accurate/Inaccurate)
   - User makes independent annotation decision (Yes/No)
+  - **Rubric Annotation**: If custom rubrics are defined, annotate each rubric by selecting from its options
   - Submit all annotations when complete
 
 - **Job Controls**:
@@ -270,34 +275,37 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
 ### **Phase 3: Scoring**
 
 #### 8. Scoring Page
-- **Judge Management**:
-  - View all judges as cards (Baseline + custom judges)
+- **Accuracy Judges**:
+  - View all accuracy judges as cards (Baseline + custom judges)
   - Each judge card shows:
-    - Judge name and configuration
-    - Model and temperature settings
-    - Run status and metrics
+    - Judge name, model, and temperature settings
+    - Run status with real-time progress
+    - Two key metrics after completion:
+      1. **Judge Reliability (F1 Score)**: Compares judge vs. human annotations on selected subset
+      2. **Accuracy**: Percentage of accurate responses across all N answers
   - Create new judge with custom configuration
   - Duplicate and modify existing judges
   - Delete custom judges (baseline cannot be deleted)
 
-- **Run Additional Judges**:
-  - Click "Run" on Judge 2 and Judge 3
-  - System evaluates all N responses
-  - Real-time progress indicators per judge
-  - Calculates two key metrics:
-    1. **Judge Reliability (F1 Score)**: Compares judge vs. human annotations on selected subset
-    2. **Accuracy**: Percentage of accurate responses across all N answers
+- **Custom Rubric Judges**:
+  - For each custom rubric defined on the target, a collapsible section shows assigned judges
+  - Judges are assigned by category (e.g., `relevance` rubric shows relevance judges + common judges)
+  - Each rubric judge card shows:
+    - Accuracy (% of answers where the judge chose the best option)
+    - Reliability (F1 score comparing judge vs. human rubric annotations)
+  - Rubric score gauge shows aggregated performance across reliable judges via majority vote
 
 - **Results Table**:
   - View all N Q&A pairs with scores
-  - Columns: Question, Answer, Aggregated Accuracy (majority vote from all judges)
+  - Columns: Question, Answer, Aggregated Accuracy (majority vote from reliable judges)
   - Hover over accuracy label to see judge breakdown
+  - Manual label overrides for correcting judge consensus
   - Filter for disagreements between judges
   - Sort by various fields
 
 - **Export Results**:
   - Export to CSV for external analysis (calls `GET /targets/snapshots/:snapshotId/export`)
-  - Backend also supports `?include_evaluators=true` to download a ZIP with the CSV plus judge-level JSON for deeper analysis (used by internal tooling)
+  - Pass `?include_evaluators=true` to download a ZIP with the CSV plus judge-level JSON for deeper analysis
 
 ## API Integration
 
@@ -377,28 +385,51 @@ The frontend integrates with the Kaleidoscope backend API:
 - `PUT /annotations/:id` - Update annotation
 - `DELETE /annotations/:id` - Delete annotation
 
+### Custom Rubric Endpoints
+- `GET /targets/:id/rubrics` - List all rubrics for target
+- `POST /targets/:id/rubrics` - Create a rubric
+- `PUT /targets/:id/rubrics/:rubricId` - Update a rubric
+- `DELETE /targets/:id/rubrics/:rubricId` - Delete a rubric
+
 ### Judge Endpoints
 - `POST /judges/seed` - Seed default judges
 - `GET /judges` - List all judges
 - `POST /judges` - Create custom judge
 - `GET /judges/baseline` - Get baseline judge
 - `GET /judges/available-models` - Get available models
+- `GET /judges/by-category/:category` - Get judges for a rubric category
 - `GET /judges/:id` - Get judge details
 - `PUT /judges/:id` - Update judge configuration (if editable)
 - `DELETE /judges/:id` - Delete judge (if editable)
 
 ### QA Job Endpoints
-- `POST /snapshots/:id/qa-jobs/start` - Start QA job (answer generation + baseline scoring)
+- `POST /snapshots/:id/qa-jobs/start` - Start accuracy QA jobs
+- `POST /snapshots/:id/rubric-qa-jobs/start` - Start rubric evaluation jobs
 - `POST /qa-jobs/pause` - Pause running QA jobs
 - `GET /snapshots/:id/qa-jobs` - List QA jobs for snapshot
 - `GET /qa-jobs/:id` - Get QA job details and status
 
+### Annotation Endpoints
+- `POST /annotations` - Create annotation
+- `POST /annotations/bulk` - Bulk create annotations
+- `GET /snapshots/:id/annotations` - List annotations for snapshot
+- `GET /snapshots/:id/annotations/completion-status` - Check annotation completion status
+- `GET /answers/:id/annotations` - Get annotation for specific answer
+- `GET /annotations/:id` - Get annotation by ID
+- `PUT /annotations/:id` - Update annotation
+- `DELETE /annotations/:id` - Delete annotation
+- `GET /answers/:id/rubric-annotations` - Get rubric annotations for an answer
+- `PUT /answers/:id/rubric-annotations/:rubricId` - Upsert a rubric annotation
+
 ### Metrics & Export Endpoints
 - `GET /snapshots/:id/judges/:judgeId/alignment` - Get judge alignment metrics (F1, precision, recall, accuracy)
 - `GET /snapshots/:id/judges/:judgeId/accuracy` - Get judge accuracy on all responses
+- `GET /snapshots/:id/judges/:judgeId/rubrics/:rubricId/alignment` - Rubric judge alignment (F1)
+- `GET /snapshots/:id/judges/:judgeId/rubrics/:rubricId/accuracy` - Rubric judge accuracy
 - `GET /snapshots/:id/results` - Get aggregated results with judge breakdown
 - `GET /targets/snapshots/:id/export` - Export snapshot results (CSV by default; pass `?include_evaluators=true` to receive a ZIP with CSV + judge JSON)
 - `GET /targets/:id/snapshot-metrics` - Get aggregated metrics for all snapshots of a target
+- `GET /targets/:id/rubric-snapshot-metrics?snapshot_id=:id` - Get aggregated rubric metrics for a snapshot
 
 ## Configuration
 
@@ -437,13 +468,13 @@ The application uses real-time job polling for long-running operations (configur
 
 ### Answer Scoring
 
-All accuracy scores are **real values** calculated by LLM judges:
-- **Claim-level scoring**: Each claim evaluated against knowledge base
-- **Response-level scoring**: Aggregated from claim scores using majority vote or threshold
-- **Judge metrics**: F1 score, precision, recall calculated from human annotations
+All scores are **real values** calculated by LLM judges:
+- **Claim-level scoring**: Each claim evaluated against knowledge base (accuracy judges)
+- **Response-level scoring**: Holistic answer evaluation in a single LLM call
+- **Rubric scoring**: Answer evaluated against custom criteria, judge selects from defined options
+- **Judge metrics**: F1 score, precision, recall calculated from human annotations (for both accuracy and rubric judges)
 - **Target accuracy**: Percentage of accurate responses across full evaluation set
-
-No mock data is used for scoring in the current implementation.
+- **Rubric scores**: Percentage of answers where judges chose the best option, aggregated via majority vote from reliable judges
 
 ### Document Upload
 
@@ -476,9 +507,11 @@ The Overview page provides comprehensive performance tracking across snapshot it
 
 **Metrics Calculation:**
 - `aggregated_accuracy`: Percentage of accurate responses based on majority vote from judges with F1 ≥ 0.5
+- `accurate_count` / `inaccurate_count` / `pending_count`: Breakdown by aggregated label
 - `judge_alignment_range`: Min and max F1 scores of judges that aligned with human annotations
-- `reliable_judge_count`: Number of judges achieving F1 ≥ 0.5 threshold
+- `aligned_judges`: List of judges meeting the reliability threshold (F1 ≥ 0.5)
 - Only judges with sufficient annotation alignment contribute to aggregated accuracy
+- Same metrics structure applies to custom rubric evaluations (where "accurate" = judge chose the best option)
 
 **PDF Report Export:**
 - One-click export of entire overview page as PDF
@@ -658,7 +691,7 @@ Home (/)
 
 ### API Client Design
 - Single Axios instance with base URL configuration
-- Organized by resource (targets, jobs, personas, questions, documents, snapshots, answers, annotations, judges, QA jobs, metrics)
+- Organized by resource (targets, jobs, personas, questions, documents, snapshots, answers, annotations, judges, QA jobs, metrics, rubrics, rubric QA jobs, rubric scores)
 - Type-safe responses using TypeScript generics
 - FormData support for file uploads
 - Consistent error handling across all endpoints

@@ -25,6 +25,7 @@ import {
   SsidChart as SsidChartIcon,
   AssessmentOutlined as AssessmentOutlinedIcon,
   AdminPanelSettingsOutlined as AdminPanelSettingsIcon,
+  TuneOutlined as TuneIcon,
 } from "@mui/icons-material";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
@@ -68,7 +69,7 @@ export default function Navigation({ children }: NavigationProps) {
     if (pathname.includes("/scoring")) return "scoring";
     if (pathname.includes("/report")) return "report";
     if (pathname.includes("/questions")) return "questions";
-    if (pathname.includes("/metrics")) return "metrics";
+    if (pathname.includes("/rubrics")) return "rubrics";
     return "overview";
   };
   const activeTab = getActiveTab();
@@ -194,11 +195,11 @@ export default function Navigation({ children }: NavigationProps) {
                 </ListItemButton>
               </ListItem>
 
-              {/* Metrics */}
+              {/* Rubrics */}
               <ListItem disablePadding sx={{ display: "block" }}>
                 <ListItemButton
-                  selected={activeTab === "metrics"}
-                  onClick={() => router.push(`/targets/${targetId}/metrics`)}
+                  selected={activeTab === "rubrics"}
+                  onClick={() => router.push(`/targets/${targetId}/rubrics`)}
                   sx={{
                     minHeight: 48,
                     justifyContent: open ? "initial" : "center",
@@ -208,9 +209,9 @@ export default function Navigation({ children }: NavigationProps) {
                   <ListItemIcon
                     sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
                   >
-                    <AssessmentOutlinedIcon />
+                    <TuneIcon />
                   </ListItemIcon>
-                  <ListItemText primary="Metrics" sx={{ opacity: open ? 1 : 0 }} />
+                  <ListItemText primary="Rubrics" sx={{ opacity: open ? 1 : 0 }} />
                 </ListItemButton>
               </ListItem>
 

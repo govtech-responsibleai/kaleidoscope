@@ -357,7 +357,7 @@ export default function CreateJudgeDialog({
             onChange={(e) => handlePromptTemplateChange(e.target.value)}
             disabled={loading}
             placeholder="Optional custom prompt template for this judge"
-            helperText="Defaults to the same template used by the baseline judge—feel free to extend or edit."
+            helperText="Defaults to the same template used by the primary judge—feel free to extend or edit."
           />
 
           <Typography variant="h6" sx={{ mt: 2 }}>

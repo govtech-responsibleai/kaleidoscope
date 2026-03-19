@@ -31,8 +31,18 @@ import {
   KeyboardArrowDown as KeyboardArrowDownIcon,
   KeyboardArrowUp as KeyboardArrowUpIcon,
 } from "@mui/icons-material";
-import { ResultRow, JudgeConfig, QuestionResponse, PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
-import { questionApi, personaApi, metricsApi } from "@/lib/api";
+import {
+  ResultRow,
+  JudgeConfig,
+  QuestionResponse,
+  PersonaResponse,
+  QuestionType,
+  QuestionScope,
+  TargetRubricResponse,
+  RubricAnnotation,
+  RubricAnswerScore,
+} from "@/lib/types";
+import { questionApi, personaApi, metricsApi, annotationApi, rubricScoreApi, judgeApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
 import LabelCell from "./LabelCell";
 import { QAFilter, JudgeFilter } from "./filters";
@@ -43,6 +53,7 @@ interface ResultsTableProps {
   targetId: number;
   snapshotId: number;
   judges: JudgeConfig[];
+  rubrics: TargetRubricResponse[];
   onLabelChange?: () => void;
 }
 
@@ -50,51 +61,25 @@ const extractReliableLabels = (metadata: string[]) => {
   const labels: boolean[] = [];
   metadata.forEach((entry) => {
     const lower = entry.toLowerCase();
-    if (lower.includes("excluded")) {
-      return;
-    }
-    // Check "inaccurate" BEFORE "accurate" since "inaccurate" contains "accurate"
-    if (lower.includes("inaccurate")) {
-      labels.push(false);
-      return;
-    }
-    if (lower.includes("accurate")) {
-      labels.push(true);
-    }
+    if (lower.includes("excluded")) return;
+    if (lower.includes("inaccurate")) { labels.push(false); return; }
+    if (lower.includes("accurate")) labels.push(true);
   });
   return labels;
 };
 
-// Parse metadata to extract evaluator names and their labels
-interface EvaluatorData {
-  name: string;
-  label: boolean | null; // true = accurate, false = inaccurate, null = excluded
-}
+interface EvaluatorData { name: string; label: boolean | null; }
 
 const parseEvaluatorData = (metadata: string[]): EvaluatorData[] => {
   return metadata.map((entry) => {
-    // Format: "- Evaluator Name: Accurate" or "- Evaluator Name: Inaccurate" or "- Evaluator Name: excluded as not reliable"
-    // Remove leading dash and whitespace that backend adds
     const cleanEntry = entry.replace(/^-\s*/, "").trim();
     const parts = cleanEntry.split(":");
-    if (parts.length < 2) {
-      return { name: cleanEntry, label: null };
-    }
-
+    if (parts.length < 2) return { name: cleanEntry, label: null };
     const name = parts[0].trim();
     const labelText = parts.slice(1).join(":").trim().toLowerCase();
-
-    // Check in order: excluded first, then inaccurate (before accurate to avoid substring match)
-    if (labelText.includes("excluded")) {
-      return { name, label: null };
-    }
-    if (labelText === "inaccurate" || labelText.startsWith("inaccurate")) {
-      return { name, label: false };
-    }
-    if (labelText === "accurate" || labelText.startsWith("accurate")) {
-      return { name, label: true };
-    }
-
+    if (labelText.includes("excluded")) return { name, label: null };
+    if (labelText === "inaccurate" || labelText.startsWith("inaccurate")) return { name, label: false };
+    if (labelText === "accurate" || labelText.startsWith("accurate")) return { name, label: true };
     return { name, label: null };
   });
 };
@@ -105,11 +90,7 @@ const truncate = (value: string, length: number) => {
 };
 
 export default function ResultsTable({
-  results,
-  targetId,
-  snapshotId,
-  judges,
-  onLabelChange,
+  results, targetId, snapshotId, judges, rubrics, onLabelChange,
 }: ResultsTableProps) {
   const theme = useTheme();
   const [page, setPage] = useState(0);
@@ -118,188 +99,163 @@ export default function ResultsTable({
   const [exporting, setExporting] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [selectedJudges, setSelectedJudges] = useState<Set<number>>(new Set());
+  // Which rubric tab is active in table header (null = Accuracy / main label column)
+  const [activeRubricId, setActiveRubricId] = useState<number | null>(null);
 
-  // Question filter state
   const [questionsMap, setQuestionsMap] = useState<Map<number, QuestionResponse>>(new Map());
   const [personasMap, setPersonasMap] = useState<Map<number, PersonaResponse>>(new Map());
   const [selectedTypes, setSelectedTypes] = useState<QuestionType[]>([QuestionType.TYPICAL, QuestionType.EDGE]);
   const [selectedScopes, setSelectedScopes] = useState<QuestionScope[]>([QuestionScope.IN_KB, QuestionScope.OUT_KB]);
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<number[]>([]);
 
+  // Rubric labels: answerId -> rubricId -> option_value
+  const [rubricLabelsMap, setRubricLabelsMap] = useState<Record<number, Record<number, string>>>({});
+
+  // rubricJudgeScores: answerId -> judgeId -> option_chosen (for rubric tabs)
+  const [rubricJudgeScoresMap, setRubricJudgeScoresMap] = useState<Record<number, Record<number, string>>>({});
+  // judges for the active rubric tab
+  const [activeRubricJudges, setActiveRubricJudges] = useState<JudgeConfig[]>([]);
+
   const rowsPerPage = 10;
 
   const toggleRow = (answerId: number) => {
     setExpandedRows((prev) => {
       const next = new Set(prev);
-      if (next.has(answerId)) {
-        next.delete(answerId);
-      } else {
-        next.add(answerId);
-      }
+      next.has(answerId) ? next.delete(answerId) : next.add(answerId);
       return next;
     });
   };
 
-  // Fetch questions and personas for filtering
+  // Fetch questions and personas
   useEffect(() => {
     const fetchQuestionsAndPersonas = async () => {
       if (results.length === 0) return;
-
       const uniqueQuestionIds = [...new Set(results.map((r) => r.question_id))];
-
       try {
-        // Fetch all questions
-        const questionPromises = uniqueQuestionIds.map((id) => questionApi.get(id));
-        const questionResponses = await Promise.all(questionPromises);
-
+        const questionResponses = await Promise.all(uniqueQuestionIds.map((id) => questionApi.get(id)));
         const newQuestionsMap = new Map<number, QuestionResponse>();
         const personaIdsToFetch = new Set<number>();
-
         questionResponses.forEach((res) => {
           newQuestionsMap.set(res.data.id, res.data);
-          if (res.data.persona_id !== null) {
-            personaIdsToFetch.add(res.data.persona_id);
-          }
+          if (res.data.persona_id !== null) personaIdsToFetch.add(res.data.persona_id);
         });
-
         setQuestionsMap(newQuestionsMap);
-
-        // Fetch all personas
-        const personaPromises = [...personaIdsToFetch].map((id) => personaApi.get(id));
-        const personaResponses = await Promise.all(personaPromises);
-
+        const personaResponses = await Promise.all([...personaIdsToFetch].map((id) => personaApi.get(id)));
         const newPersonasMap = new Map<number, PersonaResponse>();
-        personaResponses.forEach((res) => {
-          newPersonasMap.set(res.data.id, res.data);
-        });
-
+        personaResponses.forEach((res) => newPersonasMap.set(res.data.id, res.data));
         setPersonasMap(newPersonasMap);
-
-        // Initialize selectedPersonaIds with all personas
         setSelectedPersonaIds([...personaIdsToFetch]);
       } catch (err) {
         console.error("Failed to fetch questions/personas:", err);
       }
     };
-
     fetchQuestionsAndPersonas();
   }, [results]);
 
-  // Filter results based on selected filters
+  // Fetch rubric labels for all answers when rubrics exist
+  useEffect(() => {
+    if (rubrics.length === 0 || results.length === 0) return;
+    const fetchRubricLabels = async () => {
+      const answerIds = results.map((r) => r.answer_id);
+      try {
+        const responses = await Promise.all(
+          answerIds.map((id) => annotationApi.getRubricAnnotations(id).then((r) => ({ answerId: id, labels: r.data })))
+        );
+        const map: Record<number, Record<number, string>> = {};
+        responses.forEach(({ answerId, labels }) => {
+          map[answerId] = {};
+          (labels as RubricAnnotation[]).forEach((l) => {
+            map[answerId][l.rubric_id] = l.option_value;
+          });
+        });
+        setRubricLabelsMap(map);
+      } catch (err) {
+        console.error("Failed to fetch rubric labels:", err);
+      }
+    };
+    fetchRubricLabels();
+  }, [results, rubrics]);
+
   const filteredResults = useMemo(() => {
     let filtered = results;
-
-    // Filter by question type, scope, and persona
     if (questionsMap.size > 0) {
       filtered = filtered.filter((result) => {
         const question = questionsMap.get(result.question_id);
-        if (!question) return true; // Keep if question not loaded yet
-
+        if (!question) return true;
         const typeMatch = question.type ? selectedTypes.includes(question.type) : true;
         const scopeMatch = question.scope ? selectedScopes.includes(question.scope) : true;
-        const personaMatch =
-          question.persona_id === null ||
-          selectedPersonaIds.length === 0 ||
-          selectedPersonaIds.includes(question.persona_id);
-
+        const personaMatch = question.persona_id === null || selectedPersonaIds.length === 0 || selectedPersonaIds.includes(question.persona_id);
         return typeMatch && scopeMatch && personaMatch;
       });
     }
-
-    // Filter by label
     if (selectedLabels.length < 2) {
       filtered = filtered.filter((result) => {
         const aggregated = result.aggregated_accuracy;
-
-        // If label was edited, use the override directly
         if (aggregated?.is_edited && aggregated.label !== null) {
           const isAccurate = aggregated.label === true;
-          if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) {
-            return !isAccurate;
-          } else if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) {
-            return isAccurate;
-          }
+          if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) return !isAccurate;
+          if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) return isAccurate;
           return true;
         }
-
-        // Otherwise use evaluator majority vote
         const metadata = aggregated?.metadata ?? [];
         const labels = extractReliableLabels(metadata);
         const inaccurateCount = labels.filter((l) => l === false).length;
         const accurateCount = labels.filter((l) => l === true).length;
-
-        if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) {
-          return inaccurateCount > accurateCount;
-        } else if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) {
-          return accurateCount > inaccurateCount;
-        }
+        if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) return inaccurateCount > accurateCount;
+        if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) return accurateCount > inaccurateCount;
         return true;
       });
     }
-
-    // Filter for disagreements only
     if (showDisagreementsOnly) {
       filtered = filtered.filter((result) => {
         const metadata = result.aggregated_accuracy?.metadata ?? [];
         const labels = extractReliableLabels(metadata);
-        const unique = new Set(labels);
-        return unique.size > 1;
+        return new Set(labels).size > 1;
       });
     }
-
     return filtered;
   }, [results, selectedLabels, showDisagreementsOnly, questionsMap, selectedTypes, selectedScopes, selectedPersonaIds]);
 
-  const paginatedResults = useMemo(() => {
-    return filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage);
-  }, [filteredResults, page]);
+  const paginatedResults = useMemo(
+    () => filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
+    [filteredResults, page]
+  );
 
   const labelFilterOptions: FilterOption<string>[] = useMemo(() => [
     { value: "accurate", label: "Accurate" },
     { value: "inaccurate", label: "Inaccurate" },
   ], []);
 
-  // Extract all evaluators and determine which are reliable based on metadata
   const { reliableJudges, excludedJudges } = useMemo(() => {
-    // If no results yet, show all judges
-    if (results.length === 0) {
-      return { reliableJudges: judges, excludedJudges: [] };
-    }
-
+    if (results.length === 0) return { reliableJudges: judges, excludedJudges: [] };
     const judgeReliability = new Map<number, boolean>();
-
     results.forEach((result) => {
-      const metadata = result.aggregated_accuracy?.metadata ?? [];
-      const evaluators = parseEvaluatorData(metadata);
-
+      const evaluators = parseEvaluatorData(result.aggregated_accuracy?.metadata ?? []);
       evaluators.forEach((evaluator) => {
-        // Match evaluator name to judge
         const judge = judges.find((j) => j.name === evaluator.name);
         if (judge) {
           const existing = judgeReliability.get(judge.id);
-          // A judge is reliable if it has actual labels (not excluded) in all results
           const isReliable = evaluator.label !== null;
           judgeReliability.set(judge.id, existing === undefined ? isReliable : existing && isReliable);
         }
       });
     });
-
     const reliable: JudgeConfig[] = [];
     const excluded: JudgeConfig[] = [];
-
     judges.forEach((judge) => {
-      const isReliable = judgeReliability.get(judge.id);
-      if (isReliable === true) {
-        reliable.push(judge);
-      } else if (isReliable === false) {
-        excluded.push(judge);
-      }
+      const r = judgeReliability.get(judge.id);
+      if (r === true) reliable.push(judge);
+      else if (r === false) excluded.push(judge);
     });
-
     return { reliableJudges: reliable, excludedJudges: excluded };
   }, [results, judges]);
 
-  // Initialize selectedJudges with all reliable judges by default
+  // All accuracy (claim_based) judges — shown in table columns regardless of reliability
+  const accuracyJudges = useMemo(
+    () => [...judges].filter((j) => j.judge_type === "claim_based").sort((a, b) => Number(b.is_baseline) - Number(a.is_baseline)),
+    [judges]
+  );
+
   React.useEffect(() => {
     setSelectedJudges(new Set(reliableJudges.map((j) => j.id)));
   }, [reliableJudges]);
@@ -309,38 +265,84 @@ export default function ResultsTable({
     try {
       const response = await metricsApi.exportCSV(snapshotId, "csv");
       const blob = response.data;
-
-      // Try to honor backend-provided filename if the header exists
       const disposition = response.headers?.["content-disposition"];
       let filename = `snapshot_${snapshotId}_results.csv`;
       if (disposition) {
         const match = disposition.match(/filename="?([^\";]+)"?/i);
-        if (match?.[1]) {
-          filename = match[1];
-        }
+        if (match?.[1]) filename = match[1];
       }
-
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url;
-      link.download = filename;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      window.URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Failed to export results:", error);
-      alert("Failed to export results. Please try again.");
+      link.href = url; link.download = filename;
+      document.body.appendChild(link); link.click();
+      document.body.removeChild(link); window.URL.revokeObjectURL(url);
+    } catch {
+      alert("Failed to export results.");
     } finally {
       setExporting(false);
     }
   };
 
+  // Fetch rubric judge scores and judges when a custom rubric tab is active
+  useEffect(() => {
+    if (activeRubricId === null || results.length === 0) {
+      setRubricJudgeScoresMap({});
+      setActiveRubricJudges([]);
+      return;
+    }
+    const activeRubric = rubrics.find((r) => r.id === activeRubricId);
+    if (!activeRubric) return;
+
+    // Fetch judges for this rubric category
+    judgeApi.getByCategory(activeRubric.category)
+      .then((res) => setActiveRubricJudges(res.data))
+      .catch(() => setActiveRubricJudges([]));
+
+    // Fetch rubric scores for all answers
+    const answerIds = results.map((r) => r.answer_id);
+    Promise.all(
+      answerIds.map((id) =>
+        rubricScoreApi.getForAnswer(id, activeRubricId)
+          .then((res) => ({ answerId: id, scores: res.data as RubricAnswerScore[] }))
+          .catch(() => ({ answerId: id, scores: [] as RubricAnswerScore[] }))
+      )
+    ).then((entries) => {
+      const map: Record<number, Record<number, string>> = {};
+      entries.forEach(({ answerId, scores }) => {
+        map[answerId] = {};
+        scores.forEach((s) => { map[answerId][s.judge_id] = s.option_chosen; });
+      });
+      setRubricJudgeScoresMap(map);
+    });
+  }, [activeRubricId, results, rubrics]);
+
   return (
     <Box>
+      {/* Rubric pill toggles */}
+      {rubrics.length > 0 && (
+        <Stack direction="row" spacing={1} sx={{ mb: 2 }}>
+          <Chip
+            label="Accuracy"
+            onClick={() => setActiveRubricId(null)}
+            variant={activeRubricId === null ? "filled" : "outlined"}
+            color={activeRubricId === null ? "primary" : "default"}
+            sx={{ fontWeight: 600, fontSize: "0.85rem", height: 36, px: 1 }}
+          />
+          {rubrics.map((r) => (
+            <Chip
+              key={r.id}
+              label={r.name}
+              onClick={() => setActiveRubricId(r.id)}
+              variant={activeRubricId === r.id ? "filled" : "outlined"}
+              color={activeRubricId === r.id ? "primary" : "default"}
+              sx={{ fontWeight: 600, fontSize: "0.85rem", height: 36, px: 1 }}
+            />
+          ))}
+        </Stack>
+      )}
+
       <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1.5 }}>
         <Typography variant="h5">All Questions & Answers</Typography>
-
         <Box sx={{ flexGrow: 1 }} />
 
         <QAFilter
@@ -348,18 +350,9 @@ export default function ResultsTable({
           selectedScopes={selectedScopes}
           selectedPersonaIds={selectedPersonaIds}
           personas={[...personasMap.values()]}
-          onTypesChange={(types) => {
-            setSelectedTypes(types);
-            setPage(0);
-          }}
-          onScopesChange={(scopes) => {
-            setSelectedScopes(scopes);
-            setPage(0);
-          }}
-          onPersonaIdsChange={(ids) => {
-            setSelectedPersonaIds(ids);
-            setPage(0);
-          }}
+          onTypesChange={(types) => { setSelectedTypes(types); setPage(0); }}
+          onScopesChange={(scopes) => { setSelectedScopes(scopes); setPage(0); }}
+          onPersonaIdsChange={(ids) => { setSelectedPersonaIds(ids); setPage(0); }}
         />
 
         <JudgeFilter
@@ -369,89 +362,95 @@ export default function ResultsTable({
         />
 
         <Button
-          variant="outlined"
-          size="small"
-          color="inherit"
-          disableRipple
-          sx={{ 
-            pr: 1.5, 
-            height: "40px", 
-            fontWeight: 400, 
-            borderColor: "rgba(0, 0, 0, 0.2)"
-          }}
+          variant="outlined" size="small" color="inherit" disableRipple
+          sx={{ pr: 1.5, height: "40px", fontWeight: 400, borderColor: "rgba(0,0,0,0.2)" }}
         >
           <Checkbox
-            size="small"
-            checked={showDisagreementsOnly}
-            onChange={(event) => {
-              setPage(0);
-              setShowDisagreementsOnly(event.target.checked);
-            }}
-
+            size="small" checked={showDisagreementsOnly}
+            onChange={(e) => { setPage(0); setShowDisagreementsOnly(e.target.checked); }}
           />
           Show only disagreements
         </Button>
-        
+
         <Divider orientation="vertical" flexItem />
 
         <Button
-          variant="contained"
-          startIcon={<DownloadIcon />}
-          onClick={handleExport}
-          disabled={exporting}
+          variant="contained" startIcon={<DownloadIcon />}
+          onClick={handleExport} disabled={exporting}
           sx={{ bgcolor: theme.palette.secondary.main }}
         >
           {exporting ? "Exporting..." : "Export CSV"}
         </Button>
-
       </Stack>
 
       {excludedJudges.length > 0 && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          Excluded evaluators (not reliable): {excludedJudges.map(j => j.name).join(", ")}
+          Excluded judges (not reliable): {excludedJudges.map(j => j.name).join(", ")}
         </Alert>
       )}
 
       <TableContainer component={Paper} sx={{ boxShadow: "none" }}>
         <Table size="small">
-
           <TableHead>
             <TableRow>
               <TableCell sx={{ width: "5%" }} />
               <TableCell sx={{ width: "5%" }}>ID</TableCell>
-              <TableCell sx={{ width: "35%" }}>Question</TableCell>
-              <TableCell sx={{ width: "35%" }}>Answer</TableCell>
-              <TableCell sx={{ width: "100px" }}>
-                <TableHeaderFilter
-                  label="Label"
-                  options={labelFilterOptions}
-                  value={selectedLabels}
-                  onChange={(labels) => {
-                    setSelectedLabels(labels);
-                    setPage(0);
-                  }}
-                  allSelectedLabel="All Labels"
-                />
-              </TableCell>
-              {reliableJudges
-                .filter((judge) => selectedJudges.has(judge.id))
-                .map((judge) => (
-                <TableCell
-                  key={judge.id}
-                  sx={{
-                    width: "70px",
-                    textAlign: "center",
-                    whiteSpace: "normal",
-                    wordBreak: "break-word",
-                    padding: "8px 4px",
-                    overflow: "hidden"
-                  }}
-                >
-                  <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>
-                    {judge.name}
-                  </Typography>
+              <TableCell sx={{ width: "30%" }}>Question</TableCell>
+              <TableCell sx={{ width: "30%" }}>Answer</TableCell>
+              {/* Accuracy label column (Accuracy tab) */}
+              {activeRubricId === null && (
+                <TableCell sx={{ width: "100px" }}>
+                  <TableHeaderFilter
+                    label="Accuracy"
+                    options={labelFilterOptions}
+                    value={selectedLabels}
+                    onChange={(labels) => { setSelectedLabels(labels); setPage(0); }}
+                    allSelectedLabel="All Labels"
+                  />
                 </TableCell>
-              ))}
+              )}
+              {/* Human label column (custom rubric tab) */}
+              {activeRubricId !== null && (() => {
+                const activeRubric = rubrics.find((r) => r.id === activeRubricId);
+                return activeRubric ? (
+                  <TableCell
+                    sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px", fontWeight: 700 }}
+                  >
+                    <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem", fontWeight: 700 }}>
+                      {activeRubric.name}
+                    </Typography>
+                  </TableCell>
+                ) : null;
+              })()}
+              {/* Judge columns (Accuracy tab): all claim_based judges sorted baseline first */}
+              {activeRubricId === null && (() => {
+                let secondaryIdx = 0;
+                return accuracyJudges.map((judge) => {
+                  const displayName = judge.name;
+                  return (
+                    <TableCell
+                      key={judge.id}
+                      sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px" }}
+                    >
+                      <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{displayName}</Typography>
+                    </TableCell>
+                  );
+                });
+              })()}
+              {/* Rubric judge columns (custom rubric tab): sorted recommended first */}
+              {activeRubricId !== null && (() => {
+                return activeRubricJudges.map((judge) => {
+                  const displayName = judge.name;
+                  return (
+                    <TableCell
+                      key={judge.id}
+                      sx={{ width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", padding: "8px 4px" }}
+                    >
+                      <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem" }}>{displayName}</Typography>
+                    </TableCell>
+                  );
+                });
+              })()}
             </TableRow>
           </TableHead>
 
@@ -459,72 +458,52 @@ export default function ResultsTable({
             {paginatedResults.map((result) => {
               const aggregatedAccuracy = result.aggregated_accuracy;
               const metadataEntries = aggregatedAccuracy?.metadata ?? [];
-
-              // Parse evaluator labels for this result
               const evaluatorLabels = parseEvaluatorData(metadataEntries);
-              const evaluatorMap = new Map(
-                evaluatorLabels.map((e) => [e.name, e.label])
-              );
+              const evaluatorMap = new Map(evaluatorLabels.map((e) => [e.name, e.label]));
 
-              // Determine chip label - use override if edited, otherwise calculate from evaluators
+              // Accuracy chip
               let chipLabel = "No data";
               let chipColor: ChipProps["color"] = "default";
               let helperText: string | null = null;
 
-              // If label was manually edited, use the aggregated label directly
               if (aggregatedAccuracy?.is_edited && aggregatedAccuracy.label !== null) {
                 chipLabel = aggregatedAccuracy.label ? "Accurate" : "Inaccurate";
                 chipColor = aggregatedAccuracy.label ? "success" : "error";
               } else if (selectedJudges.size === 0) {
-                chipLabel = "No evaluators selected";
-                chipColor = "warning";
-                helperText = "Please select at least one evaluator.";
+                chipLabel = "No judges selected"; chipColor = "warning";
+                helperText = "Please select at least one judge.";
               } else {
-                // Get labels from selected judges only
-                const selectedLabels: boolean[] = [];
+                const selLabels: boolean[] = [];
                 reliableJudges.forEach((judge) => {
                   if (selectedJudges.has(judge.id)) {
                     const label = evaluatorMap.get(judge.name);
-                    if (label !== null && label !== undefined) {
-                      selectedLabels.push(label);
-                    }
+                    if (label !== null && label !== undefined) selLabels.push(label);
                   }
                 });
-
-                if (selectedLabels.length === 0) {
-                  chipLabel = "No data";
-                  chipColor = "default";
+                if (selLabels.length === 0) {
+                  chipLabel = "No data"; chipColor = "default";
                 } else {
-                  // Count accurate vs inaccurate
-                  const accurateCount = selectedLabels.filter((l) => l === true).length;
-                  const inaccurateCount = selectedLabels.filter((l) => l === false).length;
-
-                  if (accurateCount > inaccurateCount) {
-                    chipLabel = "Accurate";
-                    chipColor = "success";
-                  } else if (inaccurateCount > accurateCount) {
-                    chipLabel = "Inaccurate";
-                    chipColor = "error";
-                  } else {
-                    // Tie
-                    chipLabel = "Tie";
-                    chipColor = "warning";
-                    helperText = "Equal votes for accurate and inaccurate.";
-                  }
+                  const accurateCount = selLabels.filter((l) => l).length;
+                  const inaccurateCount = selLabels.filter((l) => !l).length;
+                  if (accurateCount > inaccurateCount) { chipLabel = "Accurate"; chipColor = "success"; }
+                  else if (inaccurateCount > accurateCount) { chipLabel = "Inaccurate"; chipColor = "error"; }
+                  else { chipLabel = "Tie"; chipColor = "warning"; helperText = "Equal votes."; }
                 }
               }
 
               const isExpanded = expandedRows.has(result.answer_id);
+              const answerRubricLabels = rubricLabelsMap[result.answer_id] ?? {};
+              const rubricJudgeLabels = rubricJudgeScoresMap[result.answer_id] ?? {};
+              // expand/question/answer + label column + judge columns
+              const totalColSpan = activeRubricId === null
+                ? 5 + accuracyJudges.length
+                : 5 + activeRubricJudges.length;
 
               return (
                 <React.Fragment key={result.answer_id}>
                   <TableRow hover>
                     <TableCell>
-                      <IconButton
-                        size="small"
-                        onClick={() => toggleRow(result.answer_id)}
-                        aria-label="expand row"
-                      >
+                      <IconButton size="small" onClick={() => toggleRow(result.answer_id)}>
                         {isExpanded ? <KeyboardArrowUpIcon /> : <KeyboardArrowDownIcon />}
                       </IconButton>
                     </TableCell>
@@ -546,56 +525,85 @@ export default function ResultsTable({
                     </TableCell>
 
                     <TableCell>
-                      <Typography variant="subtitle2">
-                        {truncate(result.question_text ?? "", 160)}
-                      </Typography>
+                      <Typography variant="subtitle2">{truncate(result.question_text ?? "", 160)}</Typography>
                     </TableCell>
 
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {truncate(result.answer_content, 160)}
-                      </Typography>
+                      <Typography variant="body2" color="text.secondary">{truncate(result.answer_content, 160)}</Typography>
                     </TableCell>
 
-                    <TableCell>
-                      <LabelCell
-                        answerId={result.answer_id}
-                        aggregatedAccuracy={aggregatedAccuracy}
-                        chipLabel={chipLabel}
-                        chipColor={chipColor}
-                        helperText={helperText}
-                        onLabelChange={onLabelChange}
-                      />
-                    </TableCell>
+                    {/* Accuracy label (Accuracy tab) */}
+                    {activeRubricId === null && (
+                      <TableCell>
+                        <LabelCell
+                          answerId={result.answer_id}
+                          aggregatedAccuracy={aggregatedAccuracy}
+                          chipLabel={chipLabel}
+                          chipColor={chipColor}
+                          helperText={helperText}
+                          onLabelChange={onLabelChange}
+                        />
+                      </TableCell>
+                    )}
 
-                    {reliableJudges
-                      .filter((judge) => selectedJudges.has(judge.id))
-                      .map((judge) => {
-                      const label = evaluatorMap.get(judge.name);
-
+                    {/* Human label (custom rubric tab) */}
+                    {activeRubricId !== null && (() => {
+                      const val = answerRubricLabels[activeRubricId];
+                      const ar = rubrics.find((r) => r.id === activeRubricId);
+                      const best = ar?.best_option || ar?.options?.[0]?.option || "";
+                      const chipColor = !val ? undefined : val === best ? "success" as const : (ar && ar.options.length <= 2) ? "error" as const : "primary" as const;
                       return (
-                        <TableCell key={judge.id} align="center">
-                          {label === true ? (
-                            <CheckCircleIcon color="success" fontSize="small" />
-                          ) : label === false ? (
-                            <CancelIcon color="error" fontSize="small" />
+                        <TableCell align="center">
+                          {val ? (
+                            <Chip label={val} size="small" color={chipColor} sx={{ fontSize: "0.7rem", height: 20 }} />
                           ) : (
-                            <Typography variant="caption" color="text.secondary">
-                              --
-                            </Typography>
+                            <Typography variant="caption" color="text.disabled">—</Typography>
                           )}
                         </TableCell>
                       );
+                    })()}
+
+                    {/* Judge columns (Accuracy tab): all claim_based judges */}
+                    {activeRubricId === null && accuracyJudges.map((judge) => {
+                      const label = evaluatorMap.get(judge.name);
+                      return (
+                        <TableCell key={judge.id} align="center">
+                          {label === true ? <CheckCircleIcon color="success" fontSize="small" /> :
+                           label === false ? <CancelIcon color="error" fontSize="small" /> :
+                           <Typography variant="caption" color="text.secondary">--</Typography>}
+                        </TableCell>
+                      );
                     })}
+                    {/* Rubric judge score cells (custom rubric tab): sorted recommended first */}
+                    {activeRubricId !== null && (() => {
+                      const ar = rubrics.find((r) => r.id === activeRubricId);
+                      const best = ar?.best_option || ar?.options?.[0]?.option || "";
+                      return activeRubricJudges.map((judge) => {
+                        const val = rubricJudgeLabels[judge.id];
+                        const chipColor = !val ? undefined : val === best ? "success" as const : (ar && ar.options.length <= 2) ? "error" as const : "primary" as const;
+                        return (
+                          <TableCell key={judge.id} align="center">
+                            {val ? (
+                              <Chip label={val} size="small" color={chipColor} sx={{ fontSize: "0.7rem", height: 20 }} />
+                            ) : (
+                              <Typography variant="caption" color="text.disabled">—</Typography>
+                            )}
+                          </TableCell>
+                        );
+                      });
+                    })()}
                   </TableRow>
 
                   <TableRow>
-                    <TableCell style={{ padding: 0 }} colSpan={5 + selectedJudges.size}>
+                    <TableCell style={{ padding: 0 }} colSpan={totalColSpan}>
                       <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                         <ResultsTableExpandedRow
                           result={result}
                           reliableJudges={reliableJudges}
                           selectedJudgeIds={Array.from(selectedJudges)}
+                          rubrics={rubrics}
+                          activeRubricId={activeRubricId}
+                          answerRubricLabels={answerRubricLabels}
                         />
                       </Collapse>
                     </TableCell>

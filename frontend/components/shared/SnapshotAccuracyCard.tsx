@@ -75,7 +75,7 @@ export default function SnapshotAccuracyCard({
       <Stack spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
         {hasReliableJudges && alignmentRange ? (
           <Typography variant="body2" color="text.secondary" textAlign="center">
-            from {reliableJudgeCount} evaluator{reliableJudgeCount !== 1 ? "s" : ""}{" "}
+            from {reliableJudgeCount} judge{reliableJudgeCount !== 1 ? "s" : ""}{" "}
             <Box
               component="span"
               sx={{ color: "success.main", fontWeight: 500 }}
@@ -108,7 +108,7 @@ export default function SnapshotAccuracyCard({
           </Box>
         ) : (
           <Typography variant="body2" color="text.secondary">
-            No reliable evaluators yet
+            No reliable judges yet
           </Typography>
         )}
 
@@ -126,7 +126,7 @@ export default function SnapshotAccuracyCard({
           textAlign="center"
           sx={{ mt: 2, maxWidth: 350 }}
         >
-          Accuracy is calculated from the labels in the results table below. Labels are aggregated across reliable evaluators but can be manually edited.
+          Accuracy is calculated from the labels in the results table below. Labels are aggregated across reliable judges but can be manually edited.
         </Typography>
       )}
     </Box>
