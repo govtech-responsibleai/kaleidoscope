@@ -53,7 +53,7 @@ export default function RubricsPage() {
     const tempId = -Date.now();
     const placeholder: TargetRubricResponse = {
       id: tempId, target_id: targetId, name: "", criteria: "",
-      options: [], best_option: null, position: 0, category: "custom",
+      options: [], best_option: null, position: 0, category: "default",
       created_at: "", updated_at: "",
     };
     setRubrics((prev) => [...prev, placeholder]);
