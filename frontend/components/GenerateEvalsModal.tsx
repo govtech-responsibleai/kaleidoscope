@@ -129,6 +129,13 @@ export default function GenerateEvalsModal({
       return;
     }
 
+    if (numQuestions < allSelectedIds.length) {
+      setError(
+        `You selected ${allSelectedIds.length} personas but requested ${numQuestions} questions. Use at least ${allSelectedIds.length} questions or select fewer personas.`
+      );
+      return;
+    }
+
     setGeneratingQuestions(true);
     setError(null);
 
@@ -232,6 +239,11 @@ export default function GenerateEvalsModal({
 
   const combinedError = error || personaGen.error;
   const newSelectedCount = personaGen.personas.length - rejectedPersonaIds.size;
+  const selectedPersonaCount = step === "select_personas" ? selectedExistingIds.length : newSelectedCount;
+  const hasInsufficientQuestions = selectedPersonaCount > 0 && numQuestions < selectedPersonaCount;
+  const countValidationMessage = hasInsufficientQuestions
+    ? `You selected ${selectedPersonaCount} persona${selectedPersonaCount !== 1 ? "s" : ""} but requested ${numQuestions} question${numQuestions !== 1 ? "s" : ""}. Use at least ${selectedPersonaCount} question${selectedPersonaCount !== 1 ? "s" : ""} or select fewer personas.`
+    : null;
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
@@ -255,6 +267,11 @@ export default function GenerateEvalsModal({
         {combinedError && (
           <Alert severity="error" sx={{ mb: 2 }}>
             {combinedError}
+          </Alert>
+        )}
+        {countValidationMessage && (
+          <Alert severity="warning" sx={{ mb: 2 }}>
+            {countValidationMessage}
           </Alert>
         )}
 
@@ -656,7 +673,7 @@ export default function GenerateEvalsModal({
           <Button
             onClick={handleGenerateQuestions}
             variant="contained"
-            disabled={personaGen.loading || generatingQuestions || newSelectedCount === 0}
+            disabled={personaGen.loading || generatingQuestions || newSelectedCount === 0 || hasInsufficientQuestions}
             startIcon={generatingQuestions ? <CircularProgress size={20} /> : undefined}
           >
             {generatingQuestions
@@ -675,7 +692,7 @@ export default function GenerateEvalsModal({
           <Button
             onClick={handleGenerateQuestions}
             variant="contained"
-            disabled={generatingQuestions || selectedExistingIds.length === 0}
+            disabled={generatingQuestions || selectedExistingIds.length === 0 || hasInsufficientQuestions}
             startIcon={generatingQuestions ? <CircularProgress size={20} /> : undefined}
           >
             {generatingQuestions

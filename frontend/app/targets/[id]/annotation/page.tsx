@@ -1,15 +1,14 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Alert, Box, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
-import CreateSnapshotDialog from "@/components/shared/CreateSnapshotDialog";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
-import { Snapshot, QAJob, QAMap, TargetRubricResponse } from "@/lib/types";
+import { Snapshot, QAJob, QAMap, TargetRubricResponse, QuestionResponse, Status } from "@/lib/types";
 import { Download as DownloadIcon } from "@mui/icons-material";
-import { snapshotApi, judgeApi, metricsApi, targetRubricApi } from "@/lib/api";
+import { snapshotApi, judgeApi, metricsApi, targetRubricApi, questionApi } from "@/lib/api";
 
 export default function AnnotationPage() {
   const params = useParams();
@@ -30,11 +29,15 @@ export default function AnnotationPage() {
   const [qaJobs, setQaJobs] = useState<QAJob[]>([]);
   const [qaMap, setQaMap] = useState<QAMap>({});
   const [error, setError] = useState<string | null>(null);
-  const [createDialogOpen, setCreateDialogOpen] = useState(false);
-  const [rubricJobsComplete, setRubricJobsComplete] = useState(false);
+  const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
+  const [approvedQuestionsLoading, setApprovedQuestionsLoading] = useState(true);
+  const [approvedQuestionsError, setApprovedQuestionsError] = useState<string | null>(null);
   const [rubricPendingQuestions, setRubricPendingQuestions] = useState<Set<number>>(new Set());
-  const [autoCreating, setAutoCreating] = useState(false);
   const autoCreateAttempted = useRef(false);
+  const approvedQuestionIds = useMemo(
+    () => approvedQuestions.map((question) => question.id),
+    [approvedQuestions]
+  );
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
     setSelectedSnapshotId(snapshotId);
@@ -56,7 +59,6 @@ export default function AnnotationPage() {
 
       if (response.data.length === 0 && !autoCreateAttempted.current) {
         autoCreateAttempted.current = true;
-        setAutoCreating(true);
         try {
           const createResponse = await snapshotApi.create({
             target_id: targetId,
@@ -67,8 +69,6 @@ export default function AnnotationPage() {
         } catch (err) {
           console.error("Failed to auto-create snapshot:", err);
           setError("Failed to create initial snapshot.");
-        } finally {
-          setAutoCreating(false);
         }
         return;
       }
@@ -104,11 +104,29 @@ export default function AnnotationPage() {
     }
   }, []);
 
+  const fetchApprovedQuestions = useCallback(async () => {
+    setApprovedQuestionsLoading(true);
+    try {
+      const questions = await questionApi.listAllByTarget(targetId, {
+        status_filter: Status.APPROVED,
+      });
+      setApprovedQuestions(questions);
+      setApprovedQuestionsError(null);
+    } catch (err) {
+      console.error("Failed to load approved questions:", err);
+      setApprovedQuestions([]);
+      setApprovedQuestionsError("Failed to load approved questions.");
+    } finally {
+      setApprovedQuestionsLoading(false);
+    }
+  }, [targetId]);
+
   useEffect(() => {
     fetchSnapshots();
     fetchBaselineJudge();
+    fetchApprovedQuestions();
     targetRubricApi.list(targetId).then((res) => setRubrics(res.data)).catch(() => {});
-  }, [fetchSnapshots, fetchBaselineJudge]);
+  }, [fetchSnapshots, fetchBaselineJudge, fetchApprovedQuestions, targetId]);
 
   const handleSnapshotSelect = useCallback((snapshotId: number | null) => {
     updateSnapshotSelection(snapshotId);
@@ -119,7 +137,6 @@ export default function AnnotationPage() {
   const handleSnapshotCreated = useCallback((snapshot: Snapshot) => {
     updateSnapshotSelection(snapshot.id);
     fetchSnapshots();
-    setCreateDialogOpen(false);
   }, [fetchSnapshots, updateSnapshotSelection]);
 
   const handleExportSnapshot = async () => {
@@ -197,13 +214,13 @@ export default function AnnotationPage() {
         targetId={targetId}
         snapshotId={selectedSnapshotId}
         baselineJudgeId={baselineJudgeId}
+        approvedQuestionIds={approvedQuestionIds}
         qaJobs={qaJobs}
         setQaJobs={setQaJobs}
         qaMap={qaMap}
         setQaMap={setQaMap}
         rubrics={rubrics}
         onError={(message) => setError(message)}
-        onRubricJobsCompleteChange={setRubricJobsComplete}
         onRubricPendingQuestionsChange={setRubricPendingQuestions}
       />
 
@@ -220,6 +237,9 @@ export default function AnnotationPage() {
       <QAList
         targetId={targetId}
         snapshotId={selectedSnapshotId}
+        approvedQuestions={approvedQuestions}
+        questionsLoading={approvedQuestionsLoading}
+        questionError={approvedQuestionsError}
         qaJobs={qaJobs}
         qaMap={qaMap}
         setQaMap={setQaMap}

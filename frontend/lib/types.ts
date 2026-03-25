@@ -152,6 +152,13 @@ export interface QuestionResponse extends QuestionBase {
   updated_at: string;
 }
 
+export interface QuestionListResponse {
+  items: QuestionResponse[];
+  total: number;
+  skip: number;
+  limit: number;
+}
+
 export interface SimilarQuestionsRequest {
   target_id: number;
   question_ids: number[];

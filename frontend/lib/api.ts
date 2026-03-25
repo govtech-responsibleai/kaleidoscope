@@ -12,6 +12,7 @@ import {
   PersonaResponse,
   PersonaUpdate,
   QuestionResponse,
+  QuestionListResponse,
   QuestionUpdate,
   JobCreate,
   JobResponse,
@@ -56,6 +57,7 @@ import {
   RubricAnnotationUpsert,
   RubricAnswerScore,
   SnapshotMetric,
+  Status,
 } from "./types";
 import { sortJudges } from "./judgeOrdering";
 
@@ -231,8 +233,44 @@ export const personaApi = {
 
 // Question endpoints
 export const questionApi = {
-  listByTarget: (targetId: number) =>
-    api.get<QuestionResponse[]>(`/targets/${targetId}/questions`),
+  listByTarget: (
+    targetId: number,
+    params?: {
+      status_filter?: Status;
+      skip?: number;
+      limit?: number;
+    }
+  ) =>
+    api.get<QuestionListResponse>(`/targets/${targetId}/questions`, { params }),
+
+  listAllByTarget: async (
+    targetId: number,
+    params?: {
+      status_filter?: Status;
+      limit?: number;
+    }
+  ) => {
+    const limit = params?.limit ?? 250;
+    let skip = 0;
+    let items: QuestionResponse[] = [];
+    let total = 0;
+
+    do {
+      const response = await api.get<QuestionListResponse>(`/targets/${targetId}/questions`, {
+        params: {
+          ...params,
+          skip,
+          limit,
+        },
+      });
+      items = [...items, ...response.data.items];
+      total = response.data.total;
+      if (response.data.items.length === 0) break;
+      skip += response.data.items.length;
+    } while (items.length < total);
+
+    return items;
+  },
 
   listByPersona: (personaId: number) =>
     api.get<QuestionResponse[]>(`/personas/${personaId}/questions`),

@@ -8,7 +8,6 @@ import React, {
   useState,
 } from "react";
 import {
-  Alert,
   Box,
   Button,
   Chip,
@@ -34,6 +33,7 @@ interface QAJobControlProps {
   targetId: number;
   snapshotId: number | null;
   baselineJudgeId: number | null;
+  approvedQuestionIds: number[];
   qaJobs: QAJob[];
   setQaJobs: React.Dispatch<React.SetStateAction<QAJob[]>>;
   qaMap: QAMap;
@@ -67,6 +67,7 @@ export default function QAJobControl({
   targetId,
   snapshotId,
   baselineJudgeId,
+  approvedQuestionIds,
   qaJobs,
   setQaJobs,
   qaMap,
@@ -171,6 +172,28 @@ export default function QAJobControl({
 
   // Track questions without answers (fetched from backend)
   const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number[]>([]);
+  const approvedQuestionIdSet = useMemo(() => new Set(approvedQuestionIds), [approvedQuestionIds]);
+
+  const selectAccuracyJobs = useCallback((allJobs: QAJob[]) => {
+    const accuracyJobs = allJobs.filter((job) => job.rubric_id === null);
+    const jobsByQuestion = new Map<number, QAJob[]>();
+
+    for (const job of accuracyJobs) {
+      const existing = jobsByQuestion.get(job.question_id) ?? [];
+      existing.push(job);
+      jobsByQuestion.set(job.question_id, existing);
+    }
+
+    return Array.from(jobsByQuestion.values()).map((jobs) => {
+      const preferredJobs = baselineJudgeId
+        ? jobs.filter((job) => job.judge_id === baselineJudgeId)
+        : [];
+      const candidates = preferredJobs.length > 0 ? preferredJobs : jobs;
+      return [...candidates].sort(
+        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      )[0];
+    });
+  }, [baselineJudgeId]);
 
   // Update counts of the STAGEs each QAJob is in
   const stageGroups = useMemo(() => {
@@ -215,13 +238,14 @@ export default function QAJobControl({
 
   const fetchClaims = useCallback(
     async (job: QAJob): Promise<Partial<QARecord> | null> => {
-      if (!job.answer_id || !baselineJudgeId) return null;
+      const judgeId = job.judge_id ?? baselineJudgeId;
+      if (!job.answer_id || !judgeId) return null;
       const entry = qaMapRef.current[job.question_id];
       if (entry?.claims && entry.claims.length > 0) {
         return null;
       }
       try {
-        const response = await answerApi.getClaims(job.answer_id, baselineJudgeId);
+        const response = await answerApi.getClaims(job.answer_id, judgeId);
         const claims = response.data.claims.map(({ score, ...claim }) => claim);
         const claimScores = response.data.claims
           .map((item) => item.score)
@@ -238,13 +262,14 @@ export default function QAJobControl({
 
   const fetchScore = useCallback(
     async (job: QAJob): Promise<Partial<QARecord> | null> => {
-      if (!job.answer_id || !baselineJudgeId) return null;
+      const judgeId = job.judge_id ?? baselineJudgeId;
+      if (!job.answer_id || !judgeId) return null;
       const entry = qaMapRef.current[job.question_id];
       if (entry?.answerScore) {
         return null;
       }
       try {
-        const response = await answerApi.getScores(job.answer_id, baselineJudgeId);
+        const response = await answerApi.getScores(job.answer_id, judgeId);
         return { answerScore: response.data, claimScores: response.data.claim_scores };
       } catch (err) {
         console.error("Failed to fetch score:", err);
@@ -275,15 +300,13 @@ export default function QAJobControl({
         if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
 
         // Get all jobs for this snapshot and (baseline) judge
-        const allJobs = jobsResponse.data;
-        const baselineJobs = baselineJudgeId
-          ? allJobs.filter((job) => job.judge_id === baselineJudgeId)
-          : allJobs;
-        setQaJobs(baselineJobs);
+        const allJobs = jobsResponse.data.filter((job) => approvedQuestionIdSet.has(job.question_id));
+        const accuracyJobs = selectAccuracyJobs(allJobs);
+        setQaJobs(accuracyJobs);
 
         // Check if rubric jobs are already complete (returning to a finished snapshot)
-        const baselineDone = baselineJobs.length > 0 &&
-          baselineJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED);
+        const baselineDone = accuracyJobs.length > 0 &&
+          accuracyJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED);
         if (baselineDone) {
           const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
           const rubricJobs = allJobs.filter((j) => j.rubric_id !== null);
@@ -354,7 +377,7 @@ export default function QAJobControl({
     return () => {
       cancelled = true;
     };
-  }, [snapshotId, baselineJudgeId, setQaJobs, setQaMap, notifyError]);
+  }, [snapshotId, baselineJudgeId, approvedQuestionIdSet, setQaJobs, setQaMap, notifyError, rubrics, selectAccuracyJobs, updateRubricPendingQuestions]);
 
   // Fetch questions without answers when snapshot or judge changes
   useEffect(() => {
@@ -476,18 +499,16 @@ export default function QAJobControl({
     try {
       const response = await qaJobApi.list(snapshotId);
       console.log("Current job list...", response);
-      const allJobs = response.data;
+      const allJobs = response.data.filter((job) => approvedQuestionIdSet.has(job.question_id));
 
-      const baselineJobs = allJobs.filter(
-        (job) => job.judge_id === baselineJudgeId
-      );
-      setQaJobs(baselineJobs);
+      const accuracyJobs = selectAccuracyJobs(allJobs);
+      setQaJobs(accuracyJobs);
 
-      const baselineDone = baselineJobs.every(
+      const baselineDone = accuracyJobs.length > 0 && accuracyJobs.every(
         (job) => job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED
       );
 
-      if (baselineDone && baselineJobs.length > 0) {
+      if (baselineDone) {
         // Auto-fire rubric jobs once baseline completes
         if (!rubricJobsFired) {
           setRubricJobsFired(true);
@@ -524,7 +545,7 @@ export default function QAJobControl({
 
     pollingIntervalRef.current = window.setInterval(checkData, 2000);
     console.log("Started polling...");
-  }, [snapshotId, baselineJudgeId, stopPolling]);
+  }, [checkData]);
 
   // Automatically trigger default selection once answers exist but none are selected.
   useEffect(() => {
