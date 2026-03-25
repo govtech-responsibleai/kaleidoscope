@@ -2,6 +2,7 @@
 Pydantic models for Judge API requests and responses.
 """
 
+from datetime import datetime
 from typing import Optional, Dict, Any
 from enum import Enum
 from pydantic import BaseModel, Field
@@ -15,6 +16,7 @@ class JudgeType(str, Enum):
 
 class JudgeCreate(BaseModel):
     """Request model for creating a judge."""
+    target_id: Optional[int] = Field(None, description="Target to scope this judge to (NULL = global)")
     name: str = Field(..., description="Name of the judge (e.g., 'Baseline Judge', 'GPT-4 Judge')")
     model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-2.5-flash-lite')")
     model_label: Optional[str] = Field(None, description="Display label for the model")
@@ -40,6 +42,7 @@ class JudgeUpdate(BaseModel):
 class JudgeResponse(BaseModel):
     """Response model for Judge."""
     id: int
+    target_id: Optional[int] = None
     name: str
     model_name: str
     model_label: Optional[str] = None
@@ -49,6 +52,8 @@ class JudgeResponse(BaseModel):
     is_baseline: bool
     is_editable: bool
     category: str = "default"
+    created_at: datetime
+    updated_at: datetime
 
     class Config:
         from_attributes = True

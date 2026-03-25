@@ -390,6 +390,7 @@ class Judge(Base):
     id = Column(Integer, primary_key=True, index=True)
     # FK
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # Fields
     name = Column(String, nullable=False)
@@ -401,12 +402,15 @@ class Judge(Base):
     is_baseline = Column(Boolean, default=False, nullable=False)
     is_editable = Column(Boolean, default=True, nullable=False)
     category = Column(String, nullable=False, default="accuracy")
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     owner = relationship("User", back_populates="judges")
-    qa_jobs = relationship("QAJob", back_populates="judge")
-    answer_scores = relationship("AnswerScore", back_populates="judge")
-    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="judge")
+    target = relationship("Target", foreign_keys=[target_id])
+    qa_jobs = relationship("QAJob", back_populates="judge", passive_deletes=True)
+    answer_scores = relationship("AnswerScore", back_populates="judge", passive_deletes=True)
+    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="judge", passive_deletes=True)
 
 
 

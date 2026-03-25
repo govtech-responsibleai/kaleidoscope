@@ -2,7 +2,7 @@
 API routes for Judge management.
 """
 
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -39,23 +39,30 @@ def create_judge(
     judge_data = judge.model_dump()
     judge_data["user_id"] = user_id
     created_judge = JudgeRepository.create(db, judge_data)
+    print(f"[DEBUG] Created judge: id={created_judge.id}, category={created_judge.category}, target_id={created_judge.target_id}, user_id={created_judge.user_id}", flush=True)
     return created_judge
 
 
 @router.get("/judges", response_model=List[JudgeResponse])
 def list_judges(
+    target_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """
-    List all judges.
+    List all judges, optionally filtered by target.
+
+    When target_id is provided, returns judges scoped to that target
+    plus global default judges (target_id=NULL).
 
     Args:
+        target_id: Optional target ID to filter by
         db: Database session
 
     Returns:
-        List of all judges
+        List of judges
     """
-    judges = JudgeRepository.get_all(db)
+    judges = JudgeRepository.get_all(db, target_id=target_id)
+    print(f"[DEBUG] list_judges(target_id={target_id}): {len(judges)} judges, ids={[j.id for j in judges]}, categories={[j.category for j in judges]}", flush=True)
     return judges
 
 
@@ -95,15 +102,16 @@ def list_available_models():
 @router.get("/judges/by-category/{category}", response_model=List[JudgeResponse])
 def list_judges_by_category(
     category: str,
+    target_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """
-    Get judges for a specific rubric category.
+    Get judges for a specific rubric category, optionally filtered by target.
 
     Returns judges whose category exactly matches the given value.
-    Each category has 3 dedicated judges seeded at startup.
+    When target_id is provided, includes target-scoped and global judges.
     """
-    judges = JudgeRepository.get_by_category(db, category)
+    judges = JudgeRepository.get_by_category(db, category, target_id=target_id)
     return judges
 
 

@@ -68,7 +68,7 @@ class QAJobResponse(BaseModel):
     snapshot_id: int
     question_id: int
     answer_id: Optional[int] = None
-    judge_id: int
+    judge_id: Optional[int] = None
     rubric_id: Optional[int] = None
     type: QAJobType
     status: JobStatus
