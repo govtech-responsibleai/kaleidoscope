@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository, RubricAnswerScoreRepository
-from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse
+from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse
 from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
 from src.common.services.export_service import ExportService, ExportFormat
@@ -221,7 +221,7 @@ def list_personas_for_target(
     return personas
 
 
-@router.get("/{target_id}/questions", response_model=List[QuestionResponse])
+@router.get("/{target_id}/questions", response_model=QuestionListResponse)
 def list_questions_for_target(
     target_id: int,
     status_filter: Optional[StatusEnum] = None,
@@ -240,7 +240,7 @@ def list_questions_for_target(
         db: Database session
 
     Returns:
-        List of questions with persona titles
+        Paginated list of questions with persona titles
     """
     # Verify target exists
     target = TargetRepository.get_by_id(db, target_id)
@@ -251,6 +251,7 @@ def list_questions_for_target(
         )
 
     questions = QuestionRepository.get_by_target(db, target_id, status_filter, skip, limit)
+    total = QuestionRepository.count_by_target(db, target_id, status_filter)
 
     # Add persona_title to each question
     response = []
@@ -272,7 +273,12 @@ def list_questions_for_target(
         }
         response.append(question_dict)
 
-    return response
+    return {
+        "items": response,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+    }
 
 
 @router.get("/{target_id}/personas/export")
