@@ -28,6 +28,7 @@ import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
 interface QAContentProps {
+  targetId: number;
   question: QuestionResponse | null;
   persona: PersonaResponse | null;
   qaEntry?: QARecord;
@@ -40,6 +41,7 @@ interface QAContentProps {
 }
 
 export default function QAContent({
+  targetId,
   question,
   persona,
   qaEntry,
@@ -71,7 +73,7 @@ export default function QAContent({
     }
 
     // Fetch judges for the rubric's category
-    judgeApi.getByCategory(activeRubric.category)
+    judgeApi.getByCategory(activeRubric.category, targetId)
       .then((res) => setRubricJudges(res.data))
       .catch(() => setRubricJudges([]));
 
@@ -103,7 +105,7 @@ export default function QAContent({
       cancelled = true;
       if (pollTimer !== null) window.clearTimeout(pollTimer);
     };
-  }, [activeTab, rubrics, qaEntry?.answer?.id]);
+  }, [activeTab, rubrics, qaEntry?.answer?.id, targetId]);
 
   const answer = qaEntry?.answer;
   const claims = qaEntry?.claims ?? [];

@@ -404,7 +404,7 @@ export interface JudgeModelOption {
 
 export interface JudgeConfig {
   id: number;
-  target_id: number;
+  target_id?: number | null;
   name: string;
   model_name: string;
   model_label?: string;
@@ -435,6 +435,7 @@ export interface JudgeCreate {
   model_name: string;
   model_label?: string;
   judge_type: JudgeType;
+  category?: string;
   params?: Record<string, any>;
   prompt_template?: string;
 }

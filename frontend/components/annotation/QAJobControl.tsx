@@ -31,6 +31,7 @@ import {
 import { answerApi, judgeApi, qaJobApi, questionApi, rubricQAJobApi } from "@/lib/api";
 
 interface QAJobControlProps {
+  targetId: number;
   snapshotId: number | null;
   baselineJudgeId: number | null;
   qaJobs: QAJob[];
@@ -63,6 +64,7 @@ const getStageLabel = (stage: QAJobStageEnum): string => {
 };
 
 export default function QAJobControl({
+  targetId,
   snapshotId,
   baselineJudgeId,
   qaJobs,
@@ -735,7 +737,7 @@ export default function QAJobControl({
 
     for (const rubric of nonAccuracyRubrics) {
       try {
-        const resp = await judgeApi.getByCategory(rubric.category);
+        const resp = await judgeApi.getByCategory(rubric.category, targetId);
         const judges = resp.data;
         // Fire the first (recommended) judge for this category.
         // Users can manually run additional judges from the scoring tab if desired.
@@ -755,7 +757,7 @@ export default function QAJobControl({
         console.error(`Failed to fetch judges for rubric category ${rubric.category}:`, err);
       }
     }
-  }, [snapshotId, rubrics]);
+  }, [snapshotId, rubrics, targetId]);
 
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {

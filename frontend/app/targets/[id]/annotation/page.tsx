@@ -194,6 +194,7 @@ export default function AnnotationPage() {
       </Box>
 
       <QAJobControl
+        targetId={targetId}
         snapshotId={selectedSnapshotId}
         baselineJudgeId={baselineJudgeId}
         qaJobs={qaJobs}

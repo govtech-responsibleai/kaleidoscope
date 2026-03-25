@@ -516,6 +516,7 @@ export default function QAList({
         }}
       >
         <QAContent
+          targetId={targetId}
           question={activeQuestion}
           persona={activePersona}
           qaEntry={activeEntry}

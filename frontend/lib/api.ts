@@ -57,6 +57,7 @@ import {
   RubricAnswerScore,
   SnapshotMetric,
 } from "./types";
+import { sortJudges } from "./judgeOrdering";
 
 // API base URL - can be configured via environment variable
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -412,7 +413,10 @@ export const judgeApi = {
   list: (targetId?: number) =>
     api.get<JudgeConfig[]>("/judges", {
       params: targetId ? { target_id: targetId } : undefined,
-    }),
+    }).then((response) => ({
+      ...response,
+      data: sortJudges(response.data),
+    })),
 
   get: (judgeId: number) =>
     api.get<JudgeConfig>(`/judges/${judgeId}`),
@@ -432,8 +436,13 @@ export const judgeApi = {
   listAvailableModels: () =>
     api.get<JudgeModelOption[]>("/judges/available-models"),
 
-  getByCategory: (category: string) =>
-    api.get<JudgeConfig[]>(`/judges/by-category/${category}`),
+  getByCategory: (category: string, targetId?: number) =>
+    api.get<JudgeConfig[]>(`/judges/by-category/${category}`, {
+      params: targetId ? { target_id: targetId } : undefined,
+    }).then((response) => ({
+      ...response,
+      data: sortJudges(response.data),
+    })),
 };
 
 // QA Job endpoints
