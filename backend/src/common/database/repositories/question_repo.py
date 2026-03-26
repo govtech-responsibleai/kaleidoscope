@@ -3,7 +3,7 @@ Repository for Question database operations.
 """
 
 from typing import List, Optional
-from sqlalchemy import and_, not_, exists
+from sqlalchemy import and_, not_, exists, func
 from sqlalchemy.orm import Session, joinedload
 
 from src.common.database.models import Question, QAJob, Answer, AnswerScore, RubricAnswerScore, StatusEnum
@@ -44,7 +44,12 @@ class QuestionRepository:
         limit: int = 100
     ) -> List[Question]:
         """Get questions for a persona, optionally filtered by status."""
-        query = db.query(Question).options(joinedload(Question.persona)).filter(Question.persona_id == persona_id)
+        query = (
+            db.query(Question)
+            .options(joinedload(Question.persona))
+            .filter(Question.persona_id == persona_id)
+            .order_by(Question.updated_at.desc(), Question.id.desc())
+        )
         if status:
             query = query.filter(Question.status == status)
         return query.offset(skip).limit(limit).all()
@@ -58,10 +63,27 @@ class QuestionRepository:
         limit: int = 100
     ) -> List[Question]:
         """Get questions for a target, optionally filtered by status."""
-        query = db.query(Question).options(joinedload(Question.persona)).filter(Question.target_id == target_id)
+        query = (
+            db.query(Question)
+            .options(joinedload(Question.persona))
+            .filter(Question.target_id == target_id)
+            .order_by(Question.updated_at.desc(), Question.id.desc())
+        )
         if status:
             query = query.filter(Question.status == status)
         return query.offset(skip).limit(limit).all()
+
+    @staticmethod
+    def count_by_target(
+        db: Session,
+        target_id: int,
+        status: Optional[StatusEnum] = None,
+    ) -> int:
+        """Count questions for a target, optionally filtered by status."""
+        query = db.query(func.count(Question.id)).filter(Question.target_id == target_id)
+        if status:
+            query = query.filter(Question.status == status)
+        return query.scalar() or 0
 
     @staticmethod
     def get_by_job(db: Session, job_id: int) -> List[Question]:

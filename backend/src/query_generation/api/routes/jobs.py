@@ -187,9 +187,15 @@ def create_question_generation_job_for_target(
             detail=f"Target {job_request.target_id} not found"
         )
 
+    settings = get_settings()
+    resolved_count_requested = job_request.count_requested or settings.default_question_count
+
+    selected_persona_ids: Optional[List[int]] = None
+
     # Validate persona IDs if provided
     if job_request.persona_ids:
-        for persona_id in job_request.persona_ids:
+        selected_persona_ids = list(dict.fromkeys(job_request.persona_ids))
+        for persona_id in selected_persona_ids:
             persona = PersonaRepository.get_by_id(db, persona_id)
             if not persona:
                 raise HTTPException(
@@ -201,6 +207,7 @@ def create_question_generation_job_for_target(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Persona {persona_id} does not belong to target {job_request.target_id}"
                 )
+        selected_persona_count = len(selected_persona_ids)
     else:
         # Check if there are approved personas when no specific IDs provided
         approved_personas = PersonaRepository.get_approved_by_target(db, job_request.target_id)
@@ -209,14 +216,23 @@ def create_question_generation_job_for_target(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Target {job_request.target_id} has no approved personas"
             )
+        selected_persona_count = len(approved_personas)
+
+    if resolved_count_requested < selected_persona_count:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Question generation requires at least one question per persona: "
+                f"requested {resolved_count_requested} for {selected_persona_count} personas"
+            )
+        )
 
     # Create job
-    settings = get_settings()
     job_data = {
         "target_id": job_request.target_id,
         "type": JobTypeEnum.question_generation,
         "persona_id": None,  # Multiple personas
-        "count_requested": job_request.count_requested or settings.default_question_count,
+        "count_requested": resolved_count_requested,
         "model_used": job_request.model_used or settings.default_llm_model,
         "status": "running"
     }
@@ -226,7 +242,7 @@ def create_question_generation_job_for_target(
     background_tasks.add_task(
         run_question_generation_background,
         job.id,
-        job_request.persona_ids,
+        selected_persona_ids,
         job_request.sample_questions,
         job_request.input_style
     )

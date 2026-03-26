@@ -8,12 +8,37 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Tuple
 
+from sqlalchemy import text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
 
 from src.common.database.repositories import JudgeRepository
 from src.common.database.models import JudgeTypeEnum
 
 logger = logging.getLogger(__name__)
+
+
+def run_manual_migrations(engine: Engine) -> None:
+    """
+    Run manual schema migrations that create_all() cannot handle
+    (e.g. adding columns to existing tables).
+
+    Each statement uses IF NOT EXISTS so this is safe to run on every startup.
+    """
+    migrations = [
+        "ALTER TABLE judges ADD COLUMN IF NOT EXISTS target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE",
+        "CREATE INDEX IF NOT EXISTS ix_judges_target_id ON judges(target_id)",
+        "ALTER TABLE judges ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()",
+        "ALTER TABLE judges ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()",
+        "UPDATE judges SET created_at = COALESCE(created_at, NOW()), updated_at = COALESCE(updated_at, NOW()) WHERE created_at IS NULL OR updated_at IS NULL",
+        "ALTER TABLE judges ALTER COLUMN created_at SET NOT NULL",
+        "ALTER TABLE judges ALTER COLUMN updated_at SET NOT NULL",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            conn.execute(text(sql))
+        conn.commit()
+    logger.info("✓ Manual migrations applied")
 
 
 def _load_baseline_prompt() -> str:
@@ -110,15 +135,34 @@ def seed_default_judges(db: Session) -> None:
     logger.info("Seeding default judges...")
 
     existing_judges = JudgeRepository.get_all(db)
-    existing_combos = {(judge.model_name, judge.category): judge for judge in existing_judges}
+    system_judges = [j for j in existing_judges if not j.is_editable and j.user_id is None]
+    existing_combos = {(judge.model_name, judge.category): judge for judge in system_judges}
 
-    # Sync names of existing non-editable judges to match current config
+    # Sync existing seeded judges to match current config
     for config in DEFAULT_JUDGES:
         combo = (config["model_name"], config["category"])
         existing = existing_combos.get(combo)
-        if existing and not existing.is_editable and existing.name != config["name"]:
-            logger.info(f"Renaming judge '{existing.name}' -> '{config['name']}'")
-            JudgeRepository.update(db, existing.id, {"name": config["name"]})
+        if not existing:
+            continue
+
+        updates = {}
+        if existing.name != config["name"]:
+            updates["name"] = config["name"]
+        if existing.model_label != config.get("model_label"):
+            updates["model_label"] = config.get("model_label")
+        if existing.judge_type != config["judge_type"]:
+            updates["judge_type"] = config["judge_type"]
+        if existing.is_baseline != config["is_baseline"]:
+            updates["is_baseline"] = config["is_baseline"]
+        if existing.is_editable != config["is_editable"]:
+            updates["is_editable"] = config["is_editable"]
+
+        if updates:
+            logger.info(
+                f"Syncing seeded judge id={existing.id} for combo={combo}: "
+                f"{', '.join(sorted(updates.keys()))}"
+            )
+            JudgeRepository.update(db, existing.id, updates)
 
     created_count = 0
     for config in DEFAULT_JUDGES:
@@ -147,3 +191,34 @@ def seed_default_judges(db: Session) -> None:
         logger.info(f"✓ Seeded {created_count} default judges")
     else:
         logger.info("✓ All default judges already exist")
+
+    # Clean up stale or duplicate default judges
+    current_combos = {(cfg["model_name"], cfg["category"]) for cfg in DEFAULT_JUDGES}
+    all_judges = JudgeRepository.get_all(db)
+    system_judges = [j for j in all_judges if not j.is_editable and j.user_id is None]
+
+    # Remove judges whose combo is no longer in DEFAULT_JUDGES
+    stale_judges = [j for j in system_judges if (j.model_name, j.category) not in current_combos]
+
+    # Remove duplicate judges: for each combo, keep only the newest (highest id)
+    from collections import defaultdict
+    combo_groups: dict = defaultdict(list)
+    for j in system_judges:
+        if (j.model_name, j.category) in current_combos:
+            combo_groups[(j.model_name, j.category)].append(j)
+    duplicate_judges = []
+    for combo, judges_in_combo in combo_groups.items():
+        if len(judges_in_combo) > 1:
+            sorted_judges = sorted(judges_in_combo, key=lambda j: j.id, reverse=True)
+            duplicate_judges.extend(sorted_judges[1:])  # keep newest, remove the rest
+
+    to_remove = stale_judges + duplicate_judges
+    for judge in to_remove:
+        logger.info(
+            f"Removing stale/duplicate default judge: id={judge.id}, name='{judge.name}', "
+            f"model={judge.model_name}, category={judge.category}"
+        )
+        JudgeRepository.delete(db, judge.id)
+
+    if to_remove:
+        logger.info(f"✓ Removed {len(to_remove)} stale/duplicate default judges")

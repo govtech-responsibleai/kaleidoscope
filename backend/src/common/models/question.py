@@ -75,6 +75,14 @@ class QuestionResponse(QuestionBase):
         from_attributes = True
 
 
+class QuestionListResponse(BaseModel):
+    """Paginated response model for questions."""
+    items: List[QuestionResponse]
+    total: int
+    skip: int
+    limit: int
+
+
 class QuestionApprove(BaseModel):
     """Request model for approving a question."""
     pass
