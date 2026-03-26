@@ -31,8 +31,18 @@ interface QAItemProps {
   onSelect: () => void;
 }
 
-const getStageLabel = (job: QAJob | null, rubricJobsComplete = true): string => {
+const getStageLabel = (
+  job: QAJob | null,
+  answer: Answer | null,
+  rubricJobsComplete = true
+): string => {
   if (!job) {
+    if (answer?.has_annotation) {
+      return "Annotated";
+    }
+    if (answer) {
+      return "Answer Only";
+    }
     return "Not Started";
   }
 
@@ -69,8 +79,18 @@ const getStageLabel = (job: QAJob | null, rubricJobsComplete = true): string => 
   return "Pending";
 };
 
-const getStageColor = (job: QAJob | null, rubricJobsComplete = true): "default" | "warning" | "success" | "error" | "info" => {
+const getStageColor = (
+  job: QAJob | null,
+  answer: Answer | null,
+  rubricJobsComplete = true
+): "default" | "warning" | "success" | "error" | "info" => {
   if (!job) {
+    if (answer?.has_annotation) {
+      return "success";
+    }
+    if (answer) {
+      return "info";
+    }
     return "default";
   }
 
@@ -149,16 +169,16 @@ export default function QAItem({
                   <Tooltip title={job.error_message}>
                     <Chip
                       size="small"
-                      label={getStageLabel(job, rubricJobsComplete)}
-                      color={getStageColor(job, rubricJobsComplete)}
+                      label={getStageLabel(job, answer, rubricJobsComplete)}
+                      color={getStageColor(job, answer, rubricJobsComplete)}
                       variant="outlined"
                     />
                   </Tooltip>
                 ) : (
                   <Chip
                     size="small"
-                    label={getStageLabel(job, rubricJobsComplete)}
-                    color={getStageColor(job, rubricJobsComplete)}
+                    label={getStageLabel(job, answer, rubricJobsComplete)}
+                    color={getStageColor(job, answer, rubricJobsComplete)}
                     variant="outlined"
                   />
                 )}

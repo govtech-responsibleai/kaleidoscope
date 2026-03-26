@@ -38,6 +38,7 @@ const resolveTemperatureValue = (value: unknown): number | null => {
 interface CreateJudgeDialogProps {
   open: boolean;
   targetId: number;
+  category: string;
   mode: "create" | "edit" | "duplicate";
   judge?: JudgeConfig | null;
   onClose: () => void;
@@ -47,6 +48,7 @@ interface CreateJudgeDialogProps {
 export default function CreateJudgeDialog({
   open,
   targetId,
+  category,
   mode,
   judge,
   onClose,
@@ -224,6 +226,7 @@ export default function CreateJudgeDialog({
           model_name: modelName.trim(),
           model_label: modelLabel,
           judge_type: judgeType,
+          category,
           params: updatedParams,
           prompt_template: promptTemplate.trim() || undefined,
         };

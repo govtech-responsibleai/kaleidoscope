@@ -73,6 +73,7 @@ export default function ScoringPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | "duplicate">("create");
+  const [dialogCategory, setDialogCategory] = useState<string>("accuracy");
   const [dialogJudge, setDialogJudge] = useState<JudgeConfig | null>(null);
   const [judgeToDelete, setJudgeToDelete] = useState<JudgeConfig | null>(null);
 
@@ -138,7 +139,8 @@ export default function ScoringPage() {
     setJudgesLoading(true);
     try {
       const response = await judgeApi.list(targetId);
-      setJudges(response.data.sort((a, b) => Number(b.is_baseline) - Number(a.is_baseline)));
+      console.log("[DEBUG] fetchJudges response:", response.data.length, "judges", response.data.map(j => ({ id: j.id, name: j.name, category: j.category, target_id: j.target_id })));
+      setJudges(response.data);
     } catch {
       setError("Failed to load judges.");
     } finally {
@@ -231,7 +233,7 @@ export default function ScoringPage() {
       await Promise.all(
         rubricList.map(async (rubric) => {
           try {
-            const resp = await judgeApi.getByCategory(rubric.category);
+            const resp = await judgeApi.getByCategory(rubric.category, targetId);
             judgesMap[rubric.id] = resp.data;
           } catch {
             judgesMap[rubric.id] = [];
@@ -310,8 +312,11 @@ export default function ScoringPage() {
     await Promise.all([fetchResults(selectedSnapshotId), fetchQuestionsWithoutScores(selectedSnapshotId), fetchSnapshotMetrics(), fetchRubricMetrics()]);
   }, [selectedSnapshotId, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics, fetchRubricMetrics]);
 
-  const handleOpenDialog = (mode: "create" | "edit" | "duplicate", judge?: JudgeConfig) => {
-    setDialogMode(mode); setDialogJudge(judge || null); setDialogOpen(true);
+  const handleOpenDialog = (mode: "create" | "edit" | "duplicate", judge?: JudgeConfig, category?: string) => {
+    setDialogMode(mode);
+    setDialogCategory(judge?.category ?? category ?? "accuracy");
+    setDialogJudge(judge || null);
+    setDialogOpen(true);
   };
 
   const handleLabelChange = useCallback(async () => {
@@ -536,6 +541,7 @@ export default function ScoringPage() {
       <CreateJudgeDialog
         open={dialogOpen}
         targetId={targetId}
+        category={dialogCategory}
         mode={dialogMode}
         judge={dialogJudge}
         onClose={() => { setDialogOpen(false); setDialogJudge(null); }}

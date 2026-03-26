@@ -252,7 +252,7 @@ export default function ResultsTable({
 
   // All accuracy (claim_based) judges — shown in table columns regardless of reliability
   const accuracyJudges = useMemo(
-    () => [...judges].filter((j) => j.judge_type === "claim_based").sort((a, b) => Number(b.is_baseline) - Number(a.is_baseline)),
+    () => judges.filter((j) => j.judge_type === "claim_based"),
     [judges]
   );
 
@@ -294,7 +294,7 @@ export default function ResultsTable({
     if (!activeRubric) return;
 
     // Fetch judges for this rubric category
-    judgeApi.getByCategory(activeRubric.category)
+    judgeApi.getByCategory(activeRubric.category, targetId)
       .then((res) => setActiveRubricJudges(res.data))
       .catch(() => setActiveRubricJudges([]));
 
@@ -314,7 +314,7 @@ export default function ResultsTable({
       });
       setRubricJudgeScoresMap(map);
     });
-  }, [activeRubricId, results, rubrics]);
+  }, [activeRubricId, results, rubrics, targetId]);
 
   return (
     <Box>
@@ -599,6 +599,7 @@ export default function ResultsTable({
                       <Collapse in={isExpanded} timeout="auto" unmountOnExit>
                         <ResultsTableExpandedRow
                           result={result}
+                          targetId={targetId}
                           reliableJudges={reliableJudges}
                           selectedJudgeIds={Array.from(selectedJudges)}
                           rubrics={rubrics}

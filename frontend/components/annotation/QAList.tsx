@@ -17,7 +17,7 @@ import {
   Typography,
 } from "@mui/material";
 import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse, TargetRubricResponse } from "@/lib/types";
-import { answerApi, questionApi, personaApi } from "@/lib/api";
+import { answerApi, personaApi } from "@/lib/api";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
 import AnnotationForm from "./AnnotationForm";
@@ -27,6 +27,9 @@ type FilterMode = "all" | "selected";
 interface QAListProps {
   targetId: number;
   snapshotId: number | null;
+  approvedQuestions: QuestionResponse[];
+  questionsLoading: boolean;
+  questionError: string | null;
   qaJobs: QAJob[];
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
@@ -40,6 +43,9 @@ const EMPTY_SET = new Set<number>();
 export default function QAList({
   targetId,
   snapshotId,
+  approvedQuestions,
+  questionsLoading,
+  questionError,
   qaJobs,
   qaMap,
   setQaMap,
@@ -47,10 +53,7 @@ export default function QAList({
   rubricPendingQuestions = EMPTY_SET,
   initialQuestionId,
 }: QAListProps) {
-  const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
   const [personaMap, setPersonaMap] = useState<Record<number, PersonaResponse>>({});
-  const [questionsLoading, setQuestionsLoading] = useState(false);
-  const [questionError, setQuestionError] = useState<string | null>(null);
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
 
@@ -59,20 +62,13 @@ export default function QAList({
   const [selectionDirty, setSelectionDirty] = useState(false); // Whether there is mismatch between Saved and Draft selections
   const [helperAlertDismissed, setHelperAlertDismissed] = useState(false); // Track if user dismissed helper alert
 
-  // Load questions and personas
+  // Load personas
   useEffect(() => {
     let cancelled = false;
-    const loadQuestionsAndPersonas = async () => {
-      setQuestionsLoading(true);
+    const loadPersonas = async () => {
       try {
-        const [questionsRes, personasRes] = await Promise.all([
-          questionApi.listByTarget(targetId),
-          personaApi.list(targetId),
-        ]);
+        const personasRes = await personaApi.list(targetId);
         if (cancelled) return;
-        const approvedQuestions = questionsRes.data.filter((question: QuestionResponse) => question.status === "approved");
-        setApprovedQuestions(approvedQuestions);
-        setActiveQuestionId(approvedQuestions[0]?.id ?? null);
 
         // Build persona map
         const pMap: Record<number, PersonaResponse> = {};
@@ -82,22 +78,27 @@ export default function QAList({
         setPersonaMap(pMap);
       } catch (err) {
         if (!cancelled) {
-          console.error("Failed to load questions:", err);
-          setQuestionError("Failed to load questions.");
-        }
-      } finally {
-        if (!cancelled) {
-          setQuestionsLoading(false);
+          console.error("Failed to load personas:", err);
         }
       }
     };
 
-    loadQuestionsAndPersonas();
+    loadPersonas();
 
     return () => {
       cancelled = true;
     };
   }, [targetId]);
+
+  useEffect(() => {
+    setActiveQuestionId((current) => {
+      if (approvedQuestions.length === 0) return null;
+      if (current && approvedQuestions.some((question) => question.id === current)) {
+        return current;
+      }
+      return approvedQuestions[0]?.id ?? null;
+    });
+  }, [approvedQuestions]);
 
   // Get saved selections from qaMap
   useEffect(() => {
@@ -516,6 +517,7 @@ export default function QAList({
         }}
       >
         <QAContent
+          targetId={targetId}
           question={activeQuestion}
           persona={activePersona}
           qaEntry={activeEntry}

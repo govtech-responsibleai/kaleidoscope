@@ -27,6 +27,7 @@ import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
 
 interface ResultsTableExpandedRowProps {
   result: ResultRow;
+  targetId: number;
   reliableJudges: JudgeConfig[];
   selectedJudgeIds: number[];
   rubrics: TargetRubricResponse[];
@@ -41,6 +42,7 @@ interface ClaimsData {
 
 export default function ResultsTableExpandedRow({
   result,
+  targetId,
   reliableJudges,
   selectedJudgeIds,
   rubrics,
@@ -130,14 +132,14 @@ export default function ResultsTableExpandedRow({
       return;
     }
 
-    judgeApi.getByCategory(activeRubric.category)
+    judgeApi.getByCategory(activeRubric.category, targetId)
       .then((res) => setRubricJudges(res.data))
       .catch(() => setRubricJudges([]));
 
     rubricScoreApi.getForAnswer(result.answer_id, activeRubric.id)
       .then((res) => setRubricScores(res.data))
       .catch(() => setRubricScores([]));
-  }, [localActiveRubricId, rubrics, result.answer_id]);
+  }, [localActiveRubricId, rubrics, result.answer_id, targetId]);
 
   const tabValue = localActiveRubricId === null ? 0 : rubrics.findIndex((r) => r.id === localActiveRubricId) + 1;
   const activeRubric = localActiveRubricId !== null ? rubrics.find((r) => r.id === localActiveRubricId) : null;

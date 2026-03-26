@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import {
   Box,
   Typography,
@@ -40,7 +40,7 @@ import {
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
-import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, QuestionUpdate } from "@/lib/types";
+import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, Status } from "@/lib/types";
 import { JOB_POLLING_INTERVAL } from "@/lib/constants";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 import PersonaTable from "@/components/questions/PersonaTable";
@@ -59,7 +59,7 @@ export default function QuestionsPage() {
   const [addPersonasOpen, setAddPersonasOpen] = useState(false);
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [jobStatus, setJobStatus] = useState<"running" | "finding_similar" | "ready_for_review" | null>(null);
-  const [newQuestions, setNewQuestions] = useState<QuestionResponse[]>([]);
+  const [generationSummary, setGenerationSummary] = useState<string | null>(null);
   const [similarQuestionsMap, setSimilarQuestionsMap] = useState<Record<number, QuestionResponse[]>>({});
   const [processingQuestionId, setProcessingQuestionId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -75,9 +75,6 @@ export default function QuestionsPage() {
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<number[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>(["typical", "edge"]);
   const [selectedScopes, setSelectedScopes] = useState<string[]>(["in_kb", "out_kb"]);
-
-  // Ref to avoid stale closure in polling useEffect
-  const questionsRef = useRef<QuestionResponse[]>([]);
 
   const buildSimilarMap = useCallback(async (
     newQs: QuestionResponse[],
@@ -107,65 +104,70 @@ export default function QuestionsPage() {
     return similarMap;
   }, [targetId]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [targetRes, questionsRes, personasRes] = await Promise.all([
         targetApi.get(targetId),
-        questionApi.listByTarget(targetId),
+        questionApi.listAllByTarget(targetId),
         personaApi.list(targetId),
       ]);
 
       setTarget(targetRes.data);
-      setQuestions(questionsRes.data);
-      questionsRef.current = questionsRes.data;
+      setQuestions(questionsRes);
       setPersonas(personasRes.data);
-      return questionsRes.data;
+      return questionsRes;
     } catch (error) {
       console.error("Failed to fetch data:", error);
       return [];
     } finally {
       setLoading(false);
     }
-  };
+  }, [targetId]);
 
-  const loadPendingQuestionsForReview = async (allQuestions: QuestionResponse[]) => {
-    const pendingQuestions = allQuestions.filter(q => q.status === "pending");
-    if (pendingQuestions.length === 0) return;
+  const loadQuestionsForReview = useCallback(async (allQuestions: QuestionResponse[]) => {
+    const reviewableQuestions = allQuestions.filter(
+      (q) => q.status === Status.PENDING || q.status === Status.EDITED
+    );
+    if (reviewableQuestions.length === 0) {
+      setJobStatus(null);
+      setSimilarQuestionsMap({});
+      return;
+    }
 
-    setNewQuestions(pendingQuestions);
     setJobStatus("finding_similar");
 
-    const similarMap = await buildSimilarMap(pendingQuestions, allQuestions);
+    const similarMap = await buildSimilarMap(reviewableQuestions, allQuestions);
     setSimilarQuestionsMap(similarMap);
     setJobStatus("ready_for_review");
-  };
+  }, [buildSimilarMap]);
 
   useEffect(() => {
     const initialize = async () => {
       const freshQuestions = await fetchData();
-      // On initial load, check for pending questions and load them for review
+      // On initial load, check for questions that still need review.
       if (freshQuestions && freshQuestions.length > 0 && !activeJobId && !jobStatus) {
-        const pendingQuestions = freshQuestions.filter(q => q.status === "pending");
-        if (pendingQuestions.length > 0) {
-          await loadPendingQuestionsForReview(freshQuestions);
+        const reviewableQuestions = freshQuestions.filter(
+          (q) => q.status === Status.PENDING || q.status === Status.EDITED
+        );
+        if (reviewableQuestions.length > 0) {
+          await loadQuestionsForReview(freshQuestions);
         }
       }
     };
     initialize();
-  }, [targetId]);
+  }, [targetId, activeJobId, jobStatus, fetchData, loadQuestionsForReview]);
 
   // Initialize persona filter when personas are loaded, and add new personas to selection
   useEffect(() => {
     if (personas.length > 0) {
       const allPersonaIds = personas.map((p) => p.id);
-      if (selectedPersonaIds.length === 0) {
-        setSelectedPersonaIds(allPersonaIds);
-      } else {
-        const newPersonaIds = allPersonaIds.filter(id => !selectedPersonaIds.includes(id));
-        if (newPersonaIds.length > 0) {
-          setSelectedPersonaIds([...selectedPersonaIds, ...newPersonaIds]);
+      setSelectedPersonaIds((prev) => {
+        if (prev.length === 0) {
+          return allPersonaIds;
         }
-      }
+        const newPersonaIds = allPersonaIds.filter(id => !prev.includes(id));
+        return newPersonaIds.length > 0 ? [...prev, ...newPersonaIds] : prev;
+      });
     }
   }, [personas]);
 
@@ -181,19 +183,26 @@ export default function QuestionsPage() {
           setJobStatus("finding_similar");
 
           const jobQuestionsRes = await jobApi.getQuestions(activeJobId);
-          const newQs = jobQuestionsRes.data;
-          setNewQuestions(newQs);
-
-          const similarMap = await buildSimilarMap(newQs, questionsRef.current);
-          setSimilarQuestionsMap(similarMap);
-          setJobStatus("ready_for_review");
+          const generatedCount = jobQuestionsRes.data.length;
+          const requestedCount = response.data.count_requested;
+          const freshQuestions = await fetchData();
+          if (freshQuestions.length > 0) {
+            await loadQuestionsForReview(freshQuestions);
+          } else {
+            setJobStatus(null);
+          }
+          setGenerationSummary(
+            generatedCount < requestedCount
+              ? `Generated ${generatedCount} of ${requestedCount} requested questions. Review the generated questions before continuing.`
+              : null
+          );
           setActiveJobId(null);
-
-          fetchData();
         } else if (response.data.status === JobStatus.FAILED) {
           clearInterval(interval);
           setActiveJobId(null);
           setJobStatus(null);
+          setGenerationSummary(null);
+          setError("Question generation failed. No questions were added.");
           console.error("Job failed:", activeJobId);
         }
       } catch (error) {
@@ -202,11 +211,17 @@ export default function QuestionsPage() {
     }, JOB_POLLING_INTERVAL);
 
     return () => clearInterval(interval);
-  }, [activeJobId, buildSimilarMap]);
+  }, [activeJobId, fetchData, loadQuestionsForReview]);
 
   // Get only approved questions
   const approvedQuestions = useMemo(() => {
-    return questions.filter((question) => question.status === "approved");
+    return questions.filter((question) => question.status === Status.APPROVED);
+  }, [questions]);
+
+  const reviewQuestions = useMemo(() => {
+    return questions.filter(
+      (question) => question.status === Status.PENDING || question.status === Status.EDITED
+    );
   }, [questions]);
 
   // Apply filters to approved questions
@@ -243,18 +258,18 @@ export default function QuestionsPage() {
   const handleReviewQuestion = async (questionId: number, action: "approve" | "reject") => {
     setProcessingQuestionId(questionId);
     try {
-      if (action === "approve") {
-        await questionApi.approve(questionId);
-      } else {
-        await questionApi.reject(questionId);
-      }
-      const updatedNewQuestions = newQuestions.filter(q => q.id !== questionId);
-      setNewQuestions(updatedNewQuestions);
+      const response = action === "approve"
+        ? await questionApi.approve(questionId)
+        : await questionApi.reject(questionId);
 
-      if (updatedNewQuestions.length === 0) {
+      setQuestions((prev) => prev.map((question) => (
+        question.id === questionId ? response.data : question
+      )));
+
+      if (reviewQuestions.length === 1) {
         setJobStatus(null);
         setSimilarQuestionsMap({});
-        await fetchData();
+        setGenerationSummary(null);
       }
     } catch (error) {
       console.error(`Failed to ${action} question:`, error);
@@ -267,11 +282,16 @@ export default function QuestionsPage() {
   const handleBulkApprove = async () => {
     setBulkApproving(true);
     try {
-      await questionApi.bulkApprove(newQuestions.map(q => q.id));
-      setNewQuestions([]);
+      const reviewQuestionIds = reviewQuestions.map((question) => question.id);
+      await questionApi.bulkApprove(reviewQuestionIds);
+      setQuestions((prev) => prev.map((question) => (
+        reviewQuestionIds.includes(question.id)
+          ? { ...question, status: Status.APPROVED }
+          : question
+      )));
       setJobStatus(null);
       setSimilarQuestionsMap({});
-      await fetchData();
+      setGenerationSummary(null);
     } catch (error) {
       console.error("Failed to bulk approve questions:", error);
       setError("Failed to approve all questions. Please try again.");
@@ -297,10 +317,14 @@ export default function QuestionsPage() {
   const handleSaveEdit = async (questionId: number) => {
     setProcessingQuestionId(questionId);
     try {
-      const question = newQuestions.find(q => q.id === questionId);
+      const question = reviewQuestions.find(q => q.id === questionId);
       if (!question) return;
 
-      const updates: QuestionUpdate = {};
+      const updates: {
+        text?: string;
+        type?: QuestionType | null;
+        scope?: QuestionScope | null;
+      } = {};
 
       // Only include fields that have changed
       if (editedText !== question.text) {
@@ -315,14 +339,10 @@ export default function QuestionsPage() {
 
       // Only call API if there are actual changes
       if (Object.keys(updates).length > 0) {
-        await questionApi.update(questionId, updates);
-
-        // Update the question in the local state
-        setNewQuestions(newQuestions.map(q =>
-          q.id === questionId
-            ? { ...q, ...updates }
-            : q
-        ));
+        const response = await questionApi.update(questionId, updates);
+        setQuestions((prev) => prev.map((q) => (
+          q.id === questionId ? response.data : q
+        )));
       }
 
       handleCancelEdit();
@@ -337,7 +357,7 @@ export default function QuestionsPage() {
   const handleJobLaunched = (jobId: number) => {
     setActiveJobId(jobId);
     setJobStatus("running");
-    setNewQuestions([]);
+    setGenerationSummary(null);
     setSimilarQuestionsMap({});
   };
 
@@ -393,7 +413,7 @@ export default function QuestionsPage() {
     return null;
   }
 
-  const hasQuestions = questions.length > 0;
+  const hasQuestions = approvedQuestions.length > 0;
 
   return (
     <Box>
@@ -492,10 +512,17 @@ export default function QuestionsPage() {
             {jobStatus === "ready_for_review" && (
               <>
                 <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                  <Alert severity="info" sx={{ flex: 1, mr: 2 }}>
-                    Questions generated. Scroll down to accept or reject.
-                  </Alert>
-                  {newQuestions.length > 1 && (
+                  <Box sx={{ flex: 1, mr: 2 }}>
+                    {generationSummary && (
+                      <Alert severity="warning" sx={{ mb: 1 }}>
+                        {generationSummary}
+                      </Alert>
+                    )}
+                    <Alert severity="info">
+                      Questions needing review are shown below. Approve or reject each one before continuing.
+                    </Alert>
+                  </Box>
+                  {reviewQuestions.length > 1 && (
                     <Button
                       variant="contained"
                       color="success"
@@ -503,12 +530,12 @@ export default function QuestionsPage() {
                       onClick={handleBulkApprove}
                       disabled={bulkApproving || processingQuestionId !== null}
                     >
-                      Approve All ({newQuestions.length})
+                      Approve All ({reviewQuestions.length})
                     </Button>
                   )}
                 </Box>
 
-                {newQuestions.map((newQ) => {
+                {reviewQuestions.map((newQ) => {
                   const isEditing = editingQuestionId === newQ.id;
                   return (
                   <Card key={newQ.id} sx={{ mb: 2, border: "2px solid", borderColor: "primary.main" }}>
@@ -565,6 +592,11 @@ export default function QuestionsPage() {
                                 {newQ.text}
                               </Typography>
                               <Box display="flex" gap={1} mt={1}>
+                                <Chip
+                                  label={newQ.status === Status.EDITED ? "Edited" : "Pending"}
+                                  size="small"
+                                  color={newQ.status === Status.EDITED ? "info" : "warning"}
+                                />
                                 <Chip label={getPersonaTitle(newQ.persona_id)} size="small" />
                                 <Chip
                                   label={newQ.type || "NA"}
@@ -663,7 +695,7 @@ export default function QuestionsPage() {
                   );
                 })}
 
-                {newQuestions.length === 0 && (
+                {reviewQuestions.length === 0 && (
                   <Typography variant="body1" color="text.secondary">
                     All questions have been reviewed.
                   </Typography>
@@ -821,7 +853,7 @@ export default function QuestionsPage() {
         onQuestionsUploaded={async () => {
           const freshQuestions = await fetchData();
           if (freshQuestions) {
-            await loadPendingQuestionsForReview(freshQuestions);
+            await loadQuestionsForReview(freshQuestions);
           }
         }}
       />

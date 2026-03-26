@@ -12,6 +12,7 @@ import {
   PersonaResponse,
   PersonaUpdate,
   QuestionResponse,
+  QuestionListResponse,
   QuestionUpdate,
   JobCreate,
   JobResponse,
@@ -56,7 +57,9 @@ import {
   RubricAnnotationUpsert,
   RubricAnswerScore,
   SnapshotMetric,
+  Status,
 } from "./types";
+import { sortJudges } from "./judgeOrdering";
 
 // API base URL - can be configured via environment variable
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api/v1";
@@ -230,8 +233,44 @@ export const personaApi = {
 
 // Question endpoints
 export const questionApi = {
-  listByTarget: (targetId: number) =>
-    api.get<QuestionResponse[]>(`/targets/${targetId}/questions`),
+  listByTarget: (
+    targetId: number,
+    params?: {
+      status_filter?: Status;
+      skip?: number;
+      limit?: number;
+    }
+  ) =>
+    api.get<QuestionListResponse>(`/targets/${targetId}/questions`, { params }),
+
+  listAllByTarget: async (
+    targetId: number,
+    params?: {
+      status_filter?: Status;
+      limit?: number;
+    }
+  ) => {
+    const limit = params?.limit ?? 250;
+    let skip = 0;
+    let items: QuestionResponse[] = [];
+    let total = 0;
+
+    do {
+      const response = await api.get<QuestionListResponse>(`/targets/${targetId}/questions`, {
+        params: {
+          ...params,
+          skip,
+          limit,
+        },
+      });
+      items = [...items, ...response.data.items];
+      total = response.data.total;
+      if (response.data.items.length === 0) break;
+      skip += response.data.items.length;
+    } while (items.length < total);
+
+    return items;
+  },
 
   listByPersona: (personaId: number) =>
     api.get<QuestionResponse[]>(`/personas/${personaId}/questions`),
@@ -412,7 +451,10 @@ export const judgeApi = {
   list: (targetId?: number) =>
     api.get<JudgeConfig[]>("/judges", {
       params: targetId ? { target_id: targetId } : undefined,
-    }),
+    }).then((response) => ({
+      ...response,
+      data: sortJudges(response.data),
+    })),
 
   get: (judgeId: number) =>
     api.get<JudgeConfig>(`/judges/${judgeId}`),
@@ -432,8 +474,13 @@ export const judgeApi = {
   listAvailableModels: () =>
     api.get<JudgeModelOption[]>("/judges/available-models"),
 
-  getByCategory: (category: string) =>
-    api.get<JudgeConfig[]>(`/judges/by-category/${category}`),
+  getByCategory: (category: string, targetId?: number) =>
+    api.get<JudgeConfig[]>(`/judges/by-category/${category}`, {
+      params: targetId ? { target_id: targetId } : undefined,
+    }).then((response) => ({
+      ...response,
+      data: sortJudges(response.data),
+    })),
 };
 
 // QA Job endpoints
