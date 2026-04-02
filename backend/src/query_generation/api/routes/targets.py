@@ -456,14 +456,26 @@ def create_rubric(
     target = TargetRepository.get_by_id(db, target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
+    # Validate completeness — rubrics must be fully defined before saving
+    if not rubric.name or not rubric.name.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric name is required")
+    if not rubric.criteria or not rubric.criteria.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric criteria is required")
+    non_empty_options = [o for o in rubric.options if o.option.strip()]
+    if len(non_empty_options) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least 2 non-empty options are required")
+    if not rubric.best_option:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option is required")
+    option_names = [o.option for o in rubric.options]
+    if rubric.best_option not in option_names:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
+    # Validate no duplicate option names
+    non_empty_names = [o.option.strip().lower() for o in non_empty_options]
+    if len(set(non_empty_names)) != len(non_empty_names):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Option names must be unique")
     data = rubric.model_dump()
     data["options"] = [o.model_dump() for o in rubric.options]
     data["category"] = classify_rubric(rubric.name, rubric.criteria)
-    # Validate best_option consistency (completeness enforced at scoring time)
-    if data.get("best_option") and len(data["options"]) > 0:
-        option_names = [o["option"] for o in data["options"]]
-        if data["best_option"] not in option_names:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
     return TargetRubricRepository.create(db, target_id, data)
 
 
@@ -486,6 +498,11 @@ def update_rubric(
         option_names = [o["option"] if isinstance(o, dict) else o.option for o in merged_options]
         if data["best_option"] not in option_names:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
+    # Validate no duplicate option names
+    if "options" in data and data["options"] is not None:
+        non_empty_names = [(o["option"] if isinstance(o, dict) else o.option).strip().lower() for o in data["options"] if (o["option"] if isinstance(o, dict) else o.option).strip()]
+        if len(set(non_empty_names)) != len(non_empty_names):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Option names must be unique")
     # Invalidate existing scores when options change (old option_chosen values become stale)
     if "options" in data and data["options"] is not None:
         existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
