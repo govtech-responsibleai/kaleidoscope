@@ -3,7 +3,7 @@
 import { Box, Typography, useTheme } from "@mui/material";
 
 interface AccuracyGaugeProps {
-  value: number; // 0 to 1
+  value: number | null; // 0 to 1, or null for no data
   size?: number;
   label?: string;
 }
@@ -14,13 +14,15 @@ export default function AccuracyGauge({
   label = "Aggregated Accuracy",
 }: AccuracyGaugeProps) {
   const theme = useTheme();
-  const percentage = (value * 100).toFixed(1);
+  const hasValue = value !== null;
+  const displayValue = hasValue ? value : 0;
+  const percentage = hasValue ? (value * 100).toFixed(1) : "--";
 
   // SVG parameters for semi-circle gauge
   const strokeWidth = 20;
   const radius = (size - strokeWidth) / 2;
   const circumference = Math.PI * radius; // Half circle
-  const progress = value * circumference;
+  const progress = displayValue * circumference;
 
   // Center point
   const cy = size / 2 + 10; // Slight offset down for semi-circle
@@ -32,7 +34,7 @@ export default function AccuracyGauge({
     return theme.palette.error.main;
   };
 
-  const gaugeColor = getColor(value);
+  const gaugeColor = hasValue ? getColor(value) : theme.palette.text.disabled;
 
   return (
     <Box

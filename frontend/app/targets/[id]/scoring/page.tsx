@@ -743,7 +743,7 @@ function RubricScoreGauge({
       </Typography>
 
       <AccuracyGauge
-        value={metric.aggregated_accuracy}
+        value={hasReliableJudges ? metric.aggregated_accuracy : null}
         size={300}
         label={`% ${rubric.best_option || rubric.options?.[0]?.option || "best option"}`}
       />

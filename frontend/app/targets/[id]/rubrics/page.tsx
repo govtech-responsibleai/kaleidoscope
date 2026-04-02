@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  Alert,
   Box,
   Typography,
   Card,
@@ -16,12 +15,12 @@ import {
   Tooltip,
 } from "@mui/material";
 import {
-  EditOutlined as EditOutlinedIcon,
   Add as AddIcon,
   DeleteOutline as DeleteOutlineIcon,
   CheckCircle as CheckCircleIcon,
   CheckCircleOutline as CheckCircleOutlineIcon,
   HelpOutline as HelpOutlineIcon,
+  Save as SaveIcon,
 } from "@mui/icons-material";
 import { targetRubricApi } from "@/lib/api";
 import { TargetRubricResponse, RubricOption } from "@/lib/types";
@@ -37,19 +36,35 @@ export default function RubricsPage() {
   const targetId = Number(params.id);
 
   const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
+  const [savedRubrics, setSavedRubrics] = useState<Record<number, TargetRubricResponse>>({});
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState<Set<number>>(new Set());
+  const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
   const [rubricToDelete, setRubricToDelete] = useState<TargetRubricResponse | null>(null);
-  const [touchedRubrics, setTouchedRubrics] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     targetRubricApi.list(targetId).then((res) => {
       setRubrics(res.data);
+      const saved: Record<number, TargetRubricResponse> = {};
+      res.data.forEach((r) => { saved[r.id] = r; });
+      setSavedRubrics(saved);
       setLoading(false);
     });
   }, [targetId]);
 
-  const addRubric = async () => {
-    // Optimistic: show placeholder immediately, replace with real data after API responds
+  const isDraft = (rubricId: number) => rubricId < 0;
+
+  const isDirty = (rubric: TargetRubricResponse) => {
+    if (isDraft(rubric.id)) return true;
+    const saved = savedRubrics[rubric.id];
+    if (!saved) return true;
+    return rubric.name !== saved.name
+      || rubric.criteria !== saved.criteria
+      || rubric.best_option !== saved.best_option
+      || JSON.stringify(rubric.options) !== JSON.stringify(saved.options);
+  };
+
+  const addRubric = () => {
     const tempId = -Date.now();
     const placeholder: TargetRubricResponse = {
       id: tempId, target_id: targetId, name: "", criteria: "",
@@ -57,84 +72,101 @@ export default function RubricsPage() {
       created_at: "", updated_at: "",
     };
     setRubrics((prev) => [...prev, placeholder]);
-    const res = await targetRubricApi.create(targetId, {
-      name: "",
-      criteria: "",
-      options: [],
-    });
-    setRubrics((prev) => prev.map((r) => (r.id === tempId ? res.data : r)));
   };
 
-  const removeRubric = async (rubricId: number) => {
-    await targetRubricApi.delete(targetId, rubricId);
-    setRubrics((prev) => prev.filter((r) => r.id !== rubricId));
-  };
-
-  const saveName = async (rubric: TargetRubricResponse, name: string) => {
-    if (name === rubric.name) return;
-    const res = await targetRubricApi.update(targetId, rubric.id, { name });
-    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
-  };
-
-  const saveCriteria = async (rubric: TargetRubricResponse, criteria: string) => {
-    if (criteria === rubric.criteria) return;
-    const res = await targetRubricApi.update(targetId, rubric.id, { criteria });
-    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
-  };
-
-  const saveOptions = async (rubric: TargetRubricResponse, options: RubricOption[]) => {
-    const res = await targetRubricApi.update(targetId, rubric.id, { options });
-    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+  const updateField = (rubricId: number, patch: Partial<TargetRubricResponse>) => {
+    setRubrics((prev) => prev.map((r) => (r.id === rubricId ? { ...r, ...patch } : r)));
   };
 
   const updateOptionField = (
-    rubric: TargetRubricResponse,
+    rubricId: number,
     index: number,
     field: keyof RubricOption,
     value: string
   ) => {
-    const updated = rubric.options.map((o, i) => (i === index ? { ...o, [field]: value } : o));
-    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? { ...r, options: updated } : r)));
+    setRubrics((prev) => prev.map((r) => {
+      if (r.id !== rubricId) return r;
+      const updated = r.options.map((o, i) => (i === index ? { ...o, [field]: value } : o));
+      return { ...r, options: updated };
+    }));
   };
 
-  const addOption = async (rubric: TargetRubricResponse) => {
-    const updated = [...rubric.options, { option: "", description: "" }];
-    const res = await targetRubricApi.update(targetId, rubric.id, { options: updated });
-    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+  const addOption = (rubricId: number) => {
+    setRubrics((prev) => prev.map((r) =>
+      r.id === rubricId ? { ...r, options: [...r.options, { option: "", description: "" }] } : r
+    ));
   };
 
-  const removeOption = async (rubric: TargetRubricResponse, index: number) => {
-    const removed = rubric.options[index];
-    const updated = rubric.options.filter((_, i) => i !== index);
-    const patch: { options: RubricOption[]; best_option?: string | null } = { options: updated };
-    if (rubric.best_option === removed.option) {
-      patch.best_option = null;
+  const removeOption = (rubricId: number, index: number) => {
+    setRubrics((prev) => prev.map((r) => {
+      if (r.id !== rubricId) return r;
+      const removed = r.options[index];
+      const updated = r.options.filter((_, i) => i !== index);
+      return {
+        ...r,
+        options: updated,
+        best_option: r.best_option === removed.option ? null : r.best_option,
+      };
+    }));
+  };
+
+  const setBestOption = (rubricId: number, optionName: string) => {
+    updateField(rubricId, { best_option: optionName });
+  };
+
+  const handleSave = async (rubric: TargetRubricResponse) => {
+    setSaving((prev) => new Set(prev).add(rubric.id));
+    setSaveErrors((prev) => { const next = { ...prev }; delete next[rubric.id]; return next; });
+    try {
+      if (isDraft(rubric.id)) {
+        const res = await targetRubricApi.create(targetId, {
+          name: rubric.name,
+          criteria: rubric.criteria,
+          options: rubric.options,
+          best_option: rubric.best_option,
+        });
+        setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+        setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+      } else {
+        const res = await targetRubricApi.update(targetId, rubric.id, {
+          name: rubric.name,
+          criteria: rubric.criteria,
+          options: rubric.options,
+          best_option: rubric.best_option,
+        });
+        setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+        setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+      }
+    } catch {
+      setSaveErrors((prev) => ({ ...prev, [rubric.id]: "Failed to save rubric. Please try again." }));
+    } finally {
+      setSaving((prev) => { const next = new Set(prev); next.delete(rubric.id); return next; });
     }
-    const res = await targetRubricApi.update(targetId, rubric.id, patch);
-    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
-  };
-
-  const saveBestOption = async (rubric: TargetRubricResponse, optionName: string) => {
-    const res = await targetRubricApi.update(targetId, rubric.id, { best_option: optionName });
-    setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
   };
 
   const getRubricErrors = (rubric: TargetRubricResponse): string[] => {
     const errors: string[] = [];
-    if (rubric.options.length < 2) errors.push("Add at least 2 options");
+    if (!rubric.name.trim()) errors.push("Enter a rubric name");
+    if (!rubric.criteria.trim()) errors.push("Enter evaluation criteria");
+    const nonEmptyOptions = rubric.options.filter((o) => o.option.trim() !== "");
+    if (nonEmptyOptions.length < 2) errors.push("Add at least 2 non-empty options");
+    const optionNames = nonEmptyOptions.map((o) => o.option.trim().toLowerCase());
+    if (new Set(optionNames).size !== optionNames.length) errors.push("Remove duplicate option names");
     if (!rubric.best_option || !rubric.options.some((o) => o.option === rubric.best_option))
       errors.push("Select an ideal outcome");
     return errors;
   };
 
-  const markTouched = (rubricId: number) => {
-    setTouchedRubrics((prev) => new Set(prev).add(rubricId));
-  };
-
   const handleConfirmDelete = async () => {
     if (!rubricToDelete) return;
-    await targetRubricApi.delete(targetId, rubricToDelete.id);
-    setRubrics((prev) => prev.filter((r) => r.id !== rubricToDelete.id));
+    try {
+      if (!isDraft(rubricToDelete.id)) {
+        await targetRubricApi.delete(targetId, rubricToDelete.id);
+      }
+      setRubrics((prev) => prev.filter((r) => r.id !== rubricToDelete.id));
+    } catch {
+      setSaveErrors((prev) => ({ ...prev, [rubricToDelete.id]: "Failed to delete rubric. Please try again." }));
+    }
   };
 
   return (
@@ -205,33 +237,26 @@ export default function RubricsPage() {
       ) : (
         <>
           {rubrics.map((rubric) => {
+            const draft = isDraft(rubric.id);
+            const dirty = isDirty(rubric);
             const errors = getRubricErrors(rubric);
-            const showErrors = touchedRubrics.has(rubric.id) && errors.length > 0;
+            const isSaving = saving.has(rubric.id);
+            const saveError = saveErrors[rubric.id];
             return (
             <Card
               key={rubric.id}
               variant="outlined"
-              sx={{ mb: 2, ...(showErrors && { borderColor: "error.main" }) }}
-              onBlur={(e) => {
-                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-                  markTouched(rubric.id);
-                }
-              }}
+              sx={{ mb: 2, ...(draft && { borderStyle: "dashed" }) }}
             >
               <CardContent>
-                {showErrors && (
-                  <Alert severity="error" sx={{ mb: 2 }}>
-                    Incomplete rubric: {errors.join(" and ").toLowerCase()} to use in scoring.
-                  </Alert>
-                )}
                 <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2 }}>
                   <TextField
-                    defaultValue={rubric.name}
+                    value={rubric.name}
                     placeholder="Enter rubric name..."
                     variant="standard"
                     size="small"
-                    onBlur={(e) => saveName(rubric, e.target.value)}
-                    inputProps={{ style: { fontWeight: 600, fontSize: "1rem" } }}
+                    onChange={(e) => updateField(rubric.id, { name: e.target.value })}
+                    slotProps={{ input: { style: { fontWeight: 600, fontSize: "1rem" } } }}
                     sx={{ flexGrow: 1, mr: 1 }}
                   />
                   <IconButton size="small" onClick={() => setRubricToDelete(rubric)}>
@@ -243,12 +268,12 @@ export default function RubricsPage() {
                   Criteria
                 </Typography>
                 <TextField
-                  defaultValue={rubric.criteria}
+                  value={rubric.criteria}
                   placeholder="Describe your evaluation criteria"
                   fullWidth
                   multiline
                   size="small"
-                  onBlur={(e) => saveCriteria(rubric, e.target.value)}
+                  onChange={(e) => updateField(rubric.id, { criteria: e.target.value })}
                   sx={{ mb: 2 }}
                 />
 
@@ -275,7 +300,7 @@ export default function RubricsPage() {
                     <Box key={i} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
                       <Box
                         sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-                        onClick={() => { if (opt.option) saveBestOption(rubric, opt.option); }}
+                        onClick={() => { if (opt.option) setBestOption(rubric.id, opt.option); }}
                       >
                         {isPositive
                           ? <CheckCircleIcon sx={{ fontSize: 24, color: "success.main" }} />
@@ -287,8 +312,7 @@ export default function RubricsPage() {
                         value={opt.option}
                         size="small"
                         sx={{ width: 140, flexShrink: 0 }}
-                        onChange={(e) => updateOptionField(rubric, i, "option", e.target.value)}
-                        onBlur={() => saveOptions(rubric, rubric.options)}
+                        onChange={(e) => updateOptionField(rubric.id, i, "option", e.target.value)}
                       />
                       <TextField
                         placeholder="Description"
@@ -296,19 +320,46 @@ export default function RubricsPage() {
                         size="small"
                         fullWidth
                         multiline
-                        onChange={(e) => updateOptionField(rubric, i, "description", e.target.value)}
-                        onBlur={() => saveOptions(rubric, rubric.options)}
+                        onChange={(e) => updateOptionField(rubric.id, i, "description", e.target.value)}
                       />
-                      <IconButton size="small" onClick={() => removeOption(rubric, i)}>
+                      <IconButton size="small" onClick={() => removeOption(rubric.id, i)}>
                         <DeleteOutlineIcon fontSize="small" />
                       </IconButton>
                     </Box>
                   );
                 })}
 
-                <Button startIcon={<AddIcon />} size="small" sx={{ mt: 0.5 }} onClick={() => addOption(rubric)}>
+                <Button startIcon={<AddIcon />} size="small" sx={{ mt: 0.5 }} onClick={() => addOption(rubric.id)}>
                   Add Option
                 </Button>
+
+                {dirty && (
+                  <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1.5 }}>
+                    <Tooltip title={errors.length > 0 ? errors.join(", ") : ""}>
+                      <span>
+                        <Button
+                          variant="contained"
+                          size="small"
+                          startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+                          disabled={errors.length > 0 || isSaving}
+                          onClick={() => handleSave(rubric)}
+                        >
+                          {isSaving ? "Saving..." : "Save"}
+                        </Button>
+                      </span>
+                    </Tooltip>
+                    {errors.length > 0 && (
+                      <Typography variant="caption" color="error">
+                        {errors.join(", ")}
+                      </Typography>
+                    )}
+                    {saveError && (
+                      <Typography variant="caption" color="error">
+                        {saveError}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
               </CardContent>
             </Card>
             );

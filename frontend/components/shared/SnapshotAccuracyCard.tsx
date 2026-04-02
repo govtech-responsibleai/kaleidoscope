@@ -67,7 +67,7 @@ export default function SnapshotAccuracyCard({
       </Typography>
 
       <AccuracyGauge
-        value={snapshotMetric.aggregated_accuracy}
+        value={hasReliableJudges ? snapshotMetric.aggregated_accuracy : null}
         size={300}
         label="Aggregated Accuracy Score"
       />
