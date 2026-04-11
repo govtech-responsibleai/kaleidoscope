@@ -533,8 +533,10 @@ class TargetRubric(Base):
     criteria = Column(Text, nullable=False, default="")
     options = Column(JSON, nullable=False, default=list)
     position = Column(Integer, nullable=False, default=0)
-    category = Column(String, nullable=False, default="default")  # "relevance" | "voice" | "default"
+    category = Column(String, nullable=False, default="default")  # legacy, no longer written to
     best_option = Column(String, nullable=True)  # user-specified positive option for scoring
+    judge_prompt = Column(Text, nullable=True)  # complete judge prompt for this rubric
+    template_key = Column(String, nullable=True)  # pre-made template identifier (e.g. "empathy"), null for custom
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

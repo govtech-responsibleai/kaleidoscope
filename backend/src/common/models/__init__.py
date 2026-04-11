@@ -113,6 +113,7 @@ from src.common.models.answer_label_override import (
 )
 from src.common.models.target_rubric import (
     RubricOption,
+    PremadeRubricTemplateResponse,
     TargetRubricCreate,
     TargetRubricUpdate,
     TargetRubricResponse,
@@ -249,6 +250,7 @@ __all__ = [
     "ConfusionMatrixResponse",
     # TargetRubric
     "RubricOption",
+    "PremadeRubricTemplateResponse",
     "TargetRubricCreate",
     "TargetRubricUpdate",
     "TargetRubricResponse",

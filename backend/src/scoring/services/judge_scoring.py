@@ -19,6 +19,7 @@ from src.common.database.repositories.rubric_answer_score_repo import RubricAnsw
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
+from src.common.prompts.template_loader import get_loader
 from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult, RubricJudgmentResult
 
 logger = logging.getLogger(__name__)
@@ -335,33 +336,40 @@ class AnswerJudge:
             logger.error(f"Failed to score answer {self.answer.id}: {e}", exc_info=True)
             raise
 
-    # Category-specific prompt templates for rubric scoring
-    RUBRIC_TEMPLATE_MAP = {
-        "voice": "voice_rubric_judge.md",
-        "relevance": "relevancy_rubric_judge.md",
-        "default": "default_rubric_judge.md",
-    }
-
     async def _score_rubric_response_level(self) -> None:
         """
         Score an answer against a custom rubric using response-level judging.
 
-        Selects a category-specific prompt template (voice, relevance, or default),
-        calls LLM to pick one option, and stores the result in RubricAnswerScore.
+        Uses the rubric's stored judge_prompt (either pre-made or LLM-generated).
+        Falls back to default_rubric_judge.md for legacy rubrics without a judge_prompt.
         """
-        template_name = self.RUBRIC_TEMPLATE_MAP.get(
-            self.rubric.category, "default_rubric_judge.md"
-        )
-        logger.info(f"QAJob {self.job_id}: Using template '{template_name}' for rubric category '{self.rubric.category}'")
-
-        prompt = render_template(
-            template_name,
-            question_text=self.answer.question.text,
-            answer_text=self.answer.answer_content,
-            rubric_name=self.rubric.name,
-            rubric_criteria=self.rubric.criteria,
-            rubric_options=self.rubric.options,
-        )
+        if self.rubric.judge_prompt:
+            loader = get_loader()
+            prompt = loader.render_from_string(
+                self.rubric.judge_prompt,
+                # Augmenter-generated variable names
+                Question=self.answer.question.text,
+                Answer=self.answer.answer_content,
+                System_Prompt_Cleaned="",
+                All_Citations="",
+                # Legacy/pre-made variable names
+                question_text=self.answer.question.text,
+                answer_text=self.answer.answer_content,
+                rubric_name=self.rubric.name,
+                rubric_criteria=self.rubric.criteria,
+                rubric_options=self.rubric.options,
+            )
+            logger.info(f"QAJob {self.job_id}: Using rubric's stored judge_prompt ({len(self.rubric.judge_prompt)} chars)")
+        else:
+            prompt = render_template(
+                "default_rubric_judge.md",
+                question_text=self.answer.question.text,
+                answer_text=self.answer.answer_content,
+                rubric_name=self.rubric.name,
+                rubric_criteria=self.rubric.criteria,
+                rubric_options=self.rubric.options,
+            )
+            logger.info(f"QAJob {self.job_id}: No judge_prompt on rubric, falling back to default_rubric_judge.md")
 
         try:
             result, metadata = await self.llm_client.generate_structured_async(

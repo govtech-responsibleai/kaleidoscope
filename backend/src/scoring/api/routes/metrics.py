@@ -369,27 +369,41 @@ def get_rubric_judge_accuracy(
 )
 def get_rubric_snapshot_metrics(
     target_id: int,
-    snapshot_id: int = Query(...),
+    snapshot_id: Optional[int] = Query(None),
     db: Session = Depends(get_db),
 ):
-    """Get aggregated rubric metrics for a specific snapshot."""
+    """Get aggregated rubric metrics. If snapshot_id is omitted, returns metrics for all snapshots."""
     target = TargetRepository.get_by_id(db, target_id)
     if not target:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Target {target_id} not found",
         )
-    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
-    if not snapshot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Snapshot {snapshot_id} not found",
-        )
-    try:
-        service = MetricsService(db)
-        return service.calculate_rubric_snapshot_metrics(target_id, snapshot_id)
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
-        )
+    service = MetricsService(db)
+    if snapshot_id is not None:
+        snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+        if not snapshot:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Snapshot {snapshot_id} not found",
+            )
+        try:
+            return service.calculate_rubric_snapshot_metrics(target_id, snapshot_id)
+        except ValueError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+    # No snapshot_id: aggregate rubric metrics across all snapshots
+    snapshots = SnapshotRepository.get_by_target(db, target_id)
+    all_metrics = []
+    for snapshot in snapshots:
+        try:
+            metrics = service.calculate_rubric_snapshot_metrics(target_id, snapshot.id)
+            for m in metrics:
+                all_metrics.append(m.model_copy(update={
+                    "snapshot_id": snapshot.id,
+                    "snapshot_name": snapshot.name,
+                    "created_at": snapshot.created_at.isoformat(),
+                }))
+        except Exception:
+            continue
+    return all_metrics
