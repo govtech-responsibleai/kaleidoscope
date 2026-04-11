@@ -40,8 +40,9 @@ export default function AccuracyGauge({
     <Box
       sx={{
         position: "relative",
-        width: size,
-        height: size * 0.65,
+        width: "100%",
+        maxWidth: size,
+        aspectRatio: `${size} / ${size * 0.65}`,
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -49,9 +50,10 @@ export default function AccuracyGauge({
       }}
     >
       <svg
-        width={size}
-        height={size * 0.6}
-        style={{ overflow: "visible" }}
+        viewBox={`0 0 ${size} ${size * 0.6}`}
+        width="100%"
+        height="auto"
+        style={{ display: "block" }}
       >
         {/* Background arc */}
         <path

@@ -750,33 +750,30 @@ export default function QAJobControl({
   const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && questionsWithoutAnswers.length === 0;
 
   // Fire rubric jobs for all answered questions (fire-and-forget).
-  // Fetches judges on-demand so we don't depend on pre-loaded state.
+  // Fetches response-level judges on-demand and fires the first one for each rubric.
   const fireRubricJobs = useCallback(async (allQuestionIds: number[]) => {
-    if (!snapshotId || !rubrics || allQuestionIds.length === 0) return;
-    const nonAccuracyRubrics = rubrics.filter((r) => r.category !== "accuracy");
-    if (nonAccuracyRubrics.length === 0) return;
+    if (!snapshotId || !rubrics || rubrics.length === 0 || allQuestionIds.length === 0) return;
 
-    for (const rubric of nonAccuracyRubrics) {
-      try {
-        const resp = await judgeApi.getByCategory(rubric.category, targetId);
-        const judges = resp.data;
-        // Fire the first (recommended) judge for this category.
-        // Users can manually run additional judges from the scoring tab if desired.
-        const specialistJudges = judges.slice(0, 1);
-        await Promise.allSettled(
-          specialistJudges.map((judge) =>
-            rubricQAJobApi.start(snapshotId, {
-              judge_id: judge.id,
-              question_ids: allQuestionIds,
-              rubric_id: rubric.id,
-            }).catch((err) => {
-              console.error(`Failed to start rubric job for rubric ${rubric.id}, judge ${judge.id}:`, err);
-            })
-          )
-        );
-      } catch (err) {
-        console.error(`Failed to fetch judges for rubric category ${rubric.category}:`, err);
-      }
+    try {
+      const resp = await judgeApi.list(targetId);
+      const responseLevelJudges = resp.data.filter((j) => j.judge_type === "response_level");
+      if (responseLevelJudges.length === 0) return;
+
+      // Fire the first response-level judge for each rubric
+      const firstJudge = responseLevelJudges[0];
+      await Promise.allSettled(
+        rubrics.map((rubric) =>
+          rubricQAJobApi.start(snapshotId, {
+            judge_id: firstJudge.id,
+            question_ids: allQuestionIds,
+            rubric_id: rubric.id,
+          }).catch((err) => {
+            console.error(`Failed to start rubric job for rubric ${rubric.id}, judge ${firstJudge.id}:`, err);
+          })
+        )
+      );
+    } catch (err) {
+      console.error("Failed to fetch judges for rubric scoring:", err);
     }
   }, [snapshotId, rubrics, targetId]);
 

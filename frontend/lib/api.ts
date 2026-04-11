@@ -544,6 +544,9 @@ export const metricsApi = {
     api.get<SnapshotMetric[]>(`/targets/${targetId}/rubric-snapshot-metrics`, {
       params: { snapshot_id: snapshotId },
     }),
+
+  getAllRubricSnapshotMetrics: (targetId: number) =>
+    api.get<SnapshotMetric[]>(`/targets/${targetId}/rubric-snapshot-metrics`),
 };
 
 // Admin endpoints
@@ -575,6 +578,9 @@ export const rubricScoreApi = {
 export const targetRubricApi = {
   list: (targetId: number) =>
     api.get<TargetRubricResponse[]>(`/targets/${targetId}/rubrics`),
+
+  listPremade: (targetId: number) =>
+    api.get<import("./types").PremadeRubricTemplate[]>(`/targets/${targetId}/premade-rubrics`),
 
   create: (targetId: number, data: TargetRubricCreate) =>
     api.post<TargetRubricResponse>(`/targets/${targetId}/rubrics`, data),

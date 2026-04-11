@@ -72,9 +72,9 @@ export default function QAContent({
       return;
     }
 
-    // Fetch judges for the rubric's category
-    judgeApi.getByCategory(activeRubric.category, targetId)
-      .then((res) => setRubricJudges(res.data))
+    // Fetch response-level judges for rubric scoring
+    judgeApi.list(targetId)
+      .then((res) => setRubricJudges(res.data.filter((j) => j.judge_type === "response_level")))
       .catch(() => setRubricJudges([]));
 
     let cancelled = false;
@@ -205,7 +205,7 @@ export default function QAContent({
       <QAJobProgress job={job} />
 
       {/* Rubric pill toggles */}
-      <Stack direction="row" spacing={1} sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider", bgcolor: "grey.50" }}>
+      <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider", bgcolor: "grey.50" }}>
         <Chip
           label="Accuracy"
           onClick={() => setActiveTab(0)}

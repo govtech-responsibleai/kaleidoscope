@@ -594,6 +594,7 @@ export interface TargetRubricCreate {
   criteria: string;
   options: RubricOption[];
   best_option?: string | null;
+  template_key?: string | null;
 }
 
 export interface TargetRubricUpdate {
@@ -603,8 +604,6 @@ export interface TargetRubricUpdate {
   best_option?: string | null;
 }
 
-export type RubricCategory = "accuracy" | "voice" | "relevancy" | "default";
-
 export interface TargetRubricResponse {
   id: number;
   target_id: number;
@@ -613,9 +612,20 @@ export interface TargetRubricResponse {
   options: RubricOption[];
   best_option: string | null;
   position: number;
-  category: RubricCategory;
+  category: string;
+  judge_prompt: string | null;
+  template_key: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface PremadeRubricTemplate {
+  key: string;
+  name: string;
+  criteria: string;
+  options: RubricOption[];
+  best_option: string;
+  recommended_model: string;
 }
 
 // Admin / User Management types
