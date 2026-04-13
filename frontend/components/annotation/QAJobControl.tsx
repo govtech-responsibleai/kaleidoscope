@@ -26,8 +26,9 @@ import {
   QAMap,
   QARecord,
   TargetRubricResponse,
+  RubricSpec,
 } from "@/lib/types";
-import { answerApi, judgeApi, qaJobApi, questionApi, rubricQAJobApi } from "@/lib/api";
+import { answerApi, getApiErrorMessage, judgeApi, qaJobApi, questionApi } from "@/lib/api";
 
 interface QAJobControlProps {
   targetId: number;
@@ -40,27 +41,21 @@ interface QAJobControlProps {
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
   rubrics?: TargetRubricResponse[];
   onError?: (message: string) => void;
-  onRubricJobsCompleteChange?: (complete: boolean) => void;
-  onRubricPendingQuestionsChange?: (pendingQuestionIds: Set<number>) => void;
 }
 
 type ControlState = "start" | "pause" | "resume" | "disabled";
 
-const getStageLabel = (stage: QAJobStageEnum): string => {
-  switch (stage) {
-    case QAJobStageEnum.STARTING:
-      return "Starting";
-    case QAJobStageEnum.GENERATING_ANSWERS:
-      return "Generating";
-    case QAJobStageEnum.PROCESSING_ANSWERS:
-      return "Processing";
-    case QAJobStageEnum.SCORING_ANSWERS:
-      return "Scoring";
-    case QAJobStageEnum.COMPLETED:
-      return "Completed";
-    default:
-      return "Unknown";
-  }
+/**
+ * Merge updated jobs into an existing list by id. Existing jobs are replaced
+ * with their updated version; jobs not present in `updated` are preserved;
+ * new jobs in `updated` that aren't in `prev` are appended.
+ */
+const mergeJobs = (prev: QAJob[], updated: QAJob[]): QAJob[] => {
+  const byId = new Map(updated.map((job) => [job.id, job]));
+  const merged = prev.map((job) => byId.get(job.id) ?? job);
+  const prevIds = new Set(prev.map((job) => job.id));
+  const appended = updated.filter((job) => !prevIds.has(job.id));
+  return [...merged, ...appended];
 };
 
 export default function QAJobControl({
@@ -74,13 +69,9 @@ export default function QAJobControl({
   setQaMap,
   rubrics,
   onError,
-  onRubricJobsCompleteChange,
-  onRubricPendingQuestionsChange,
 }: QAJobControlProps) {
-  const [jobInAction, setJobInAction] = useState(false); // To prevent double submits of a job request
-  const [loadingInitialData, setLoadingInitialData] = useState(true); // Wait for the first set of data to be ready
-  const [rubricJobsFired, setRubricJobsFired] = useState(false); // Track if rubric jobs have been fired this session
-  const [rubricJobsComplete, setRubricJobsComplete] = useState(false); // Track if all rubric jobs have completed
+  const [jobInAction, setJobInAction] = useState(false);
+  const [loadingInitialData, setLoadingInitialData] = useState(true);
   const pollingIntervalRef = useRef<number | null>(null);
   const qaMapRef = useRef<QAMap>({});
   const activeSnapshotIdRef = useRef<number | null>(null);
@@ -96,50 +87,6 @@ export default function QAJobControl({
     onErrorRef.current?.(message);
   }, []);
 
-  // Propagate rubricJobsComplete to parent
-  useEffect(() => {
-    onRubricJobsCompleteChange?.(rubricJobsComplete);
-  }, [rubricJobsComplete, onRubricJobsCompleteChange]);
-
-  const onRubricPendingQuestionsChangeRef = useRef(onRubricPendingQuestionsChange);
-  useEffect(() => {
-    onRubricPendingQuestionsChangeRef.current = onRubricPendingQuestionsChange;
-  }, [onRubricPendingQuestionsChange]);
-
-  /** Compute which question IDs still have pending rubric jobs and notify parent */
-  const updateRubricPendingQuestions = useCallback((allJobs: QAJob[]) => {
-    const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
-    if (!hasNonAccuracyRubrics) {
-      onRubricPendingQuestionsChangeRef.current?.(new Set());
-      return;
-    }
-    const rubricJobs = allJobs.filter((j) => j.rubric_id !== null);
-    // Group rubric jobs by question_id
-    const byQuestion = new Map<number, QAJob[]>();
-    for (const job of rubricJobs) {
-      const existing = byQuestion.get(job.question_id) ?? [];
-      existing.push(job);
-      byQuestion.set(job.question_id, existing);
-    }
-    const pending = new Set<number>();
-    for (const [questionId, jobs] of byQuestion) {
-      const allDone = jobs.every(
-        (j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED
-      );
-      if (!allDone) pending.add(questionId);
-    }
-    // Also include questions that have baseline jobs completed but no rubric jobs yet
-    // (rubric jobs haven't been created for them yet)
-    if (rubricJobs.length === 0) {
-      // No rubric jobs at all yet — all questions with baseline jobs are pending
-      const baselineCompleted = allJobs
-        .filter((j) => j.rubric_id === null && (j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED))
-        .map((j) => j.question_id);
-      for (const qid of baselineCompleted) pending.add(qid);
-    }
-    onRubricPendingQuestionsChangeRef.current?.(pending);
-  }, [rubrics]);
-
   // refs don't trigger re-renders
   useEffect(() => {
     qaMapRef.current = qaMap;
@@ -148,6 +95,15 @@ export default function QAJobControl({
   useEffect(() => {
     activeSnapshotIdRef.current = snapshotId;
   }, [snapshotId]);
+
+  // With one job per question, completed count = jobs in terminal state
+  const questionsFullyComplete = useMemo(() => {
+    return qaJobs.filter(
+      (j) => j.status === JobStatus.COMPLETED
+    ).length;
+  }, [qaJobs]);
+
+  const totalQuestions = qaJobs.length;
 
   // Update STATUS counts
   const statusGroups = useMemo(() => {
@@ -166,53 +122,12 @@ export default function QAJobControl({
   }, [qaJobs]);
 
   const runningCount = statusGroups[JobStatus.RUNNING] ?? 0;
-  const completedCount = statusGroups[JobStatus.COMPLETED] ?? 0;
   const failedCount = statusGroups[JobStatus.FAILED] ?? 0;
   const pausedCount = statusGroups[JobStatus.PAUSED] ?? 0;
 
   // Track questions without answers (fetched from backend)
   const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number[]>([]);
   const approvedQuestionIdSet = useMemo(() => new Set(approvedQuestionIds), [approvedQuestionIds]);
-
-  const selectAccuracyJobs = useCallback((allJobs: QAJob[]) => {
-    const accuracyJobs = allJobs.filter((job) => job.rubric_id === null);
-    const jobsByQuestion = new Map<number, QAJob[]>();
-
-    for (const job of accuracyJobs) {
-      const existing = jobsByQuestion.get(job.question_id) ?? [];
-      existing.push(job);
-      jobsByQuestion.set(job.question_id, existing);
-    }
-
-    return Array.from(jobsByQuestion.values()).map((jobs) => {
-      const preferredJobs = baselineJudgeId
-        ? jobs.filter((job) => job.judge_id === baselineJudgeId)
-        : [];
-      const candidates = preferredJobs.length > 0 ? preferredJobs : jobs;
-      return [...candidates].sort(
-        (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      )[0];
-    });
-  }, [baselineJudgeId]);
-
-  // Update counts of the STAGEs each QAJob is in
-  const stageGroups = useMemo(() => {
-    const groups: Record<QAJobStageEnum, number> = {
-      [QAJobStageEnum.STARTING]: 0,
-      [QAJobStageEnum.GENERATING_ANSWERS]: 0,
-      [QAJobStageEnum.PROCESSING_ANSWERS]: 0,
-      [QAJobStageEnum.SCORING_ANSWERS]: 0,
-      [QAJobStageEnum.COMPLETED]: 0,
-    };
-
-    qaJobs.forEach((job) => {
-      if (job.status === JobStatus.RUNNING) {
-        groups[job.stage]++;
-      }
-    });
-
-    return groups;
-  }, [qaJobs]);
 
   // Fetch helpers — return partial QARecord data without calling setQaMap.
   // The hydrate effect collects all partials and applies them in a single batch.
@@ -290,7 +205,6 @@ export default function QAJobControl({
 
     const loadData = async () => {
       setLoadingInitialData(true);
-      console.log("Loading initial data...");
       try {
         const [jobsResponse, answersResponse] = await Promise.all([
           qaJobApi.list(snapshotId),
@@ -299,23 +213,8 @@ export default function QAJobControl({
 
         if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
 
-        // Get all jobs for this snapshot and (baseline) judge
         const allJobs = jobsResponse.data.filter((job) => approvedQuestionIdSet.has(job.question_id));
-        const accuracyJobs = selectAccuracyJobs(allJobs);
-        setQaJobs(accuracyJobs);
-
-        // Check if rubric jobs are already complete (returning to a finished snapshot)
-        const baselineDone = accuracyJobs.length > 0 &&
-          accuracyJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED);
-        if (baselineDone) {
-          const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
-          const rubricJobs = allJobs.filter((j) => j.rubric_id !== null);
-          const rubricsDone = !hasNonAccuracyRubrics ||
-            (rubricJobs.length > 0 &&
-              rubricJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED));
-          setRubricJobsComplete(rubricsDone);
-          updateRubricPendingQuestions(allJobs);
-        }
+        setQaJobs(allJobs);
 
         const answers = answersResponse.data.answers;
 
@@ -361,7 +260,6 @@ export default function QAJobControl({
           qaMapRef.current = initial;
           return initial;
         });
-        console.log("Loaded initial data...");
       } catch (err) {
         console.error("Failed to load QA data:", err);
         notifyError("Failed to load QA data for this snapshot.");
@@ -377,7 +275,7 @@ export default function QAJobControl({
     return () => {
       cancelled = true;
     };
-  }, [snapshotId, baselineJudgeId, approvedQuestionIdSet, setQaJobs, setQaMap, notifyError, rubrics, selectAccuracyJobs, updateRubricPendingQuestions]);
+  }, [snapshotId, baselineJudgeId, approvedQuestionIdSet, setQaJobs, setQaMap, notifyError]);
 
   // Fetch questions without answers when snapshot or judge changes
   useEffect(() => {
@@ -394,14 +292,6 @@ export default function QAJobControl({
         if (!cancelled) {
           const questionIds = response.data.map((q) => q.id);
           setQuestionsWithoutAnswers(questionIds);
-          if (questionIds.length > 0) {
-            console.log(
-              `QAJobControl: Detected ${questionIds.length} questions without answers:`,
-              questionIds
-            );
-          } else {
-            console.log("QAJobControl: No new questions to evaluate.");
-          }
         }
       } catch (err) {
         console.error("Failed to fetch questions without answers:", err);
@@ -419,7 +309,7 @@ export default function QAJobControl({
   }, [snapshotId, baselineJudgeId, qaJobs]);
 
   // Update QA data as jobs progress depending on their STAGE.
-  // Fetches all missing data in parallel and applies a single batched setQaMap.
+  // Only hydrates from accuracy jobs (rubric_id === null) to avoid duplicate fetches.
   useEffect(() => {
     if (!snapshotId) {
       return;
@@ -428,7 +318,6 @@ export default function QAJobControl({
     let cancelled = false;
 
     const hydrate = async () => {
-      // Collect all fetch promises keyed by questionId
       const updates: { questionId: number; promise: Promise<Partial<QARecord> | null> }[] = [];
 
       for (const job of qaJobs) {
@@ -448,7 +337,6 @@ export default function QAJobControl({
 
       if (updates.length === 0) return;
 
-      // Resolve all fetches in parallel
       const results = await Promise.all(
         updates.map(async ({ questionId, promise }) => ({
           questionId,
@@ -458,7 +346,6 @@ export default function QAJobControl({
 
       if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
 
-      // Merge all non-null results into a single qaMap update
       const merged: Record<number, Partial<QARecord>> = {};
       for (const { questionId, partial } of results) {
         if (!partial) continue;
@@ -498,42 +385,15 @@ export default function QAJobControl({
     if (!snapshotId || !baselineJudgeId) return;
     try {
       const response = await qaJobApi.list(snapshotId);
-      console.log("Current job list...", response);
       const allJobs = response.data.filter((job) => approvedQuestionIdSet.has(job.question_id));
+      setQaJobs(allJobs);
 
-      const accuracyJobs = selectAccuracyJobs(allJobs);
-      setQaJobs(accuracyJobs);
-
-      const baselineDone = accuracyJobs.length > 0 && accuracyJobs.every(
+      const allDone = allJobs.length > 0 && allJobs.every(
         (job) => job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED
       );
 
-      if (baselineDone) {
-        // Auto-fire rubric jobs once baseline completes
-        if (!rubricJobsFired) {
-          setRubricJobsFired(true);
-          const answeredIds = Object.values(qaMapRef.current)
-            .filter((e) => e.answer)
-            .map((e) => e.questionId);
-          if (answeredIds.length > 0) {
-            console.log("Baseline complete — auto-firing rubric jobs for", answeredIds.length, "answered questions");
-            fireRubricJobs(answeredIds);
-          }
-        }
-
-        // Check rubric job completion
-        const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
-        const rubricJobs = allJobs.filter((j) => j.rubric_id !== null);
-        const rubricsDone = !hasNonAccuracyRubrics ||
-          (rubricJobs.length > 0 &&
-            rubricJobs.every((j) => j.status === JobStatus.COMPLETED || j.status === JobStatus.FAILED));
-        setRubricJobsComplete(rubricsDone);
-        updateRubricPendingQuestions(allJobs);
-
-        // Only stop polling when baseline AND rubric jobs are all done
-        if (rubricsDone) {
-          stopPolling();
-        }
+      if (allDone) {
+        stopPolling();
       }
     } catch (err) {
       console.error("Failed to poll job status:", err);
@@ -541,10 +401,8 @@ export default function QAJobControl({
   };
 
   const startPolling = useCallback(() => {
-    if (pollingIntervalRef.current !== null) return; // Already polling
-
+    if (pollingIntervalRef.current !== null) return;
     pollingIntervalRef.current = window.setInterval(checkData, 2000);
-    console.log("Started polling...");
   }, [checkData]);
 
   // Automatically trigger default selection once answers exist but none are selected.
@@ -559,7 +417,6 @@ export default function QAJobControl({
 
     if (answers.length === 0) return;
 
-    // Check if any answer is already selected
     const hasSelection = answers.some((answer) => answer.is_selected_for_annotation);
     if (hasSelection) {
       defaultSelectionAttemptedRef.current.add(snapshotId);
@@ -607,20 +464,38 @@ export default function QAJobControl({
     };
   }, [snapshotId, qaMap, setQaMap]);
 
-  // Reset rubric jobs state and cleanup polling on snapshot/judge change
+  // Cleanup polling on snapshot/judge change
   useEffect(() => {
-    setRubricJobsFired(false);
-    setRubricJobsComplete(false);
     return () => {
       stopPolling();
     };
   }, [snapshotId, baselineJudgeId, stopPolling]);
 
+  // Resolve rubric specs: for each non-accuracy rubric, fetch its specialist judge
+  const resolveRubricSpecs = useCallback(async (): Promise<RubricSpec[]> => {
+    if (!rubrics) return [];
+    const nonAccuracyRubrics = rubrics.filter((r) => r.category !== "accuracy");
+    if (nonAccuracyRubrics.length === 0) return [];
+
+    const specs: RubricSpec[] = [];
+    for (const rubric of nonAccuracyRubrics) {
+      try {
+        const resp = await judgeApi.getByCategory(rubric.category, targetId);
+        const judges = resp.data;
+        if (judges.length > 0) {
+          specs.push({ rubric_id: rubric.id, judge_id: judges[0].id });
+        }
+      } catch (err) {
+        console.error(`Failed to fetch judges for rubric category ${rubric.category}:`, err);
+      }
+    }
+    return specs;
+  }, [rubrics, targetId]);
+
   const totalJobs = qaJobs.length;
 
-  // UI chips to display the STATUS and STAGE of the QA job.
+  // UI chip to display progress
   const getStatusChip = () => {
-
     if (!snapshotId || !baselineJudgeId) {
       return <Chip label="Select a snapshot" size="small" />;
     }
@@ -640,53 +515,36 @@ export default function QAJobControl({
     }
 
     if (runningCount > 0) {
-      const dominantStage = Object.entries(stageGroups).reduce(
-        (max, [stage, count]) => {
-          return count > max.count
-            ? { stage: stage as QAJobStageEnum, count }
-            : max;
-        },
-        { stage: QAJobStageEnum.STARTING, count: 0 }
-      ).stage;
-
       return (
         <Chip
           icon={<CircularProgress size={14} />}
-          label={`${getStageLabel(dominantStage)} • ${completedCount}/${totalJobs}`}
+          label={`Evaluating \u2022 ${questionsFullyComplete}/${totalQuestions}`}
           color="warning"
           size="small"
         />
       );
     }
 
-    if (completedCount === totalJobs) {
+    if (questionsFullyComplete === totalQuestions && totalQuestions > 0) {
       if (questionsWithoutAnswers.length > 0) {
         return (
           <Chip
-            label={`Pending: (${questionsWithoutAnswers.length}) new questions found.`}
+            label={`${questionsWithoutAnswers.length} new question${questionsWithoutAnswers.length === 1 ? "" : "s"} ready to evaluate`}
             color="warning"
             size="small"
           />
         );
       }
-      const hasNonAccuracyRubrics = rubrics?.some((r) => r.category !== "accuracy") ?? false;
-      if (hasNonAccuracyRubrics && !rubricJobsComplete) {
-        return (
-          <Chip
-            icon={<CircularProgress size={14} />}
-            label="Scoring custom metrics..."
-            color="warning"
-            size="small"
-          />
-        );
-      }
-      return <Chip label="Completed" color="success" size="small" />;
+      return <Chip label="Evaluations complete — ready to annotate" color="success" size="small" />;
     }
 
-    if (failedCount > 0) {
+    if (failedCount > 0 && runningCount === 0 && pausedCount === 0) {
+      const failedQuestions = new Set(
+        qaJobs.filter((j) => j.status === JobStatus.FAILED).map((j) => j.question_id)
+      ).size;
       return (
         <Chip
-          label={`Failed: ${failedCount}/${totalJobs}`}
+          label={`${failedQuestions} of ${totalQuestions} evaluation${failedQuestions === 1 ? "" : "s"} failed`}
           color="error"
           size="small"
         />
@@ -696,7 +554,7 @@ export default function QAJobControl({
     if (pausedCount > 0) {
       return (
         <Chip
-          label={`Paused: ${completedCount}/${totalJobs}`}
+          label={`Paused: ${questionsFullyComplete}/${totalQuestions}`}
           color="default"
           size="small"
         />
@@ -713,8 +571,7 @@ export default function QAJobControl({
 
     if (
       totalJobs === 0 ||
-      completedCount === totalJobs ||
-      failedCount === totalJobs
+      (questionsFullyComplete === totalQuestions && totalQuestions > 0)
     ) {
       return "start";
     }
@@ -730,14 +587,23 @@ export default function QAJobControl({
     return "start";
   })();
 
+  const isScoringComplete = totalQuestions > 0
+    && questionsFullyComplete === totalQuestions
+    && questionsWithoutAnswers.length === 0;
+
   const controlButtonText = (() => {
     switch (controlState) {
       case "start":
-        // If there are already completed jobs but new questions found, show different text
-        if (completedCount > 0 && questionsWithoutAnswers.length > 0) {
+        if (failedCount > 0) {
+          return "Retry Failed Evaluations";
+        }
+        if (questionsFullyComplete > 0 && questionsWithoutAnswers.length > 0) {
           return "Evaluate New Questions";
         }
-        return "Evaluate All Questions";
+        if (isScoringComplete) {
+          return "All Evaluations Complete";
+        }
+        return "Start Evaluations";
       case "pause":
         return "Pause Evaluation";
       case "resume":
@@ -747,106 +613,63 @@ export default function QAJobControl({
     }
   })();
 
-  const isScoringComplete = totalJobs > 0 && completedCount === totalJobs && questionsWithoutAnswers.length === 0;
-
-  // Fire rubric jobs for all answered questions (fire-and-forget).
-  // Fetches response-level judges on-demand and fires the first one for each rubric.
-  const fireRubricJobs = useCallback(async (allQuestionIds: number[]) => {
-    if (!snapshotId || !rubrics || rubrics.length === 0 || allQuestionIds.length === 0) return;
-
-    try {
-      const resp = await judgeApi.list(targetId);
-      const responseLevelJudges = resp.data.filter((j) => j.judge_type === "response_level");
-      if (responseLevelJudges.length === 0) return;
-
-      // Fire the first response-level judge for each rubric
-      const firstJudge = responseLevelJudges[0];
-      const results = await Promise.allSettled(
-        rubrics.map((rubric) =>
-          rubricQAJobApi.start(snapshotId, {
-            judge_id: firstJudge.id,
-            question_ids: allQuestionIds,
-            rubric_id: rubric.id,
-          })
-        )
-      );
-      const failed = results.filter((r) => r.status === "rejected");
-      if (failed.length > 0 && onError) {
-        onError(`${failed.length} rubric job(s) failed to start. Check the console for details.`);
-        failed.forEach((r) => console.error("Rubric job start failed:", (r as PromiseRejectedResult).reason));
-      }
-    } catch (err) {
-      console.error("Failed to fetch judges for rubric scoring:", err);
-      if (onError) onError("Failed to start rubric scoring jobs.");
-    }
-  }, [snapshotId, rubrics, targetId]);
-
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {
     if (!snapshotId || !baselineJudgeId) return;
-    console.log("calling handleStart");
 
-    // All question IDs to potentially rubric-score (answered + new)
-    const answeredQuestionIds = Object.values(qaMap)
-      .filter((entry) => entry.answer)
-      .map((entry) => entry.questionId);
+    setJobInAction(true);
+    try {
+      const rubricSpecs = await resolveRubricSpecs();
 
-    // Check for failed jobs that need restarting
-    const failedJobs = qaJobs.filter((job) => job.status === JobStatus.FAILED);
+      // Determine which questions to evaluate
+      const failedJobs = qaJobs.filter((job) => job.status === JobStatus.FAILED);
+      const questionIds = failedJobs.length > 0
+        ? failedJobs.map((job) => job.question_id)
+        : questionsWithoutAnswers;
+      const jobIds = failedJobs.length > 0
+        ? failedJobs.map((job) => job.id)
+        : undefined;
 
-    // If there are failed jobs, restart them; otherwise start new jobs for questions without answers
-    if (failedJobs.length > 0) {
-      setJobInAction(true);
-      try {
-        const response = await qaJobApi.start(snapshotId, {
-          judge_id: baselineJudgeId,
-          question_ids: failedJobs.map((job) => job.question_id),
-          job_ids: failedJobs.map((job) => job.id),
-        });
-        setQaJobs(response.data);
-        startPolling();
-        // Fire rubric jobs only for already-answered questions (failed baseline jobs don't have answers yet)
-        fireRubricJobs(answeredQuestionIds);
-      } catch (err) {
-        console.error("Failed to restart failed QA jobs:", err);
-        notifyError("Failed to restart failed QA jobs.");
-      } finally {
-        setJobInAction(false);
+      if (questionIds.length === 0 && !jobIds) return;
+
+      const response = await qaJobApi.startAll(snapshotId, {
+        judge_id: baselineJudgeId,
+        question_ids: questionIds,
+        rubric_specs: rubricSpecs.length > 0 ? rubricSpecs : undefined,
+        job_ids: jobIds,
+      });
+
+      if (failedJobs.length > 0) {
+        const retriedIds = new Set(failedJobs.map((job) => job.id));
+        const optimistic = response.data.map((job) =>
+          retriedIds.has(job.id) ? { ...job, status: JobStatus.RUNNING } : job
+        );
+        setQaJobs((prev) => mergeJobs(prev, optimistic));
+      } else {
+        setQaJobs((prev) => mergeJobs(prev, response.data));
       }
-    } else if (questionsWithoutAnswers.length > 0) {
-      setJobInAction(true);
-      try {
-        const response = await qaJobApi.start(snapshotId, {
-          judge_id: baselineJudgeId,
-          question_ids: questionsWithoutAnswers,
-        });
-        setQaJobs(response.data);
-        startPolling();
-        // Fire rubric jobs only for already-answered questions (new questions don't have answers yet)
-        fireRubricJobs(answeredQuestionIds);
-      } catch (err) {
-        console.error("Failed to start QA jobs:", err);
-        notifyError("Failed to start QA jobs.");
-      } finally {
-        setJobInAction(false);
-      }
-    } else {
-      // No new baseline questions but user may want to run rubric jobs for already-answered questions
-      fireRubricJobs(answeredQuestionIds);
+      startPolling();
+      checkData();
+    } catch (err) {
+      console.error("Failed to start QA jobs:", err);
+      notifyError(getApiErrorMessage(err, "Failed to start QA jobs."));
+    } finally {
+      setJobInAction(false);
     }
   };
 
   const handlePause = async () => {
-    if (qaJobs.length === 0) return;
-    console.log("calling handlePause");
+    const runningJobs = qaJobs.filter((job) => job.status === JobStatus.RUNNING);
+    if (runningJobs.length === 0) return;
     setJobInAction(true);
     try {
-      const response = await qaJobApi.pause(qaJobs.map((job) => job.id));
-      setQaJobs(response.data);
+      const response = await qaJobApi.pause(runningJobs.map((job) => job.id));
+      setQaJobs((prev) => mergeJobs(prev, response.data));
+      await checkData();
       stopPolling();
     } catch (err) {
       console.error("Failed to pause QA jobs:", err);
-      notifyError("Failed to pause QA jobs.");
+      notifyError(getApiErrorMessage(err, "Failed to pause QA jobs."));
     } finally {
       setJobInAction(false);
     }
@@ -857,19 +680,23 @@ export default function QAJobControl({
     const pausedJobs = qaJobs.filter((job) => job.status === JobStatus.PAUSED);
     if (pausedJobs.length === 0) return;
 
-    console.log("calling handleResume");
     setJobInAction(true);
     try {
-      const response = await qaJobApi.start(snapshotId, {
+      const response = await qaJobApi.startAll(snapshotId, {
         judge_id: baselineJudgeId,
         question_ids: pausedJobs.map((job) => job.question_id),
         job_ids: pausedJobs.map((job) => job.id),
       });
-      setQaJobs(response.data);
+      const resumedIds = new Set(pausedJobs.map((job) => job.id));
+      const optimistic = response.data.map((job) =>
+        resumedIds.has(job.id) ? { ...job, status: JobStatus.RUNNING } : job
+      );
+      setQaJobs((prev) => mergeJobs(prev, optimistic));
       startPolling();
+      checkData();
     } catch (err) {
       console.error("Failed to resume QA jobs:", err);
-      notifyError("Failed to resume QA jobs.");
+      notifyError(getApiErrorMessage(err, "Failed to resume QA jobs."));
     } finally {
       setJobInAction(false);
     }
@@ -889,12 +716,14 @@ export default function QAJobControl({
     <Box sx={{ mb: 2 }}>
       <Stack direction="row" spacing={2} alignItems="center">
         <Button
-          variant="outlined"
+          variant="contained"
+          color="primary"
           onClick={handleControlClick}
           disabled={
             controlState === "disabled" ||
             jobInAction ||
-            loadingInitialData
+            loadingInitialData ||
+            isScoringComplete
           }
           startIcon={
             jobInAction ? (

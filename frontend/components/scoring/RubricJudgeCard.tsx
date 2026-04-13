@@ -12,8 +12,8 @@ import {
   Typography,
 } from "@mui/material";
 import { InfoOutlined as InfoOutlinedIcon } from "@mui/icons-material";
-import { JudgeConfig, JobStatus, QAJob, JudgeAlignment, JudgeAccuracy } from "@/lib/types";
-import { qaJobApi, metricsApi } from "@/lib/api";
+import { JudgeConfig, QAJob, JudgeAlignment, JudgeAccuracy } from "@/lib/types";
+import { metricsApi, questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 
 interface RubricJudgeCardProps {
@@ -37,8 +37,9 @@ export default function RubricJudgeCard({
   onJobStart,
   onJobComplete,
 }: RubricJudgeCardProps) {
-  const [jobs, setJobs] = useState<QAJob[]>([]);
   const [isPolling, setIsPolling] = useState(false);
+  const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [runTotalCount, setRunTotalCount] = useState<number | null>(null);
   const pollingRef = useRef<number | null>(null);
   const onJobCompleteRef = useRef(onJobComplete);
 
@@ -50,19 +51,17 @@ export default function RubricJudgeCard({
     onJobCompleteRef.current = onJobComplete;
   }, [onJobComplete]);
 
-  // Filter jobs for this specific rubric+judge combo
-  const rubricJobs = jobs.filter((j) => j.rubric_id === rubricId);
-
-  const fetchJobs = useCallback(async (): Promise<QAJob[]> => {
-    if (!snapshotId) return [];
+  const fetchPendingCount = useCallback(async (): Promise<number> => {
+    if (!snapshotId) return 0;
     try {
-      const response = await qaJobApi.listByJudge(snapshotId, judge.id);
-      setJobs(response.data);
-      return response.data;
+      const response = await questionApi.listApprovedWithoutRubricScores(snapshotId, judge.id, rubricId);
+      const nextPending = response.data.length;
+      setPendingCount(nextPending);
+      return nextPending;
     } catch {
-      return [];
+      return pendingCount ?? 0;
     }
-  }, [snapshotId, judge.id]);
+  }, [snapshotId, judge.id, rubricId, pendingCount]);
 
   const fetchMetrics = useCallback(async () => {
     setLoadingMetrics(true);
@@ -80,30 +79,24 @@ export default function RubricJudgeCard({
     }
   }, [snapshotId, judge.id, rubricId]);
 
-  const startPolling = useCallback(() => {
+  const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       window.clearInterval(pollingRef.current);
       pollingRef.current = null;
     }
+    setIsPolling(false);
+  }, []);
+
+  const startPolling = useCallback((initialPending: number) => {
+    stopPolling();
     setIsPolling(true);
+    setRunTotalCount(initialPending);
 
     const poll = async () => {
       try {
-        const response = await qaJobApi.listByJudge(snapshotId, judge.id);
-        const allJobs = response.data;
-        setJobs(allJobs);
-
-        const currentRubricJobs = allJobs.filter((j) => j.rubric_id === rubricId);
-        const allCompleted =
-          currentRubricJobs.length > 0 &&
-          currentRubricJobs.every((j) => j.status === JobStatus.COMPLETED);
-
-        if (allCompleted) {
-          if (pollingRef.current) {
-            window.clearInterval(pollingRef.current);
-            pollingRef.current = null;
-          }
-          setIsPolling(false);
+        const remaining = await fetchPendingCount();
+        if (remaining === 0) {
+          stopPolling();
           await fetchMetrics();
           onJobCompleteRef.current();
         }
@@ -114,55 +107,44 @@ export default function RubricJudgeCard({
 
     poll();
     pollingRef.current = window.setInterval(poll, 5000);
-  }, [snapshotId, judge.id, rubricId, fetchMetrics]);
+  }, [fetchPendingCount, fetchMetrics, stopPolling]);
 
   useEffect(() => {
     return () => {
-      if (pollingRef.current) {
-        window.clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
+      stopPolling();
     };
-  }, []);
+  }, [stopPolling]);
 
   useEffect(() => {
-    setJobs([]);
-    setIsPolling(false);
+    setPendingCount(null);
+    setRunTotalCount(null);
     setAlignment(null);
     setAccuracy(null);
-    if (pollingRef.current) {
-      window.clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, [snapshotId]);
+    stopPolling();
+  }, [snapshotId, stopPolling]);
 
   useEffect(() => {
-    fetchJobs();
-  }, [fetchJobs]);
+    fetchPendingCount();
+  }, [fetchPendingCount]);
 
-  const isRunning = isPolling || rubricJobs.some((j) => j.status === JobStatus.RUNNING);
-  const isCompleted =
-    rubricJobs.length > 0 && rubricJobs.every((j) => j.status === JobStatus.COMPLETED);
-  const hasAllScores = rubricJobs.length > 0;
-  const completedCount = rubricJobs.filter((j) => j.status === JobStatus.COMPLETED).length;
-  const totalJobs = rubricJobs.length;
+  const isRunning = isPolling;
+  const hasAllScores = pendingCount === 0;
+  const totalTracked =
+    runTotalCount ??
+    (accuracy ? accuracy.total_answers : pendingCount ?? 0);
+  const completedCount = Math.max(totalTracked - (pendingCount ?? 0), 0);
 
-  // Fetch metrics when completed
   useEffect(() => {
-    if ((isCompleted || hasAllScores) && snapshotId && !isRunning) {
+    if (hasAllScores && snapshotId && !isRunning) {
       fetchMetrics();
     }
-  }, [isCompleted, hasAllScores, isRunning, snapshotId, fetchMetrics]);
+  }, [hasAllScores, isRunning, snapshotId, fetchMetrics]);
 
   const handleRun = async () => {
+    const initialPending = pendingCount ?? 0;
     const createdJobs = await onJobStart(judge.id);
     if (createdJobs && createdJobs.length > 0) {
-      setJobs((prev) => {
-        const existingIds = new Set(prev.map((j) => j.id));
-        const merged = [...prev, ...createdJobs.filter((j) => !existingIds.has(j.id))];
-        return merged;
-      });
-      startPolling();
+      startPolling(initialPending);
     }
   };
 
@@ -195,7 +177,7 @@ export default function RubricJudgeCard({
             <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
               {accuracy
                 ? `This judge rates your target at`
-                : (isRunning ? `Running: ${completedCount}/${totalJobs} questions` : "Run this judge to see score")}
+                : (isRunning ? `Running: ${completedCount}/${totalTracked} questions` : "Run this judge to see score")}
             </Typography>
             <Stack direction="row" spacing={0.5} alignItems="baseline">
               <Typography variant="h4" fontWeight={700} color={accuracy ? "primary.main" : "text.disabled"}>
@@ -239,18 +221,18 @@ export default function RubricJudgeCard({
           fullWidth
           sx={{ mt: 2 }}
           onClick={handleRun}
-          disabled={isRunning || isCompleted || hasQuestionsWithoutAnswers || loadingMetrics}
+          disabled={isRunning || hasAllScores || hasQuestionsWithoutAnswers || loadingMetrics}
         >
           {isRunning ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-              <CircularProgress size={16} /> Running ({completedCount}/{totalJobs})
+              <CircularProgress size={16} /> Running ({completedCount}/{totalTracked})
             </Box>
-          ) : isCompleted ? (
+          ) : hasQuestionsWithoutAnswers ? (
+            "Run in Annotations"
+          ) : hasAllScores ? (
             "Completed"
-          ) : totalJobs === 0 ? (
-            "Run"
           ) : (
-            "Run"
+            `Run (${pendingCount ?? 0} pending)`
           )}
         </Button>
       </CardContent>

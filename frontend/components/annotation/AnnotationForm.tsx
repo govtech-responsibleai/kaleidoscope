@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Box,
@@ -183,17 +183,17 @@ function CustomRubricRow({ rubric, value, onChange, saving, notes, onNotesChange
 interface AnnotationFormProps {
   answer: Answer | null;
   onAnnotationSaved: () => void;
-  showHelperAlert?: boolean;
-  onDismissHelperAlert?: () => void;
   rubrics: TargetRubricResponse[];
+  activeRubricId?: number | null;
+  onCompletenessChanged?: (answerId: number, isFullyAnnotated: boolean) => void;
 }
 
 export default function AnnotationForm({
   answer,
   onAnnotationSaved,
-  showHelperAlert = false,
-  onDismissHelperAlert,
   rubrics,
+  activeRubricId,
+  onCompletenessChanged,
 }: AnnotationFormProps) {
   const [accuracyLabel, setAccuracyLabel] = useState<boolean | null>(null);
   const [existingAnnotation, setExistingAnnotation] = useState<Annotation | null>(null);
@@ -203,6 +203,45 @@ export default function AnnotationForm({
   const [rubricNotes, setRubricNotes] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(false);
   const [savingRubric, setSavingRubric] = useState<number | "accuracy" | null>(null);
+
+  const accuracyRowRef = useRef<HTMLDivElement>(null);
+  const rubricRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
+  const annotatableRubrics = useMemo(
+    () => rubrics.filter((r) => r.options.length >= 2 && !!r.best_option),
+    [rubrics]
+  );
+
+  const isFullyAnnotated = useMemo(
+    () =>
+      accuracyLabel !== null &&
+      annotatableRubrics.every((r) => rubricLabels[r.id] !== undefined),
+    [accuracyLabel, rubricLabels, annotatableRubrics]
+  );
+
+  useEffect(() => {
+    if (answer && onCompletenessChanged) {
+      onCompletenessChanged(answer.id, isFullyAnnotated);
+    }
+  }, [answer?.id, isFullyAnnotated, onCompletenessChanged]);
+
+  useEffect(() => {
+    if (activeRubricId === undefined) return;
+    const el =
+      activeRubricId === null
+        ? accuracyRowRef.current
+        : rubricRowRefs.current[activeRubricId];
+    if (el) {
+      el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [activeRubricId]);
+
+  const setRubricRowRef = useCallback(
+    (rubricId: number) => (el: HTMLDivElement | null) => {
+      rubricRowRefs.current[rubricId] = el;
+    },
+    []
+  );
 
   useEffect(() => {
     if (!answer) {
@@ -309,13 +348,9 @@ export default function AnnotationForm({
 
   if (!answer) {
     return (
-      <Box sx={{ px: 3, py: 2, height: "100%", display: "flex", flexDirection: "column" }}>
-        <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
-          <Typography variant="body1" color="text.secondary" align="center">
-            Select a response to annotate.
-          </Typography>
-        </Box>
-      </Box>
+      <Typography variant="body2" color="text.secondary" sx={{ py: 2 }}>
+        Waiting for answer to be generated.
+      </Typography>
     );
   }
 
@@ -340,40 +375,52 @@ export default function AnnotationForm({
   return (
     <Box sx={{ height: "100%", display: "flex", flexDirection: "column" }}>
       <Stack spacing={2.5} sx={{ flex: 1 }}>
-        <Typography variant="h5">Annotations</Typography>
-
-        {showHelperAlert && (
-          <Alert severity="info" onClose={onDismissHelperAlert}>
-            Ready to annotate! Toggle a label for each rubric below.
-          </Alert>
-        )}
-
         {loading ? (
           <Box sx={{ display: "flex", justifyContent: "center", py: 2 }}>
             <CircularProgress size={24} />
           </Box>
         ) : (
           <Stack spacing={2.5} divider={<Box sx={{ borderBottom: 1, borderColor: "divider" }} />}>
-            <AccuracyRow
-              value={accuracyLabel}
-              onChange={handleAccuracyChange}
-              saving={savingRubric === "accuracy"}
-              notes={accuracyNotes}
-              onNotesChange={setAccuracyNotes}
-              onNotesSave={handleAccuracyNotesSave}
-              notesDisabled={!existingAnnotation}
-            />
-            {rubrics.filter((r) => r.options.length >= 2 && !!r.best_option).map((rubric) => (
-              <CustomRubricRow
-                key={rubric.id}
-                rubric={rubric}
-                value={rubricLabels[rubric.id] ?? null}
-                onChange={(val) => handleRubricChange(rubric.id, val)}
-                saving={savingRubric === rubric.id}
-                notes={rubricNotes[rubric.id] ?? ""}
-                onNotesChange={(val) => setRubricNotes((prev) => ({ ...prev, [rubric.id]: val }))}
-                onNotesSave={(val) => handleRubricNotesSave(rubric.id, val)}
+            <Box
+              ref={accuracyRowRef}
+              sx={{
+                pl: 1.5,
+                borderLeft: activeRubricId === null ? "3px solid" : "3px solid transparent",
+                borderColor: activeRubricId === null ? "primary.main" : "transparent",
+                transition: "border-color 0.2s",
+              }}
+            >
+              <AccuracyRow
+                value={accuracyLabel}
+                onChange={handleAccuracyChange}
+                saving={savingRubric === "accuracy"}
+                notes={accuracyNotes}
+                onNotesChange={setAccuracyNotes}
+                onNotesSave={handleAccuracyNotesSave}
+                notesDisabled={!existingAnnotation}
               />
+            </Box>
+            {annotatableRubrics.map((rubric) => (
+              <Box
+                key={rubric.id}
+                ref={setRubricRowRef(rubric.id)}
+                sx={{
+                  pl: 1.5,
+                  borderLeft: activeRubricId === rubric.id ? "3px solid" : "3px solid transparent",
+                  borderColor: activeRubricId === rubric.id ? "primary.main" : "transparent",
+                  transition: "border-color 0.2s",
+                }}
+              >
+                <CustomRubricRow
+                  rubric={rubric}
+                  value={rubricLabels[rubric.id] ?? null}
+                  onChange={(val) => handleRubricChange(rubric.id, val)}
+                  saving={savingRubric === rubric.id}
+                  notes={rubricNotes[rubric.id] ?? ""}
+                  onNotesChange={(val) => setRubricNotes((prev) => ({ ...prev, [rubric.id]: val }))}
+                  onNotesSave={(val) => handleRubricNotesSave(rubric.id, val)}
+                />
+              </Box>
             ))}
           </Stack>
         )}

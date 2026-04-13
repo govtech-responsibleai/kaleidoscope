@@ -40,6 +40,7 @@ import {
   JudgeModelOption,
   QAJob,
   QAJobStartRequest,
+  UnifiedQAJobStartRequest,
   JudgeAlignment,
   JudgeAccuracy,
   ResultRow,
@@ -70,6 +71,28 @@ const api = axios.create({
     "Content-Type": "application/json",
   },
 });
+
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    const detail = error.response?.data?.detail;
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+    if (Array.isArray(detail) && detail.length > 0) {
+      const joined = detail
+        .map((item) => (typeof item === "string" ? item : item?.msg))
+        .filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+        .join("; ");
+      if (joined) {
+        return joined;
+      }
+    }
+    if (error.message) {
+      return error.message;
+    }
+  }
+  return fallback;
+}
 
 // Add auth token to all requests
 api.interceptors.request.use((config) => {
@@ -491,6 +514,12 @@ export const qaJobApi = {
       ...data,
     }),
 
+  startAll: (snapshotId: number, data: UnifiedQAJobStartRequest) =>
+    api.post<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs/start-all`, {
+      snapshot_id: snapshotId,
+      ...data,
+    }),
+
   pause: (jobIds: number[]) =>
     api.post<QAJob[]>('/qa-jobs/pause', { job_ids: jobIds }),
 
@@ -559,12 +588,6 @@ export const adminApi = {
 
   deleteUser: (username: string) =>
     api.delete<{ message: string }>(`/auth/admin/delete-user-jwt/${username}`),
-};
-
-// Rubric QA Job endpoints
-export const rubricQAJobApi = {
-  start: (snapshotId: number, data: { judge_id: number; question_ids: number[]; rubric_id: number }) =>
-    api.post<QAJob[]>(`/snapshots/${snapshotId}/rubric-qa-jobs/start`, data),
 };
 
 // Rubric score endpoints

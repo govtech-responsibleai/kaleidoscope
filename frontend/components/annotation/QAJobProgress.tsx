@@ -27,12 +27,9 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
     return null;
   }
 
-  // Hide the progress box when job is completed
   if (job.status === JobStatus.COMPLETED) {
     return null;
   }
-
-  // This page only displays the progress of a single QAJob!!!
 
   const getStageLabel = (stage: QAJobStageEnum): string => {
     switch (stage) {
@@ -43,7 +40,7 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
       case QAJobStageEnum.PROCESSING_ANSWERS:
         return "Processing Claims";
       case QAJobStageEnum.SCORING_ANSWERS:
-        return "Scoring Claims";
+        return "Scoring";
       case QAJobStageEnum.COMPLETED:
         return "Completed";
       default:
@@ -67,7 +64,25 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
         return 0;
     }
   };
-  
+
+  const friendlyError = (raw: string | null, stage: QAJobStageEnum): string => {
+    if (!raw) {
+      return `Evaluation failed during "${getStageLabel(stage).toLowerCase()}". Click retry to try again.`;
+    }
+    const lower = raw.toLowerCase();
+    if (lower.includes("failed to connect") || lower.includes("dns") || lower.includes("unreachable")) {
+      return "Could not reach the evaluation service. Please check your connection and retry.";
+    }
+    if (lower.includes("timeout") || lower.includes("timed out")) {
+      return "The evaluation timed out. This may happen with long responses. Please retry.";
+    }
+    if (lower.includes("rate limit")) {
+      return "Rate limited by the API. Please wait a moment and retry.";
+    }
+    const maxLen = 120;
+    return raw.length > maxLen ? raw.slice(0, maxLen) + "…" : raw;
+  };
+
   const getStatusChip = () => {
     if (job.status === JobStatus.RUNNING) {
       return (
@@ -75,17 +90,6 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
           icon={<CircularProgress size={14} />}
           label={getStageLabel(job.stage)}
           color="primary"
-          size="small"
-        />
-      );
-    }
-
-    if (job.status === JobStatus.COMPLETED) {
-      return (
-        <Chip
-          icon={<CheckCircleIcon />}
-          label="Completed"
-          color="success"
           size="small"
         />
       );
@@ -137,20 +141,17 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
             sx={{ height: 6, borderRadius: 1 }}
           />
           <Typography variant="caption" color="text.secondary">
-            {getStageLabel(job.stage)}...
+            {`${getStageLabel(job.stage)}...`}
           </Typography>
         </>
       )}
 
       {isFailed && (
         <Alert severity="error" sx={{ py: 0.5 }}>
-          {job.error_message
-            ? job.error_message
-            : `Job failed at stage: ${getStageLabel(job.stage)}. Try running again.`}
+          {friendlyError(job.error_message, job.stage)}
         </Alert>
       )}
 
-      {/* Cost tracking (optional) */}
       {(job.prompt_tokens > 0 || job.completion_tokens > 0) && (
         <Box sx={{ pt: 1, borderTop: 1, borderColor: "divider" }}>
           <Stack direction="row" spacing={3}>

@@ -286,13 +286,18 @@ export enum QAJobStageEnum {
   COMPLETED = "completed",
 }
 
+export interface RubricSpec {
+  rubric_id: number;
+  judge_id: number;
+}
+
 export interface QAJob {
   id: number;
   snapshot_id: number;
   question_id: number;
   answer_id: number | null;
   judge_id: number;
-  rubric_id: number | null;
+  rubric_specs: RubricSpec[] | null;
   type: string;
   status: JobStatus;
   stage: QAJobStageEnum;
@@ -308,6 +313,13 @@ export interface QAJobStartRequest {
   judge_id: number;
   question_ids: number[];
   job_ids?: number[]
+}
+
+export interface UnifiedQAJobStartRequest {
+  judge_id: number;
+  question_ids: number[];
+  rubric_specs?: RubricSpec[];
+  job_ids?: number[];
 }
 
 // Answer types
