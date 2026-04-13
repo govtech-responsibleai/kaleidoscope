@@ -12,10 +12,48 @@ class AnswerScoreRepository:
     """Repository for AnswerScore CRUD operations."""
 
     @staticmethod
+    def _dedupe_latest(scores: List[AnswerScore]) -> List[AnswerScore]:
+        """Keep the latest score per (answer, judge) pair."""
+        deduped: dict[tuple[int | None, int | None], AnswerScore] = {}
+        for score in sorted(scores, key=lambda s: (s.answer_id or -1, s.judge_id or -1, s.created_at, s.id), reverse=True):
+            key = (score.answer_id, score.judge_id)
+            if key not in deduped:
+                deduped[key] = score
+        return list(deduped.values())
+
+    @staticmethod
     def create(db: Session, score_data: dict) -> AnswerScore:
         """Create a new answer score."""
         score = AnswerScore(**score_data)
         db.add(score)
+        db.commit()
+        db.refresh(score)
+        return score
+
+    @staticmethod
+    def replace_for_answer_and_judge(db: Session, score_data: dict) -> AnswerScore:
+        """Replace the canonical score for an (answer, judge) pair."""
+        answer_id = score_data["answer_id"]
+        judge_id = score_data["judge_id"]
+        score = (
+            db.query(AnswerScore)
+            .filter(
+                AnswerScore.answer_id == answer_id,
+                AnswerScore.judge_id == judge_id,
+            )
+            .order_by(AnswerScore.created_at.desc(), AnswerScore.id.desc())
+            .first()
+        )
+
+        if score is None:
+            score = AnswerScore(**score_data)
+            db.add(score)
+        else:
+            for claim_score in list(score.claim_scores):
+                db.delete(claim_score)
+            for key, value in score_data.items():
+                setattr(score, key, value)
+
         db.commit()
         db.refresh(score)
         return score
@@ -67,12 +105,13 @@ class AnswerScoreRepository:
         snapshot_id: int
     ) -> List[AnswerScore]:
         """Get all judge scores for answers that belong to a snapshot."""
-        return (
+        scores = (
             db.query(AnswerScore)
             .join(Answer)
             .filter(Answer.snapshot_id == snapshot_id)
             .all()
         )
+        return AnswerScoreRepository._dedupe_latest(scores)
 
     @staticmethod
     def get_by_snapshot_and_judge(
@@ -81,7 +120,7 @@ class AnswerScoreRepository:
         judge_id: int
     ) -> List[AnswerScore]:
         """Get all scores for a snapshot evaluated by a specific judge."""
-        return (
+        scores = (
             db.query(AnswerScore)
             .join(Answer)
             .filter(
@@ -90,6 +129,7 @@ class AnswerScoreRepository:
             )
             .all()
         )
+        return AnswerScoreRepository._dedupe_latest(scores)
 
     @staticmethod
     def get_by_snapshot_and_judge_selected(
@@ -101,7 +141,7 @@ class AnswerScoreRepository:
         Get scores for a judge on answers that are selected for annotation.
         Used for judge alignment metric calculation in service layer.
         """
-        return (
+        scores = (
             db.query(AnswerScore)
             .join(Answer)
             .filter(
@@ -111,6 +151,7 @@ class AnswerScoreRepository:
             )
             .all()
         )
+        return AnswerScoreRepository._dedupe_latest(scores)
 
     @staticmethod
     def delete(db: Session, score_id: int) -> bool:

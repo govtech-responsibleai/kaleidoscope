@@ -10,9 +10,9 @@ from src.common.config import get_settings
 
 settings = get_settings()
 
-# Create SQLAlchemy engine
-# Note: Airbase limits each app to ~10 connections, recommend 5-8 for app use
-# pool_size + max_overflow = 3 + 4 = 7 connections (leaves 3 for admin)
+# Create SQLAlchemy engine.
+# Keep the default pool conservative because the unified QA pipeline opens
+# short-lived worker sessions while background tasks are running.
 engine = create_engine(
     settings.database_url,
     echo=settings.database_echo,

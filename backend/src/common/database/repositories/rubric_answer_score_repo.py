@@ -5,7 +5,7 @@ Repository for RubricAnswerScore database operations.
 from typing import List, Optional
 from sqlalchemy.orm import Session
 
-from src.common.database.models import RubricAnswerScore, QAJob
+from src.common.database.models import RubricAnswerScore
 
 
 class RubricAnswerScoreRepository:
@@ -13,9 +13,22 @@ class RubricAnswerScoreRepository:
 
     @staticmethod
     def create(db: Session, data: dict) -> RubricAnswerScore:
-        """Create a new rubric answer score."""
-        score = RubricAnswerScore(**data)
-        db.add(score)
+        """Create or replace a rubric answer score."""
+        score = (
+            db.query(RubricAnswerScore)
+            .filter(
+                RubricAnswerScore.answer_id == data["answer_id"],
+                RubricAnswerScore.rubric_id == data["rubric_id"],
+                RubricAnswerScore.judge_id == data["judge_id"],
+            )
+            .first()
+        )
+        if score is None:
+            score = RubricAnswerScore(**data)
+            db.add(score)
+        else:
+            for key, value in data.items():
+                setattr(score, key, value)
         db.commit()
         db.refresh(score)
         return score
@@ -114,15 +127,15 @@ class RubricAnswerScoreRepository:
         )
 
     @staticmethod
-    def delete_scores_and_jobs_by_rubric(db: Session, rubric_id: int) -> int:
-        """Delete all judge scores and QA jobs for a rubric.
+    def delete_scores_by_rubric(db: Session, rubric_id: int) -> int:
+        """Delete all judge scores for a rubric.
 
         Called when rubric options change so stale option_chosen values
         don't linger in the database.
 
         Args:
             db: Database session
-            rubric_id: The rubric whose scores/jobs should be purged
+            rubric_id: The rubric whose scores should be purged
 
         Returns:
             Number of scores deleted
@@ -132,6 +145,5 @@ class RubricAnswerScoreRepository:
             .filter(RubricAnswerScore.rubric_id == rubric_id)
             .delete()
         )
-        db.query(QAJob).filter(QAJob.rubric_id == rubric_id).delete()
         db.commit()
         return score_count
