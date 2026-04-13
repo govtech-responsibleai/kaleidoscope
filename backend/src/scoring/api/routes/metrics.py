@@ -225,9 +225,7 @@ def get_target_snapshot_metrics(
             continue
         except Exception:
             # Log but don't fail the entire request
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.exception(f"Failed to calculate metrics for snapshot {snapshot.id}")
+            logger.exception("Failed to calculate metrics for snapshot %s", snapshot.id)
             continue
 
     return snapshot_metrics

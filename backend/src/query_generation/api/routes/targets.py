@@ -506,11 +506,11 @@ def create_rubric(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
 
     data = rubric.model_dump()
-    data["options"] = [o.model_dump() for o in rubric.options]
+    data["options"] = [o.model_dump() for o in rubric.options if o.option.strip()]
 
     # Generate judge prompt via LLM augmenter, fall back to template if it fails
     from src.common.services.rubric_augmenter import generate_judge_prompt, build_fallback_judge_prompt
-    options_dicts = [o.model_dump() for o in rubric.options]
+    options_dicts = [o.model_dump() for o in rubric.options if o.option.strip()]
     try:
         data["judge_prompt"] = generate_judge_prompt(
             rubric.name, rubric.criteria, options_dicts, rubric.best_option
@@ -584,11 +584,12 @@ def update_rubric(
         criteria = data.get("criteria", existing_rubric.criteria)
         options = data.get("options", existing_options)
         best_option = data.get("best_option", existing_rubric.best_option)
+        non_empty_options = [o for o in options if o.get("option", "").strip()]
         try:
-            data["judge_prompt"] = generate_judge_prompt(name, criteria, options, best_option)
+            data["judge_prompt"] = generate_judge_prompt(name, criteria, non_empty_options, best_option)
         except Exception as e:
             logger.warning(f"Augmenter failed for rubric {rubric_id}, using fallback: {e}")
-            data["judge_prompt"] = build_fallback_judge_prompt(name, criteria, options, best_option)
+            data["judge_prompt"] = build_fallback_judge_prompt(name, criteria, non_empty_options, best_option)
 
     rubric = TargetRubricRepository.update(db, rubric_id, data)
     if not rubric:
