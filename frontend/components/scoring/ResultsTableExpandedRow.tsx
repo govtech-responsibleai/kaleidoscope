@@ -155,7 +155,7 @@ export default function ResultsTableExpandedRow({
 
   return (
     <Box sx={{ py: 2, px: 4, bgcolor: "grey.50", borderTop: 1, borderColor: "divider" }}>
-<Stack spacing={2}>
+      <Stack spacing={2}>
         {/* Question & Answer Chat Bubbles */}
         <Stack spacing={2}>
           <Box display="flex" justifyContent="flex-end">

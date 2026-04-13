@@ -761,19 +761,23 @@ export default function QAJobControl({
 
       // Fire the first response-level judge for each rubric
       const firstJudge = responseLevelJudges[0];
-      await Promise.allSettled(
+      const results = await Promise.allSettled(
         rubrics.map((rubric) =>
           rubricQAJobApi.start(snapshotId, {
             judge_id: firstJudge.id,
             question_ids: allQuestionIds,
             rubric_id: rubric.id,
-          }).catch((err) => {
-            console.error(`Failed to start rubric job for rubric ${rubric.id}, judge ${firstJudge.id}:`, err);
           })
         )
       );
+      const failed = results.filter((r) => r.status === "rejected");
+      if (failed.length > 0 && onError) {
+        onError(`${failed.length} rubric job(s) failed to start. Check the console for details.`);
+        failed.forEach((r) => console.error("Rubric job start failed:", (r as PromiseRejectedResult).reason));
+      }
     } catch (err) {
       console.error("Failed to fetch judges for rubric scoring:", err);
+      if (onError) onError("Failed to start rubric scoring jobs.");
     }
   }, [snapshotId, rubrics, targetId]);
 

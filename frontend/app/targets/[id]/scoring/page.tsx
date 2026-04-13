@@ -24,6 +24,7 @@ import {
   Download as DownloadIcon,
   ExpandMore as ExpandMoreIcon,
 } from "@mui/icons-material";
+import AccuracyGauge from "@/components/shared/AccuracyGauge";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import JudgeCards from "@/components/scoring/JudgeCards";
@@ -225,7 +226,7 @@ export default function ScoringPage() {
     targetRubricApi.list(targetId).then((res) => {
       setRubrics(res.data);
     }).catch(() => {});
-  }, [fetchSnapshots, fetchJudges, targetId]);
+  }, [targetId]);
 
   useEffect(() => {
     setAnnotationStatus(null);
@@ -668,8 +669,6 @@ function EvaluatorSection({
 }
 
 // ── Rubric score gauge (analogous to SnapshotAccuracyCard) ─────────────
-import AccuracyGauge from "@/components/shared/AccuracyGauge";
-
 function RubricScoreGauge({
   rubric,
   metric,

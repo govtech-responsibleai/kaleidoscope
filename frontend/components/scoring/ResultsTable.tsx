@@ -317,9 +317,8 @@ export default function ResultsTable({
       });
       setRubricJudgeScoresMap(map);
       const allResponseLevel = judgesRes.data.filter((j) => j.judge_type === "response_level");
-      // Deduplicate by name so each judge appears once (avoids duplicates from per-rubric judge configs)
-      const seen = new Set<string>();
-      setActiveRubricJudges(allResponseLevel.filter((j) => seen.has(j.name) ? false : (seen.add(j.name), true)));
+      // Deduplicate by judge ID
+      setActiveRubricJudges(Array.from(new Map(allResponseLevel.map((j) => [j.id, j])).values()));
     });
   }, [activeRubricId, results, rubrics, targetId]);
 

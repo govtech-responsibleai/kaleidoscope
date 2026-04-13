@@ -147,9 +147,19 @@ export default function TargetReport() {
     await fetchData();
   };
 
+  // Reset to accuracy if the selected rubric was deleted
+  useEffect(() => {
+    if (metric.startsWith("rubric-")) {
+      const rubricId = Number(metric.split("-")[1]);
+      if (!rubrics.find((r) => r.id === rubricId)) {
+        setMetric("accuracy");
+      }
+    }
+  }, [rubrics, metric]);
+
   // Derive chart data and selected-snapshot metric from the chosen metric/rubric
   const selectedRubricId = metric.startsWith("rubric-") ? Number(metric.split("-")[1]) : null;
-  const selectedRubric = selectedRubricId ? rubrics.find((r) => r.id === selectedRubricId) ?? null : null;
+  const selectedRubric = selectedRubricId ? rubrics.find((r) => r.id === selectedRubricId) : null;
 
   const chartData: SnapshotMetric[] = selectedRubricId
     ? allRubricMetrics.filter((m) => m.rubric_id === selectedRubricId)
