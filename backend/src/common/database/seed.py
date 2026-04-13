@@ -33,6 +33,11 @@ def run_manual_migrations(engine: Engine) -> None:
         "UPDATE judges SET created_at = COALESCE(created_at, NOW()), updated_at = COALESCE(updated_at, NOW()) WHERE created_at IS NULL OR updated_at IS NULL",
         "ALTER TABLE judges ALTER COLUMN created_at SET NOT NULL",
         "ALTER TABLE judges ALTER COLUMN updated_at SET NOT NULL",
+        "ALTER TABLE target_rubrics ADD COLUMN IF NOT EXISTS judge_prompt TEXT",
+        "ALTER TABLE target_rubrics ADD COLUMN IF NOT EXISTS template_key VARCHAR",
+        # Remove judges in deprecated categories — these are system-seeded judges
+        # for the old relevance/voice routing model, which is fully replaced.
+        "DELETE FROM judges WHERE category IN ('relevance', 'voice')",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -50,7 +55,17 @@ def _load_baseline_prompt() -> str:
         raise RuntimeError(f"Baseline prompt template missing: {template_path}") from exc
 
 
+def _load_response_level_prompt() -> str:
+    """Load the response-level judge prompt template."""
+    template_path = Path(__file__).resolve().parents[1] / "prompts" / "templates" / "response_level_judge.md"
+    try:
+        return template_path.read_text()
+    except OSError as exc:  # pragma: no cover
+        raise RuntimeError(f"Response-level prompt template missing: {template_path}") from exc
+
+
 BASELINE_PROMPT_TEMPLATE = _load_baseline_prompt()
+RESPONSE_LEVEL_PROMPT_TEMPLATE = _load_response_level_prompt()
 
 AVAILABLE_MODELS = [
     {"value": "litellm_proxy/gemini-2.5-flash-lite", "label": "Gemini 2.5 Flash Lite"},
@@ -75,41 +90,41 @@ def _require_model(value: str) -> str:
         raise RuntimeError(f"Model '{value}' is not defined in AVAILABLE_MODELS.")
     return value
 
-# 3 models per category (index 0 = recommended / baseline for accuracy)
+# Accuracy (claim-based) models — index 0 = recommended / global baseline
 ACCURACY_MODELS = [
     "litellm_proxy/gemini-2.5-flash-lite",
     "litellm_proxy/gemini-3.1-flash-lite-preview-global",
     "azure/gpt-5-nano-2025-08-07",
 ]
-RELEVANCE_MODELS = [
+
+# Common additional rubric judge models (positions 1 and 2 for all rubric categories)
+_RUBRIC_ADDITIONAL = [
     "azure/gpt-5-mini-2025-08-07",
     "litellm_proxy/gemini-2.5-flash-lite",
-    "azure/gpt-5-nano-2025-08-07",
 ]
-VOICE_MODELS = [
-    "litellm_proxy/gemini-3-flash-preview",
-    "litellm_proxy/gemini-2.5-flash-lite",
-    "azure/gpt-5-nano-2025-08-07",
-]
-DEFAULT_MODELS = [
-    "litellm_proxy/gemini-3.1-flash-lite-preview-global",
-    "litellm_proxy/gemini-2.5-flash-lite",
-    "azure/gpt-5-nano-2025-08-07",
-]
+
+# Empathy pre-made rubric: Gemini 3 Flash recommended
+EMPATHY_MODELS = ["litellm_proxy/gemini-3-flash-preview"] + _RUBRIC_ADDITIONAL
+
+# Verbosity pre-made rubric: Gemini 3.1 Flash Lite recommended
+VERBOSITY_MODELS = ["litellm_proxy/gemini-3.1-flash-lite-preview-global"] + _RUBRIC_ADDITIONAL
+
+# Default (custom) rubric judges: Gemini 3.1 Flash Lite recommended
+DEFAULT_RUBRIC_MODELS = ["litellm_proxy/gemini-3.1-flash-lite-preview-global"] + _RUBRIC_ADDITIONAL
 
 # (category, judge_type, model_list)
 JUDGE_CATEGORIES: List[Tuple[str, JudgeTypeEnum, List[str]]] = [
     ("accuracy", JudgeTypeEnum.claim_based, ACCURACY_MODELS),
-    ("relevance", JudgeTypeEnum.response_level, RELEVANCE_MODELS),
-    ("voice", JudgeTypeEnum.response_level, VOICE_MODELS),
-    ("default", JudgeTypeEnum.response_level, DEFAULT_MODELS),
+    ("empathy", JudgeTypeEnum.response_level, EMPATHY_MODELS),
+    ("verbosity", JudgeTypeEnum.response_level, VERBOSITY_MODELS),
+    ("default", JudgeTypeEnum.response_level, DEFAULT_RUBRIC_MODELS),
 ]
 
 JUDGE_NAMES = ["Judge 1 (Recommended)", "Judge 2", "Judge 3"]
 
-# Generate the 12 seeded judges (4 categories x 3 each)
 DEFAULT_JUDGES: List[dict] = []
 for _category, _judge_type, _models in JUDGE_CATEGORIES:
+    _prompt_template = BASELINE_PROMPT_TEMPLATE if _judge_type == JudgeTypeEnum.claim_based else RESPONSE_LEVEL_PROMPT_TEMPLATE
     for _idx, _model in enumerate(_models):
         DEFAULT_JUDGES.append({
             "name": JUDGE_NAMES[_idx],
@@ -119,6 +134,7 @@ for _category, _judge_type, _models in JUDGE_CATEGORIES:
             "is_baseline": (_category == "accuracy" and _idx == 0),
             "is_editable": False,
             "category": _category,
+            "_prompt_template": _prompt_template,
         })
 
 
@@ -175,7 +191,7 @@ def seed_default_judges(db: Session) -> None:
             "name": config["name"],
             "model_name": config["model_name"],
             "model_label": config.get("model_label"),
-            "prompt_template": BASELINE_PROMPT_TEMPLATE,
+            "prompt_template": config.get("_prompt_template", BASELINE_PROMPT_TEMPLATE),
             "params": {},
             "judge_type": config["judge_type"],
             "is_baseline": config["is_baseline"],

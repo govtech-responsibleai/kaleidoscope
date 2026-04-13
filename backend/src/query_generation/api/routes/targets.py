@@ -13,11 +13,11 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository, RubricAnswerScoreRepository
-from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse
+from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse
 from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
 from src.common.services.export_service import ExportService, ExportFormat
-from src.common.services.rubric_classifier import classify_rubric
+from src.common.services.premade_rubrics import list_premade_templates, get_premade_template
 
 logger = logging.getLogger(__name__)
 
@@ -447,6 +447,23 @@ def list_rubrics(
     return TargetRubricRepository.get_by_target(db, target_id)
 
 
+@router.get("/{target_id}/premade-rubrics", response_model=List[PremadeRubricTemplateResponse])
+def list_premade_rubrics(
+    target_id: int,
+    db: Session = Depends(get_db)
+):
+    """List available pre-made rubric templates, excluding those already added to this target."""
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
+    existing_keys = {
+        r.template_key
+        for r in TargetRubricRepository.get_by_target(db, target_id)
+        if r.template_key
+    }
+    return [t for t in list_premade_templates() if t["key"] not in existing_keys]
+
+
 @router.post("/{target_id}/rubrics", response_model=TargetRubricResponse, status_code=status.HTTP_201_CREATED)
 def create_rubric(
     target_id: int,
@@ -456,14 +473,54 @@ def create_rubric(
     target = TargetRepository.get_by_id(db, target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
+
+    # Pre-made template path
+    if rubric.template_key:
+        tmpl = get_premade_template(rubric.template_key)
+        if not tmpl:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown template key: {rubric.template_key}")
+        data = {
+            "name": tmpl["name"],
+            "criteria": tmpl["criteria"],
+            "options": tmpl["options"],
+            "best_option": tmpl["best_option"],
+            "judge_prompt": tmpl["judge_prompt"],
+            "template_key": rubric.template_key,
+        }
+        return TargetRubricRepository.create(db, target_id, data)
+
+    # Custom rubric path — validate completeness
+    if not rubric.name or not rubric.name.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric name is required")
+    if not rubric.criteria or not rubric.criteria.strip():
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric criteria is required")
+    non_empty_options = [o for o in rubric.options if o.option.strip()]
+    if len(non_empty_options) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least 2 non-empty options are required")
+    if not rubric.best_option:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option is required")
+    non_empty_names = [o.option.strip() for o in non_empty_options]
+    if len(set(n.lower() for n in non_empty_names)) != len(non_empty_names):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Option names must be unique")
+    if rubric.best_option.strip() not in non_empty_names:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
+
     data = rubric.model_dump()
-    data["options"] = [o.model_dump() for o in rubric.options]
-    data["category"] = classify_rubric(rubric.name, rubric.criteria)
-    # Validate best_option consistency (completeness enforced at scoring time)
-    if data.get("best_option") and len(data["options"]) > 0:
-        option_names = [o["option"] for o in data["options"]]
-        if data["best_option"] not in option_names:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
+    data["options"] = [o.model_dump() for o in rubric.options if o.option.strip()]
+
+    # Generate judge prompt via LLM augmenter, fall back to template if it fails
+    from src.common.services.rubric_augmenter import generate_judge_prompt, build_fallback_judge_prompt
+    options_dicts = [o.model_dump() for o in rubric.options if o.option.strip()]
+    try:
+        data["judge_prompt"] = generate_judge_prompt(
+            rubric.name, rubric.criteria, options_dicts, rubric.best_option
+        )
+    except Exception as e:
+        logger.warning(f"Augmenter failed for rubric '{rubric.name}', using fallback: {e}")
+        data["judge_prompt"] = build_fallback_judge_prompt(
+            rubric.name, rubric.criteria, options_dicts, rubric.best_option
+        )
+
     return TargetRubricRepository.create(db, target_id, data)
 
 
@@ -474,38 +531,66 @@ def update_rubric(
     rubric_update: TargetRubricUpdate,
     db: Session = Depends(get_db)
 ):
+    existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not existing_rubric:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+
+    # Block editing of pre-made rubric content
+    if existing_rubric.template_key:
+        editable_fields = {"name", "criteria", "options", "best_option", "judge_prompt", "template_key"}
+        changed = rubric_update.model_dump(exclude_unset=True)
+        if any(k in changed for k in editable_fields):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pre-made rubrics cannot be edited")
+
     data = rubric_update.model_dump(exclude_unset=True)
+
+    # Normalise options to plain dicts once — data["options"] comes from model_dump so
+    # it's already dicts, but existing_rubric.options may be ORM objects or JSON dicts.
+    def _to_dict(o) -> dict:
+        return o if isinstance(o, dict) else {"option": o.option, "description": o.description}
+
     if "options" in data and data["options"] is not None:
-        data["options"] = [o.model_dump() if hasattr(o, "model_dump") else o for o in data["options"]]
-    # Validate best_option consistency (don't block incremental edits — completeness is enforced at scoring time)
+        data["options"] = [_to_dict(o) for o in data["options"]]
+
+    existing_options: list[dict] = [_to_dict(o) for o in existing_rubric.options]
+
+    # Validate no duplicate option names
+    if "options" in data and data["options"] is not None:
+        non_empty_names = [o["option"].strip() for o in data["options"] if o["option"].strip()]
+        if len(set(n.lower() for n in non_empty_names)) != len(non_empty_names):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Option names must be unique")
+
+    # Validate best_option consistency (against non-empty options, same casing)
     if "best_option" in data and data["best_option"] is not None:
-        existing = TargetRubricRepository.get_by_id(db, rubric_id)
-        if not existing:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
-        merged_options = data.get("options", [o if isinstance(o, dict) else {"option": o.option, "description": o.description} for o in existing.options])
-        option_names = [o["option"] if isinstance(o, dict) else o.option for o in merged_options]
-        if data["best_option"] not in option_names:
+        merged_options = data.get("options", existing_options)
+        non_empty_merged = [o["option"].strip() for o in merged_options if o["option"].strip()]
+        if data["best_option"].strip() not in non_empty_merged:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
-    # Invalidate existing scores when options change (old option_chosen values become stale)
+
+    # Invalidate existing scores when options change
     if "options" in data and data["options"] is not None:
-        existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
-        if not existing_rubric:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
-        old_options = {o.option if hasattr(o, "option") else o["option"] for o in existing_rubric.options}
-        new_options = {o["option"] for o in data["options"]}
-        if old_options != new_options:
+        old_option_names = {o["option"] for o in existing_options}
+        new_option_names = {o["option"] for o in data["options"]}
+        if old_option_names != new_option_names:
             deleted = RubricAnswerScoreRepository.delete_scores_and_jobs_by_rubric(db, rubric_id)
             if deleted:
                 logger.info(f"Rubric {rubric_id} options changed — purged {deleted} stale scores and associated jobs")
 
-    if "name" in data or "criteria" in data:
-        # Need to fetch existing rubric to get current name/criteria for classification
-        existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
-        if not existing_rubric:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+    # Regenerate judge prompt if rubric content changed (custom rubrics only)
+    content_changed = any(k in data for k in ("name", "criteria", "options"))
+    if content_changed and not existing_rubric.template_key:
+        from src.common.services.rubric_augmenter import generate_judge_prompt, build_fallback_judge_prompt
         name = data.get("name", existing_rubric.name)
         criteria = data.get("criteria", existing_rubric.criteria)
-        data["category"] = classify_rubric(name, criteria)
+        options = data.get("options", existing_options)
+        best_option = data.get("best_option", existing_rubric.best_option)
+        non_empty_options = [o for o in options if o.get("option", "").strip()]
+        try:
+            data["judge_prompt"] = generate_judge_prompt(name, criteria, non_empty_options, best_option)
+        except Exception as e:
+            logger.warning(f"Augmenter failed for rubric {rubric_id}, using fallback: {e}")
+            data["judge_prompt"] = build_fallback_judge_prompt(name, criteria, non_empty_options, best_option)
+
     rubric = TargetRubricRepository.update(db, rubric_id, data)
     if not rubric:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
