@@ -293,26 +293,32 @@ export default function ResultsTable({
     const activeRubric = rubrics.find((r) => r.id === activeRubricId);
     if (!activeRubric) return;
 
-    // Fetch judges for this rubric category
-    judgeApi.getByCategory(activeRubric.category, targetId)
-      .then((res) => setActiveRubricJudges(res.data))
-      .catch(() => setActiveRubricJudges([]));
-
-    // Fetch rubric scores for all answers
+    // Fetch response-level judges and rubric scores together, then filter judges
+    // to only those that have scores for this specific rubric
     const answerIds = results.map((r) => r.answer_id);
-    Promise.all(
-      answerIds.map((id) =>
-        rubricScoreApi.getForAnswer(id, activeRubricId)
-          .then((res) => ({ answerId: id, scores: res.data as RubricAnswerScore[] }))
-          .catch(() => ({ answerId: id, scores: [] as RubricAnswerScore[] }))
-      )
-    ).then((entries) => {
+    Promise.all([
+      judgeApi.list(targetId).catch(() => ({ data: [] as JudgeConfig[] })),
+      Promise.all(
+        answerIds.map((id) =>
+          rubricScoreApi.getForAnswer(id, activeRubricId)
+            .then((res) => ({ answerId: id, scores: res.data as RubricAnswerScore[] }))
+            .catch(() => ({ answerId: id, scores: [] as RubricAnswerScore[] }))
+        )
+      ),
+    ]).then(([judgesRes, entries]) => {
       const map: Record<number, Record<number, string>> = {};
+      const rubricJudgeIds = new Set<number>();
       entries.forEach(({ answerId, scores }) => {
         map[answerId] = {};
-        scores.forEach((s) => { map[answerId][s.judge_id] = s.option_chosen; });
+        scores.forEach((s) => {
+          map[answerId][s.judge_id] = s.option_chosen;
+          rubricJudgeIds.add(s.judge_id);
+        });
       });
       setRubricJudgeScoresMap(map);
+      const allResponseLevel = judgesRes.data.filter((j) => j.judge_type === "response_level");
+      // Deduplicate by judge ID
+      setActiveRubricJudges(Array.from(new Map(allResponseLevel.map((j) => [j.id, j])).values()));
     });
   }, [activeRubricId, results, rubrics, targetId]);
 

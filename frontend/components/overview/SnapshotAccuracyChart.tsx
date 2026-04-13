@@ -18,11 +18,13 @@ import { SnapshotMetric } from "@/lib/types";
 interface SnapshotAccuracyChartProps {
   data: SnapshotMetric[];
   loading: boolean;
+  yAxisLabel?: string;
 }
 
 export default function SnapshotAccuracyChart({
   data,
   loading,
+  yAxisLabel = "Accuracy (%)",
 }: SnapshotAccuracyChartProps) {
   const theme = useTheme();
   const svgRef = useRef<SVGSVGElement>(null);
@@ -90,7 +92,7 @@ export default function SnapshotAccuracyChart({
       .style("text-anchor", "middle")
       .style("font-size", "14px")
       .style("fill", "#666")
-      .text("Accuracy (%)");
+      .text(yAxisLabel);
 
     // Tooltip
     const tooltip = d3

@@ -7,8 +7,6 @@ import {
   Chip,
   CircularProgress,
   Stack,
-  Tab,
-  Tabs,
   Tooltip,
   Typography,
 } from "@mui/material";
@@ -132,8 +130,8 @@ export default function ResultsTableExpandedRow({
       return;
     }
 
-    judgeApi.getByCategory(activeRubric.category, targetId)
-      .then((res) => setRubricJudges(res.data))
+    judgeApi.list(targetId)
+      .then((res) => setRubricJudges(res.data.filter((j) => j.judge_type === "response_level")))
       .catch(() => setRubricJudges([]));
 
     rubricScoreApi.getForAnswer(result.answer_id, activeRubric.id)
@@ -141,7 +139,6 @@ export default function ResultsTableExpandedRow({
       .catch(() => setRubricScores([]));
   }, [localActiveRubricId, rubrics, result.answer_id, targetId]);
 
-  const tabValue = localActiveRubricId === null ? 0 : rubrics.findIndex((r) => r.id === localActiveRubricId) + 1;
   const activeRubric = localActiveRubricId !== null ? rubrics.find((r) => r.id === localActiveRubricId) : null;
 
   // Determine the best_option and recommended judge verdict for answer highlighting
@@ -158,20 +155,6 @@ export default function ResultsTableExpandedRow({
 
   return (
     <Box sx={{ py: 2, px: 4, bgcolor: "grey.50", borderTop: 1, borderColor: "divider" }}>
-      {/* Rubric tabs inside the collapse */}
-      {rubrics.length > 0 && (
-        <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
-          <Tabs
-            value={tabValue}
-            onChange={(_, v) => setLocalActiveRubricId(v === 0 ? null : rubrics[v - 1].id)}
-            sx={{ minHeight: 36, "& .MuiTab-root": { minHeight: 36, py: 0, fontSize: "0.78rem", textTransform: "none", fontWeight: 500 } }}
-          >
-            <Tab label="Accuracy" />
-            {rubrics.map((r) => <Tab key={r.id} label={r.name} />)}
-          </Tabs>
-        </Box>
-      )}
-
       <Stack spacing={2}>
         {/* Question & Answer Chat Bubbles */}
         <Stack spacing={2}>

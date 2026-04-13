@@ -16,6 +16,7 @@ interface SnapshotAccuracyCardProps {
   emptyMessage?: string;
   showExplanatoryText?: boolean;
   showWarningBox?: boolean;
+  title?: string;
 }
 
 export default function SnapshotAccuracyCard({
@@ -24,6 +25,7 @@ export default function SnapshotAccuracyCard({
   emptyMessage = "No data available",
   showExplanatoryText = false,
   showWarningBox = false,
+  title = "Overall Accuracy",
 }: SnapshotAccuracyCardProps) {
   if (loading) {
     return (
@@ -44,7 +46,7 @@ export default function SnapshotAccuracyCard({
     return (
       <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
         <Typography variant="h6" color="text.secondary" sx={{ mb: 2 }}>
-          Overall Accuracy
+          {title}
         </Typography>
         <Typography variant="h2" fontWeight={700} color="text.disabled">
           --%
@@ -63,11 +65,11 @@ export default function SnapshotAccuracyCard({
   return (
     <Box sx={{ display: "flex", flexDirection: "column", justifyContent: "center", alignItems: "center" }}>
       <Typography variant="h6" sx={{ mb: 1 }}>
-        Overall Accuracy
+        {title}
       </Typography>
 
       <AccuracyGauge
-        value={snapshotMetric.aggregated_accuracy}
+        value={hasReliableJudges ? snapshotMetric.aggregated_accuracy : null}
         size={300}
         label="Aggregated Accuracy Score"
       />

@@ -22,8 +22,8 @@ import {
   Download as DownloadIcon
 } from "@mui/icons-material";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { targetApi, snapshotApi, judgeApi, metricsApi } from "@/lib/api";
-import { TargetResponse, TargetStats, SnapshotMetric, ConfusionMatrix, Snapshot } from "@/lib/types";
+import { targetApi, snapshotApi, judgeApi, metricsApi, targetRubricApi } from "@/lib/api";
+import { TargetResponse, TargetStats, SnapshotMetric, ConfusionMatrix, Snapshot, TargetRubricResponse } from "@/lib/types";
 import SnapshotAccuracyChart from "@/components/overview/SnapshotAccuracyChart";
 import SnapshotAccuracyCard from "@/components/shared/SnapshotAccuracyCard";
 import ConfusionMatrixCard from "@/components/overview/ConfusionMatrixCard";
@@ -50,6 +50,8 @@ export default function TargetReport() {
   const [judgeCount, setJudgeCount] = useState(0);
   const [snapshotMetrics, setSnapshotMetrics] = useState<SnapshotMetric[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(true);
+  const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
+  const [allRubricMetrics, setAllRubricMetrics] = useState<SnapshotMetric[]>([]);
   const [downloading, setDownloading] = useState(false);
   const [confusionMatrix, setConfusionMatrix] = useState<ConfusionMatrix | null>(null);
   const [confusionMatrixLoading, setConfusionMatrixLoading] = useState(true);
@@ -68,18 +70,27 @@ export default function TargetReport() {
 
   const fetchData = async () => {
     try {
-      const [targetRes, statsRes, snapshotsRes, judgesRes, metricsRes] = await Promise.all([
+      const [targetRes, statsRes, snapshotsRes, judgesRes, metricsRes, rubricsRes] = await Promise.all([
         targetApi.get(targetId),
         targetApi.getStats(targetId),
         snapshotApi.list(targetId),
         judgeApi.list(targetId),
         metricsApi.getSnapshotMetrics(targetId),
+        targetRubricApi.list(targetId),
       ]);
       setTarget(targetRes.data);
       setStats(statsRes.data);
       setSnapshots(snapshotsRes.data);
       setJudgeCount(judgesRes.data.length);
       setSnapshotMetrics(metricsRes.data ?? []);
+      setRubrics(rubricsRes.data ?? []);
+
+      try {
+        const rubricMetricsRes = await metricsApi.getAllRubricSnapshotMetrics(targetId);
+        setAllRubricMetrics(rubricMetricsRes.data ?? []);
+      } catch {
+        setAllRubricMetrics([]);
+      }
 
       const hasSelectedSnapshot = selectedSnapshotId !== null && snapshotsRes.data.some(
         (snapshot) => snapshot.id === selectedSnapshotId
@@ -136,10 +147,27 @@ export default function TargetReport() {
     await fetchData();
   };
 
-  // Get the metric for the selected snapshot
-  const selectedSnapshotMetric = snapshotMetrics.find(
-    (m) => m.snapshot_id === selectedSnapshotId
-  ) || null;
+  // Reset to accuracy if the selected rubric was deleted
+  useEffect(() => {
+    if (metric.startsWith("rubric-")) {
+      const rubricId = Number(metric.split("-")[1]);
+      if (!rubrics.find((r) => r.id === rubricId)) {
+        setMetric("accuracy");
+      }
+    }
+  }, [rubrics, metric]);
+
+  // Derive chart data and selected-snapshot metric from the chosen metric/rubric
+  const selectedRubricId = metric.startsWith("rubric-") ? Number(metric.split("-")[1]) : null;
+  const selectedRubric = selectedRubricId ? rubrics.find((r) => r.id === selectedRubricId) : null;
+
+  const chartData: SnapshotMetric[] = selectedRubricId
+    ? allRubricMetrics.filter((m) => m.rubric_id === selectedRubricId)
+    : snapshotMetrics;
+
+  const selectedSnapshotMetric: SnapshotMetric | null = selectedRubricId
+    ? allRubricMetrics.find((m) => m.rubric_id === selectedRubricId && m.snapshot_id === selectedSnapshotId) ?? null
+    : snapshotMetrics.find((m) => m.snapshot_id === selectedSnapshotId) ?? null;
 
   const handleDownloadReport = async () => {
     setDownloading(true);
@@ -352,22 +380,23 @@ export default function TargetReport() {
 
         <Select
           value={metric}
-          onChange={(e) => {
-            setMetric(e.target.value);
-          }}
+          onChange={(e) => setMetric(e.target.value)}
           size="small"
-          disabled={snapshotMetrics.length === 0}
           sx={{ mb: 1, minWidth: 200 }}
         >
-          <MenuItem value={"accuracy"}>Accuracy</MenuItem>
+          <MenuItem value="accuracy">Accuracy</MenuItem>
+          {rubrics.map((r) => (
+            <MenuItem key={r.id} value={`rubric-${r.id}`}>{r.name}</MenuItem>
+          ))}
         </Select>
 
         {/* Snapshot Accuracy Chart and Snapshot Details */}
         <Box sx={{ mb: 3 }}>
           <Stack direction="row" spacing={3} alignItems="stretch">
             <SnapshotAccuracyChart
-              data={snapshotMetrics}
+              data={chartData}
               loading={metricsLoading}
+              yAxisLabel={selectedRubric ? `${selectedRubric.name} (%)` : "Accuracy (%)"}
             />
 
             {/* Snapshot Details Section */}
@@ -426,6 +455,7 @@ export default function TargetReport() {
                     loading={false}
                     emptyMessage="No snapshots yet"
                     showWarningBox
+                    title={selectedRubric ? `Overall ${selectedRubric.name}` : "Overall Accuracy"}
                   />
                 )}
 

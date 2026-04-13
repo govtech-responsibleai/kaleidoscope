@@ -19,7 +19,6 @@ import { getModelIcon } from "@/lib/modelIcons";
 interface RubricJudgeCardProps {
   judge: JudgeConfig;
   displayName: string;
-  rubricCategory: string;
   snapshotId: number;
   rubricId: number;
   bestOption: string;
@@ -31,7 +30,6 @@ interface RubricJudgeCardProps {
 export default function RubricJudgeCard({
   judge,
   displayName,
-  rubricCategory,
   snapshotId,
   rubricId,
   bestOption,
