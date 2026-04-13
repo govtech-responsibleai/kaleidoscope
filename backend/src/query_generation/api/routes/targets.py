@@ -456,8 +456,12 @@ def list_premade_rubrics(
     target = TargetRepository.get_by_id(db, target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
-    templates = list_premade_templates()
-    return templates
+    existing_keys = {
+        r.template_key
+        for r in TargetRubricRepository.get_by_target(db, target_id)
+        if r.template_key
+    }
+    return [t for t in list_premade_templates() if t["key"] not in existing_keys]
 
 
 @router.post("/{target_id}/rubrics", response_model=TargetRubricResponse, status_code=status.HTTP_201_CREATED)
@@ -498,7 +502,7 @@ def create_rubric(
     non_empty_names = [o.option.strip() for o in non_empty_options]
     if len(set(n.lower() for n in non_empty_names)) != len(non_empty_names):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Option names must be unique")
-    if rubric.best_option not in non_empty_names:
+    if rubric.best_option.strip() not in non_empty_names:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
 
     data = rubric.model_dump()
@@ -533,7 +537,7 @@ def update_rubric(
 
     # Block editing of pre-made rubric content
     if existing_rubric.template_key:
-        editable_fields = {"name", "criteria", "options", "best_option"}
+        editable_fields = {"name", "criteria", "options", "best_option", "judge_prompt", "template_key"}
         changed = rubric_update.model_dump(exclude_unset=True)
         if any(k in changed for k in editable_fields):
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pre-made rubrics cannot be edited")
@@ -560,7 +564,7 @@ def update_rubric(
     if "best_option" in data and data["best_option"] is not None:
         merged_options = data.get("options", existing_options)
         non_empty_merged = [o["option"].strip() for o in merged_options if o["option"].strip()]
-        if data["best_option"] not in non_empty_merged:
+        if data["best_option"].strip() not in non_empty_merged:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
 
     # Invalidate existing scores when options change

@@ -42,17 +42,11 @@ A complete judge prompt in markdown that follows this exact structure:
 ```
 ## Inputs
 
-**System Prompt:**
-{{{{ System_Prompt_Cleaned }}}}
-
 **User Question:**
 {{{{ Question }}}}
 
 **Chatbot Response:**
 {{{{ Answer }}}}
-
-**Citations:**
-{{{{ All_Citations }}}}
 ```
 
 4. **Task section with reasoning scaffold** — Before the judge assigns a label, require a 2-3 step reasoning process in their comments. The steps should be specific to the dimension (not generic). Each step should force the judge to observe something concrete about the response before deciding.
@@ -112,17 +106,11 @@ def build_fallback_judge_prompt(name: str, criteria: str, options: list[dict], b
         "",
         "## Inputs",
         "",
-        "**System Prompt:**",
-        "{{ System_Prompt_Cleaned }}",
-        "",
         "**User Question:**",
         "{{ Question }}",
         "",
         "**Chatbot Response:**",
         "{{ Answer }}",
-        "",
-        "**Citations:**",
-        "{{ All_Citations }}",
         "",
         "---",
         "",
@@ -189,6 +177,7 @@ def generate_judge_prompt(name: str, criteria: str, options: list[dict], best_op
     response = llm_client.generate(
         prompt=prompt,
         temperature=0.3,
+        timeout=60,
     )
 
     judge_prompt = response["content"].strip()

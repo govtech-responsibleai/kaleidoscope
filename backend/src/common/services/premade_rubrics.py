@@ -27,17 +27,11 @@ Put yourself in the shoes of the person who asked this question and received thi
 
 ## Inputs
 
-**System Prompt:**
-{{ System_Prompt_Cleaned }}
-
 **User Question:**
 {{ Question }}
 
 **Chatbot Response:**
 {{ Answer }}
-
-**Citations:**
-{{ All_Citations }}
 
 ---
 
@@ -108,17 +102,11 @@ Read the user's question first. Consider: how complex is this question? How many
 
 ## Inputs
 
-**System Prompt:**
-{{ System_Prompt_Cleaned }}
-
 **User Question:**
 {{ Question }}
 
 **Chatbot Response:**
 {{ Answer }}
-
-**Citations:**
-{{ All_Citations }}
 
 ---
 

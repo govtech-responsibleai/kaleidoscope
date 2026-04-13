@@ -270,8 +270,8 @@ async def start_rubric_qa_jobs(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric options must have unique names")
     if not rubric.best_option:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric must have a best_option selected to run scoring")
-    option_names_original = [o.option if hasattr(o, "option") else o["option"] for o in rubric_options]
-    if rubric.best_option not in option_names_original:
+    option_names_original = [(o.option if hasattr(o, "option") else o["option"]).strip() for o in non_empty_options]
+    if rubric.best_option.strip() not in option_names_original:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric best_option does not match any option")
 
     try:

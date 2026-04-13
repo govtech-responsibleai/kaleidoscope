@@ -347,12 +347,8 @@ class AnswerJudge:
             loader = get_loader()
             prompt = loader.render_from_string(
                 self.rubric.judge_prompt,
-                # Augmenter-generated variable names
                 Question=self.answer.question.text,
                 Answer=self.answer.answer_content,
-                System_Prompt_Cleaned="",
-                All_Citations="",
-                # Legacy/pre-made variable names
                 question_text=self.answer.question.text,
                 answer_text=self.answer.answer_content,
                 rubric_name=self.rubric.name,
@@ -375,7 +371,7 @@ class AnswerJudge:
             result, metadata = await self.llm_client.generate_structured_async(
                 prompt=prompt,
                 response_model=RubricJudgmentResult,
-                temperature=0.7,
+                temperature=0.0,
             )
 
             self.cost_tracker.add_call(metadata)

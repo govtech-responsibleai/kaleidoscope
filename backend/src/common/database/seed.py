@@ -35,12 +35,9 @@ def run_manual_migrations(engine: Engine) -> None:
         "ALTER TABLE judges ALTER COLUMN updated_at SET NOT NULL",
         "ALTER TABLE target_rubrics ADD COLUMN IF NOT EXISTS judge_prompt TEXT",
         "ALTER TABLE target_rubrics ADD COLUMN IF NOT EXISTS template_key VARCHAR",
-        # Remove all deprecated-category judges (relevance, voice) — these categories
-        # are no longer supported; rubric judges are now wired by template_key category.
-        # Remove all deprecated-category judges and legacy response_level judges
-        # named after their model (old seeds used model labels as judge names).
+        # Remove judges in deprecated categories — these are system-seeded judges
+        # for the old relevance/voice routing model, which is fully replaced.
         "DELETE FROM judges WHERE category IN ('relevance', 'voice')",
-        "DELETE FROM judges WHERE judge_type = 'response_level' AND name NOT IN ('Judge 1 (Recommended)', 'Judge 2', 'Judge 3')",
     ]
     with engine.connect() as conn:
         for sql in migrations:

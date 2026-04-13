@@ -1,8 +1,11 @@
 """API routes for Metrics calculation and export."""
 
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import SnapshotRepository, JudgeRepository, TargetRepository
@@ -405,5 +408,6 @@ def get_rubric_snapshot_metrics(
                     "created_at": snapshot.created_at.isoformat(),
                 }))
         except Exception:
+            logger.exception("Failed to calculate rubric metrics for snapshot %s", snapshot.id)
             continue
     return all_metrics
