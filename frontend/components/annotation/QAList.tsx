@@ -7,6 +7,7 @@ import {
   Button,
   Chip,
   CircularProgress,
+  Collapse,
   LinearProgress,
   List,
   Paper,
@@ -19,6 +20,8 @@ import {
 import {
   ArrowBack as ArrowBackIcon,
   ArrowForward as ArrowForwardIcon,
+  ExpandMore as ExpandMoreIcon,
+  ExpandLess as ExpandLessIcon,
 } from "@mui/icons-material";
 import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse, TargetRubricResponse } from "@/lib/types";
 
@@ -61,7 +64,11 @@ export default function QAList({
   const [savedSelections, setSavedSelections] = useState<Set<number>>(new Set()); // Saved set of selections
   const [draftSelections, setDraftSelections] = useState<Set<number>>(new Set()); // Draft set of selections
   const [selectionDirty, setSelectionDirty] = useState(false); // Whether there is mismatch between Saved and Draft selections
-  const [activeTab, setActiveTab] = useState(0);
+  const [activeTab, setActiveTabRaw] = useState(0);
+  const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const setActiveTab = useCallback((tab: number) => {
+    setActiveTabRaw(tab);
+  }, []);
   const [fullyAnnotatedIds, setFullyAnnotatedIds] = useState<Set<number>>(new Set());
 
   const activeRubricId = useMemo(() => {
@@ -587,7 +594,7 @@ export default function QAList({
         </Stack>
 
         {/* Rubric tabs — shared across both panels */}
-        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap sx={{ px: 2, py: 1, borderBottom: 1, borderColor: "divider", bgcolor: "grey.50" }}>
+        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center" sx={{ px: 2, py: 1, borderBottom: 1, borderColor: criteriaOpen ? "transparent" : "divider", transition: "border-color 0.3s" }}>
           <Chip
             label="Accuracy"
             onClick={() => setActiveTab(0)}
@@ -613,7 +620,54 @@ export default function QAList({
               }}
             />
           ))}
+          <Box sx={{ flex: 1 }} />
+          <Button
+            variant="text"
+            size="small"
+            color="primary"
+            endIcon={criteriaOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            onClick={() => setCriteriaOpen((prev) => !prev)}
+            sx={{ textTransform: "none", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+          >
+            {criteriaOpen ? "less" : "more"}
+          </Button>
         </Stack>
+        <Collapse in={criteriaOpen}>
+          <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider" }}>
+            <Box sx={{ pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
+              {activeTab === 0 ? (
+                <>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                    Is the response factually accurate based on the knowledge base?
+                  </Typography>
+                  <Stack spacing={0.25}>
+                    <Typography variant="caption" color="text.secondary">
+                      <Box component="span" fontWeight={700}>Accurate</Box> — reflects the source information
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      <Box component="span" fontWeight={700}>Inaccurate</Box> — contains factual errors or omissions
+                    </Typography>
+                  </Stack>
+                </>
+              ) : rubrics[activeTab - 1] ? (
+                <>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                    {rubrics[activeTab - 1].criteria || <em>No criteria defined.</em>}
+                  </Typography>
+                  {rubrics[activeTab - 1].options.length > 0 && (
+                    <Stack spacing={0.25}>
+                      {rubrics[activeTab - 1].options.map((opt) => (
+                        <Typography key={opt.option} variant="caption" color="text.secondary">
+                          <Box component="span" fontWeight={700}>{opt.option}</Box> — {opt.description}
+                        </Typography>
+                      ))}
+                    </Stack>
+                  )}
+                </>
+              ) : null}
+            </Box>
+          </Box>
+        </Collapse>
 
         {/* Two-column body: Judge View | Your Annotations */}
         <Box

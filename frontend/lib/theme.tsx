@@ -2,6 +2,12 @@
 
 import { createTheme, alpha } from "@mui/material/styles";
 
+export const groupColors = {
+  fixed:  { border: "#5C6BC0", bg: "#F5F5FF" },
+  preset: { border: "#26A69A", bg: "#F0FBF9" },
+  custom: { border: "#FFA726", bg: "#FFFBF0" },
+};
+
 export const theme = createTheme({
   palette: {
     primary: {

@@ -132,7 +132,7 @@ function getOptionColor(opt: string, rubric: TargetRubricResponse): { main: stri
   if (opt === bestOption) return { main: "success.main", dark: "success.dark" };
   // If only 2 options, the non-positive is red; otherwise blue
   if (rubric.options.length <= 2) return { main: "error.main", dark: "error.dark" };
-  return { main: "primary.main", dark: "primary.dark" };
+  return { main: "text.secondary", dark: "text.primary" };
 }
 
 function CustomRubricRow({ rubric, value, onChange, saving, notes, onNotesChange, onNotesSave }: CustomRubricRowProps) {

@@ -193,7 +193,7 @@ export default function AddPersonasDialog({
         {mode === "manual" && !showPersonaReview && (
           <Box py={2}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Define a persona that represents a type of user for your chatbot.
+              Define a persona that represents a type of user for your target application.
             </Typography>
             <PersonaManualAdd
               onSubmit={async (data) => {

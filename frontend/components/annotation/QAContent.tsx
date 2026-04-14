@@ -6,8 +6,6 @@ import {
   Box,
   Chip,
   CircularProgress,
-  Collapse,
-  Link,
   Paper,
   Skeleton,
   Stack,
@@ -43,11 +41,6 @@ export default function QAContent({
   const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
   const [rubricScoresLoading, setRubricScoresLoading] = useState(false);
   const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
-  const [criteriaOpen, setCriteriaOpen] = useState(false);
-
-  useEffect(() => {
-    setCriteriaOpen(false);
-  }, [activeTab]);
 
   // Fetch rubric judges and scores when a custom rubric tab is active and an answer exists.
   useEffect(() => {
@@ -127,12 +120,12 @@ export default function QAContent({
   );
 
   if (!answer) {
-    let message = "Waiting for chatbot answer to be generated before running primary judge.";
+    let message = "Waiting for target application answer to be generated before running primary judge.";
     if (job) {
       if (job.stage === QAJobStageEnum.STARTING || job.stage === QAJobStageEnum.GENERATING_ANSWERS) {
-        message = "Chatbot is generating an answer for this question.";
+        message = "Target application is generating an answer for this question.";
       } else if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS || job.stage === QAJobStageEnum.SCORING_ANSWERS) {
-        message = "Primary judge is generating an evaluation for the chatbot answer.";
+        message = "Primary judge is generating an evaluation for the answer.";
       }
     }
     return (
@@ -158,7 +151,15 @@ export default function QAContent({
       <QAJobProgress job={job} />
 
       {/* Judge verdict — inline, no accordion */}
-      <Box sx={{ px: 2, py: 2, borderBottom: 1, borderColor: "divider" }}>
+      <Box sx={{
+        px: 2,
+        py: 2,
+        bgcolor: activeTab === 0
+          ? (answerScore ? (answerScore.overall_label ? "#f0faf0" : "#fef0f0") : undefined)
+          : (recommendedScore
+            ? ((recommendedScore.option_chosen === (activeRubric?.best_option || activeRubric?.options?.[0]?.option || "")) ? "#f0faf0" : "#fef0f0")
+            : undefined),
+      }}>
         {activeTab === 0 ? (
           <Stack spacing={1}>
             {answerScore ? (
@@ -216,50 +217,6 @@ export default function QAContent({
           </Stack>
         ) : null}
 
-        <Link
-          component="button"
-          variant="caption"
-          underline="hover"
-          color="text.disabled"
-          onClick={() => setCriteriaOpen((prev) => !prev)}
-          sx={{ mt: 1.5, display: "inline-block", fontSize: "0.7rem" }}
-        >
-          {criteriaOpen ? "Hide criteria" : "Show criteria"}
-        </Link>
-        <Collapse in={criteriaOpen}>
-          <Box sx={{ mt: 1, pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
-            {activeTab === 0 ? (
-              <>
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                  Is the response factually accurate based on the knowledge base?
-                </Typography>
-                <Stack spacing={0.25}>
-                  <Typography variant="caption" color="text.secondary">
-                    <Box component="span" fontWeight={700}>Accurate</Box> — reflects the source information
-                  </Typography>
-                  <Typography variant="caption" color="text.secondary">
-                    <Box component="span" fontWeight={700}>Inaccurate</Box> — contains factual errors or omissions
-                  </Typography>
-                </Stack>
-              </>
-            ) : activeRubric ? (
-              <>
-                <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                  {activeRubric.criteria || <em>No criteria defined.</em>}
-                </Typography>
-                {activeRubric.options.length > 0 && (
-                  <Stack spacing={0.25}>
-                    {activeRubric.options.map((opt) => (
-                      <Typography key={opt.option} variant="caption" color="text.secondary">
-                        <Box component="span" fontWeight={700}>{opt.option}</Box> — {opt.description}
-                      </Typography>
-                    ))}
-                  </Stack>
-                )}
-              </>
-            ) : null}
-          </Box>
-        </Collapse>
       </Box>
 
       {/* Answer + question chat display */}
