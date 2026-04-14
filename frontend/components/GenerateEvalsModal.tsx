@@ -17,9 +17,10 @@ import {
   TextField,
   MenuItem,
   Checkbox,
-  ListItemText,
+  Chip,
   Collapse,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import {
   Close as CloseIcon,
   Upload as UploadIcon,
@@ -29,6 +30,7 @@ import {
 } from "@mui/icons-material";
 import { jobApi, personaApi, questionApi } from "@/lib/api";
 import { PersonaResponse, InputStyle } from "@/lib/types";
+import { getSourceChip } from "@/lib/theme";
 import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaSelect from "@/components/questions/PersonaSelect";
@@ -83,7 +85,7 @@ export default function GenerateEvalsModal({
 
   // Generation config
   const [numQuestions, setNumQuestions] = useState(30);
-  const [inputStyle, setInputStyle] = useState<InputStyle>(InputStyle.REGULAR);
+  const [inputStyle, setInputStyle] = useState<InputStyle>(InputStyle.BRIEF);
   const [generatingQuestions, setGeneratingQuestions] = useState(false);
 
   // Upload state
@@ -104,10 +106,10 @@ export default function GenerateEvalsModal({
       personaApi.list(targetId).then((res) => {
         const approved = res.data.filter((p) => p.status === "approved");
         setExistingPersonas(approved);
-        setSelectedExistingIds(approved.map((p) => p.id));
+        setSelectedExistingIds([]);
       });
     }
-  }, [step, targetId]);
+  }, [existingPersonas.length, step, targetId]);
 
   const handleToggleReject = (personaId: number) => {
     setRejectedPersonaIds((prev) => {
@@ -229,7 +231,7 @@ export default function GenerateEvalsModal({
       setExistingPersonas([]);
       setSelectedExistingIds([]);
       setNumQuestions(30);
-      setInputStyle(InputStyle.REGULAR);
+      setInputStyle(InputStyle.BRIEF);
       setGeneratingQuestions(false);
       setUploadFile(null);
       setUploading(false);
@@ -392,7 +394,7 @@ export default function GenerateEvalsModal({
           <Box py={3}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
               Upload a CSV, JSON, or Excel file containing your questions.
-              The file must have a "question" field. Optional fields: id, persona, type, scope.
+              The file must have a &quot;question&quot; field. Optional fields: id, persona, type, scope.
             </Typography>
 
             <Box
@@ -512,9 +514,24 @@ export default function GenerateEvalsModal({
             {/* Persona review grid */}
             {personaGen.personas.length > 0 && (
               <Box mb={3}>
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-                  New Personas
-                </Typography>
+                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
+                  <Typography variant="subtitle2" fontWeight={600}>
+                    New Personas
+                  </Typography>
+                  <Button
+                    size="small"
+                    onClick={() =>
+                      setRejectedPersonaIds(
+                        rejectedPersonaIds.size === 0
+                          ? new Set(personaGen.personas.map((p) => p.id))
+                          : new Set()
+                      )
+                    }
+                    sx={{ textTransform: "none", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+                  >
+                    {rejectedPersonaIds.size === 0 ? "Deselect All" : "Select All"}
+                  </Button>
+                </Box>
                 <Box display="flex" gap={1} mb={2}>
                   <Button
                     startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
@@ -595,38 +612,84 @@ export default function GenerateEvalsModal({
         {step === "select_personas" && (
           <>
             <Box mb={3}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Select which existing personas to generate questions for.
-              </Typography>
-              <TextField
-                select
-                fullWidth
-                size="small"
-                label="Select personas"
-                value={selectedExistingIds}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setSelectedExistingIds(
-                    typeof val === "string"
-                      ? val.split(",").map(Number)
-                      : (val as unknown as number[])
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5}>
+                <Typography variant="body2" color="text.secondary">
+                  Select which existing personas to generate questions for.
+                </Typography>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    setSelectedExistingIds(
+                      selectedExistingIds.length === existingPersonas.length
+                        ? []
+                        : existingPersonas.map((p) => p.id)
+                    )
+                  }
+                  sx={{ textTransform: "none", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+                >
+                  {selectedExistingIds.length === existingPersonas.length ? "Deselect All" : "Select All"}
+                </Button>
+              </Box>
+              <Box sx={{ maxHeight: 400, overflow: "auto", display: "flex", flexDirection: "column", gap: 1 }}>
+                {existingPersonas.map((p) => {
+                  const selected = selectedExistingIds.includes(p.id);
+                  return (
+                    <Box
+                      key={p.id}
+                      onClick={() =>
+                        setSelectedExistingIds((prev) =>
+                          selected ? prev.filter((id) => id !== p.id) : [...prev, p.id]
+                        )
+                      }
+                      sx={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 1.5,
+                        p: 2,
+                        borderRadius: 2,
+                        border: "1px solid",
+                        borderColor: selected ? "primary.light" : "grey.200",
+                        bgcolor: selected ? alpha("#4861b6", 0.06) : "background.paper",
+                        cursor: "pointer",
+                        transition: "all 0.15s",
+                        "&:hover": { borderColor: "primary.light", bgcolor: alpha("#4861b6", 0.03) },
+                      }}
+                    >
+                      <Checkbox checked={selected} size="small" sx={{ mt: -0.5 }} />
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Box display="flex" alignItems="center" gap={1} mb={0.5}>
+                          <Typography variant="body2" fontWeight={600}>{p.title}</Typography>
+                          <Chip
+                            label={getSourceChip(p.source).label}
+                            size="small"
+                            variant="outlined"
+                            sx={{ height: 20, fontSize: 10, ...getSourceChip(p.source) }}
+                          />
+                        </Box>
+                        {p.info && (
+                          <Typography variant="body2" color="text.secondary" sx={{
+                            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden", mb: 0.5,
+                          }}>
+                            {p.info}
+                          </Typography>
+                        )}
+                        <Box display="flex" gap={2}>
+                          {p.style && (
+                            <Typography variant="caption" color="text.disabled">
+                              <strong>Style:</strong> {p.style}
+                            </Typography>
+                          )}
+                          {p.use_case && (
+                            <Typography variant="caption" color="text.disabled">
+                              <strong>Use case:</strong> {p.use_case}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Box>
+                    </Box>
                   );
-                }}
-                slotProps={{
-                  select: {
-                    multiple: true,
-                    renderValue: (selected) =>
-                      `${(selected as number[]).length} of ${existingPersonas.length} selected`,
-                  },
-                }}
-              >
-                {existingPersonas.map((p) => (
-                  <MenuItem key={p.id} value={p.id}>
-                    <Checkbox checked={selectedExistingIds.includes(p.id)} size="small" />
-                    <ListItemText primary={p.title} secondary={p.source === "generated" ? "AI" : "General"} />
-                  </MenuItem>
-                ))}
-              </TextField>
+                })}
+              </Box>
             </Box>
 
             <Box sx={{ borderTop: 1, borderColor: "divider", pt: 3, mt: 1 }}>

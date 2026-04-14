@@ -24,10 +24,13 @@ import {
   Divider,
   Alert,
   TextField,
-  Tooltip,
   Tabs,
   Tab,
+  TablePagination,
+  Tooltip,
+  useTheme,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import {
   CheckCircle as CheckCircleIcon,
   Cancel as CancelIcon,
@@ -36,6 +39,8 @@ import {
   Edit as EditIcon,
   Save as SaveIcon,
   Add as AddIcon,
+  QuizOutlined,
+  PeopleOutlined,
 } from "@mui/icons-material";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { useParams } from "next/navigation";
@@ -45,10 +50,37 @@ import { JOB_POLLING_INTERVAL } from "@/lib/constants";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 import PersonaTable from "@/components/questions/PersonaTable";
 import AddPersonasDialog from "@/components/questions/AddPersonasDialog";
+import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+
+const cardSx = {
+  p: 2.5,
+  borderRadius: 2,
+  border: "1px solid",
+  borderColor: "grey.200",
+  bgcolor: "background.paper",
+  display: "flex",
+  flexDirection: "column",
+} as const;
+
+const chipSx = {
+  height: 22,
+  fontSize: 11,
+  fontWeight: 600,
+} as const;
+
+const headerCellSx = {
+  fontWeight: 700,
+  fontSize: 11,
+  letterSpacing: 0.5,
+  textTransform: "uppercase" as const,
+  color: "text.secondary",
+  py: 1.5,
+} as const;
 
 export default function QuestionsPage() {
   const params = useParams();
   const targetId = parseInt(params.id as string);
+  const theme = useTheme();
 
   const [activeTab, setActiveTab] = useState(0);
   const [target, setTarget] = useState<TargetResponse | null>(null);
@@ -64,6 +96,7 @@ export default function QuestionsPage() {
   const [processingQuestionId, setProcessingQuestionId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bulkApproving, setBulkApproving] = useState(false);
+  const [questionToDelete, setQuestionToDelete] = useState<QuestionResponse | null>(null);
 
   // Edit mode state
   const [editingQuestionId, setEditingQuestionId] = useState<number | null>(null);
@@ -75,6 +108,8 @@ export default function QuestionsPage() {
   const [selectedPersonaIds, setSelectedPersonaIds] = useState<number[]>([]);
   const [selectedTypes, setSelectedTypes] = useState<string[]>(["typical", "edge"]);
   const [selectedScopes, setSelectedScopes] = useState<string[]>(["in_kb", "out_kb"]);
+  const [page, setPage] = useState(0);
+  const rowsPerPage = 10;
 
   const buildSimilarMap = useCallback(async (
     newQs: QuestionResponse[],
@@ -144,7 +179,6 @@ export default function QuestionsPage() {
   useEffect(() => {
     const initialize = async () => {
       const freshQuestions = await fetchData();
-      // On initial load, check for questions that still need review.
       if (freshQuestions && freshQuestions.length > 0 && !activeJobId && !jobStatus) {
         const reviewableQuestions = freshQuestions.filter(
           (q) => q.status === Status.PENDING || q.status === Status.EDITED
@@ -157,7 +191,6 @@ export default function QuestionsPage() {
     initialize();
   }, [targetId, activeJobId, jobStatus, fetchData, loadQuestionsForReview]);
 
-  // Initialize persona filter when personas are loaded, and add new personas to selection
   useEffect(() => {
     if (personas.length > 0) {
       const allPersonaIds = personas.map((p) => p.id);
@@ -171,7 +204,6 @@ export default function QuestionsPage() {
     }
   }, [personas]);
 
-  // Poll for active job completion and fetch similar questions
   useEffect(() => {
     if (!activeJobId) return;
 
@@ -213,7 +245,6 @@ export default function QuestionsPage() {
     return () => clearInterval(interval);
   }, [activeJobId, fetchData, loadQuestionsForReview]);
 
-  // Get only approved questions
   const approvedQuestions = useMemo(() => {
     return questions.filter((question) => question.status === Status.APPROVED);
   }, [questions]);
@@ -224,23 +255,20 @@ export default function QuestionsPage() {
     );
   }, [questions]);
 
-  // Apply filters to approved questions
   const filteredQuestions = useMemo(() => {
     return approvedQuestions.filter((question) => {
-      // For persona filter: show questions with no persona when all personas are selected OR when no personas exist
       const allPersonasSelected = selectedPersonaIds.length === personas.length;
       const personaMatch =
         selectedPersonaIds.length === 0 ||
         allPersonasSelected ||
         (question.persona_id !== null && selectedPersonaIds.includes(question.persona_id));
 
-      const typeMatch = question.type ? selectedTypes.includes(question.type) : selectedTypes.length === 2; // Show NA if both filters selected
-      const scopeMatch = question.scope ? selectedScopes.includes(question.scope) : selectedScopes.length === 2; // Show NA if both filters selected
+      const typeMatch = question.type ? selectedTypes.includes(question.type) : selectedTypes.length === 2;
+      const scopeMatch = question.scope ? selectedScopes.includes(question.scope) : selectedScopes.length === 2;
       return personaMatch && typeMatch && scopeMatch;
     });
   }, [approvedQuestions, selectedPersonaIds, selectedTypes, selectedScopes, personas.length]);
 
-  // Filter options for table header filters
   const personaFilterOptions: FilterOption<number>[] = useMemo(() => {
     return personas.map((p) => ({ value: p.id, label: p.title }));
   }, [personas]);
@@ -254,6 +282,28 @@ export default function QuestionsPage() {
     { value: "in_kb", label: "In KB" },
     { value: "out_kb", label: "Out KB" },
   ], []);
+
+  const summaryStats = useMemo(() => {
+    const approvedPersonaCount = personas.filter((p) => p.status === "approved").length;
+
+    const personasWithQuestions = personas
+      .map((p) => ({
+        title: p.title,
+        count: approvedQuestions.filter((q) => q.persona_id === p.id).length,
+      }))
+      .filter((p) => p.count > 0)
+      .sort((a, b) => b.count - a.count);
+    const perPersona = personasWithQuestions.slice(0, 5);
+    const remainingPersonaCount = personasWithQuestions.length - perPersona.length;
+    const maxPerPersona = Math.max(...perPersona.map((p) => p.count), 1);
+
+    const typicalCount = approvedQuestions.filter((q) => q.type === "typical").length;
+    const edgeCount = approvedQuestions.filter((q) => q.type === "edge").length;
+    const inKbCount = approvedQuestions.filter((q) => q.scope === "in_kb").length;
+    const outKbCount = approvedQuestions.filter((q) => q.scope === "out_kb").length;
+
+    return { approvedPersonaCount, perPersona, remainingPersonaCount, maxPerPersona, typicalCount, edgeCount, inKbCount, outKbCount };
+  }, [approvedQuestions, personas]);
 
   const handleReviewQuestion = async (questionId: number, action: "approve" | "reject") => {
     setProcessingQuestionId(questionId);
@@ -326,7 +376,6 @@ export default function QuestionsPage() {
         scope?: QuestionScope | null;
       } = {};
 
-      // Only include fields that have changed
       if (editedText !== question.text) {
         updates.text = editedText;
       }
@@ -337,7 +386,6 @@ export default function QuestionsPage() {
         updates.scope = editedScope;
       }
 
-      // Only call API if there are actual changes
       if (Object.keys(updates).length > 0) {
         const response = await questionApi.update(questionId, updates);
         setQuestions((prev) => prev.map((q) => (
@@ -374,25 +422,28 @@ export default function QuestionsPage() {
 
   const handleExportQuestions = async () => {
     try {
-      const [questionsRes, personasRes] = await Promise.all([
-        targetApi.exportQuestions(targetId, "json"),
-        targetApi.exportPersonas(targetId, "json"),
-      ]);
-      triggerDownload(questionsRes.data, `questions_target_${targetId}.json`);
-      triggerDownload(personasRes.data, `personas_target_${targetId}.json`);
+      const res = await targetApi.exportQuestions(targetId, "json");
+      triggerDownload(res.data, `questions_target_${targetId}.json`);
     } catch (error) {
-      console.error("Failed to export:", error);
-      setError("Failed to export data. Please try again.");
+      console.error("Failed to export questions:", error);
+      setError("Failed to export questions. Please try again.");
     }
   };
 
-  const handleDeleteQuestion = async (questionId: number) => {
+  const handleExportPersonas = async () => {
     try {
-      await questionApi.delete(questionId);
-      fetchData();
+      const res = await targetApi.exportPersonas(targetId, "json");
+      triggerDownload(res.data, `personas_target_${targetId}.json`);
     } catch (error) {
-      console.error("Failed to delete question:", error);
+      console.error("Failed to export personas:", error);
+      setError("Failed to export personas. Please try again.");
     }
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!questionToDelete) return;
+    await questionApi.delete(questionToDelete.id);
+    fetchData();
   };
 
   const getPersonaTitle = (personaId: number | null) => {
@@ -403,8 +454,9 @@ export default function QuestionsPage() {
 
   if (loading) {
     return (
-      <Box display="flex" justifyContent="center" alignItems="center" minHeight="30vh">
-        <CircularProgress />
+      <Box display="flex" flexDirection="column" justifyContent="center" alignItems="center" minHeight="30vh" gap={1}>
+        <CircularProgress size={32} color="primary" />
+        <Typography variant="body2" color="text.secondary">Loading...</Typography>
       </Box>
     );
   }
@@ -414,18 +466,195 @@ export default function QuestionsPage() {
   }
 
   const hasQuestions = approvedQuestions.length > 0;
+  const maxPage = Math.max(0, Math.ceil(filteredQuestions.length / rowsPerPage) - 1);
+  const currentPage = Math.min(page, maxPage);
 
   return (
     <Box>
-      <Tabs
-        value={activeTab}
-        onChange={(_, newValue) => setActiveTab(newValue)}
-        sx={{ mb: 3, borderBottom: 1, borderColor: "divider" }}
-      >
-        <Tab label="Questions" />
-        <Tab label="Manage Personas" />
-      </Tabs>
+      {/* ── Page Header ── */}
+      <Box mb={3}>
+        <Typography variant="h5" fontWeight={700}>Evaluation Set</Typography>
+        <Typography variant="body2" color="text.secondary">
+          Manage evaluation questions for this target
+        </Typography>
+      </Box>
 
+      {/* ── Summary Cards ── */}
+      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 2, mb: 3 }}>
+        <Box sx={cardSx}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "text.secondary", textTransform: "uppercase" }}>
+            Total Questions
+          </Typography>
+          <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <Typography variant="h3" fontWeight={700} sx={{ color: "primary.main" }}>{approvedQuestions.length}</Typography>
+            {reviewQuestions.length > 0 && (
+              <Typography variant="caption" sx={{ color: "text.secondary", mt: 0.5 }}>
+                {reviewQuestions.length} pending review
+              </Typography>
+            )}
+          </Box>
+        </Box>
+
+        <Box sx={cardSx}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "text.secondary", textTransform: "uppercase" }}>
+            Personas
+          </Typography>
+          <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            <Typography variant="h3" fontWeight={700} sx={{ color: "primary.main" }}>{personas.length}</Typography>
+            <Typography variant="caption" sx={{ color: "text.secondary", mt: 0.5 }}>
+              {summaryStats.approvedPersonaCount} approved
+            </Typography>
+          </Box>
+        </Box>
+
+        <Box sx={cardSx}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "text.secondary", textTransform: "uppercase", mb: 1 }}>
+            Per Persona
+          </Typography>
+          {summaryStats.perPersona.length === 0 ? (
+            <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>No data yet</Typography>
+          ) : (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+              {summaryStats.perPersona.map((p) => (
+                <Box key={p.title} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                  <Typography
+                    sx={{
+                      fontSize: 11,
+                      color: "text.secondary",
+                      minWidth: 72,
+                      maxWidth: 72,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {p.title}
+                  </Typography>
+                  <Box sx={{ flex: 1, height: 6, bgcolor: "grey.200", borderRadius: 3, overflow: "hidden" }}>
+                    <Box
+                      sx={{
+                        width: `${(p.count / summaryStats.maxPerPersona) * 100}%`,
+                        height: "100%",
+                        bgcolor: "primary.main",
+                        borderRadius: 3,
+                        transition: "width 0.3s",
+                      }}
+                    />
+                  </Box>
+                  <Typography sx={{ fontSize: 11, color: "text.secondary", minWidth: 16, textAlign: "right" }}>
+                    {p.count}
+                  </Typography>
+                </Box>
+              ))}
+              {summaryStats.remainingPersonaCount > 0 && (
+                <Typography sx={{ fontSize: 10, color: "text.disabled", mt: 0.5 }}>
+                  +{summaryStats.remainingPersonaCount} more
+                </Typography>
+              )}
+            </Box>
+          )}
+        </Box>
+
+        <Box sx={cardSx}>
+          <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "text.secondary", textTransform: "uppercase", mb: 1 }}>
+            Distribution
+          </Typography>
+          {approvedQuestions.length === 0 ? (
+            <Typography variant="body2" color="text.disabled" sx={{ mt: 1 }}>No data yet</Typography>
+          ) : (
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
+              <Box>
+                <Typography sx={{ fontSize: 11, color: "text.secondary", mb: 0.5, fontWeight: 600 }}>Type</Typography>
+                <Box sx={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", bgcolor: "grey.200" }}>
+                  <Box sx={{ width: `${(summaryStats.typicalCount / approvedQuestions.length) * 100}%`, bgcolor: "success.main", transition: "width 0.3s" }} />
+                  <Box sx={{ width: `${(summaryStats.edgeCount / approvedQuestions.length) * 100}%`, bgcolor: "warning.main", transition: "width 0.3s" }} />
+                </Box>
+                <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.25 }}>
+                  <Typography sx={{ fontSize: 10, color: "success.dark", fontWeight: 600 }}>Typical {summaryStats.typicalCount}</Typography>
+                  <Typography sx={{ fontSize: 10, color: "warning.dark", fontWeight: 600 }}>Edge {summaryStats.edgeCount}</Typography>
+                </Box>
+              </Box>
+              <Box>
+                <Typography sx={{ fontSize: 11, color: "text.secondary", mb: 0.5, fontWeight: 600 }}>Scope</Typography>
+                <Box sx={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", bgcolor: "grey.200" }}>
+                  <Box sx={{ width: `${(summaryStats.inKbCount / approvedQuestions.length) * 100}%`, bgcolor: "info.main", transition: "width 0.3s" }} />
+                  <Box sx={{ width: `${(summaryStats.outKbCount / approvedQuestions.length) * 100}%`, bgcolor: "secondary.main", transition: "width 0.3s" }} />
+                </Box>
+                <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.25 }}>
+                  <Typography sx={{ fontSize: 10, color: "info.dark", fontWeight: 600 }}>In KB {summaryStats.inKbCount}</Typography>
+                  <Typography sx={{ fontSize: 10, color: "secondary.dark", fontWeight: 600 }}>Out KB {summaryStats.outKbCount}</Typography>
+                </Box>
+              </Box>
+            </Box>
+          )}
+        </Box>
+      </Box>
+
+      {/* ── Tabs ── */}
+      <Box sx={{ display: "flex", alignItems: "center", borderBottom: 1, borderColor: "divider", mb: 3 }}>
+        <Tabs
+          value={activeTab}
+          onChange={(_, newValue) => setActiveTab(newValue)}
+          sx={{ flex: 1 }}
+        >
+          <Tab label="Questions" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 }} />
+          <Tab label="Manage Personas" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 }} />
+        </Tabs>
+        {activeTab === 0 && hasQuestions && (
+          <Box display="flex" gap={1} alignItems="center">
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => setGenerateModalOpen(true)}
+              sx={{
+                border: "1px solid",
+                borderColor: "primary.light",
+                color: "primary.light",
+                "&:hover": { bgcolor: "primary.light", color: "#fff" },
+              }}
+            >
+              Add Questions
+            </Button>
+            <Tooltip title="Download questions">
+              <IconButton
+                size="small"
+                onClick={handleExportQuestions}
+                sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
+              >
+                <DownloadIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+        {activeTab === 1 && personas.length > 0 && (
+          <Box display="flex" gap={1} alignItems="center">
+            <Button
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => setAddPersonasOpen(true)}
+              sx={{
+                border: "1px solid",
+                borderColor: "primary.light",
+                color: "primary.light",
+                "&:hover": { bgcolor: "primary.light", color: "#fff" },
+              }}
+            >
+              Add Personas
+            </Button>
+            <Tooltip title="Download personas">
+              <IconButton
+                size="small"
+                onClick={handleExportPersonas}
+                sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
+              >
+                <DownloadIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          </Box>
+        )}
+      </Box>
+
+      {/* ── Personas Tab ── */}
       {activeTab === 1 && (
         personas.length === 0 ? (
           <Box
@@ -435,9 +664,20 @@ export default function QuestionsPage() {
             justifyContent="center"
             minHeight="30vh"
             gap={2}
-            sx={{ maxWidth: 500, mx: "auto", textAlign: "center" }}
+            sx={{
+              maxWidth: 500,
+              mx: "auto",
+              textAlign: "center",
+              border: "2px dashed",
+              borderColor: "grey.300",
+              borderRadius: 3,
+              py: 8,
+              px: 4,
+              bgcolor: "grey.50",
+            }}
           >
-            <Typography variant="h5" fontWeight={600}>
+            <PeopleOutlined sx={{ fontSize: 48, color: "grey.400" }} />
+            <Typography variant="h6" fontWeight={700}>
               No personas yet
             </Typography>
             <Typography variant="body1" color="text.secondary">
@@ -454,21 +694,6 @@ export default function QuestionsPage() {
           </Box>
         ) : (
           <Box>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-              <Typography variant="body2" color="text.secondary">
-                {personas.length} persona{personas.length !== 1 ? "s" : ""} total
-                {" | "}
-                {personas.filter((p) => p.status === "approved").length} approved
-              </Typography>
-              <Button
-                variant="outlined"
-                startIcon={<AddIcon />}
-                onClick={() => setAddPersonasOpen(true)}
-                size="small"
-              >
-                Add Personas
-              </Button>
-            </Box>
             <PersonaTable
               personas={personas}
               onPersonasChanged={fetchData}
@@ -485,365 +710,441 @@ export default function QuestionsPage() {
         onPersonasAdded={fetchData}
       />
 
-      {activeTab === 0 && <>
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Job Status Section */}
-      {jobStatus && (
-        <Card variant="outlined" sx={{ mb: 3, backgroundColor: "grey.100" }}>
-          <CardContent>
-            <Typography variant="h6" fontWeight={600} sx={{mb: 2}}>
-              Generation Job
-            </Typography>
-
-            {(jobStatus === "running" || jobStatus === "finding_similar") && (
-              <Box display="flex" alignItems="center" gap={2}>
-                <CircularProgress size={24} />
-                <Typography variant="body1">
-                  Generating questions, please wait...
-                </Typography>
-              </Box>
-            )}
-
-            {jobStatus === "ready_for_review" && (
-              <>
-                <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                  <Box sx={{ flex: 1, mr: 2 }}>
-                    {generationSummary && (
-                      <Alert severity="warning" sx={{ mb: 1 }}>
-                        {generationSummary}
-                      </Alert>
-                    )}
-                    <Alert severity="info">
-                      Questions needing review are shown below. Approve or reject each one before continuing.
-                    </Alert>
-                  </Box>
-                  {reviewQuestions.length > 1 && (
-                    <Button
-                      variant="contained"
-                      color="success"
-                      startIcon={bulkApproving ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />}
-                      onClick={handleBulkApprove}
-                      disabled={bulkApproving || processingQuestionId !== null}
-                    >
-                      Approve All ({reviewQuestions.length})
-                    </Button>
-                  )}
-                </Box>
-
-                {reviewQuestions.map((newQ) => {
-                  const isEditing = editingQuestionId === newQ.id;
-                  return (
-                  <Card key={newQ.id} sx={{ mb: 2, border: "2px solid", borderColor: "primary.main" }}>
-                    <CardContent>
-                      <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
-                        <Box flex={1}>
-                          <Typography variant="subtitle1" fontWeight={600} sx={{mb: 2}}>
-                            New Question
-                          </Typography>
-
-                          {isEditing ? (
-                            <Box display="flex" flexDirection="column" gap={2} sx={{mb: 2}}>
-                              <TextField
-                                label="Question Text"
-                                value={editedText}
-                                onChange={(e) => setEditedText(e.target.value)}
-                                multiline
-                                rows={3}
-                                fullWidth
-                                required
-                              />
-                              <Box display="flex" gap={2}>
-                                <FormControl sx={{ minWidth: 150 }}>
-                                  <InputLabel id={`edit-type-${newQ.id}`}>Type</InputLabel>
-                                  <Select
-                                    labelId={`edit-type-${newQ.id}`}
-                                    value={editedType ?? ""}
-                                    onChange={(e) => setEditedType(!e.target.value ? null : e.target.value as QuestionType)}
-                                    label="Type"
-                                  >
-                                    <MenuItem value="">NA</MenuItem>
-                                    <MenuItem value={QuestionType.TYPICAL}>Typical</MenuItem>
-                                    <MenuItem value={QuestionType.EDGE}>Edge</MenuItem>
-                                  </Select>
-                                </FormControl>
-                                <FormControl sx={{ minWidth: 150 }}>
-                                  <InputLabel id={`edit-scope-${newQ.id}`}>Scope</InputLabel>
-                                  <Select
-                                    labelId={`edit-scope-${newQ.id}`}
-                                    value={editedScope ?? ""}
-                                    onChange={(e) => setEditedScope(!e.target.value ? null : e.target.value as QuestionScope)}
-                                    label="Scope"
-                                  >
-                                    <MenuItem value="">NA</MenuItem>
-                                    <MenuItem value={QuestionScope.IN_KB}>In KB</MenuItem>
-                                    <MenuItem value={QuestionScope.OUT_KB}>Out KB</MenuItem>
-                                  </Select>
-                                </FormControl>
-                              </Box>
-                            </Box>
-                          ) : (
-                            <>
-                              <Typography variant="body1" sx={{mb: 2}}>
-                                {newQ.text}
-                              </Typography>
-                              <Box display="flex" gap={1} mt={1}>
-                                <Chip
-                                  label={newQ.status === Status.EDITED ? "Edited" : "Pending"}
-                                  size="small"
-                                  color={newQ.status === Status.EDITED ? "info" : "warning"}
-                                />
-                                <Chip label={getPersonaTitle(newQ.persona_id)} size="small" />
-                                <Chip
-                                  label={newQ.type || "NA"}
-                                  size="small"
-                                  color={newQ.type === "edge" ? "warning" : "default"}
-                                />
-                                <Chip
-                                  label={newQ.scope ? (newQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
-                                  size="small"
-                                  color={newQ.scope === "in_kb" ? "success" : newQ.scope === "out_kb" ? "info" : "default"}
-                                />
-                              </Box>
-                            </>
-                          )}
-                        </Box>
-                        <Box display="flex" gap={1}>
-                          {isEditing ? (
-                            <>
-                              <Button
-                                variant="contained"
-                                color="primary"
-                                startIcon={<SaveIcon />}
-                                onClick={() => handleSaveEdit(newQ.id)}
-                                disabled={processingQuestionId === newQ.id || !editedText.trim()}
-                              >
-                                {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Save"}
-                              </Button>
-                              <Button
-                                variant="outlined"
-                                onClick={handleCancelEdit}
-                                disabled={processingQuestionId === newQ.id}
-                              >
-                                Cancel
-                              </Button>
-                            </>
-                          ) : (
-                            <>
-                              <Button
-                                variant="outlined"
-                                color="primary"
-                                startIcon={<EditIcon />}
-                                onClick={() => handleStartEdit(newQ)}
-                                disabled={processingQuestionId !== null}
-                              >
-                                Edit
-                              </Button>
-                              <Button
-                                variant="contained"
-                                color="success"
-                                startIcon={<CheckCircleIcon />}
-                                onClick={() => handleReviewQuestion(newQ.id, "approve")}
-                                disabled={processingQuestionId !== null}
-                              >
-                                {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Approve"}
-                              </Button>
-                              <Button
-                                variant="outlined"
-                                color="error"
-                                startIcon={<CancelIcon />}
-                                onClick={() => handleReviewQuestion(newQ.id, "reject")}
-                                disabled={processingQuestionId !== null}
-                              >
-                                Reject
-                              </Button>
-                            </>
-                          )}
-                        </Box>
-                      </Box>
-
-                      {similarQuestionsMap[newQ.id] && similarQuestionsMap[newQ.id].length > 0 && (
-                        <>
-                          <Divider sx={{ my: 2 }} />
-                          <Typography variant="subtitle2" color="text.secondary" sx={{mb: 2}}>
-                            Similar Existing Questions ({similarQuestionsMap[newQ.id].length})
-                          </Typography>
-                          {similarQuestionsMap[newQ.id].map((similarQ) => (
-                            <Box key={similarQ.id} sx={{ pl: 2, py: 1, backgroundColor: "grey.50", borderRadius: 1, mb: 1 }}>
-                              <Typography variant="body2" color="text.secondary">
-                                {similarQ.text}
-                              </Typography>
-                              <Box display="flex" gap={1} mt={0.5}>
-                                <Chip label={getPersonaTitle(similarQ.persona_id)} size="small" variant="outlined" />
-                                <Chip label={similarQ.type || "NA"} size="small" variant="outlined" />
-                                <Chip
-                                  label={similarQ.scope ? (similarQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
-                                  size="small"
-                                  variant="outlined"
-                                />
-                              </Box>
-                            </Box>
-                          ))}
-                        </>
-                      )}
-                    </CardContent>
-                  </Card>
-                  );
-                })}
-
-                {reviewQuestions.length === 0 && (
-                  <Typography variant="body1" color="text.secondary">
-                    All questions have been reviewed.
-                  </Typography>
-                )}
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {!hasQuestions ? (
-        <Box
-          display="flex"
-          flexDirection="column"
-          alignItems="center"
-          justifyContent="center"
-          minHeight="30vh"
-          gap={2}
-          sx={{ maxWidth: 600, mx: "auto", textAlign: "center" }}
-        >
-          <Typography variant="h5" fontWeight={600}>
-            Start by generating evaluation questions
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
-            Evaluation questions are used to systematically test how your target application responds across different scenarios. Generate them automatically, and edit them later.
-          </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => setGenerateModalOpen(true)}
-          >
-            Generate Questions
-          </Button>
-        </Box>
-      ) : (
+      {/* ── Questions Tab ── */}
+      {activeTab === 0 && (
         <>
-          {/* Generate More Button + Download */}
-          <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-            <Button
-              variant="outlined"
-              onClick={() => setGenerateModalOpen(true)}
-            >
-              Add Questions
-            </Button>
-            <Tooltip title="Download questions & personas">
-              <span>
-                <IconButton
-                  onClick={handleExportQuestions}
-                  disabled={loading || !hasQuestions}
-                  sx={{
-                    bgcolor: "secondary.main",
-                    color: "white",
-                    borderRadius: 1,
-                    "&:hover": { bgcolor: "secondary.dark" },
-                    "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
-                  }}
-                >
-                  <DownloadIcon />
-                </IconButton>
-              </span>
-            </Tooltip>
-          </Box>
+          {error && (
+            <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
 
-          <TableContainer component={Paper} variant="outlined">
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell sx={{ width: 70 }}>ID</TableCell>
-                  <TableCell>Question</TableCell>
-                  <TableCell align="center" sx={{ width: 160 }}>
-                    <TableHeaderFilter
-                      label="Persona"
-                      options={personaFilterOptions}
-                      value={selectedPersonaIds}
-                      onChange={setSelectedPersonaIds}
-                      allSelectedLabel="All Personas"
-                    />
-                  </TableCell>
-                  <TableCell align="center" sx={{ width: 120 }}>
-                    <TableHeaderFilter
-                      label="Type"
-                      options={typeFilterOptions}
-                      value={selectedTypes}
-                      onChange={setSelectedTypes}
-                      allSelectedLabel="All Types"
-                    />
-                  </TableCell>
-                  <TableCell align="center" sx={{ width: 120 }}>
-                    <TableHeaderFilter
-                      label="Scope"
-                      options={scopeFilterOptions}
-                      value={selectedScopes}
-                      onChange={setSelectedScopes}
-                      allSelectedLabel="All Scopes"
-                    />
-                  </TableCell>
-                  <TableCell align="center" width={50}></TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredQuestions.map((question) => (
-                  <TableRow key={question.id}>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary" fontWeight={600}>{question.id}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography>{question.text}</Typography>
-                    </TableCell>
-                    <TableCell align="center">
-                      <Typography fontWeight={600}>
-                        {getPersonaTitle(question.persona_id)}
+          {/* Job Status Section */}
+          {jobStatus && (
+            <Card
+              variant="outlined"
+              sx={{
+                mb: 3,
+                background: `linear-gradient(135deg, ${alpha(theme.palette.primary.light, 0.06)}, ${alpha(theme.palette.primary.light, 0.02)})`,
+                borderColor: alpha(theme.palette.primary.main, 0.15),
+              }}
+            >
+              <CardContent>
+                <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, color: "primary.main", textTransform: "uppercase", mb: 2 }}>
+                  Generation Job
+                </Typography>
+
+                {(jobStatus === "running" || jobStatus === "finding_similar") && (
+                  <Box display="flex" alignItems="center" gap={2}>
+                    <CircularProgress size={24} color="primary" />
+                    <Typography variant="body2" color="text.secondary">
+                      Generating questions, please wait...
+                    </Typography>
+                  </Box>
+                )}
+
+                {jobStatus === "ready_for_review" && (
+                  <>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
+                      <Box sx={{ flex: 1, mr: 2 }}>
+                        {generationSummary && (
+                          <Alert severity="warning" sx={{ mb: 1 }}>
+                            {generationSummary}
+                          </Alert>
+                        )}
+                        <Alert severity="info">
+                          Questions needing review are shown below. Approve or reject each one before continuing.
+                        </Alert>
+                      </Box>
+                      {reviewQuestions.length > 1 && (
+                        <Button
+                          variant="contained"
+                          color="success"
+                          startIcon={bulkApproving ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />}
+                          onClick={handleBulkApprove}
+                          disabled={bulkApproving || processingQuestionId !== null}
+                        >
+                          Approve All ({reviewQuestions.length})
+                        </Button>
+                      )}
+                    </Box>
+
+                    {reviewQuestions.map((newQ) => {
+                      const isEditing = editingQuestionId === newQ.id;
+                      return (
+                        <Card
+                          key={newQ.id}
+                          sx={{
+                            mb: 2,
+                            border: "1px solid",
+                            borderColor: "grey.300",
+                            borderTop: "3px solid",
+                            borderTopColor: "primary.main",
+                            borderRadius: 2,
+                          }}
+                        >
+                          <CardContent>
+                            <Box display="flex" justifyContent="space-between" alignItems="flex-start" mb={2}>
+                              <Box flex={1}>
+                                <Typography
+                                  sx={{
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    letterSpacing: 1,
+                                    color: "primary.main",
+                                    textTransform: "uppercase",
+                                    mb: 1,
+                                  }}
+                                >
+                                  New Question
+                                </Typography>
+
+                                {isEditing ? (
+                                  <Box
+                                    sx={{
+                                      bgcolor: alpha(theme.palette.primary.light, 0.04),
+                                      borderRadius: 1.5,
+                                      p: 2,
+                                      mb: 2,
+                                    }}
+                                  >
+                                    <Box display="flex" flexDirection="column" gap={2}>
+                                      <TextField
+                                        label="Question Text"
+                                        value={editedText}
+                                        onChange={(e) => setEditedText(e.target.value)}
+                                        multiline
+                                        rows={3}
+                                        fullWidth
+                                        required
+                                      />
+                                      <Box display="flex" gap={2}>
+                                        <FormControl sx={{ minWidth: 150 }}>
+                                          <InputLabel id={`edit-type-${newQ.id}`}>Type</InputLabel>
+                                          <Select
+                                            labelId={`edit-type-${newQ.id}`}
+                                            value={editedType ?? ""}
+                                            onChange={(e) => setEditedType(!e.target.value ? null : e.target.value as QuestionType)}
+                                            label="Type"
+                                          >
+                                            <MenuItem value="">NA</MenuItem>
+                                            <MenuItem value={QuestionType.TYPICAL}>Typical</MenuItem>
+                                            <MenuItem value={QuestionType.EDGE}>Edge</MenuItem>
+                                          </Select>
+                                        </FormControl>
+                                        <FormControl sx={{ minWidth: 150 }}>
+                                          <InputLabel id={`edit-scope-${newQ.id}`}>Scope</InputLabel>
+                                          <Select
+                                            labelId={`edit-scope-${newQ.id}`}
+                                            value={editedScope ?? ""}
+                                            onChange={(e) => setEditedScope(!e.target.value ? null : e.target.value as QuestionScope)}
+                                            label="Scope"
+                                          >
+                                            <MenuItem value="">NA</MenuItem>
+                                            <MenuItem value={QuestionScope.IN_KB}>In KB</MenuItem>
+                                            <MenuItem value={QuestionScope.OUT_KB}>Out KB</MenuItem>
+                                          </Select>
+                                        </FormControl>
+                                      </Box>
+                                    </Box>
+                                  </Box>
+                                ) : (
+                                  <>
+                                    <Typography sx={{ fontSize: 15, lineHeight: 1.6, mb: 2 }}>
+                                      {newQ.text}
+                                    </Typography>
+                                    <Box display="flex" gap={1} mt={1}>
+                                      <Chip
+                                        label={newQ.status === Status.EDITED ? "Edited" : "Pending"}
+                                        size="small"
+                                        sx={{
+                                          ...chipSx,
+                                          ...(newQ.status === Status.EDITED
+                                            ? { bgcolor: alpha(theme.palette.info.main, 0.08), color: "info.main" }
+                                            : { bgcolor: alpha(theme.palette.warning.main, 0.08), color: "warning.dark" }),
+                                        }}
+                                      />
+                                      <Chip
+                                        label={getPersonaTitle(newQ.persona_id)}
+                                        size="small"
+                                        sx={{ ...chipSx, fontWeight: 500, bgcolor: "grey.100", color: "text.secondary" }}
+                                      />
+                                      <Chip
+                                        label={newQ.type || "NA"}
+                                        size="small"
+                                        variant="outlined"
+                                        sx={{
+                                          ...chipSx,
+                                          ...(newQ.type === "edge"
+                                            ? { bgcolor: alpha(theme.palette.warning.main, 0.1), color: "warning.dark", borderColor: alpha(theme.palette.warning.main, 0.3) }
+                                            : newQ.type === "typical"
+                                            ? { bgcolor: alpha(theme.palette.success.main, 0.1), color: "success.dark", borderColor: alpha(theme.palette.success.main, 0.3) }
+                                            : { borderColor: "grey.300", color: "text.secondary" }),
+                                        }}
+                                      />
+                                      <Chip
+                                        label={newQ.scope ? (newQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                                        size="small"
+                                        variant="outlined"
+                                        sx={{
+                                          ...chipSx,
+                                          ...(newQ.scope === "in_kb"
+                                            ? { bgcolor: alpha(theme.palette.info.main, 0.1), color: "info.dark", borderColor: alpha(theme.palette.info.main, 0.3) }
+                                            : newQ.scope === "out_kb"
+                                            ? { bgcolor: alpha(theme.palette.secondary.main, 0.1), color: "secondary.dark", borderColor: alpha(theme.palette.secondary.main, 0.3) }
+                                            : { borderColor: "grey.300", color: "text.secondary" }),
+                                        }}
+                                      />
+                                    </Box>
+                                  </>
+                                )}
+                              </Box>
+                              <Box display="flex" gap={0.75}>
+                                {isEditing ? (
+                                  <>
+                                    <Button
+                                      variant="contained"
+                                      size="small"
+                                      startIcon={<SaveIcon />}
+                                      onClick={() => handleSaveEdit(newQ.id)}
+                                      disabled={processingQuestionId === newQ.id || !editedText.trim()}
+                                    >
+                                      {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Save"}
+                                    </Button>
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      onClick={handleCancelEdit}
+                                      disabled={processingQuestionId === newQ.id}
+                                    >
+                                      Cancel
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Button
+                                      variant="outlined"
+                                      size="small"
+                                      startIcon={<EditIcon />}
+                                      onClick={() => handleStartEdit(newQ)}
+                                      disabled={processingQuestionId !== null}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      variant="contained"
+                                      color="success"
+                                      size="small"
+                                      startIcon={<CheckCircleIcon />}
+                                      onClick={() => handleReviewQuestion(newQ.id, "approve")}
+                                      disabled={processingQuestionId !== null}
+                                    >
+                                      {processingQuestionId === newQ.id ? <CircularProgress size={20} /> : "Approve"}
+                                    </Button>
+                                    <Button
+                                      variant="outlined"
+                                      color="error"
+                                      size="small"
+                                      startIcon={<CancelIcon />}
+                                      onClick={() => handleReviewQuestion(newQ.id, "reject")}
+                                      disabled={processingQuestionId !== null}
+                                    >
+                                      Reject
+                                    </Button>
+                                  </>
+                                )}
+                              </Box>
+                            </Box>
+
+                            {similarQuestionsMap[newQ.id] && similarQuestionsMap[newQ.id].length > 0 && (
+                              <>
+                                <Divider sx={{ my: 2 }} />
+                                <Typography variant="subtitle2" color="text.secondary" sx={{mb: 2}}>
+                                  Similar Existing Questions ({similarQuestionsMap[newQ.id].length})
+                                </Typography>
+                                {similarQuestionsMap[newQ.id].map((similarQ) => (
+                                  <Box key={similarQ.id} sx={{ pl: 2, py: 1, backgroundColor: "grey.50", borderRadius: 1, mb: 1 }}>
+                                    <Typography variant="body2" color="text.secondary">
+                                      {similarQ.text}
+                                    </Typography>
+                                    <Box display="flex" gap={1} mt={0.5}>
+                                      <Chip label={getPersonaTitle(similarQ.persona_id)} size="small" variant="outlined" />
+                                      <Chip label={similarQ.type || "NA"} size="small" variant="outlined" />
+                                      <Chip
+                                        label={similarQ.scope ? (similarQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                                        size="small"
+                                        variant="outlined"
+                                      />
+                                    </Box>
+                                  </Box>
+                                ))}
+                              </>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
+
+                    {reviewQuestions.length === 0 && (
+                      <Typography variant="body1" color="text.secondary">
+                        All questions have been reviewed.
                       </Typography>
-                    </TableCell>
-                    <TableCell align="center">
-                      <Chip
-                        label={question.type || "NA"}
-                        size="small"
-                        color={question.type === "edge" ? "warning" : "default"}
-                        variant={question.type === "edge" ? "filled" : "outlined"}
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {!hasQuestions ? (
+            <Box
+              display="flex"
+              flexDirection="column"
+              alignItems="center"
+              justifyContent="center"
+              minHeight="30vh"
+              gap={2}
+              sx={{
+                maxWidth: 600,
+                mx: "auto",
+                textAlign: "center",
+                border: "2px dashed",
+                borderColor: "grey.300",
+                borderRadius: 3,
+                py: 8,
+                px: 4,
+                bgcolor: "grey.50",
+              }}
+            >
+              <QuizOutlined sx={{ fontSize: 48, color: "grey.400" }} />
+              <Typography variant="h6" fontWeight={700}>
+                Start by generating evaluation questions
+              </Typography>
+              <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
+                Evaluation questions are used to systematically test how your target application responds across different scenarios. Generate them automatically, and edit them later.
+              </Typography>
+              <Button
+                variant="contained"
+                size="large"
+                onClick={() => setGenerateModalOpen(true)}
+              >
+                Generate Questions
+              </Button>
+            </Box>
+          ) : (<>
+            <TableContainer component={Paper} variant="outlined">
+              <Table>
+                <TableHead>
+                  <TableRow sx={{ bgcolor: "grey.50" }}>
+                    <TableCell sx={{ width: 70, ...headerCellSx }}>ID</TableCell>
+                    <TableCell sx={headerCellSx}>Question</TableCell>
+                    <TableCell align="center" sx={{ width: 160, ...headerCellSx }}>
+                      <TableHeaderFilter
+                        label="Persona"
+                        options={personaFilterOptions}
+                        value={selectedPersonaIds}
+                        onChange={(ids) => { setSelectedPersonaIds(ids); setPage(0); }}
+                        allSelectedLabel="All Personas"
                       />
                     </TableCell>
-                    <TableCell align="center">
-                      <Chip
-                        label={question.scope ? (question.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
-                        size="small"
-                        color={question.scope === "in_kb" ? "success" : question.scope === "out_kb" ? "info" : "default"}
-                        variant="outlined"
+                    <TableCell align="center" sx={{ width: 120, ...headerCellSx }}>
+                      <TableHeaderFilter
+                        label="Type"
+                        options={typeFilterOptions}
+                        value={selectedTypes}
+                        onChange={(types) => { setSelectedTypes(types); setPage(0); }}
+                        allSelectedLabel="All Types"
                       />
                     </TableCell>
-                    <TableCell align="center">
-                      <IconButton
-                        size="small"
-                        onClick={() => handleDeleteQuestion(question.id)}
-                        sx={{ opacity: 0.5, "&:hover": { opacity: 1, color: "error.main" } }}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
+                    <TableCell align="center" sx={{ width: 120, ...headerCellSx }}>
+                      <TableHeaderFilter
+                        label="Scope"
+                        options={scopeFilterOptions}
+                        value={selectedScopes}
+                        onChange={(scopes) => { setSelectedScopes(scopes); setPage(0); }}
+                        allSelectedLabel="All Scopes"
+                      />
                     </TableCell>
+                    <TableCell align="center" sx={{ width: 50, py: 1.5 }} />
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                </TableHead>
+                <TableBody>
+                  {filteredQuestions.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((question) => (
+                    <TableRow
+                      key={question.id}
+                      sx={{
+                        "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.03) },
+                        "& td": { py: 1.75, borderColor: "grey.100" },
+                      }}
+                    >
+                      <TableCell>
+                        <Typography sx={{ fontFamily: "monospace", fontSize: 12, color: "text.secondary", fontWeight: 500 }}>
+                          {question.id}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography>{question.text}</Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Typography>{getPersonaTitle(question.persona_id)}</Typography>
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={question.type || "NA"}
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            ...chipSx,
+                            ...(question.type === "edge"
+                              ? { bgcolor: alpha(theme.palette.warning.main, 0.1), color: "warning.dark", borderColor: alpha(theme.palette.warning.main, 0.3) }
+                              : question.type === "typical"
+                              ? { bgcolor: alpha(theme.palette.success.main, 0.1), color: "success.dark", borderColor: alpha(theme.palette.success.main, 0.3) }
+                              : { borderColor: "grey.300", color: "text.secondary" }),
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={question.scope ? (question.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            ...chipSx,
+                            ...(question.scope === "in_kb"
+                              ? { bgcolor: alpha(theme.palette.info.main, 0.1), color: "info.dark", borderColor: alpha(theme.palette.info.main, 0.3) }
+                              : question.scope === "out_kb"
+                              ? { bgcolor: alpha(theme.palette.secondary.main, 0.1), color: "secondary.dark", borderColor: alpha(theme.palette.secondary.main, 0.3) }
+                              : { borderColor: "grey.300", color: "text.secondary" }),
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <IconButton
+                          size="small"
+                          onClick={() => setQuestionToDelete(question)}
+                          sx={{ opacity: 0.35, "&:hover": { opacity: 1, color: "error.main" } }}
+                        >
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+              <TablePagination
+                component="div"
+                rowsPerPageOptions={[rowsPerPage]}
+                rowsPerPage={rowsPerPage}
+                count={filteredQuestions.length}
+                page={currentPage}
+                onPageChange={(_event, newPage) => setPage(newPage)}
+              />
+          </>)}
         </>
       )}
 
-      </>}
-
+      {/* ── Dialogs ── */}
       <GenerateEvalsModal
         open={generateModalOpen}
         onClose={() => setGenerateModalOpen(false)}
@@ -856,6 +1157,19 @@ export default function QuestionsPage() {
             await loadQuestionsForReview(freshQuestions);
           }
         }}
+      />
+
+      <ConfirmDeleteDialog
+        open={!!questionToDelete}
+        onClose={() => setQuestionToDelete(null)}
+        onConfirm={handleDeleteConfirm}
+        title="Delete Question"
+        itemName={
+          questionToDelete?.text
+            ? `"${questionToDelete.text.substring(0, 60)}${questionToDelete.text.length > 60 ? "..." : ""}"`
+            : undefined
+        }
+        description="This will permanently remove this question from your evaluation set."
       />
     </Box>
   );

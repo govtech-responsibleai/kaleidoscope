@@ -26,6 +26,7 @@ import {
 import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse, TargetRubricResponse } from "@/lib/types";
 
 import { answerApi, personaApi } from "@/lib/api";
+import { groupColors } from "@/lib/theme";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
 import AnnotationForm from "./AnnotationForm";
@@ -602,24 +603,27 @@ export default function QAList({
             sx={{
               fontWeight: 600, fontSize: "0.8rem", height: 32,
               ...(activeTab === 0
-                ? { background: "linear-gradient(135deg, #1d2766 0%, #4b3f8a 100%)", color: "#fff", borderColor: "transparent" }
-                : { borderColor: "divider" }),
+                ? { bgcolor: groupColors.fixed.border, color: "#fff", borderColor: "transparent", "&:hover": { bgcolor: groupColors.fixed.border, opacity: 0.9 } }
+                : { borderColor: "divider", "&:hover": { bgcolor: groupColors.fixed.bg } }),
             }}
           />
-          {rubrics.map((r, i) => (
-            <Chip
-              key={r.id}
-              label={r.name}
-              onClick={() => setActiveTab(i + 1)}
-              variant={activeTab === i + 1 ? "filled" : "outlined"}
-              sx={{
-                fontWeight: 600, fontSize: "0.8rem", height: 32,
-                ...(activeTab === i + 1
-                  ? { background: "linear-gradient(135deg, #1d2766 0%, #4b3f8a 100%)", color: "#fff", borderColor: "transparent" }
-                  : { borderColor: "divider" }),
-              }}
-            />
-          ))}
+          {rubrics.map((r, i) => {
+            const accent = r.template_key ? groupColors.preset.border : groupColors.custom.border;
+            return (
+              <Chip
+                key={r.id}
+                label={r.name}
+                onClick={() => setActiveTab(i + 1)}
+                variant={activeTab === i + 1 ? "filled" : "outlined"}
+                sx={{
+                  fontWeight: 600, fontSize: "0.8rem", height: 32,
+                  ...(activeTab === i + 1
+                    ? { bgcolor: accent, color: "#fff", borderColor: "transparent", "&:hover": { bgcolor: accent, opacity: 0.9 } }
+                    : { borderColor: "divider", "&:hover": { bgcolor: r.template_key ? groupColors.preset.bg : groupColors.custom.bg } }),
+                }}
+              />
+            );
+          })}
           <Box sx={{ flex: 1 }} />
           <Button
             variant="text"

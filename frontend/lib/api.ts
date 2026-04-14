@@ -247,6 +247,9 @@ export const personaApi = {
   reject: (personaId: number, reason?: string) =>
     api.post<PersonaResponse>(`/personas/${personaId}/reject`, { reason }),
 
+  delete: (personaId: number) =>
+    api.delete(`/personas/${personaId}`),
+
   bulkApprove: (personaIds: number[]) =>
     api.post("/personas/bulk-approve", { persona_ids: personaIds }),
 

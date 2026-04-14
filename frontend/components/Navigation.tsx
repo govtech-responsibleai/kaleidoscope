@@ -76,7 +76,7 @@ export default function Navigation({ children }: NavigationProps) {
 
   const targetNavItems = [
     { label: "Overview", icon: <HomeOutlinedIcon />, tab: "overview", path: `/targets/${targetId}` },
-    { label: "Questions", icon: <QuestionMarkIcon />, tab: "questions", path: `/targets/${targetId}/questions` },
+    { label: "Evaluation Set", icon: <QuestionMarkIcon />, tab: "questions", path: `/targets/${targetId}/questions` },
     { label: "Annotations", icon: <PostAddIcon />, tab: "annotation", path: `/targets/${targetId}/annotation` },
     { label: "Scoring", icon: <SmartToyIcon />, tab: "scoring", path: `/targets/${targetId}/scoring` },
     { label: "Report", icon: <SsidChartIcon />, tab: "report", path: `/targets/${targetId}/report` },

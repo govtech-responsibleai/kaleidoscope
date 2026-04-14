@@ -14,6 +14,7 @@ import {
 } from "@mui/material";
 import { Answer, Annotation, RubricAnnotation, TargetRubricResponse } from "@/lib/types";
 import { annotationApi } from "@/lib/api";
+import { groupColors } from "@/lib/theme";
 
 // Shared toggle styles
 const toggleSx = {
@@ -386,7 +387,7 @@ export default function AnnotationForm({
               sx={{
                 pl: 1.5,
                 borderLeft: activeRubricId === null ? "3px solid" : "3px solid transparent",
-                borderColor: activeRubricId === null ? "primary.main" : "transparent",
+                borderColor: activeRubricId === null ? groupColors.fixed.border : "transparent",
                 transition: "border-color 0.2s",
               }}
             >
@@ -407,7 +408,9 @@ export default function AnnotationForm({
                 sx={{
                   pl: 1.5,
                   borderLeft: activeRubricId === rubric.id ? "3px solid" : "3px solid transparent",
-                  borderColor: activeRubricId === rubric.id ? "primary.main" : "transparent",
+                  borderColor: activeRubricId === rubric.id
+                    ? (rubric.template_key ? groupColors.preset.border : groupColors.custom.border)
+                    : "transparent",
                   transition: "border-color 0.2s",
                 }}
               >
