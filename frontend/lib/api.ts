@@ -59,6 +59,8 @@ import {
   RubricAnswerScore,
   SnapshotMetric,
   Status,
+  TestConnectionRequest,
+  TestConnectionResponse,
 } from "./types";
 import { sortJudges } from "./judgeOrdering";
 
@@ -192,6 +194,12 @@ export const targetApi = {
       params: { format },
       responseType: "blob",
     }),
+
+  getConnectorTypes: () =>
+    api.get<string[]>("/targets/connector-types"),
+
+  testConnection: (data: TestConnectionRequest) =>
+    api.post<TestConnectionResponse>("/targets/test-connection", data),
 };
 
 // Web search endpoints
