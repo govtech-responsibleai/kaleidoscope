@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Alert, Box, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
@@ -11,6 +11,20 @@ import { Download as DownloadIcon } from "@mui/icons-material";
 import { snapshotApi, judgeApi, metricsApi, targetRubricApi, questionApi } from "@/lib/api";
 
 export default function AnnotationPage() {
+  return (
+    <Suspense
+      fallback={
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
+          <CircularProgress />
+        </Box>
+      }
+    >
+      <AnnotationPageContent />
+    </Suspense>
+  );
+}
+
+function AnnotationPageContent() {
   const params = useParams();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -32,7 +46,6 @@ export default function AnnotationPage() {
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
   const [approvedQuestionsLoading, setApprovedQuestionsLoading] = useState(true);
   const [approvedQuestionsError, setApprovedQuestionsError] = useState<string | null>(null);
-  const [rubricPendingQuestions, setRubricPendingQuestions] = useState<Set<number>>(new Set());
   const autoCreateAttempted = useRef(false);
   const approvedQuestionIds = useMemo(
     () => approvedQuestions.map((question) => question.id),
@@ -221,7 +234,6 @@ export default function AnnotationPage() {
         setQaMap={setQaMap}
         rubrics={rubrics}
         onError={(message) => setError(message)}
-        onRubricPendingQuestionsChange={setRubricPendingQuestions}
       />
 
       {error && (
@@ -244,7 +256,6 @@ export default function AnnotationPage() {
         qaMap={qaMap}
         setQaMap={setQaMap}
         rubrics={rubrics}
-        rubricPendingQuestions={rubricPendingQuestions}
         initialQuestionId={questionIdFromUrl ? Number(questionIdFromUrl) : null}
       />
     </Box>

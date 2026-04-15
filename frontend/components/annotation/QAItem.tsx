@@ -4,8 +4,6 @@ import React from "react";
 import {
   Box,
   Checkbox,
-  Chip,
-  Divider,
   ListItem,
   ListItemButton,
   Stack,
@@ -19,12 +17,12 @@ import {
   JobStatus,
   QuestionResponse,
 } from "@/lib/types";
+import LoadingDots from "@/components/shared/LoadingDots";
 
 interface QAItemProps {
   question: QuestionResponse;
   answer: Answer | null;
   job: QAJob | null;
-  rubricJobsComplete?: boolean;
   isActive: boolean;
   isChecked: boolean;
   onToggleSelection: () => void;
@@ -34,7 +32,6 @@ interface QAItemProps {
 const getStageLabel = (
   job: QAJob | null,
   answer: Answer | null,
-  rubricJobsComplete = true
 ): string => {
   if (!job) {
     if (answer?.has_annotation) {
@@ -62,9 +59,6 @@ const getStageLabel = (
   }
 
   if (job.status === JobStatus.COMPLETED) {
-    if (!rubricJobsComplete) {
-      return "Scoring metrics";
-    }
     return "Completed";
   }
 
@@ -82,7 +76,6 @@ const getStageLabel = (
 const getStageColor = (
   job: QAJob | null,
   answer: Answer | null,
-  rubricJobsComplete = true
 ): "default" | "warning" | "success" | "error" | "info" => {
   if (!job) {
     if (answer?.has_annotation) {
@@ -92,10 +85,6 @@ const getStageColor = (
       return "info";
     }
     return "default";
-  }
-
-  if (job.status === JobStatus.COMPLETED && !rubricJobsComplete) {
-    return "warning";
   }
 
   switch (job.status) {
@@ -112,6 +101,9 @@ const getStageColor = (
   }
 };
 
+const isActiveStage = (job: QAJob | null): boolean =>
+  job?.status === JobStatus.RUNNING;
+
 const truncate = (text: string, length = 100) => {
   if (text.length <= length) return text;
   return `${text.slice(0, length)}…`;
@@ -121,7 +113,6 @@ export default function QAItem({
   question,
   answer,
   job,
-  rubricJobsComplete = true,
   isActive,
   isChecked,
   onToggleSelection,
@@ -151,6 +142,8 @@ export default function QAItem({
           borderRadius: 1,
           border: (theme) =>
             isActive ? `1px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}`,
+          borderLeft: isChecked ? "3px solid" : undefined,
+          borderLeftColor: isChecked ? "primary.main" : undefined,
         }}
       >
         <Stack spacing={2} sx={{ width: "100%" }}>
@@ -164,33 +157,17 @@ export default function QAItem({
                 ? question.text
                 : "Question not found."}
               </Typography>
-              <Stack direction="row" spacing={1} sx={{ mt: 0.5, flexWrap: "wrap" }}>
-                {job?.error_message ? (
-                  <Tooltip title={job.error_message}>
-                    <Chip
-                      size="small"
-                      label={getStageLabel(job, answer, rubricJobsComplete)}
-                      color={getStageColor(job, answer, rubricJobsComplete)}
-                      variant="outlined"
-                    />
-                  </Tooltip>
-                ) : (
-                  <Chip
-                    size="small"
-                    label={getStageLabel(job, answer, rubricJobsComplete)}
-                    color={getStageColor(job, answer, rubricJobsComplete)}
-                    variant="outlined"
-                  />
-                )}
-                {answer?.is_selected_for_annotation && (
-                  <Chip
-                    size="small"
-                    label="In annotation set"
-                    color="primary"
-                    variant="outlined"
-                  />
-                )}
-              </Stack>
+              {job?.error_message ? (
+                <Tooltip title={job.error_message}>
+                  <Typography variant="caption" color={`${getStageColor(job, answer)}.main`} sx={{ mt: 0.25 }}>
+                    {getStageLabel(job, answer)}{isActiveStage(job) && <LoadingDots />}
+                  </Typography>
+                </Tooltip>
+              ) : (
+                <Typography variant="caption" color={`${getStageColor(job, answer)}.main`} sx={{ mt: 0.25 }}>
+                  {getStageLabel(job, answer)}{isActiveStage(job) && <LoadingDots />}
+                </Typography>
+              )}
             </Box>
 
             {answer ? (

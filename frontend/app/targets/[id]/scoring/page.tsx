@@ -49,7 +49,7 @@ import {
   annotationApi,
   questionApi,
   targetRubricApi,
-  rubricQAJobApi,
+  getApiErrorMessage,
 } from "@/lib/api";
 
 export default function ScoringPage() {
@@ -98,6 +98,7 @@ export default function ScoringPage() {
   const [mainTab, setMainTab] = useState(0); // 0 = Scores, 1 = Error Analysis
 
   const judgeCardsRef = useRef<HTMLDivElement | null>(null);
+  const baselineJudge = judges.find((j) => j.is_baseline) ?? null;
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
     setSelectedSnapshotId(snapshotId);
@@ -197,7 +198,6 @@ export default function ScoringPage() {
   }, [targetId, selectedSnapshotId]);
 
   const fetchQuestionsWithoutAnswers = useCallback(async (snapshotId: number) => {
-    const baselineJudge = judges.find((j) => j.is_baseline);
     if (!baselineJudge) { setQuestionsWithoutAnswers(0); return; }
     try {
       const response = await questionApi.listApprovedWithoutAnswers(snapshotId, baselineJudge.id);
@@ -205,7 +205,7 @@ export default function ScoringPage() {
     } catch {
       setQuestionsWithoutAnswers(0);
     }
-  }, [judges]);
+  }, [baselineJudge]);
 
   const fetchQuestionsWithoutScores = useCallback(async (snapshotId: number) => {
     try {
@@ -266,27 +266,27 @@ export default function ScoringPage() {
       if (questionIdsToScore.length === 0) { setError("All questions already scored for this judge."); return null; }
       const response = await qaJobApi.start(selectedSnapshotId, { judge_id: judgeId, question_ids: questionIdsToScore });
       return response.data;
-    } catch {
-      setError("Unable to start judge run.");
+    } catch (error) {
+      setError(getApiErrorMessage(error, "Unable to start judge run."));
       return null;
     }
   };
 
   const handleRubricJobStart = async (judgeId: number, rubricId: number): Promise<QAJob[] | null> => {
     if (!selectedSnapshotId) { setError("Select a snapshot to run judges."); return null; }
+    if (!baselineJudge) { setError("Baseline judge not found."); return null; }
     try {
-      // Use rubric-specific endpoint so common judges aren't blocked by accuracy scores
       const questionsResponse = await questionApi.listApprovedWithoutRubricScores(selectedSnapshotId, judgeId, rubricId);
       const questionIds = questionsResponse.data.map((q) => q.id);
       if (questionIds.length === 0) { setError("All questions already scored for this rubric judge."); return null; }
-      const response = await rubricQAJobApi.start(selectedSnapshotId, {
-        judge_id: judgeId,
+      const response = await qaJobApi.startAll(selectedSnapshotId, {
+        judge_id: baselineJudge.id,
         question_ids: questionIds,
-        rubric_id: rubricId,
+        rubric_specs: [{ rubric_id: rubricId, judge_id: judgeId }],
       });
       return response.data;
-    } catch {
-      setError("Unable to start rubric judge run.");
+    } catch (error) {
+      setError(getApiErrorMessage(error, "Unable to start rubric judge run."));
       return null;
     }
   };

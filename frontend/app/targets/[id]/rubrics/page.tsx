@@ -5,8 +5,6 @@ import { useParams } from "next/navigation";
 import {
   Box,
   Typography,
-  Card,
-  CardContent,
   TextField,
   Divider,
   Button,
@@ -16,13 +14,14 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
-  List,
-  ListItemButton,
-  ListItemText,
   Chip,
   Accordion,
   AccordionSummary,
   AccordionDetails,
+  Alert,
+  Card,
+  CardActionArea,
+  CardContent,
 } from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import {
@@ -32,8 +31,12 @@ import {
   CheckCircleOutline as CheckCircleOutlineIcon,
   HelpOutline as HelpOutlineIcon,
   Save as SaveIcon,
+  FavoriteBorder as FavoriteBorderIcon,
+  ContentCut as ContentCutIcon,
+  ChecklistRtl as ChecklistRtlIcon,
 } from "@mui/icons-material";
 import { targetRubricApi } from "@/lib/api";
+import { groupColors } from "@/lib/theme";
 import {
   TargetRubricResponse,
   RubricOption,
@@ -46,6 +49,9 @@ const accuracyOptions = [
   { option: "Inaccurate", description: "One or more claims are not supported or hallucinated." },
 ];
 
+const ACCURACY_CRITERIA =
+  "Are the claims in the response supported by the provided context, or do they contain hallucinations?";
+
 export default function RubricsPage() {
   const params = useParams();
   const targetId = Number(params.id);
@@ -57,7 +63,6 @@ export default function RubricsPage() {
   const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
   const [rubricToDelete, setRubricToDelete] = useState<TargetRubricResponse | null>(null);
 
-  // Pre-made rubric dialog state
   const [premadeDialogOpen, setPremadeDialogOpen] = useState(false);
   const [premadeTemplates, setPremadeTemplates] = useState<PremadeRubricTemplate[]>([]);
   const [premadeLoading, setPremadeLoading] = useState(false);
@@ -122,10 +127,9 @@ export default function RubricsPage() {
       });
       setRubrics((prev) => [...prev, res.data]);
       setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
-      // Remove added template from available list
       setPremadeTemplates((prev) => prev.filter((t) => t.key !== template.key));
     } catch {
-      // Could show error, but dialog will close
+      // dialog will close
     } finally {
       setAddingPremade(null);
       setPremadeDialogOpen(false);
@@ -227,13 +231,18 @@ export default function RubricsPage() {
     }
   };
 
-  // Split rubrics into premade and custom
   const premadeRubrics = rubrics.filter((r) => isPremade(r));
   const customRubrics = rubrics.filter((r) => !isPremade(r));
+  const totalRubricCount = 1 + premadeRubrics.length + customRubrics.length;
+
+  const premadeIconMap: Record<string, React.ReactElement> = {
+    empathy: <FavoriteBorderIcon sx={{ fontSize: 36, color: "text.secondary" }} />,
+    verbosity: <ContentCutIcon sx={{ fontSize: 36, color: "text.secondary" }} />,
+  };
+  const defaultPremadeIcon = <ChecklistRtlIcon sx={{ fontSize: 36, color: "text.secondary" }} />;
 
   const renderOptionsReadonly = (options: RubricOption[], bestOption: string | null) => (
     <>
-      {/* Column headers */}
       <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
         <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
           <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
@@ -246,7 +255,6 @@ export default function RubricsPage() {
         <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ width: 140, flexShrink: 0 }}>Label</Typography>
         <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>Description</Typography>
       </Box>
-
       {options.map(({ option, description }) => (
         <Box key={option} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
           <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -262,53 +270,104 @@ export default function RubricsPage() {
     </>
   );
 
+  const renderGroupHeader = (title: string, count: number, onAdd: (() => void) | null, accent?: string) => (
+    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
+      <Typography
+        variant="subtitle2"
+        fontWeight={700}
+        sx={{ textTransform: "uppercase", letterSpacing: 0.6 }}
+      >
+        {title}
+      </Typography>
+      <Chip label={count} size="small" sx={accent ? { bgcolor: accent, color: "#fff" } : undefined} />
+      <Box sx={{ flex: 1 }} />
+      {onAdd && (
+        <Tooltip title={`Add ${title.toLowerCase()} rubric`} arrow>
+          <IconButton
+            size="small"
+            onClick={onAdd}
+            sx={{
+              border: "1px solid",
+              borderColor: accent ?? "primary.main",
+              color: accent ?? "primary.main",
+              "&:hover": { bgcolor: accent ?? "primary.main", color: "#fff" },
+            }}
+          >
+            <AddIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      )}
+    </Box>
+  );
+
+  const renderEmptyState = (message: string) => (
+    <Typography variant="body2" color="text.secondary" sx={{ py: 2, px: 1, fontStyle: "italic" }}>
+      {message}
+    </Typography>
+  );
+
+  const summarySx = {
+    minHeight: 48,
+    flexDirection: "row-reverse",
+    "& .MuiAccordionSummary-expandIconWrapper": { mr: 1 },
+    "& .MuiAccordionSummary-content": { alignItems: "center" },
+  };
+
+  const getGroupSx = (group: keyof typeof groupColors) => ({
+    bgcolor: groupColors[group].bg,
+    borderLeft: "4px solid",
+    borderColor: groupColors[group].border,
+    borderRadius: 2,
+    p: 2,
+    mb: 3,
+  });
+
   return (
     <Box>
-      {/* Accuracy rubric — always present, read-only */}
-      <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-        Accuracy
-      </Typography>
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>Rubric Library</Typography>
+      <Alert severity="info" variant="outlined" sx={{ mb: 3 }}>
+        <strong>{totalRubricCount} rubric{totalRubricCount !== 1 ? "s" : ""} defined.</strong>{" "}
+        Rubrics defined here are used by annotators and LLM judges to score responses.
+        Your score = % of times judges pick the ideal outcome.
+      </Alert>
 
-      <Card variant="outlined" sx={{ pointerEvents: "none", mb: 2 }}>
-        <CardContent>
-          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-            Criteria
-          </Typography>
-          <TextField
-            value="Are the claims in the response supported by the provided context, or do they contain hallucinations?"
-            fullWidth
-            disabled
-            multiline
-            size="small"
-            sx={{ mb: 2 }}
-          />
-          <Divider sx={{ mb: 2 }} />
-          {renderOptionsReadonly(accuracyOptions, "Accurate")}
-        </CardContent>
-      </Card>
+      {/* FIXED group */}
+      <Box sx={getGroupSx("fixed")}>
+        <Box sx={{ mb: 2 }}>{renderGroupHeader("Fixed", 1, null, groupColors.fixed.border)}</Box>
+        <Accordion variant="outlined" disableGutters>
+          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={summarySx}>
+            <Typography fontWeight={600} sx={{ flex: 1 }}>Accuracy</Typography>
+          </AccordionSummary>
+          <AccordionDetails sx={{ pt: 0 }}>
+            <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+              Criteria
+            </Typography>
+            <TextField value={ACCURACY_CRITERIA} fullWidth disabled multiline size="small" sx={{ mb: 2 }} />
+            <Divider sx={{ mb: 2 }} />
+            {renderOptionsReadonly(accuracyOptions, "Accurate")}
+          </AccordionDetails>
+        </Accordion>
+      </Box>
 
-      {/* Pre-made rubrics section */}
-      {premadeRubrics.length > 0 && (
-        <>
-          <Typography variant="h6" fontWeight={600} sx={{ mt: 3, mb: 1 }}>
-            Pre-made Rubrics
-          </Typography>
-
-          {premadeRubrics.map((rubric) => (
+      {/* PRESET group */}
+      <Box sx={getGroupSx("preset")}>
+        <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, openPremadeDialog, groupColors.preset.border)}</Box>
+        {premadeRubrics.length === 0 ? (
+          renderEmptyState("No preset rubrics added yet. Click + to browse templates.")
+        ) : (
+          premadeRubrics.map((rubric) => (
             <Accordion key={rubric.id} variant="outlined" disableGutters sx={{ mb: 1 }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 48 }}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, mr: 1 }}>
-                  <Typography fontWeight={600}>{rubric.name}</Typography>
-                  <Chip label="Pre-made" size="small" color="info" variant="outlined" />
-                </Box>
-                <IconButton
-                  component="div"
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
-                  sx={{ mr: 1 }}
-                >
-                  <DeleteOutlineIcon fontSize="small" />
-                </IconButton>
+              <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={summarySx}>
+                <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
+                <Tooltip title="Delete rubric" arrow>
+                  <IconButton
+                    component="div"
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
+                  >
+                    <DeleteOutlineIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
               </AccordionSummary>
               <AccordionDetails sx={{ pt: 0 }}>
                 <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
@@ -319,25 +378,19 @@ export default function RubricsPage() {
                 {renderOptionsReadonly(rubric.options, rubric.best_option)}
               </AccordionDetails>
             </Accordion>
-          ))}
-        </>
-      )}
-
-      {/* Custom rubrics section */}
-      <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mt: 3, mb: 2 }}>
-        <Typography variant="h6" fontWeight={600}>
-          Custom Rubrics
-        </Typography>
-        <Button variant="outlined" size="small" onClick={openPremadeDialog}>
-          Add Pre-made Rubric
-        </Button>
+          ))
+        )}
       </Box>
 
-      {loading ? (
-        <CircularProgress size={24} />
-      ) : (
-        <>
-          {customRubrics.map((rubric) => {
+      {/* CUSTOM group */}
+      <Box sx={getGroupSx("custom")}>
+        <Box sx={{ mb: 2 }}>{renderGroupHeader("Custom", customRubrics.length, addRubric, groupColors.custom.border)}</Box>
+        {loading ? (
+          <CircularProgress size={24} />
+        ) : customRubrics.length === 0 ? (
+          renderEmptyState("No custom rubrics yet. Click + to add one.")
+        ) : (
+          customRubrics.map((rubric) => {
             const draft = isDraft(rubric.id);
             const dirty = isDirty(rubric);
             const errors = getRubricErrors(rubric);
@@ -351,8 +404,8 @@ export default function RubricsPage() {
                 defaultExpanded={draft}
                 sx={{ mb: 1, ...(draft && { borderStyle: "dashed" }) }}
               >
-                <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 48 }}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1, mr: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={summarySx}>
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}>
                     <TextField
                       value={rubric.name}
                       placeholder="Untitled rubric"
@@ -371,17 +424,17 @@ export default function RubricsPage() {
                     />
                     {dirty && !draft && <Chip label="Unsaved" size="small" color="warning" variant="outlined" />}
                   </Box>
-                  <IconButton
-                    component="div"
-                    size="small"
-                    onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
-                    sx={{ mr: 1 }}
-                  >
-                    <DeleteOutlineIcon fontSize="small" />
-                  </IconButton>
+                  <Tooltip title="Delete rubric" arrow>
+                    <IconButton
+                      component="div"
+                      size="small"
+                      onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
+                    >
+                      <DeleteOutlineIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
                 </AccordionSummary>
                 <AccordionDetails sx={{ pt: 0 }}>
-
                   <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
                     Criteria
                   </Typography>
@@ -390,6 +443,7 @@ export default function RubricsPage() {
                     placeholder="Describe your evaluation criteria"
                     fullWidth
                     multiline
+                    minRows={3}
                     size="small"
                     onChange={(e) => updateField(rubric.id, { criteria: e.target.value })}
                     sx={{ mb: 2 }}
@@ -397,7 +451,6 @@ export default function RubricsPage() {
 
                   <Divider sx={{ mb: 2 }} />
 
-                  {/* Column headers */}
                   <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
                     <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
                       <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
@@ -451,47 +504,47 @@ export default function RubricsPage() {
                     Add Option
                   </Button>
 
-                  {dirty && (
+                  {(dirty || saveError) && (
                     <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1.5 }}>
-                      <Tooltip title={errors.length > 0 ? errors.join(", ") : ""}>
-                        <span>
-                          <Button
-                            variant="contained"
-                            size="small"
-                            startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
-                            disabled={errors.length > 0 || isSaving}
-                            onClick={() => handleSave(rubric)}
-                          >
-                            {isSaving ? "Generating judge prompt..." : "Save"}
-                          </Button>
-                        </span>
-                      </Tooltip>
-                      {errors.length > 0 && (
-                        <Typography variant="caption" color="error">
-                          {errors.join(", ")}
-                        </Typography>
-                      )}
-                      {saveError && (
-                        <Typography variant="caption" color="error">
-                          {saveError}
-                        </Typography>
+                      <Box sx={{ flex: 1, display: "flex", alignItems: "center", gap: 1 }}>
+                        {dirty && errors.length > 0 && (
+                          <Typography variant="caption" color="error">
+                            {errors.join(", ")}
+                          </Typography>
+                        )}
+                        {saveError && (
+                          <Typography variant="caption" color="error">
+                            {saveError}
+                          </Typography>
+                        )}
+                      </Box>
+                      {dirty && (
+                        <Tooltip title={errors.length > 0 ? errors.join(", ") : ""}>
+                          <span>
+                            <Button
+                              variant="contained"
+                              size="small"
+                              startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+                              disabled={errors.length > 0 || isSaving}
+                              onClick={() => handleSave(rubric)}
+                            >
+                              {isSaving ? "Generating judge prompt..." : "Save"}
+                            </Button>
+                          </span>
+                        </Tooltip>
                       )}
                     </Box>
                   )}
                 </AccordionDetails>
               </Accordion>
             );
-          })}
+          })
+        )}
+      </Box>
 
-          <Button variant="outlined" startIcon={<AddIcon />} onClick={addRubric} sx={{ mt: 1 }}>
-            Add Rubric
-          </Button>
-        </>
-      )}
-
-      {/* Pre-made rubric selection dialog */}
+      {/* Preset rubric selection dialog */}
       <Dialog open={premadeDialogOpen} onClose={() => setPremadeDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Pre-made Rubric</DialogTitle>
+        <DialogTitle>Add Preset Rubric</DialogTitle>
         <DialogContent>
           {premadeLoading ? (
             <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
@@ -499,30 +552,52 @@ export default function RubricsPage() {
             </Box>
           ) : premadeTemplates.length === 0 ? (
             <Typography color="text.secondary" sx={{ py: 2 }}>
-              All pre-made rubrics have already been added to this target.
+              All preset rubrics have already been added to this target.
             </Typography>
           ) : (
-            <List disablePadding>
+            <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", pt: 1, justifyContent: "center" }}>
               {premadeTemplates.map((template) => (
-                <ListItemButton
+                <Card
                   key={template.key}
-                  onClick={() => addPremadeRubric(template)}
-                  disabled={addingPremade !== null}
-                  sx={{ borderRadius: 1, mb: 0.5 }}
+                  variant="outlined"
+                  sx={{ flex: "1 1 180px", maxWidth: 220, position: "relative" }}
                 >
-                  <ListItemText
-                    primary={
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                        <Typography fontWeight={600}>{template.name}</Typography>
-                        {addingPremade === template.key && <CircularProgress size={16} />}
+                  <CardActionArea
+                    onClick={() => addPremadeRubric(template)}
+                    disabled={addingPremade !== null}
+                    sx={{ p: 2, textAlign: "center" }}
+                  >
+                    {addingPremade === template.key && (
+                      <Box sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
+                        <CircularProgress size={24} />
                       </Box>
-                    }
-                    secondary={template.criteria}
-                    secondaryTypographyProps={{ noWrap: true }}
-                  />
-                </ListItemButton>
+                    )}
+                    <Box sx={{ mb: 1, opacity: addingPremade === template.key ? 0.3 : 1 }}>
+                      {premadeIconMap[template.key] ?? defaultPremadeIcon}
+                    </Box>
+                    <Typography
+                      fontWeight={600}
+                      sx={{ mb: 0.5, opacity: addingPremade === template.key ? 0.3 : 1 }}
+                    >
+                      {template.name}
+                    </Typography>
+                    <Typography
+                      variant="caption"
+                      color="text.secondary"
+                      sx={{
+                        display: "-webkit-box",
+                        WebkitLineClamp: 3,
+                        WebkitBoxOrient: "vertical",
+                        overflow: "hidden",
+                        opacity: addingPremade === template.key ? 0.3 : 1,
+                      }}
+                    >
+                      {template.criteria}
+                    </Typography>
+                  </CardActionArea>
+                </Card>
               ))}
-            </List>
+            </Box>
           )}
         </DialogContent>
       </Dialog>

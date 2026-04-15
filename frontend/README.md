@@ -1,8 +1,8 @@
 # Kaleidoscope Frontend
 
-A comprehensive React + Next.js frontend application for **systematically evaluating LLM chatbot applications**. Kaleidoscope provides an end-to-end evaluation workflow from question generation to human-in-the-loop annotation and multi-judge scoring, enabling rigorous assessment of chatbot accuracy and reliability.
+A comprehensive React + Next.js frontend application for **systematically evaluating LLM target applications**. Kaleidoscope provides an end-to-end evaluation workflow from question generation to human-in-the-loop annotation and multi-judge scoring, enabling rigorous assessment of target application accuracy and reliability.
 
-The platform automates the creation of diverse evaluation questions across user personas, collects chatbot responses, performs claim-based accuracy evaluation using LLM judges, facilitates human annotation with judge assistance, and provides detailed metrics including judge alignment scores (F1, precision, recall) for validating evaluation quality.
+The platform automates the creation of diverse evaluation questions across user personas, collects target application responses, performs claim-based accuracy evaluation using LLM judges, facilitates human annotation with judge assistance, and provides detailed metrics including judge alignment scores (F1, precision, recall) for validating evaluation quality.
 
 ## Features
 
@@ -12,8 +12,8 @@ The platform automates the creation of diverse evaluation questions across user 
 - **Question Generation**: Generate evaluation questions with configurable input style (brief/regular/detailed) and automatic web search context
 - **Question Review**: Review newly generated questions with automatic similarity detection
 - **Advanced Filtering**: Filter questions by persona, type (typical/edge), and scope (in KB/out of KB)
-- **Snapshot Management**: Version control for chatbot iterations to track improvements over time
-- **Answer Generation & Annotation**: Automated collection of chatbot responses with claim-based evaluation
+- **Snapshot Management**: Version control for target application iterations to track improvements over time
+- **Answer Generation & Annotation**: Automated collection of target application responses with claim-based evaluation
 - **Judge-Assisted Labeling**: Claim highlighting with explanations to assist human annotation
 - **Custom Rubric Evaluation**: Define custom evaluation criteria (relevance, tone, etc.) with configurable options per target
 - **Rubric Annotation**: Human annotation for custom rubrics alongside accuracy labeling
@@ -234,14 +234,14 @@ The Kaleidoscope evaluation system follows a **3-phase workflow**: Question Gene
 ### **Phase 2: Annotation**
 
 #### 7. Annotation Page
-- **Create Snapshot**: Version control for chatbot iteration
+- **Create Snapshot**: Version control for target application iteration
   - Name the snapshot (e.g., "v1.0", "Production - Jan 2025")
   - Specify number of questions to evaluate (e.g., N=100)
   - System randomly selects N approved questions
 
 - **Answer Generation & Claim Extraction**:
   - Click "Start" to begin QA job
-  - System calls target chatbot API to generate N answers
+  - System calls target application API to generate N answers
   - Automatically extracts claims from each answer
   - Real-time progress tracking per question
 
@@ -612,7 +612,7 @@ To switch back to local development, set `NEXT_PUBLIC_API_DOMAIN` back to `http:
 
 ### QA Job stuck or failing
 - Check browser console and backend logs for errors
-- Verify target chatbot API endpoint is accessible
+- Verify target application API endpoint is accessible
 - Ensure sufficient approved questions exist in target
 - Try pausing and resuming the job
 - Check if baseline judge is properly configured

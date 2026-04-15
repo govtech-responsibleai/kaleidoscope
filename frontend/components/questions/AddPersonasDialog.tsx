@@ -121,7 +121,7 @@ export default function AddPersonasDialog({
             gap={3}
           >
             <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ maxWidth: 500 }}>
-              Choose how you'd like to add personas for this target.
+              Choose how you&apos;d like to add personas for this target.
             </Typography>
             <PersonaSelect
               onGenerateAI={() => personaGen.generateWithAI()}
@@ -143,9 +143,24 @@ export default function AddPersonasDialog({
         {showPersonaReview && (
           <>
             <Box mb={2}>
-              <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                Review the personas below. Reject any that don't fit, then approve.
-              </Typography>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={1.5}>
+                <Typography variant="body2" color="text.secondary">
+                  Review the personas below. Uncheck any that don&apos;t fit, then approve.
+                </Typography>
+                <Button
+                  size="small"
+                  onClick={() =>
+                    setRejectedIds(
+                      rejectedIds.size === 0
+                        ? new Set(personaGen.personas.map((p) => p.id))
+                        : new Set()
+                    )
+                  }
+                  sx={{ textTransform: "none", fontSize: "0.75rem", whiteSpace: "nowrap" }}
+                >
+                  {rejectedIds.size === 0 ? "Deselect All" : "Select All"}
+                </Button>
+              </Box>
               <Box display="flex" gap={1}>
                 <Button
                   startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
@@ -193,7 +208,7 @@ export default function AddPersonasDialog({
         {mode === "manual" && !showPersonaReview && (
           <Box py={2}>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Define a persona that represents a type of user for your chatbot.
+              Define a persona that represents a type of user for your target application.
             </Typography>
             <PersonaManualAdd
               onSubmit={async (data) => {
