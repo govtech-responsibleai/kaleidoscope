@@ -351,9 +351,9 @@ class QAJob(Base):
     question_id = Column(Integer, ForeignKey("questions.id", ondelete="CASCADE"), nullable=False, index=True)
     judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=True, index=True)
     answer_id = Column(Integer, ForeignKey("answers.id", ondelete="SET NULL"), nullable=True, index=True)
-    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="SET NULL"), nullable=True, index=True)
 
     # Fields
+    rubric_specs = Column(JSON, nullable=True)  # [{"rubric_id": int, "judge_id": int}, ...]
     type = Column(Enum(QAJobTypeEnum), nullable=False, index=True)
     status = Column(Enum(JobStatusEnum), default=JobStatusEnum.running, nullable=False, index=True)
     stage = Column(Enum(QAJobStageEnum), default=QAJobStageEnum.starting, nullable=False, index=True)
@@ -370,12 +370,8 @@ class QAJob(Base):
     answer = relationship("Answer", back_populates="qa_jobs")
     judge = relationship("Judge", back_populates="qa_jobs")
 
-    # Partial unique indexes: accuracy jobs (rubric_id IS NULL) and rubric jobs (rubric_id IS NOT NULL)
     __table_args__ = (
-        Index('uix_accuracy_jobs', 'snapshot_id', 'question_id', 'judge_id',
-              unique=True, postgresql_where=text('rubric_id IS NULL')),
-        Index('uix_rubric_jobs', 'snapshot_id', 'question_id', 'judge_id', 'rubric_id',
-              unique=True, postgresql_where=text('rubric_id IS NOT NULL')),
+        Index('uix_snapshot_question', 'snapshot_id', 'question_id', unique=True),
     )
 
     def __repr__(self):
@@ -483,6 +479,10 @@ class AnswerScore(Base):
     answer = relationship("Answer", back_populates="scores")
     judge = relationship("Judge", back_populates="answer_scores")
     claim_scores = relationship("AnswerClaimScore", back_populates="answer_score", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("answer_id", "judge_id", name="uix_answer_judge_score"),
+    )
 
 class Annotation(Base):
     """

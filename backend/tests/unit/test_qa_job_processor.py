@@ -6,10 +6,14 @@ import pytest
 from datetime import datetime, timedelta
 from unittest.mock import Mock, patch, AsyncMock
 
-from src.scoring.services.qa_job_processor import QAJobProcessor, run_qajob, pause_qajob
+from src.scoring.services.qa_job_processor import (
+    QAJobProcessor, run_qajob, run_qajobs_batch,
+    pause_qajob, pause_qajobs_batch, get_or_create_qajobs_batch,
+)
 from src.common.database.models import (
     JobStatusEnum, QAJobStageEnum, QAJobTypeEnum,
     Answer, AnswerClaim, AnswerScore, Judge, JudgeTypeEnum,
+    Question, QuestionTypeEnum, QuestionScopeEnum, StatusEnum,
 )
 from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
@@ -23,12 +27,15 @@ class TestQAJobProcessor:
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_run_processes_existing_job(
-        self, mock_score_answer, mock_extract_claims, mock_generate_answer,
+        self, MockAnswerJudge, mock_extract_claims, mock_generate_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Test that run processes an existing job through the full pipeline."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = QAJobRepository.create(
             test_db,
             {
@@ -55,6 +62,52 @@ class TestQAJobProcessor:
         mock_generate_answer.assert_awaited_once()
 
     @pytest.mark.asyncio
+    @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
+    async def test_response_level_judge_skips_claim_processing(
+        self,
+        MockAnswerJudge,
+        mock_extract_claims,
+        mock_generate_answer,
+        test_db,
+        sample_snapshot,
+        sample_question,
+        sample_answer,
+        sample_judge_response_level,
+    ):
+        """Response-level judges should score directly from the answer."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
+        job = QAJobRepository.create(
+            test_db,
+            {
+                "snapshot_id": sample_snapshot.id,
+                "question_id": sample_question.id,
+                "judge_id": sample_judge_response_level.id,
+                "answer_id": sample_answer.id,
+                "type": QAJobTypeEnum.response_scoring_full,
+                "status": JobStatusEnum.running,
+                "stage": QAJobStageEnum.starting,
+            }
+        )
+
+        processor = QAJobProcessor(
+            test_db, sample_snapshot.id, sample_question.id, sample_judge_response_level.id
+        )
+        await processor.run(job_id=job.id)
+
+        mock_generate_answer.assert_not_awaited()
+        mock_extract_claims.assert_not_awaited()
+        MockAnswerJudge.assert_called_once_with(
+            test_db,
+            job.id,
+            override_judge_id=sample_judge_response_level.id,
+        )
+        mock_judge_instance.score.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_run_job_not_found_raises_error(self, test_db, sample_snapshot, sample_question, sample_judge_claim_based):
         """Test that run with non-existent job_id raises ValueError."""
         processor = QAJobProcessor(
@@ -65,13 +118,16 @@ class TestQAJobProcessor:
             await processor.run(job_id=999)
 
     @pytest.mark.asyncio
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_run_scoring_only_when_claims_checked(
-        self, mock_score_answer, test_db, sample_qa_job, sample_snapshot, sample_question, sample_answer
+        self, MockAnswerJudge, test_db, sample_qa_job, sample_snapshot, sample_question, sample_answer
     ):
         """Test that pipeline skips to scoring when answer and fully-checked claims exist but score doesn't."""
         from datetime import datetime, timedelta
         from src.common.database.models import AnswerClaim
+
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
 
         # Create claims with different created_at and checked_at (marking them as checked)
         now = datetime.utcnow()
@@ -107,19 +163,26 @@ class TestQAJobProcessor:
         )
         await processor.run(job_id=sample_qa_job.id)
 
-        # Verify score_answer was called
-        mock_score_answer.assert_awaited_once_with(test_db, sample_qa_job.id)
+        # Verify AnswerJudge was instantiated and score() called
+        MockAnswerJudge.assert_called_once_with(
+            test_db,
+            sample_qa_job.id,
+            override_judge_id=sample_qa_job.judge_id,
+        )
+        mock_judge_instance.score.assert_awaited_once()
 
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_full_pipeline_runs_all_stages(
-        self, mock_score_answer, mock_extract_claims, mock_generate_answer,
+        self, MockAnswerJudge, mock_extract_claims, mock_generate_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Test full pipeline calls all three stages sequentially when no prior data exists."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
 
         job = QAJobRepository.create(
             test_db,
@@ -141,7 +204,7 @@ class TestQAJobProcessor:
         # All three stages should be called since no prior data exists
         mock_generate_answer.assert_awaited_once()
         mock_extract_claims.assert_awaited_once()
-        mock_score_answer.assert_awaited_once()
+        mock_judge_instance.score.assert_awaited_once()
 
         # Verify job marked as completed
         test_db.refresh(job)
@@ -188,12 +251,15 @@ class TestQAJobPipelineResume:
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_pause_during_answer_gen_resumes_at_answer_gen(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Pause during answer gen → pipeline stops → resume runs all 3 stages."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = self._create_running_job(
             test_db, sample_snapshot, sample_question, sample_judge_claim_based,
         )
@@ -212,7 +278,7 @@ class TestQAJobPipelineResume:
 
         mock_answer.assert_awaited_once()
         mock_claims.assert_not_awaited()
-        mock_score.assert_not_awaited()
+        mock_judge_instance.score.assert_not_awaited()
         test_db.refresh(job)
         assert job.status == JobStatusEnum.paused
 
@@ -220,23 +286,27 @@ class TestQAJobPipelineResume:
         mock_answer.reset_mock()
         mock_answer.side_effect = None
         mock_claims.reset_mock()
-        mock_score.reset_mock()
+        MockAnswerJudge.reset_mock()
+        mock_judge_instance.score.reset_mock()
 
         await processor.run(job_id=job.id)
 
         mock_answer.assert_awaited_once()
         mock_claims.assert_awaited_once()
-        mock_score.assert_awaited_once()
+        mock_judge_instance.score.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_pause_during_claim_processing_resumes_at_claims(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Pause during claims → pipeline stops → set up answer in DB → resume skips to claims."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = self._create_running_job(
             test_db, sample_snapshot, sample_question, sample_judge_claim_based,
         )
@@ -255,7 +325,7 @@ class TestQAJobPipelineResume:
 
         mock_answer.assert_awaited_once()
         mock_claims.assert_awaited_once()
-        mock_score.assert_not_awaited()
+        mock_judge_instance.score.assert_not_awaited()
         test_db.refresh(job)
         assert job.status == JobStatusEnum.paused
 
@@ -270,32 +340,36 @@ class TestQAJobPipelineResume:
         mock_answer.reset_mock()
         mock_claims.reset_mock()
         mock_claims.side_effect = None
-        mock_score.reset_mock()
+        MockAnswerJudge.reset_mock()
+        mock_judge_instance.score.reset_mock()
 
         await processor.run(job_id=job.id)
 
         mock_answer.assert_not_awaited()
         mock_claims.assert_awaited_once()
-        mock_score.assert_awaited_once()
+        mock_judge_instance.score.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_pause_during_scoring_resumes_at_scoring(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Pause during scoring → pipeline stops (not overwritten to completed) → resume runs scoring."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = self._create_running_job(
             test_db, sample_snapshot, sample_question, sample_judge_claim_based,
         )
 
         # Side effect: pause during scoring
-        async def pause_during_scoring(*args, **kwargs):
+        async def pause_during_scoring():
             await pause_qajob(test_db, job.id)
 
-        mock_score.side_effect = pause_during_scoring
+        mock_judge_instance.score.side_effect = pause_during_scoring
 
         # Run 1: all stages called, but scoring pauses
         processor = QAJobProcessor(
@@ -305,7 +379,7 @@ class TestQAJobPipelineResume:
 
         mock_answer.assert_awaited_once()
         mock_claims.assert_awaited_once()
-        mock_score.assert_awaited_once()
+        mock_judge_instance.score.assert_awaited_once()
         test_db.refresh(job)
         assert job.status == JobStatusEnum.paused
         assert job.stage != QAJobStageEnum.completed  # Bug fix: not overwritten
@@ -321,24 +395,28 @@ class TestQAJobPipelineResume:
         # Resume: answer + checked claims exist, no score → _get_start_index returns 2
         mock_answer.reset_mock()
         mock_claims.reset_mock()
-        mock_score.reset_mock()
-        mock_score.side_effect = None
+        MockAnswerJudge.reset_mock()
+        mock_judge_instance.score.reset_mock()
+        mock_judge_instance.score.side_effect = None
 
         await processor.run(job_id=job.id)
 
         mock_answer.assert_not_awaited()
         mock_claims.assert_not_awaited()
-        mock_score.assert_awaited_once()
+        mock_judge_instance.score.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_completed_status_after_full_pipeline(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Full pipeline from starting → job ends with status=completed, stage=completed."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = self._create_running_job(
             test_db, sample_snapshot, sample_question, sample_judge_claim_based,
         )
@@ -355,12 +433,15 @@ class TestQAJobPipelineResume:
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_new_judge_skips_to_scoring_only(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Answer + checked claims + score for judge A exist. New judge B → scoring only."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         # Set up complete data for judge A
         answer = AnswerRepository.create(test_db, {
             "question_id": sample_question.id,
@@ -401,14 +482,14 @@ class TestQAJobPipelineResume:
 
         mock_answer.assert_not_awaited()
         mock_claims.assert_not_awaited()
-        mock_score.assert_awaited_once()
+        mock_judge_instance.score.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_stage_failure_sets_failed_status(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Stage sets status=failed internally → pipeline stops, later stages skipped.
@@ -416,6 +497,9 @@ class TestQAJobPipelineResume:
         This mirrors production behavior where stage functions (e.g. extract_and_check_claims)
         catch their own exceptions, set status=failed via QAJobRepository, and return normally.
         """
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = self._create_running_job(
             test_db, sample_snapshot, sample_question, sample_judge_claim_based,
         )
@@ -439,17 +523,20 @@ class TestQAJobPipelineResume:
 
         mock_answer.assert_awaited_once()
         mock_claims.assert_awaited_once()
-        mock_score.assert_not_awaited()
+        mock_judge_instance.score.assert_not_awaited()
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_failed_job_can_be_resumed(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Stage fails internally → job marked failed → resume retries from correct stage."""
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = self._create_running_job(
             test_db, sample_snapshot, sample_question, sample_judge_claim_based,
         )
@@ -481,22 +568,23 @@ class TestQAJobPipelineResume:
         mock_answer.reset_mock()
         mock_claims.reset_mock()
         mock_claims.side_effect = None
-        mock_score.reset_mock()
+        MockAnswerJudge.reset_mock()
+        mock_judge_instance.score.reset_mock()
 
         await processor.run(job_id=job.id)
 
         mock_answer.assert_not_awaited()
         mock_claims.assert_awaited_once()
-        mock_score.assert_awaited_once()
+        mock_judge_instance.score.assert_awaited_once()
         test_db.refresh(job)
         assert job.status == JobStatusEnum.completed
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
     @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
-    @patch('src.scoring.services.qa_job_processor.score_answer', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
     async def test_unhandled_exception_sets_failed_status(
-        self, mock_score, mock_claims, mock_answer,
+        self, MockAnswerJudge, mock_claims, mock_answer,
         test_db, sample_snapshot, sample_question, sample_judge_claim_based
     ):
         """Stage raises unhandled exception → pipeline catches it, sets failed, stops.
@@ -504,6 +592,9 @@ class TestQAJobPipelineResume:
         Safety net for cases where stage functions don't catch their own errors
         (e.g. unexpected crashes, programming errors).
         """
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
         job = self._create_running_job(
             test_db, sample_snapshot, sample_question, sample_judge_claim_based,
         )
@@ -521,4 +612,207 @@ class TestQAJobPipelineResume:
 
         mock_answer.assert_awaited_once()
         mock_claims.assert_not_awaited()
-        mock_score.assert_not_awaited()
+        mock_judge_instance.score.assert_not_awaited()
+
+
+@pytest.mark.unit
+class TestPauseBatchEdgeCases:
+    """Tests verifying pause_qajobs_batch handles non-running jobs gracefully."""
+
+    def _create_questions(self, test_db, target, job, persona, count):
+        """Helper to create N questions for testing."""
+        questions = []
+        for i in range(count):
+            q = Question(
+                job_id=job.id,
+                persona_id=persona.id,
+                target_id=target.id,
+                text=f"Test question {i}?",
+                type=QuestionTypeEnum.typical,
+                scope=QuestionScopeEnum.in_kb,
+                status=StatusEnum.approved,
+            )
+            test_db.add(q)
+            questions.append(q)
+        test_db.commit()
+        for q in questions:
+            test_db.refresh(q)
+        return questions
+
+    def _create_job(self, test_db, snapshot, question, judge, status, stage=QAJobStageEnum.starting):
+        """Helper to create a QAJob with a specific status."""
+        return QAJobRepository.create(
+            test_db,
+            {
+                "snapshot_id": snapshot.id,
+                "question_id": question.id,
+                "judge_id": judge.id,
+                "type": QAJobTypeEnum.claim_scoring_full,
+                "status": status,
+                "stage": stage,
+            }
+        )
+
+    @pytest.mark.asyncio
+    async def test_pause_batch_skips_completed_jobs(
+        self, test_db, sample_snapshot, sample_target, sample_job, sample_personas, sample_judge_claim_based
+    ):
+        """Batch with 2 running + 1 completed → only running jobs paused, no error."""
+        questions = self._create_questions(test_db, sample_target, sample_job, sample_personas[0], 3)
+        job1 = self._create_job(test_db, sample_snapshot, questions[0], sample_judge_claim_based, JobStatusEnum.running)
+        job2 = self._create_job(test_db, sample_snapshot, questions[1], sample_judge_claim_based, JobStatusEnum.running)
+        job3 = self._create_job(test_db, sample_snapshot, questions[2], sample_judge_claim_based, JobStatusEnum.completed, QAJobStageEnum.completed)
+
+        result = await pause_qajobs_batch(test_db, [job1.id, job2.id, job3.id])
+
+        test_db.refresh(job1)
+        test_db.refresh(job2)
+        test_db.refresh(job3)
+        assert job1.status == JobStatusEnum.paused
+        assert job2.status == JobStatusEnum.paused
+        assert job3.status == JobStatusEnum.completed  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_pause_batch_skips_failed_jobs(
+        self, test_db, sample_snapshot, sample_target, sample_job, sample_personas, sample_judge_claim_based
+    ):
+        """Batch with 1 running + 1 failed → running paused, failed unchanged."""
+        questions = self._create_questions(test_db, sample_target, sample_job, sample_personas[0], 2)
+        job1 = self._create_job(test_db, sample_snapshot, questions[0], sample_judge_claim_based, JobStatusEnum.running)
+        job2 = self._create_job(test_db, sample_snapshot, questions[1], sample_judge_claim_based, JobStatusEnum.failed)
+
+        result = await pause_qajobs_batch(test_db, [job1.id, job2.id])
+
+        test_db.refresh(job1)
+        test_db.refresh(job2)
+        assert job1.status == JobStatusEnum.paused
+        assert job2.status == JobStatusEnum.failed  # unchanged
+
+    @pytest.mark.asyncio
+    async def test_pause_batch_all_non_running_returns_empty(
+        self, test_db, sample_snapshot, sample_target, sample_job, sample_personas, sample_judge_claim_based
+    ):
+        """Batch of all completed jobs → returns empty list, no error."""
+        questions = self._create_questions(test_db, sample_target, sample_job, sample_personas[0], 2)
+        job1 = self._create_job(test_db, sample_snapshot, questions[0], sample_judge_claim_based, JobStatusEnum.completed, QAJobStageEnum.completed)
+        job2 = self._create_job(test_db, sample_snapshot, questions[1], sample_judge_claim_based, JobStatusEnum.completed, QAJobStageEnum.completed)
+
+        result = await pause_qajobs_batch(test_db, [job1.id, job2.id])
+
+        assert len(result) == 0
+        test_db.refresh(job1)
+        test_db.refresh(job2)
+        assert job1.status == JobStatusEnum.completed
+        assert job2.status == JobStatusEnum.completed
+
+    @pytest.mark.asyncio
+    async def test_pause_batch_mixed_statuses(
+        self, test_db, sample_snapshot, sample_target, sample_job, sample_personas, sample_judge_claim_based
+    ):
+        """Batch with running + completed + failed + paused → only running gets paused."""
+        questions = self._create_questions(test_db, sample_target, sample_job, sample_personas[0], 4)
+        running_job = self._create_job(test_db, sample_snapshot, questions[0], sample_judge_claim_based, JobStatusEnum.running)
+        completed_job = self._create_job(test_db, sample_snapshot, questions[1], sample_judge_claim_based, JobStatusEnum.completed, QAJobStageEnum.completed)
+        failed_job = self._create_job(test_db, sample_snapshot, questions[2], sample_judge_claim_based, JobStatusEnum.failed)
+        paused_job = self._create_job(test_db, sample_snapshot, questions[3], sample_judge_claim_based, JobStatusEnum.paused)
+
+        result = await pause_qajobs_batch(
+            test_db, [running_job.id, completed_job.id, failed_job.id, paused_job.id]
+        )
+
+        test_db.refresh(running_job)
+        test_db.refresh(completed_job)
+        test_db.refresh(failed_job)
+        test_db.refresh(paused_job)
+        assert running_job.status == JobStatusEnum.paused
+        assert completed_job.status == JobStatusEnum.completed
+        assert failed_job.status == JobStatusEnum.failed
+        assert paused_job.status == JobStatusEnum.paused
+
+
+@pytest.mark.unit
+class TestGetOrCreateQAJobsBatch:
+    """Tests for reopening a shared QAJob for additional judges."""
+
+    def test_reopens_completed_job_when_requested_judge_score_missing(
+        self,
+        test_db,
+        sample_snapshot,
+        sample_question,
+        sample_answer,
+        sample_judge_claim_based,
+        sample_judge_response_level,
+    ):
+        job = QAJobRepository.create(
+            test_db,
+            {
+                "snapshot_id": sample_snapshot.id,
+                "question_id": sample_question.id,
+                "judge_id": sample_judge_claim_based.id,
+                "answer_id": sample_answer.id,
+                "type": QAJobTypeEnum.claim_scoring_full,
+                "status": JobStatusEnum.completed,
+                "stage": QAJobStageEnum.completed,
+            }
+        )
+
+        jobs = get_or_create_qajobs_batch(
+            test_db,
+            snapshot_id=sample_snapshot.id,
+            judge_id=sample_judge_response_level.id,
+            question_ids=[sample_question.id],
+        )
+
+        assert len(jobs) == 1
+        test_db.refresh(job)
+        assert job.status == JobStatusEnum.running
+        assert job.stage == QAJobStageEnum.scoring_answers
+
+
+@pytest.mark.unit
+class TestBatchEdgeCases:
+    """Tests for edge cases in run_qajobs_batch."""
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.qa_job_processor.generate_answer_for_job', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.extract_and_check_claims', new_callable=AsyncMock)
+    @patch('src.scoring.services.qa_job_processor.AnswerJudge')
+    async def test_batch_creates_missing_jobs_and_processes_all(
+        self, MockAnswerJudge, mock_claims, mock_answer,
+        test_db, test_db_factory, sample_snapshot, sample_questions, sample_judge_claim_based
+    ):
+        """question_ids includes a question with no existing job → should not crash.
+
+        get_or_create_qajobs_batch creates jobs for all questions, so the mapping
+        should cover every question_id. This test verifies the full batch flow.
+        """
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+
+        q1, q2 = sample_questions[0], sample_questions[1]
+
+        # Pre-create a job only for q1
+        QAJobRepository.create(test_db, {
+            "snapshot_id": sample_snapshot.id,
+            "question_id": q1.id,
+            "judge_id": sample_judge_claim_based.id,
+            "type": QAJobTypeEnum.claim_scoring_full,
+            "status": JobStatusEnum.running,
+            "stage": QAJobStageEnum.starting,
+        })
+
+        # Patch SessionLocal so per-job isolated sessions use the in-memory
+        # test database instead of the production engine.
+        with patch(
+            'src.scoring.services.qa_job_processor.SessionLocal',
+            test_db_factory,
+        ):
+            result = await run_qajobs_batch(
+                test_db, sample_snapshot.id, sample_judge_claim_based.id,
+                question_ids=[q1.id, q2.id],
+            )
+
+        # Both jobs should complete (get_or_create creates the missing one)
+        assert len(result) == 2
+        for job in result:
+            assert job is not None

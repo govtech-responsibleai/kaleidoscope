@@ -164,25 +164,23 @@ class QuestionRepository:
         limit: int = 100
     ) -> List[Question]:
         """
-        Get approved questions that don't have QA jobs for a specific snapshot/judge.
+        Get approved questions that don't have answers for a specific snapshot.
 
         Args:
             db: Database session
             target_id: Target ID to filter questions
-            snapshot_id: Snapshot ID to check for QA jobs
-            judge_id: Judge ID to check for QA jobs
+            snapshot_id: Snapshot ID to check for answers
+            judge_id: Legacy parameter kept for API compatibility
             skip: Number of records to skip for pagination
             limit: Maximum number of records to return
 
         Returns:
-            List of approved questions without QA jobs for the given snapshot/judge
+            List of approved questions without answers for the given snapshot
         """
-        # Subquery to check if a QA job exists for this question, snapshot, and judge
-        qa_job_exists = exists().where(
+        answer_exists = exists().where(
             and_(
-                QAJob.question_id == Question.id,
-                QAJob.snapshot_id == snapshot_id,
-                QAJob.judge_id == judge_id
+                Answer.question_id == Question.id,
+                Answer.snapshot_id == snapshot_id,
             )
         )
 
@@ -192,7 +190,7 @@ class QuestionRepository:
             .filter(
                 Question.target_id == target_id,
                 Question.status == StatusEnum.approved,
-                not_(qa_job_exists)
+                not_(answer_exists)
             )
             .offset(skip)
             .limit(limit)

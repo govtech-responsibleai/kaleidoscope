@@ -8,6 +8,9 @@ from typing import List
 from datetime import datetime
 from sqlalchemy.orm import Session
 
+from src.common.concurrency import gather_with_concurrency
+from src.common.config import get_settings
+
 try:
     import nltk  # type: ignore
 except ModuleNotFoundError:  # pragma: no cover - optional dependency
@@ -76,7 +79,7 @@ class ClaimProcessor:
             ClaimCitationFilter(),
         ]
 
-    async def process(self) -> None:
+    async def process(self, raise_on_error: bool = False) -> None:
         """
         Extract and check claims for the job's answer.
 
@@ -121,6 +124,8 @@ class ClaimProcessor:
                 self.job.stage,
                 error_message=str(e)
             )
+            if raise_on_error:
+                raise
 
     def _extract_claims(self, answer_id: int) -> List[AnswerClaim]:
         """
@@ -188,7 +193,8 @@ class ClaimProcessor:
             for idx, claim in enumerate(claims)
         ]
 
-        await asyncio.gather(*tasks)
+        settings = get_settings()
+        await gather_with_concurrency(settings.batch_max_concurrent_claims, *tasks)
 
         checkworthy_count = sum(1 for claim in claims if claim.checkworthy)
         logger.info(f"Checked {len(claims)} claims for answer {answer_id}. {checkworthy_count} are checkworthy.")
@@ -334,7 +340,11 @@ class ClaimProcessor:
         return self.llm_client
 
 
-async def extract_and_check_claims(db: Session, job_id: int) -> None:
+async def extract_and_check_claims(
+    db: Session,
+    job_id: int,
+    raise_on_error: bool = False,
+) -> None:
     """Async convenience wrapper used by the QA job pipeline."""
     processor = ClaimProcessor(db, job_id)
-    await processor.process()
+    await processor.process(raise_on_error=raise_on_error)

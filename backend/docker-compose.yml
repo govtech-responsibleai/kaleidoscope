@@ -93,6 +93,8 @@ services:
 
 volumes:
   postgres_data:
+    external: true
+    name: kaleidoscope-backend_postgres_data
 
 networks:
   kaleidoscope-network:

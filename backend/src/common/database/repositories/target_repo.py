@@ -2,11 +2,14 @@
 Repository for Target database operations.
 """
 
+import logging
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 from src.common.database.models import Target, Persona, Question, Job, StatusEnum
+
+logger = logging.getLogger(__name__)
 
 
 class TargetRepository:
@@ -48,13 +51,22 @@ class TargetRepository:
 
     @staticmethod
     def delete(db: Session, target_id: int) -> bool:
-        """Delete a target."""
-        target = db.query(Target).filter(Target.id == target_id).first()
-        if not target:
+        """Delete a target using raw SQL to leverage database-level CASCADE.
+
+        ORM-level cascade loads all related objects into memory before deleting,
+        which can be extremely slow for targets with lots of data and cause
+        gateway timeouts. Raw SQL lets PostgreSQL handle cascades efficiently.
+        """
+        exists = db.query(Target.id).filter(Target.id == target_id).first()
+        if not exists:
             return False
 
-        db.delete(target)
+        db.execute(
+            text("DELETE FROM targets WHERE id = :id"),
+            {"id": target_id}
+        )
         db.commit()
+        logger.info(f"Deleted target {target_id} (database CASCADE handled related data)")
         return True
 
     @staticmethod

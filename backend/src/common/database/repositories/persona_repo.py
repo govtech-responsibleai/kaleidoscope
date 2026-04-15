@@ -106,6 +106,15 @@ class PersonaRepository:
         return persona
 
     @staticmethod
+    def delete(db: Session, persona_id: int) -> bool:
+        persona = db.query(Persona).filter(Persona.id == persona_id).first()
+        if not persona:
+            return False
+        db.delete(persona)
+        db.commit()
+        return True
+
+    @staticmethod
     def bulk_approve(db: Session, persona_ids: List[int]) -> List[Persona]:
         """Approve multiple personas."""
         personas = db.query(Persona).filter(Persona.id.in_(persona_ids)).all()

@@ -105,6 +105,20 @@ class TestPersonaGenerationAPI:
         assert stats["personas"]["approved"] == 1
         assert stats["personas"]["pending"] == 2
 
+    def test_delete_persona(self, test_client, sample_personas):
+        """Test deleting a persona returns 204 and removes it."""
+        persona_id = sample_personas[1].id
+        response = test_client.delete(f"/api/v1/personas/{persona_id}")
+        assert response.status_code == 204
+
+        get_response = test_client.get(f"/api/v1/personas/{persona_id}")
+        assert get_response.status_code == 404
+
+    def test_delete_persona_not_found(self, test_client):
+        """Test deleting a non-existent persona returns 404."""
+        response = test_client.delete("/api/v1/personas/999999")
+        assert response.status_code == 404
+
     def test_generate_personas_target_not_found(self, test_client):
         """Test error handling when target doesn't exist."""
         response = test_client.post(

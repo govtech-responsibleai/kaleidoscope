@@ -105,6 +105,8 @@ from src.common.models.qa_job import (
     QAJobDetailResponse,
     QAJobListResponse,
     RubricQAJobStart,
+    RubricSpec,
+    UnifiedQAJobStart,
 )
 from src.common.models.rubric_answer_score import RubricAnswerScoreResponse
 from src.common.models.answer_label_override import (
@@ -229,6 +231,8 @@ __all__ = [
     "QAJobDetailResponse",
     "QAJobListResponse",
     "RubricQAJobStart",
+    "RubricSpec",
+    "UnifiedQAJobStart",
     # RubricAnswerScore
     "RubricAnswerScoreResponse",
     # AnswerLabelOverride

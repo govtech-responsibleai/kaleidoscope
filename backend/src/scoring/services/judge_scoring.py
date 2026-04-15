@@ -7,6 +7,9 @@ import asyncio
 from typing import List
 from sqlalchemy.orm import Session
 
+from src.common.concurrency import gather_with_concurrency
+from src.common.config import get_settings
+
 from src.common.database.models import JobStatusEnum, JudgeTypeEnum
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
@@ -28,16 +31,27 @@ logger = logging.getLogger(__name__)
 class AnswerJudge:
     """Service for scoring answers using LLM judges."""
 
-    def __init__(self, db: Session, job_id: int):
+    def __init__(
+        self,
+        db: Session,
+        job_id: int,
+        override_judge_id: int | None = None,
+        override_rubric_id: int | None = None,
+        skip_job_update: bool = False,
+    ):
         """
         Initialize answer judge.
 
         Args:
             db: Database session
             job_id: QAJob ID for this scoring run
+            override_judge_id: If set, use this judge instead of job.judge_id
+            override_rubric_id: If set, use this rubric for rubric scoring
+            skip_job_update: If True, don't write costs to QAJob (caller aggregates)
         """
         self.db = db
         self.job_id = job_id
+        self.skip_job_update = skip_job_update
         self.cost_tracker = CostTracker(job_id=job_id)
 
         # Load job
@@ -45,27 +59,29 @@ class AnswerJudge:
         if not self.job:
             raise ValueError(f"QAJob {job_id} not found")
 
-        # Load judge
-        self.judge = JudgeRepository.get_by_id(db, self.job.judge_id)
+        # Load judge (override or from job)
+        judge_id = override_judge_id or self.job.judge_id
+        self.judge = JudgeRepository.get_by_id(db, judge_id)
         if not self.judge:
-            raise ValueError(f"Judge {self.job.judge_id} not found")
+            raise ValueError(f"Judge {judge_id} not found")
 
         # Load answer
         self.answer = AnswerRepository.get_by_id(db, self.job.answer_id)
         if not self.answer:
             raise ValueError(f"Answer {self.job.answer_id} not found")
 
-        # Load rubric if this is a rubric job
+        # Load rubric if specified
         self.rubric = None
-        if self.job.rubric_id:
-            self.rubric = TargetRubricRepository.get_by_id(db, self.job.rubric_id)
+        rubric_id = override_rubric_id
+        if rubric_id:
+            self.rubric = TargetRubricRepository.get_by_id(db, rubric_id)
             if not self.rubric:
-                raise ValueError(f"Rubric {self.job.rubric_id} not found")
+                raise ValueError(f"Rubric {rubric_id} not found")
 
         # Initialize LLM client with judge's model
         self.llm_client = LLMClient(model=self.judge.model_name)
 
-    async def score(self) -> None:
+    async def score(self, raise_on_error: bool = False) -> None:
         """
         Score answer based on judge type (claim-based or response-level).
 
@@ -85,10 +101,11 @@ class AnswerJudge:
                 return
 
             # Rubric scoring branch — completely separate from accuracy scoring
-            if self.job.rubric_id:
-                logger.info(f"QAJob {self.job_id}: Using rubric scoring for rubric {self.job.rubric_id}")
+            if self.rubric:
+                logger.info(f"QAJob {self.job_id}: Using rubric scoring for rubric {self.rubric.id}")
                 await self._score_rubric_response_level()
-                self._update_job_status()
+                if not self.skip_job_update:
+                    self._update_job_status()
                 return
 
             # Route to appropriate scoring function
@@ -102,7 +119,8 @@ class AnswerJudge:
                 raise ValueError(f"Unknown judge type: {self.judge.judge_type}")
 
             # Update job costs
-            self._update_job_status()
+            if not self.skip_job_update:
+                self._update_job_status()
 
             logger.info(f"QAJob {self.job_id}: Scoring complete with overall_label={answer_score.overall_label}")
 
@@ -117,6 +135,8 @@ class AnswerJudge:
                 self.job.stage,
                 error_message=str(e)
             )
+            if raise_on_error:
+                raise
 
     async def _score_claim_based(self):
         """
@@ -164,7 +184,7 @@ class AnswerJudge:
                 "overall_label": True,
                 "explanation": "No checkworthy claims to evaluate"
             }
-            answer_score = AnswerScoreRepository.create(self.db, answer_score_data)
+            answer_score = AnswerScoreRepository.replace_for_answer_and_judge(self.db, answer_score_data)
             return answer_score
 
         # Score each claim asynchronously
@@ -183,8 +203,12 @@ class AnswerJudge:
             task = self._score_single_claim(claim, prompt)
             tasks.append((claim, task))
 
-        # Execute all tasks concurrently
-        results = await asyncio.gather(*[task for _, task in tasks])
+        # Execute tasks with bounded concurrency to avoid rate limiting
+        settings = get_settings()
+        results = await gather_with_concurrency(
+            settings.batch_max_concurrent_claims,
+            *[task for _, task in tasks]
+        )
 
         # Aggregate claim scores
         overall_label, overall_explanation = self._aggregate_claim_scores(results)
@@ -196,7 +220,7 @@ class AnswerJudge:
             "overall_label": overall_label,
             "explanation": overall_explanation
         }
-        answer_score = AnswerScoreRepository.create(self.db, answer_score_data)
+        answer_score = AnswerScoreRepository.replace_for_answer_and_judge(self.db, answer_score_data)
 
         # Create AnswerClaimScore records
         for (claim, _), result in zip(tasks, results):
@@ -327,7 +351,7 @@ class AnswerJudge:
                 "overall_label": result.label,
                 "explanation": result.reasoning
             }
-            answer_score = AnswerScoreRepository.create(self.db, answer_score_data)
+            answer_score = AnswerScoreRepository.replace_for_answer_and_judge(self.db, answer_score_data)
 
             logger.info(f"Scored answer {self.answer.id} holistically. Accurate: {result.label}")
             return answer_score
@@ -412,7 +436,18 @@ class AnswerJudge:
         logger.info(f"Updated QAJob {self.job_id} costs: ${summary['total_cost']:.4f}")
 
 
-async def score_answer(db: Session, job_id: int) -> None:
+async def score_answer(
+    db: Session,
+    job_id: int,
+    override_judge_id: int | None = None,
+    override_rubric_id: int | None = None,
+    skip_job_update: bool = False,
+) -> None:
     """Async convenience wrapper for running the judge."""
-    judge = AnswerJudge(db, job_id)
+    judge = AnswerJudge(
+        db, job_id,
+        override_judge_id=override_judge_id,
+        override_rubric_id=override_rubric_id,
+        skip_job_update=skip_job_update,
+    )
     await judge.score()

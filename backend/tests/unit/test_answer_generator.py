@@ -3,9 +3,10 @@ Unit tests for AnswerGenerator service.
 """
 
 import pytest
+import httpx
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
-from src.query_generation.services.answer_generator import AnswerGenerator
+from src.query_generation.services.answer_generator import AnswerGenerator, APIResponseError
 from src.common.database.models import JobStatusEnum
 
 
@@ -346,3 +347,215 @@ class TestAnswerGeneratorErrors:
         test_db.refresh(qa_job)
         assert qa_job.status == JobStatusEnum.failed
         assert "500" in qa_job.error_message
+
+
+@pytest.mark.unit
+class TestAnswerGeneratorRetry:
+    """Tests for retry behavior in generate_async (QA job pipeline path)."""
+
+    def _setup_target(self, test_db, target):
+        """Configure target for AIBots endpoint."""
+        target.endpoint_type = "aibots"
+        target.api_endpoint = "https://api.test.com"
+        target.endpoint_config = {"api_key": "test_key"}
+        test_db.commit()
+
+    def _make_success_response(self):
+        """Create a mock successful API response for send_message."""
+        return {
+            "id": "msg_retry_test",
+            "response": {"content": "Retried answer content"},
+            "systemPrompt": {"content": "System"},
+            "model": "gpt-4",
+            "rag": {"chunks": []},
+        }
+
+    def _make_http_error(self, status_code, text="Error"):
+        """Create a mock httpx.HTTPStatusError."""
+        mock_response = Mock()
+        mock_response.status_code = status_code
+        mock_response.text = text
+        return httpx.HTTPStatusError(
+            f"{status_code} Error",
+            request=Mock(),
+            response=mock_response,
+        )
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_retry_on_429_succeeds(
+        self, mock_httpx_client, test_db, sample_qa_job_no_answer
+    ):
+        """429 on first attempt → retries → succeeds on second attempt."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+        self._setup_target(test_db, target)
+
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+
+        # First call: create_chat succeeds
+        # Second call (send_message): 429 error
+        # Third call (send_message retry): success
+        call_count = 0
+
+        async def post_side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = Mock()
+            mock_resp.raise_for_status = Mock()
+
+            if "/chats" in url and "/messages" not in url:
+                mock_resp.json.return_value = {"id": "chat_retry"}
+                return mock_resp
+            elif "/messages" in url:
+                if call_count == 2:  # First send_message call
+                    raise self._make_http_error(429, "Rate limited")
+                mock_resp.json.return_value = self._make_success_response()
+                return mock_resp
+            return mock_resp
+
+        mock_client_instance.post = AsyncMock(side_effect=post_side_effect)
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # Job should succeed (answer created)
+        test_db.refresh(qa_job)
+        assert qa_job.status != JobStatusEnum.failed
+        assert qa_job.answer_id is not None
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_retry_on_503_succeeds(
+        self, mock_httpx_client, test_db, sample_qa_job_no_answer
+    ):
+        """503 on first attempt → retries → succeeds on second attempt.
+
+        Currently EXPECTED TO FAIL: the retry logic only handles 429, not 503.
+        """
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+        self._setup_target(test_db, target)
+
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+
+        call_count = 0
+
+        async def post_side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = Mock()
+            mock_resp.raise_for_status = Mock()
+
+            if "/chats" in url and "/messages" not in url:
+                mock_resp.json.return_value = {"id": "chat_503"}
+                return mock_resp
+            elif "/messages" in url:
+                if call_count == 2:  # First send_message call
+                    raise self._make_http_error(503, "Service Unavailable")
+                mock_resp.json.return_value = self._make_success_response()
+                return mock_resp
+            return mock_resp
+
+        mock_client_instance.post = AsyncMock(side_effect=post_side_effect)
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # After fix: job should succeed. Currently: job fails because 503 isn't retried.
+        test_db.refresh(qa_job)
+        assert qa_job.status != JobStatusEnum.failed, \
+            "503 should be retried but currently isn't — job failed instead of retrying"
+        assert qa_job.answer_id is not None
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_retry_on_timeout_succeeds(
+        self, mock_httpx_client, test_db, sample_qa_job_no_answer
+    ):
+        """Timeout on first attempt → retries → succeeds on second attempt.
+
+        Currently EXPECTED TO FAIL: timeout errors are not retried.
+        """
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+        self._setup_target(test_db, target)
+
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+
+        call_count = 0
+
+        async def post_side_effect(url, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = Mock()
+            mock_resp.raise_for_status = Mock()
+
+            if "/chats" in url and "/messages" not in url:
+                mock_resp.json.return_value = {"id": "chat_timeout"}
+                return mock_resp
+            elif "/messages" in url:
+                if call_count == 2:  # First send_message call
+                    raise httpx.ReadTimeout("Read timed out")
+                mock_resp.json.return_value = self._make_success_response()
+                return mock_resp
+            return mock_resp
+
+        mock_client_instance.post = AsyncMock(side_effect=post_side_effect)
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # After fix: job should succeed. Currently: timeout immediately fails.
+        test_db.refresh(qa_job)
+        assert qa_job.status != JobStatusEnum.failed, \
+            "Timeout should be retried but currently isn't — job failed instead of retrying"
+        assert qa_job.answer_id is not None
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
+    @patch('src.query_generation.services.answer_generator.httpx.AsyncClient')
+    async def test_retry_exhaustion_fails(
+        self, mock_httpx_client, mock_sleep, test_db, sample_qa_job_no_answer
+    ):
+        """429 on every attempt → exhausts retries → job marked failed."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+        self._setup_target(test_db, target)
+
+        mock_client_instance = MagicMock()
+        mock_httpx_client.return_value.__aenter__.return_value = mock_client_instance
+
+        async def post_side_effect(url, **kwargs):
+            mock_resp = Mock()
+            mock_resp.raise_for_status = Mock()
+
+            if "/chats" in url and "/messages" not in url:
+                mock_resp.json.return_value = {"id": "chat_exhaust"}
+                return mock_resp
+            elif "/messages" in url:
+                # Always fail with 429
+                raise self._make_http_error(429, "Rate limited")
+            return mock_resp
+
+        mock_client_instance.post = AsyncMock(side_effect=post_side_effect)
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        # Job should be marked failed after exhausting retries
+        test_db.refresh(qa_job)
+        assert qa_job.status == JobStatusEnum.failed
+        assert qa_job.error_message is not None
+        assert "rate limit" in qa_job.error_message.lower() or "429" in qa_job.error_message

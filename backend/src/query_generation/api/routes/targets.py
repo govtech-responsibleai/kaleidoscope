@@ -150,7 +150,15 @@ def delete_target(
     Raises:
         HTTPException: If target not found
     """
-    success = TargetRepository.delete(db, target_id)
+    try:
+        success = TargetRepository.delete(db, target_id)
+    except Exception as e:
+        logger.error(f"Failed to delete target {target_id}: {e}")
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete target {target_id}"
+        )
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -572,9 +580,9 @@ def update_rubric(
         old_option_names = {o["option"] for o in existing_options}
         new_option_names = {o["option"] for o in data["options"]}
         if old_option_names != new_option_names:
-            deleted = RubricAnswerScoreRepository.delete_scores_and_jobs_by_rubric(db, rubric_id)
+            deleted = RubricAnswerScoreRepository.delete_scores_by_rubric(db, rubric_id)
             if deleted:
-                logger.info(f"Rubric {rubric_id} options changed — purged {deleted} stale scores and associated jobs")
+                logger.info(f"Rubric {rubric_id} options changed — purged {deleted} stale scores")
 
     # Regenerate judge prompt if rubric content changed (custom rubrics only)
     content_changed = any(k in data for k in ("name", "criteria", "options"))

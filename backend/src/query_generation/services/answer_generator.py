@@ -316,26 +316,47 @@ class AnswerGenerator:
 
         base_url = target.api_endpoint.rstrip("/")
 
-        try:
-            # Create chat session
-            chat_id = await self._create_chat_async(question, api_key, base_url)
+        max_retries = settings.llm_num_retries
+        chat_id = None
 
-            # Send message and get response
-            api_response = await self._send_message_async(chat_id, question.text, api_key, base_url)
+        for attempt in range(max_retries + 1):
+            try:
+                # Reuse chat session from previous attempt if available
+                if chat_id is None:
+                    chat_id = await self._create_chat_async(question, api_key, base_url)
 
-            # Extract and store answer
-            answer = await self._save_answer_async(question, chat_id, api_response, snapshot_id)
+                # Send message and get response
+                api_response = await self._send_message_async(chat_id, question.text, api_key, base_url)
 
-        except httpx.ConnectError as e:
-            raise APIConnectionError(f"Failed to connect to API at {base_url}: {e}")
-        except httpx.TimeoutException as e:
-            raise APIConnectionError(f"Connection to API timed out: {e}")
-        except httpx.HTTPStatusError as e:
-            raise APIResponseError(f"API returned error {e.response.status_code}: {e.response.text}")
-        except Exception as e:
-            raise APIResponseError(f"Unexpected error from API: {e}")
+                # Extract and store answer
+                return await self._save_answer_async(question, chat_id, api_response, snapshot_id)
 
-        return answer
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code in (429, 503) and attempt < max_retries:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        f"AIBots API returned {e.response.status_code}, retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise APIResponseError(f"API returned error {e.response.status_code}: {e.response.text}")
+            except httpx.TimeoutException as e:
+                if attempt < max_retries:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        f"AIBots API timed out, retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise APIConnectionError(f"Connection to API timed out: {e}")
+            except httpx.ConnectError as e:
+                raise APIConnectionError(f"Failed to connect to API at {base_url}: {e}")
+            except Exception as e:
+                raise APIResponseError(f"Unexpected error from API: {e}")
+
+        raise APIResponseError(f"API rate limit exceeded after {max_retries} retries")
     
 
     async def _create_chat_async(self, question: Question, api_key: str, base_url: str) -> str:

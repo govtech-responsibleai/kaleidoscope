@@ -218,6 +218,19 @@ def reject_persona(
     return persona
 
 
+@router.delete("/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_persona(
+    persona_id: int,
+    db: Session = Depends(get_db)
+):
+    success = PersonaRepository.delete(db, persona_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Persona {persona_id} not found"
+        )
+
+
 @router.post("/bulk-approve", response_model=List[PersonaResponse])
 def bulk_approve_personas(
     request: PersonaBulkApprove,

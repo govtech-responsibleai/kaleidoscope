@@ -8,7 +8,7 @@ and annotation completeness gating.
 import pytest
 
 from src.common.database.models import (
-    RubricAnswerScore, RubricAnnotation, QAJob, TargetRubric,
+    RubricAnswerScore, RubricAnnotation,
 )
 
 
@@ -73,7 +73,7 @@ class TestRubric:
         self, test_client, test_db, sample_target, sample_rubric,
         sample_answer, sample_judge_claim_based,
     ):
-        """Updating rubric options purges existing scores and QA jobs."""
+        """Updating rubric options purges existing scores."""
         # Insert a score via ORM
         score = RubricAnswerScore(
             answer_id=sample_answer.id,
@@ -83,23 +83,10 @@ class TestRubric:
             explanation="Good tone",
         )
         test_db.add(score)
-        # Insert a QA job linked to this rubric
-        qa_job = QAJob(
-            snapshot_id=sample_answer.snapshot_id,
-            question_id=sample_answer.question_id,
-            judge_id=sample_judge_claim_based.id,
-            answer_id=sample_answer.id,
-            rubric_id=sample_rubric.id,
-            type="claim_scoring_full",
-            status="running",
-            stage="starting",
-        )
-        test_db.add(qa_job)
         test_db.commit()
 
         # Verify score exists
         assert test_db.query(RubricAnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 1
-        assert test_db.query(QAJob).filter_by(rubric_id=sample_rubric.id).count() == 1
 
         # Update options (should trigger purge)
         resp = test_client.put(
@@ -114,10 +101,9 @@ class TestRubric:
         )
         assert resp.status_code == 200
 
-        # Scores and jobs should be purged
+        # Scores should be purged
         test_db.expire_all()
         assert test_db.query(RubricAnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 0
-        assert test_db.query(QAJob).filter_by(rubric_id=sample_rubric.id).count() == 0
 
     def test_update_name_preserves_scores(
         self, test_client, test_db, sample_target, sample_rubric,
@@ -268,76 +254,5 @@ class TestRubricValidation:
         )
         assert resp.status_code == 400
 
-    def test_start_rubric_job_missing_best_option(
-        self, test_client, test_db, sample_target, sample_snapshot,
-        sample_question, sample_judge_claim_based,
-    ):
-        """Rubric has no best_option -> 400 on job start."""
-        rubric = TargetRubric(
-            target_id=sample_target.id,
-            name="No Best",
-            criteria="",
-            options=[
-                {"option": "A", "description": "a"},
-                {"option": "B", "description": "b"},
-            ],
-            best_option=None,
-            category="default",
-            position=0,
-        )
-        test_db.add(rubric)
-        test_db.commit()
-        test_db.refresh(rubric)
-
-        resp = test_client.post(
-            f"/api/v1/snapshots/{sample_snapshot.id}/rubric-qa-jobs/start",
-            json={
-                "judge_id": sample_judge_claim_based.id,
-                "question_ids": [sample_question.id],
-                "rubric_id": rubric.id,
-            },
-        )
-        assert resp.status_code == 400
-
-    def test_start_rubric_job_insufficient_options(
-        self, test_client, test_db, sample_target, sample_snapshot,
-        sample_question, sample_judge_claim_based,
-    ):
-        """Rubric has <2 options -> 400 on job start."""
-        rubric = TargetRubric(
-            target_id=sample_target.id,
-            name="One Option",
-            criteria="",
-            options=[{"option": "Only", "description": "single"}],
-            best_option="Only",
-            category="default",
-            position=0,
-        )
-        test_db.add(rubric)
-        test_db.commit()
-        test_db.refresh(rubric)
-
-        resp = test_client.post(
-            f"/api/v1/snapshots/{sample_snapshot.id}/rubric-qa-jobs/start",
-            json={
-                "judge_id": sample_judge_claim_based.id,
-                "question_ids": [sample_question.id],
-                "rubric_id": rubric.id,
-            },
-        )
-        assert resp.status_code == 400
-
-    def test_start_rubric_job_nonexistent_rubric(
-        self, test_client, sample_snapshot, sample_question,
-        sample_judge_claim_based,
-    ):
-        """Bad rubric_id -> 404."""
-        resp = test_client.post(
-            f"/api/v1/snapshots/{sample_snapshot.id}/rubric-qa-jobs/start",
-            json={
-                "judge_id": sample_judge_claim_based.id,
-                "question_ids": [sample_question.id],
-                "rubric_id": 99999,
-            },
-        )
-        assert resp.status_code == 404
+    # Rubric job start tests removed — /rubric-qa-jobs/start endpoint was
+    # removed in the single-QAJob-per-question architecture.
