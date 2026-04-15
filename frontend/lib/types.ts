@@ -31,13 +31,17 @@ export interface JobProgress {
   total: number;
 }
 
-// Target types
-export enum EndpointType {
-  AIBOTS = "aibots",
-}
-
+// Target types — endpoint_type is a dynamic string from the backend registry
 export interface EndpointConfig {
   api_key?: string;
+  response_content_path?: string;
+  headers?: Record<string, string>;
+  body_template?: Record<string, unknown>;
+  method?: string;
+  timeout?: number;
+  response_model_path?: string;
+  response_tokens_path?: string;
+  [key: string]: unknown;
 }
 
 export interface TargetBase {
@@ -46,7 +50,7 @@ export interface TargetBase {
   purpose?: string;
   target_users?: string;
   api_endpoint?: string;
-  endpoint_type?: EndpointType;
+  endpoint_type?: string;
   endpoint_config?: EndpointConfig;
 }
 
@@ -58,7 +62,7 @@ export interface TargetUpdate {
   purpose?: string;
   target_users?: string;
   api_endpoint?: string;
-  endpoint_type?: EndpointType;
+  endpoint_type?: string;
   endpoint_config?: EndpointConfig;
 }
 
@@ -68,6 +72,19 @@ export interface TargetResponse extends TargetBase {
   owner_username?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TestConnectionRequest {
+  endpoint_type: string;
+  api_endpoint: string;
+  endpoint_config: EndpointConfig;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  content?: string;
+  model?: string;
+  error?: string;
 }
 
 export interface TargetStats {
@@ -292,7 +309,7 @@ export interface QAJob {
   question_id: number;
   answer_id: number | null;
   judge_id: number;
-  rubric_id: number | null;
+  rubric_specs: RubricSpec[] | null;
   type: string;
   status: JobStatus;
   stage: QAJobStageEnum;
@@ -308,6 +325,18 @@ export interface QAJobStartRequest {
   judge_id: number;
   question_ids: number[];
   job_ids?: number[]
+}
+
+export interface RubricSpec {
+  rubric_id: number;
+  judge_id: number;
+}
+
+export interface UnifiedQAJobStartRequest {
+  judge_id: number;
+  question_ids: number[];
+  rubric_specs?: RubricSpec[];
+  job_ids?: number[];
 }
 
 // Answer types

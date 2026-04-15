@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   Dialog,
   DialogTitle,
@@ -19,6 +19,7 @@ import {
   Paper,
   LinearProgress,
   Alert,
+  MenuItem,
 } from "@mui/material";
 import {
   CloudUpload as UploadIcon,
@@ -26,7 +27,8 @@ import {
   InsertDriveFile as FileIcon,
 } from "@mui/icons-material";
 import { targetApi, kbDocumentApi, webSearchApi } from "@/lib/api";
-import { TargetCreate, EndpointType } from "@/lib/types";
+import { TargetCreate } from "@/lib/types";
+import ConnectorConfigFields, { validateEndpointConfig } from "./ConnectorConfigFields";
 
 interface CreateTargetModalProps {
   open: boolean;
@@ -44,6 +46,9 @@ export default function CreateTargetModal({
   const [uploadingFiles, setUploadingFiles] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [connectorTypes, setConnectorTypes] = useState<string[]>([]);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const mountedRef = useRef(true);
 
   const [formData, setFormData] = useState<TargetCreate>({
     name: "",
@@ -51,9 +56,25 @@ export default function CreateTargetModal({
     purpose: "",
     target_users: "",
     api_endpoint: "",
-    endpoint_type: EndpointType.AIBOTS,
-    endpoint_config: { api_key: "" },
+    endpoint_type: "http",
+    endpoint_config: {},
   });
+
+  useEffect(() => {
+    mountedRef.current = true;
+    if (open) {
+      targetApi.getConnectorTypes().then((res) => {
+        if (!mountedRef.current) return;
+        setConnectorTypes(res.data);
+      }).catch(() => {
+        if (!mountedRef.current) return;
+        setConnectorTypes(["http"]);
+      });
+    }
+    return () => { mountedRef.current = false; };
+  }, [open]);
+
+  const endpointType = formData.endpoint_type || "http";
 
   const handleChange = (field: keyof TargetCreate) => (
     event: React.ChangeEvent<HTMLInputElement>
@@ -61,20 +82,19 @@ export default function CreateTargetModal({
     setFormData({ ...formData, [field]: event.target.value });
   };
 
-  const handleConfigChange = (field: "api_key") => (
-    event: React.ChangeEvent<HTMLInputElement>
-  ) => {
+  const handleEndpointTypeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     setFormData({
       ...formData,
-      endpoint_config: { ...formData.endpoint_config, [field]: event.target.value },
+      endpoint_type: event.target.value,
+      endpoint_config: {},
     });
+    setShowAdvanced(false);
   };
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;
     if (files) {
       const fileArray = Array.from(files);
-      // Filter for supported file types
       const supportedFiles = fileArray.filter((file) => {
         const ext = file.name.split(".").pop()?.toLowerCase();
         return ["pdf", "docx", "txt", "md"].includes(ext || "");
@@ -101,7 +121,12 @@ export default function CreateTargetModal({
   };
 
   const handleSubmit = async () => {
-    if (!formData.name) {
+    if (!formData.name) return;
+
+    // Validate JSON config fields before submit
+    const configError = validateEndpointConfig(endpointType, formData.endpoint_config || {});
+    if (configError) {
+      setError(configError);
       return;
     }
 
@@ -109,18 +134,15 @@ export default function CreateTargetModal({
     setError(null);
 
     try {
-      // Strip endpoint fields if no api_endpoint is provided (avoids backend validation error)
       const submitData: TargetCreate = {
         ...formData,
         endpoint_type: formData.api_endpoint ? formData.endpoint_type : undefined,
         endpoint_config: formData.api_endpoint ? formData.endpoint_config : undefined,
       };
 
-      // Create the target first
       const targetResponse = await targetApi.create(submitData);
       const targetId = targetResponse.data.id;
 
-      // Upload documents if any
       if (selectedFiles.length > 0) {
         setUploadingFiles(true);
         const totalFiles = selectedFiles.length;
@@ -136,24 +158,23 @@ export default function CreateTargetModal({
         }
       }
 
-      // Trigger web search in background (fire-and-forget)
       webSearchApi.trigger(targetId).catch((err) =>
         console.warn("Web search trigger failed:", err)
       );
 
-      // Reset form
       setFormData({
         name: "",
         agency: "",
         purpose: "",
         target_users: "",
         api_endpoint: "",
-        endpoint_type: EndpointType.AIBOTS,
-        endpoint_config: { api_key: "" },
+        endpoint_type: connectorTypes[0] || "http",
+        endpoint_config: {},
       });
       setSelectedFiles([]);
       setUploadProgress(0);
       setUploadingFiles(false);
+      setShowAdvanced(false);
 
       onSuccess();
       onClose();
@@ -174,6 +195,9 @@ export default function CreateTargetModal({
     }
   };
 
+  const config = formData.endpoint_config || {};
+  const disabled = loading || uploadingFiles;
+
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle>Create New Target Application</DialogTitle>
@@ -191,14 +215,14 @@ export default function CreateTargetModal({
             fullWidth
             value={formData.name}
             onChange={handleChange("name")}
-            disabled={loading || uploadingFiles}
+            disabled={disabled}
           />
           <TextField
             label="Agency"
             fullWidth
             value={formData.agency}
             onChange={handleChange("agency")}
-            disabled={loading || uploadingFiles}
+            disabled={disabled}
           />
           <TextField
             label="Purpose"
@@ -207,31 +231,65 @@ export default function CreateTargetModal({
             rows={2}
             value={formData.purpose}
             onChange={handleChange("purpose")}
-            disabled={loading || uploadingFiles}
+            disabled={disabled}
           />
           <TextField
             label="Target Users"
             fullWidth
             value={formData.target_users}
             onChange={handleChange("target_users")}
-            disabled={loading || uploadingFiles}
-          />
-          <TextField
-            label="API Endpoint"
-            fullWidth
-            value={formData.api_endpoint}
-            onChange={handleChange("api_endpoint")}
-            disabled={loading || uploadingFiles}
-          />
-          <TextField
-            label="AIBots API Key"
-            fullWidth
-            value={formData.endpoint_config?.api_key || ""}
-            onChange={handleConfigChange("api_key")}
-            disabled={loading || uploadingFiles}
+            disabled={disabled}
           />
 
-          {/* File Upload Section */}
+          <Paper variant="outlined" sx={{ p: 2, bgcolor: "grey.50", display: "flex", flexDirection: "column", gap: 2 }}>
+            <Typography variant="subtitle2" color="text.secondary">
+              Endpoint Configuration
+            </Typography>
+
+            <TextField
+              label="Endpoint Type"
+              select
+              fullWidth
+              value={endpointType}
+              onChange={handleEndpointTypeChange}
+              disabled={disabled || connectorTypes.length <= 1}
+              size="small"
+            >
+              {connectorTypes.map((t) => (
+                <MenuItem key={t} value={t}>{t}</MenuItem>
+              ))}
+            </TextField>
+
+            <TextField
+              label="API Endpoint URL"
+              fullWidth
+              value={formData.api_endpoint}
+              onChange={handleChange("api_endpoint")}
+              disabled={disabled}
+              placeholder="https://api.example.com/v1/chat/completions"
+              size="small"
+            />
+
+            <ConnectorConfigFields
+              endpointType={endpointType}
+              config={config}
+              apiEndpoint={formData.api_endpoint}
+              onConfigField={(field, value) =>
+                setFormData((prev) => ({
+                  ...prev,
+                  endpoint_config: { ...prev.endpoint_config, [field]: value },
+                }))
+              }
+              onConfigReplace={(newConfig) =>
+                setFormData((prev) => ({ ...prev, endpoint_config: newConfig }))
+              }
+              showAdvanced={showAdvanced}
+              onToggleAdvanced={() => setShowAdvanced(!showAdvanced)}
+              disabled={disabled}
+              onJsonError={setError}
+            />
+          </Paper>
+
           <Box sx={{ mt: 2 }}>
             <Typography variant="subtitle1" gutterBottom>
               Knowledge Base Documents (Optional)
@@ -246,7 +304,7 @@ export default function CreateTargetModal({
               startIcon={<UploadIcon />}
               fullWidth
               sx={{ mt: 1, mb: 2 }}
-              disabled={loading || uploadingFiles}
+              disabled={disabled}
             >
               Select Files
               <input
@@ -272,7 +330,7 @@ export default function CreateTargetModal({
                         <IconButton
                           edge="end"
                           onClick={() => handleRemoveFile(index)}
-                          disabled={loading || uploadingFiles}
+                          disabled={disabled}
                           size="small"
                         >
                           <DeleteIcon />
@@ -296,15 +354,15 @@ export default function CreateTargetModal({
         </Box>
       </DialogContent>
       <DialogActions>
-        <Button onClick={handleClose} disabled={loading || uploadingFiles}>
+        <Button onClick={handleClose} disabled={disabled}>
           Cancel
         </Button>
         <Button
           onClick={handleSubmit}
           variant="contained"
-          disabled={loading || uploadingFiles || !formData.name}
+          disabled={disabled || !formData.name}
         >
-          {loading || uploadingFiles ? (
+          {disabled ? (
             <CircularProgress size={24} />
           ) : (
             "Create"

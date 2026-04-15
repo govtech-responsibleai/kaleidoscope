@@ -40,6 +40,7 @@ import {
   JudgeModelOption,
   QAJob,
   QAJobStartRequest,
+  UnifiedQAJobStartRequest,
   JudgeAlignment,
   JudgeAccuracy,
   ResultRow,
@@ -58,6 +59,8 @@ import {
   RubricAnswerScore,
   SnapshotMetric,
   Status,
+  TestConnectionRequest,
+  TestConnectionResponse,
 } from "./types";
 import { sortJudges } from "./judgeOrdering";
 
@@ -169,6 +172,12 @@ export const targetApi = {
       params: { format },
       responseType: "blob",
     }),
+
+  getConnectorTypes: () =>
+    api.get<string[]>("/targets/connector-types"),
+
+  testConnection: (data: TestConnectionRequest) =>
+    api.post<TestConnectionResponse>("/targets/test-connection", data),
 };
 
 // Web search endpoints
@@ -487,6 +496,12 @@ export const judgeApi = {
 export const qaJobApi = {
   start: (snapshotId: number, data: QAJobStartRequest) =>
     api.post<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs/start`, {
+      snapshot_id: snapshotId,
+      ...data,
+    }),
+
+  startAll: (snapshotId: number, data: UnifiedQAJobStartRequest) =>
+    api.post<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs/start-all`, {
       snapshot_id: snapshotId,
       ...data,
     }),

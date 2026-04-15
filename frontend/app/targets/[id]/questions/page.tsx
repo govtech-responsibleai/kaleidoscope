@@ -442,7 +442,7 @@ export default function QuestionsPage() {
             </Typography>
             <Typography variant="body1" color="text.secondary">
               Personas define the types of users that will interact with your
-              chatbot. Add some to get started.
+              target application. Add some to get started.
             </Typography>
             <Button
               variant="contained"
@@ -720,7 +720,7 @@ export default function QuestionsPage() {
             Start by generating evaluation questions
           </Typography>
           <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
-            Evaluation questions are used to systematically test how your chatbot responds across different scenarios. Generate them automatically, and edit them later.
+            Evaluation questions are used to systematically test how your target application responds across different scenarios. Generate them automatically, and edit them later.
           </Typography>
           <Button
             variant="contained"

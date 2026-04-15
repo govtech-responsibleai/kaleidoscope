@@ -140,12 +140,12 @@ export default function QAContent({
   );
 
   if (!answer) {
-    let message = "Waiting for chatbot answer to be generated before running primary judge.";
+    let message = "Waiting for target application answer to be generated before running primary judge.";
     if (job) {
       if (job.stage === QAJobStageEnum.STARTING || job.stage === QAJobStageEnum.GENERATING_ANSWERS) {
-        message = "Chatbot is generating an answer for this question.";
+        message = "Target application is generating an answer for this question.";
       } else if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS || job.stage === QAJobStageEnum.SCORING_ANSWERS) {
-        message = "Primary judge is generating an evaluation for the chatbot answer.";
+        message = "Primary judge is generating an evaluation for the answer.";
       }
     }
     return (
