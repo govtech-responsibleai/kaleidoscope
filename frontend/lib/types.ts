@@ -22,6 +22,16 @@ export enum JobStatus {
   PAUSED = "paused",
 }
 
+export type HttpAuthPreset = "bearer" | "x-api-key" | "api-key";
+
+export interface ManagedHttpAuthConfig {
+  preset?: HttpAuthPreset;
+  masked_value?: string;
+  is_configured?: boolean;
+  secret_value?: string;
+  clear_secret?: boolean;
+}
+
 // Job progress tracking for multiple jobs
 export interface JobProgress {
   completed: number;
@@ -31,13 +41,18 @@ export interface JobProgress {
   total: number;
 }
 
-// Target types
-export enum EndpointType {
-  AIBOTS = "aibots",
-}
-
+// Target types -- endpoint_type is a dynamic string from the backend registry
 export interface EndpointConfig {
   api_key?: string;
+  response_content_path?: string;
+  headers?: Record<string, string>;
+  auth?: ManagedHttpAuthConfig;
+  body_template?: Record<string, unknown>;
+  method?: string;
+  timeout?: number;
+  response_model_path?: string;
+  metadata_fields?: Record<string, string>;
+  [key: string]: unknown;
 }
 
 export interface TargetBase {
@@ -46,11 +61,11 @@ export interface TargetBase {
   purpose?: string;
   target_users?: string;
   api_endpoint?: string;
-  endpoint_type?: EndpointType;
+  endpoint_type?: string;
   endpoint_config?: EndpointConfig;
 }
 
-export interface TargetCreate extends TargetBase {}
+export type TargetCreate = TargetBase;
 
 export interface TargetUpdate {
   name?: string;
@@ -58,7 +73,7 @@ export interface TargetUpdate {
   purpose?: string;
   target_users?: string;
   api_endpoint?: string;
-  endpoint_type?: EndpointType;
+  endpoint_type?: string;
   endpoint_config?: EndpointConfig;
 }
 
@@ -68,6 +83,36 @@ export interface TargetResponse extends TargetBase {
   owner_username?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface TestConnectionRequest {
+  target_id?: number;
+  endpoint_type: string;
+  api_endpoint: string;
+  endpoint_config: EndpointConfig;
+}
+
+export interface TestConnectionResponse {
+  success: boolean;
+  content?: string;
+  model?: string;
+  error?: string;
+}
+
+export interface ProbeRequest {
+  target_id?: number;
+  endpoint_type: string;
+  api_endpoint: string;
+  endpoint_config: EndpointConfig;
+  prompt?: string;
+}
+
+export interface ProbeResponse {
+  success: boolean;
+  status_code?: number;
+  raw_body?: unknown;
+  headers?: Record<string, string>;
+  error?: string;
 }
 
 export interface TargetStats {
@@ -431,7 +476,7 @@ export interface JudgeConfig {
   judge_type: JudgeType;
   is_baseline: boolean;
   is_editable: boolean;
-  params: Record<string, any>;
+  params: Record<string, unknown>;
   prompt_template?: string;
   category: string;
   created_at: string;
@@ -455,7 +500,7 @@ export interface JudgeCreate {
   model_label?: string;
   judge_type: JudgeType;
   category?: string;
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
   prompt_template?: string;
 }
 
@@ -464,7 +509,7 @@ export interface JudgeUpdate {
   model_name?: string;
   model_label?: string;
   judge_type?: JudgeType;
-  params?: Record<string, any>;
+  params?: Record<string, unknown>;
   prompt_template?: string;
 }
 

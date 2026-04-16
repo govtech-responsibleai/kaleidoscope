@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Box,
   Typography,
@@ -25,21 +25,32 @@ export default function Home() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [targetToDelete, setTargetToDelete] = useState<TargetResponse | null>(null);
 
-  const fetchTargets = async () => {
+  const fetchTargets = useCallback(async () => {
     try {
       const response = await targetApi.list();
       setTargets(response.data);
       setLoading(false);
-    } catch (error: any) {
-      if (error?.response?.status === 401) return; // interceptor handles redirect, keep spinner
+    } catch (error: unknown) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "response" in error &&
+        typeof (error as { response?: { status?: number } }).response?.status === "number" &&
+        (error as { response?: { status?: number } }).response?.status === 401
+      ) {
+        return; // interceptor handles redirect, keep spinner
+      }
       console.error("Failed to fetch targets:", error);
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchTargets();
-  }, []);
+    const timer = window.setTimeout(() => {
+      void fetchTargets();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [fetchTargets]);
 
   const handleTargetClick = (targetId: number) => {
     router.push(`/targets/${targetId}`);
