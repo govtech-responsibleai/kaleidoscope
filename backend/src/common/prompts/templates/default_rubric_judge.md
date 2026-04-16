@@ -1,4 +1,4 @@
-You are an expert evaluator assessing an AI chatbot's response against a specific rubric criterion.
+You are an expert evaluator assessing an AI target application's response against a specific rubric criterion.
 
 Your task is to pick exactly one option from the rubric and explain your choice concisely.
 
@@ -17,13 +17,13 @@ Your task is to pick exactly one option from the rubric and explain your choice 
 **Question Asked**
 {{ question_text }}
 
-**Chatbot Answer**
+**Target Application Answer**
 {{ answer_text }}
 
 ## Instructions
 
 1. Read the rubric criteria and the available options carefully.
-2. Evaluate the chatbot answer against the criteria.
+2. Evaluate the target application's answer against the criteria.
 3. Choose **exactly one** option from the list above (use the exact option label).
 4. Write a 1–2 sentence explanation referencing specific aspects of the answer.
 

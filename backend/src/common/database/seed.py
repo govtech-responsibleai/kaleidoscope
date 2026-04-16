@@ -33,6 +33,16 @@ def run_manual_migrations(engine: Engine) -> None:
         "UPDATE judges SET created_at = COALESCE(created_at, NOW()), updated_at = COALESCE(updated_at, NOW()) WHERE created_at IS NULL OR updated_at IS NULL",
         "ALTER TABLE judges ALTER COLUMN created_at SET NOT NULL",
         "ALTER TABLE judges ALTER COLUMN updated_at SET NOT NULL",
+        """
+        CREATE TABLE IF NOT EXISTS target_http_auth_secrets (
+            id SERIAL PRIMARY KEY,
+            target_id INTEGER NOT NULL UNIQUE REFERENCES targets(id) ON DELETE CASCADE,
+            encrypted_secret TEXT NOT NULL,
+            created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() NOT NULL,
+            updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW() NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS ix_target_http_auth_secrets_target_id ON target_http_auth_secrets(target_id)",
         "ALTER TABLE target_rubrics ADD COLUMN IF NOT EXISTS judge_prompt TEXT",
         "ALTER TABLE target_rubrics ADD COLUMN IF NOT EXISTS template_key VARCHAR",
         # Remove judges in deprecated categories — these are system-seeded judges

@@ -74,7 +74,7 @@ class PromptTemplateLoader:
             >>> loader = PromptTemplateLoader()
             >>> prompt = loader.render(
             ...     "persona_generation.md",
-            ...     chatbot_name="RAI Bot",
+            ...     target_name="RAI Bot",
             ...     purpose="Provide responsible AI guidance",
             ...     target_persona_count=5
             ... )

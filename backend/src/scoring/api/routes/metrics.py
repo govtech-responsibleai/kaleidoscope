@@ -81,13 +81,13 @@ def get_judge_alignment(
     "/snapshots/{snapshot_id}/judges/{judge_id}/accuracy",
     response_model=JudgeAccuracyResponse,
 )
-def get_chatbot_accuracy(
+def get_target_accuracy(
     snapshot_id: int,
     judge_id: int,
     db: Session = Depends(get_db)
 ):
     """
-    Calculate chatbot accuracy based on judge scores.
+    Calculate target accuracy based on judge scores.
 
     Calculates the percentage of accurate responses as determined by
     the judge's evaluation of all responses in the snapshot.

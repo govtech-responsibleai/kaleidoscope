@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 class SnapshotCreate(BaseModel):
     """Request model for creating a snapshot."""
-    target_id: int = Field(..., description="ID of the target chatbot")
+    target_id: int = Field(..., description="ID of the target application")
     name: str = Field(..., description="Name of the snapshot (e.g., 'v1.0', 'Pre-launch')")
     description: str = Field("", description="Description of what this snapshot represents")
 

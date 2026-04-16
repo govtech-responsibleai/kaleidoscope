@@ -58,6 +58,9 @@ services:
       # Auth
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
       ADMIN_API_KEY: ${ADMIN_API_KEY}
+
+      # Extensions
+      KALEIDOSCOPE_EXTENSIONS: ${KALEIDOSCOPE_EXTENSIONS:-}
     depends_on:
       db:
         condition: service_healthy

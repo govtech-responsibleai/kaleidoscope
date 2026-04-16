@@ -120,7 +120,7 @@ class Target(Base):
     purpose = Column(Text, nullable=True)
     target_users = Column(Text, nullable=True)
     api_endpoint = Column(String, nullable=True)
-    endpoint_type = Column(String, nullable=True)  # "aibots", "custom_api", etc.
+    endpoint_type = Column(String, nullable=True)  # "http", or extension types
     endpoint_config = Column(JSON, nullable=True)  # Type-specific config
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
@@ -134,9 +134,32 @@ class Target(Base):
     web_documents = relationship("WebDocument", back_populates="target", cascade="all, delete-orphan")
     snapshots = relationship("Snapshot", back_populates="target", cascade="all, delete-orphan")
     custom_rubrics = relationship("TargetRubric", back_populates="target", cascade="all, delete-orphan")
+    http_auth_secret = relationship(
+        "TargetHttpAuthSecret",
+        back_populates="target",
+        cascade="all, delete-orphan",
+        uselist=False,
+    )
 
     def __repr__(self):
         return f"<Target(id={self.id}, name='{self.name}', user_id={self.user_id})>"
+
+
+class TargetHttpAuthSecret(Base):
+    """Encrypted HTTP auth secret stored outside target.endpoint_config."""
+
+    __tablename__ = "target_http_auth_secrets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    encrypted_secret = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    target = relationship("Target", back_populates="http_auth_secret")
+
+    def __repr__(self):
+        return f"<TargetHttpAuthSecret(target_id={self.target_id})>"
 
 
 ##### QUERY GENERATION #####

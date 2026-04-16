@@ -73,7 +73,7 @@ class WebSearchService:
         """
         prompt = render_template(
             self.template_name,
-            chatbot_name=self.target.name,
+            target_name=self.target.name,
             agency=self.target.agency or "Not specified",
             purpose=self.target.purpose or "Not specified",
             target_users=self.target.target_users or "General users",

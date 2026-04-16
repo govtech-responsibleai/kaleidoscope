@@ -13,15 +13,30 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository, RubricAnswerScoreRepository
-from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse
+from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse, TestConnectionRequest, TestConnectionResponse, ProbeRequest, ProbeResponse
+from src.common.connectors.base import TargetHttpError
+from src.common.connectors.http_auth import prepare_http_config_for_storage, persist_http_auth_secret
 from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
+from src.common.connectors.registry import get_registered_types, get_connector, validate_connector_config
 from src.common.services.export_service import ExportService, ExportFormat
 from src.common.services.premade_rubrics import list_premade_templates, get_premade_template
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _normalize_target_payload_for_storage(
+    endpoint_type: Optional[str],
+    endpoint_config: Optional[dict],
+    *,
+    has_existing_auth_secret: bool,
+) -> tuple[Optional[dict], Optional[str], bool]:
+    """Prepare endpoint_config for persistence and extract transient auth state."""
+    if endpoint_type != "http" or endpoint_config is None:
+        return endpoint_config, None, False
+    return prepare_http_config_for_storage(endpoint_config, has_existing_auth_secret)
 
 
 def _target_to_response(target) -> TargetResponse:
@@ -32,6 +47,136 @@ def _target_to_response(target) -> TargetResponse:
     ).model_copy(update={
         "owner_username": target.owner.username if target.owner else None,
     })
+
+
+def _authorized_target_for_secret_reuse(
+    db: Session,
+    *,
+    user_id: int,
+    target_id: Optional[int],
+):
+    """Return the target only when the current user may reuse its saved auth."""
+    if target_id is None:
+        return None
+
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target or target.user_id != user_id:
+        return None
+
+    return target
+
+
+@router.get("/connector-types", response_model=List[str])
+def list_connector_types(user_id: int = Depends(get_current_user_id)):
+    """Return the registered connector type strings."""
+    return get_registered_types()
+
+
+@router.post("/test-connection", response_model=TestConnectionResponse)
+async def test_connection(
+    request: TestConnectionRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Test a connector configuration by sending a probe message.
+
+    Args:
+        request: Endpoint type, URL, and config to test.
+        user_id: Current user's ID (injected via auth).
+
+    Returns:
+        TestConnectionResponse with success/error details.
+    """
+    try:
+        validate_connector_config(request.endpoint_type, request.endpoint_config)
+    except ValueError as e:
+        return TestConnectionResponse(success=False, error=str(e))
+
+    try:
+        from types import SimpleNamespace
+        authorized_target = _authorized_target_for_secret_reuse(
+            db,
+            user_id=user_id,
+            target_id=request.target_id,
+        )
+        target_stub = SimpleNamespace(
+            endpoint_type=request.endpoint_type,
+            api_endpoint=request.api_endpoint,
+            endpoint_config=request.endpoint_config,
+            id=authorized_target.id if authorized_target else "test",
+        )
+        connector = get_connector(target_stub, db=db)
+        result = await connector.send_message(request.prompt)
+        return TestConnectionResponse(
+            success=True,
+            content=result.content[:200] if result.content else None,
+            model=result.model,
+        )
+    except Exception as e:
+        return TestConnectionResponse(success=False, error=str(e))
+
+
+@router.post("/probe", response_model=ProbeResponse)
+async def probe_endpoint(
+    request: ProbeRequest,
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
+    """Probe a target endpoint and return the raw response body.
+
+    Unlike /test-connection, this route does NOT run connector-specific config
+    validation — so callers can hit the endpoint before declaring an extraction
+    path and inspect the actual response shape. 4xx/5xx responses are returned
+    as success=false with the response body preserved in raw_body.
+
+    Args:
+        request: Endpoint type, URL, config, and probe prompt.
+        user_id: Current user's ID (injected via auth).
+
+    Returns:
+        ProbeResponse with status_code, raw_body, headers, or error.
+    """
+    if request.endpoint_type not in get_registered_types():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown endpoint type '{request.endpoint_type}'. See GET /targets/connector-types.",
+        )
+
+    from types import SimpleNamespace
+    authorized_target = _authorized_target_for_secret_reuse(
+        db,
+        user_id=user_id,
+        target_id=request.target_id,
+    )
+    target_stub = SimpleNamespace(
+        endpoint_type=request.endpoint_type,
+        api_endpoint=request.api_endpoint,
+        endpoint_config=request.endpoint_config,
+        id=authorized_target.id if authorized_target else "probe",
+    )
+
+    try:
+        connector = get_connector(target_stub, db=db)
+        raw = await connector.probe(request.prompt)
+        return ProbeResponse(
+            success=True,
+            status_code=200,
+            raw_body=raw,
+        )
+    except TargetHttpError as e:
+        try:
+            parsed_body = json.loads(e.body) if e.body else None
+        except (ValueError, json.JSONDecodeError):
+            parsed_body = e.body
+        return ProbeResponse(
+            success=False,
+            status_code=e.status_code,
+            raw_body=parsed_body,
+            headers=e.headers,
+            error=f"Target endpoint returned HTTP {e.status_code}",
+        )
+    except Exception as e:
+        return ProbeResponse(success=False, error=str(e))
 
 
 @router.post("", response_model=TargetResponse, status_code=status.HTTP_201_CREATED)
@@ -52,8 +197,26 @@ def create_target(
         Created target
     """
     target_data = target.model_dump()
+    try:
+        endpoint_config, pending_secret_value, should_keep_secret = _normalize_target_payload_for_storage(
+            target_data.get("endpoint_type"),
+            target_data.get("endpoint_config"),
+            has_existing_auth_secret=False,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    target_data["endpoint_config"] = endpoint_config
     target_data["user_id"] = user_id
     created_target = TargetRepository.create(db, target_data)
+    if target_data.get("endpoint_type") == "http":
+        persist_http_auth_secret(
+            db,
+            created_target.id,
+            secret_value=pending_secret_value,
+            should_keep_secret=should_keep_secret,
+        )
+        db.commit()
+        db.refresh(created_target)
     return _target_to_response(created_target)
 
 
@@ -125,13 +288,49 @@ def update_target(
     Raises:
         HTTPException: If target not found
     """
+    existing_target = TargetRepository.get_by_id(db, target_id)
+    if not existing_target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target {target_id} not found"
+        )
+
     update_data = target_update.model_dump(exclude_unset=True)
+    if "endpoint_config" in update_data or "endpoint_type" in update_data:
+        next_endpoint_type = update_data.get("endpoint_type", existing_target.endpoint_type)
+        next_endpoint_config = update_data.get("endpoint_config", existing_target.endpoint_config)
+        try:
+            endpoint_config, pending_secret_value, should_keep_secret = _normalize_target_payload_for_storage(
+                next_endpoint_type,
+                next_endpoint_config,
+                has_existing_auth_secret=existing_target.http_auth_secret is not None,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        update_data["endpoint_config"] = endpoint_config
+    else:
+        pending_secret_value = None
+        should_keep_secret = existing_target.http_auth_secret is not None
+
     target = TargetRepository.update(db, target_id, update_data)
     if not target:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Target {target_id} not found"
         )
+
+    next_endpoint_type = target.endpoint_type
+    if next_endpoint_type == "http":
+        persist_http_auth_secret(
+            db,
+            target.id,
+            secret_value=pending_secret_value,
+            should_keep_secret=should_keep_secret,
+        )
+    else:
+        persist_http_auth_secret(db, target.id, secret_value=None, should_keep_secret=False)
+    db.commit()
+    db.refresh(target)
     return _target_to_response(target)
 
 

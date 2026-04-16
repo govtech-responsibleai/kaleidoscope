@@ -36,7 +36,7 @@ class TestPersonaGenerator:
 
         assert "Test RAI Bot" in prompt
         assert "GovTech" in prompt
-        assert "Test chatbot for responsible AI" in prompt
+        assert "Test target for responsible AI" in prompt
         assert "No existing personas yet" in prompt
 
     def test_render_prompt_with_approved_personas(self, test_db, sample_job, sample_personas):

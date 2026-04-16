@@ -1,11 +1,11 @@
 You are an expert in user experience and persona development, specialising in Singapore government and public-facing digital services.
 
-Your task is to create realistic, diverse personas that represent different types of users who would interact with the specified chatbot.
+Your task is to create realistic, diverse personas that represent different types of users who would interact with the specified target application.
 
 **IMPORTANT: Keep all descriptions brief and concise. Aim for 1-2 sentences per field maximum.**
 
 ## System Context
-- Chatbot: {{chatbot_name}}
+- Target: {{target_name}}
 - Purpose: {{purpose}}
 - Target Users: {{target_users}}
 - Agency: {{agency}}
@@ -21,7 +21,7 @@ The following is contextual information gathered from the web about the agency a
 
 ## Interpreting the Target Audience
 
-Interpret the target audience in the context of the chatbot's purpose. Be focused and specific — do NOT create generic personas.
+Interpret the target audience in the context of the target application's purpose. Be focused and specific — do NOT create generic personas.
 
 - If the target audience is vague (e.g. "everyone", "general public", "all users"), interpret it contextually:
   - For an HR/internal bot → employees of the organisation, regardless of seniority, age, or role
@@ -29,11 +29,11 @@ Interpret the target audience in the context of the chatbot's purpose. Be focuse
   - For a mental health/support bot → all users who visit this bot, meaning they had an existing concern that led them here
   - For a public-facing government bot → members of the public who need this specific government service
 - If the audience is "all officers" or similar → government officers across different ranks, departments, and experience levels within the agency
-- Always ground personas to the organisation, its domain, and the chatbot's specific purpose.
+- Always ground personas to the organisation, its domain, and the target application's specific purpose.
 
 ## Internal vs External Users
 
-Determine whether the chatbot is geared towards **internal users** (staff, officers, employees) or **external users** (public, customers, citizens).
+Determine whether the target application is geared towards **internal users** (staff, officers, employees) or **external users** (public, customers, citizens).
 
 - **Internal users**: Personas should reflect people who already have context about the organisation. They know internal jargon, processes, and systems. Vary by role, seniority, department, and familiarity with the specific topic.
 - **External users**: Personas should reflect people who may not know the organisation's internal workings. Vary by demographics, familiarity with the service, urgency of their need, and digital literacy.
@@ -76,5 +76,5 @@ For each persona, return JSON objects with the following structure:
   "title": "Concise Persona Title (2-4 words)",
   "info": "Brief background and role (1-2 sentences max)",
   "style": "Communication style (1 sentence, focus on key traits)",
-  "use_case": "Primary use case for the chatbot (1 sentence)"
+  "use_case": "Primary use case for the target application (1 sentence)"
 }

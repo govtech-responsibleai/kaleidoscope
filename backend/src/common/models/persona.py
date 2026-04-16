@@ -27,7 +27,7 @@ class PersonaBase(BaseModel):
     title: str = Field(..., description="Title of the persona")
     info: Optional[str] = Field(None, description="Background and role context")
     style: Optional[str] = Field(None, description="Communication style")
-    use_case: Optional[str] = Field(None, description="Use case for engaging with chatbot")
+    use_case: Optional[str] = Field(None, description="Use case for engaging with target application")
 
 
 class PersonaListOutput(BaseModel):
@@ -44,7 +44,7 @@ class PersonaCreate(BaseModel):
     title: str = Field(..., description="Title of the persona")
     info: Optional[str] = Field(None, description="Background and role context")
     style: Optional[str] = Field(None, description="Communication style")
-    use_case: Optional[str] = Field(None, description="Use case for engaging with chatbot")
+    use_case: Optional[str] = Field(None, description="Use case for engaging with target application")
 
 
 class PersonaUpdate(BaseModel):
