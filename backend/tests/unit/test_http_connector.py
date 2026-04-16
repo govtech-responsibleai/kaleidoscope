@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, Mock
 import httpx
 
 from src.common.connectors.http import HttpConnector, _extract_by_path
-from src.common.connectors.base import ConnectorResponse
+from src.common.connectors.base import ConnectorResponse, TargetHttpError
 
 
 @pytest.mark.unit
@@ -52,8 +52,8 @@ class TestHttpConnector:
         conn = self._make_connector()
 
         mock_response = Mock()
+        mock_response.status_code = 200
         mock_response.json.return_value = {"output": "The answer is 42"}
-        mock_response.raise_for_status = Mock()
 
         mock_client = MagicMock()
         mock_client.request = AsyncMock(return_value=mock_response)
@@ -87,10 +87,10 @@ class TestHttpConnector:
         )
 
         mock_response = Mock()
+        mock_response.status_code = 200
         mock_response.json.return_value = {
             "choices": [{"message": {"content": "response text"}}]
         }
-        mock_response.raise_for_status = Mock()
 
         mock_client = MagicMock()
         mock_client.request = AsyncMock(return_value=mock_response)
@@ -121,8 +121,8 @@ class TestHttpConnector:
         )
 
         mock_response = Mock()
+        mock_response.status_code = 200
         mock_response.json.return_value = {"output": "ok"}
-        mock_response.raise_for_status = Mock()
 
         mock_client = MagicMock()
         mock_client.request = AsyncMock(return_value=mock_response)
@@ -141,20 +141,24 @@ class TestHttpConnector:
         assert call_kwargs.kwargs["headers"]["X-Custom"] == "val"
 
     @pytest.mark.asyncio
-    async def test_send_message_extracts_model_and_tokens(self):
-        """Optional model and token paths are extracted."""
+    async def test_send_message_extracts_model_and_metadata(self):
+        """response_model_path and metadata_fields are extracted independently."""
         conn = self._make_connector(
             response_content_path="result.text",
             response_model_path="result.model",
-            response_tokens_path="usage",
+            metadata_fields={
+                "tokens": "usage",
+                "finish": "choices.0.finish_reason",
+            },
         )
 
         mock_response = Mock()
+        mock_response.status_code = 200
         mock_response.json.return_value = {
             "result": {"text": "answer", "model": "gpt-4"},
             "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+            "choices": [{"finish_reason": "stop"}],
         }
-        mock_response.raise_for_status = Mock()
 
         mock_client = MagicMock()
         mock_client.request = AsyncMock(return_value=mock_response)
@@ -170,13 +174,46 @@ class TestHttpConnector:
 
         assert result.content == "answer"
         assert result.model == "gpt-4"
-        assert result.tokens == {"prompt_tokens": 10, "completion_tokens": 20}
+        assert result.metadata["tokens"] == {"prompt_tokens": 10, "completion_tokens": 20}
+        assert result.metadata["finish"] == "stop"
+
+    @pytest.mark.asyncio
+    async def test_metadata_fields_missing_path_is_ignored(self):
+        """A metadata_fields path that doesn't exist is silently skipped."""
+        conn = self._make_connector(
+            metadata_fields={"present": "output", "missing": "does.not.exist"},
+        )
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"output": "hello"}
+
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        original = httpx.AsyncClient
+        try:
+            httpx.AsyncClient = lambda **kw: mock_client
+            result = await conn.send_message("test")
+        finally:
+            httpx.AsyncClient = original
+
+        assert result.metadata["present"] == "hello"
+        assert "missing" not in result.metadata
 
     def test_missing_response_content_path_raises(self):
         """Parsing raises if response_content_path is not configured."""
         conn = HttpConnector("https://api.test.com", {})
         with pytest.raises(ValueError, match="response_content_path is required"):
             conn._parse_response({"output": "test"})
+
+    def test_missing_response_content_path_value_raises_clearly(self):
+        """Missing extraction path should return a readable error."""
+        conn = self._make_connector(response_content_path="results.refusal.reasoning")
+        with pytest.raises(ValueError, match="response_content_path 'results.refusal.reasoning' was not found"):
+            conn._parse_response({"results": {"score": 1}})
 
     def test_build_body_default(self):
         """Default body when no template is given."""
@@ -190,3 +227,31 @@ class TestHttpConnector:
         )
         result = conn._build_body("test")
         assert result == {"a": {"b": "prefix: test"}, "c": ["test"]}
+
+    @pytest.mark.asyncio
+    async def test_raises_target_http_error_with_body(self):
+        """4xx response raises TargetHttpError carrying status_code, body, headers."""
+        conn = self._make_connector()
+
+        mock_response = Mock()
+        mock_response.status_code = 422
+        mock_response.text = '{"error": "invalid payload", "detail": "field X missing"}'
+        mock_response.headers = {"content-type": "application/json"}
+
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        original = httpx.AsyncClient
+        try:
+            httpx.AsyncClient = lambda **kw: mock_client
+            with pytest.raises(TargetHttpError) as exc_info:
+                await conn.send_message("test")
+        finally:
+            httpx.AsyncClient = original
+
+        err = exc_info.value
+        assert err.status_code == 422
+        assert "invalid payload" in err.body
+        assert err.headers["content-type"] == "application/json"

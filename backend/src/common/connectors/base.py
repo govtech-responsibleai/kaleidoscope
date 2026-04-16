@@ -10,6 +10,25 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 
+class TargetHttpError(Exception):
+    """Raised when a target endpoint responds with a non-success HTTP status.
+
+    Carries the response body and headers so callers (probe, test-connection,
+    evaluation pipeline) can surface the endpoint's own error message instead
+    of a bare status line.
+    """
+
+    def __init__(self, status_code: int, body: str, headers: Dict[str, str]):
+        self.status_code = status_code
+        self.body = body
+        self.headers = headers
+        super().__init__(f"Target endpoint returned HTTP {status_code}")
+
+    def __str__(self) -> str:
+        snippet = self.body[:200] + ("…" if len(self.body) > 200 else "")
+        return f"Target endpoint returned HTTP {self.status_code}: {snippet}"
+
+
 @dataclass
 class ConnectorResponse:
     """Standardised response from any target connector.
@@ -52,3 +71,14 @@ class TargetConnector(ABC):
     async def send_message(self, prompt: str) -> ConnectorResponse:
         """Send a prompt to the target and return the response."""
         ...
+
+    async def probe(self, prompt: str) -> Any:
+        """Probe mode — send the prompt and return the raw response body.
+
+        Default implementation calls send_message and returns its raw_response,
+        which means connector-specific parsing still runs. Subclasses should
+        override to skip parsing when the whole point of probing is to inspect
+        the response shape before declaring any extraction path.
+        """
+        result = await self.send_message(prompt)
+        return result.raw_response

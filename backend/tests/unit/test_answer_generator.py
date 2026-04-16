@@ -7,7 +7,7 @@ import httpx
 from unittest.mock import Mock, patch, AsyncMock
 
 from src.query_generation.services.answer_generator import AnswerGenerator, APIResponseError, APIConnectionError
-from src.common.connectors.base import ConnectorResponse
+from src.common.connectors.base import ConnectorResponse, TargetHttpError
 from src.common.database.models import JobStatusEnum
 
 
@@ -244,6 +244,37 @@ class TestAnswerGeneratorErrors:
         assert qa_job.status == JobStatusEnum.failed
         assert "500" in qa_job.error_message
 
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.get_connector')
+    async def test_target_http_401_error_sets_job_failed(
+        self, mock_get_connector, test_db, sample_qa_job_no_answer
+    ):
+        """Normalized connector HTTP 401 errors still fail the job clearly."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        target.endpoint_type = "http"
+        target.api_endpoint = "https://api.error.com"
+        target.endpoint_config = {"response_content_path": "output"}
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.side_effect = TargetHttpError(
+            status_code=401,
+            body="Unauthorized",
+            headers={"content-type": "text/plain"},
+        )
+        mock_get_connector.return_value = mock_connector
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        test_db.refresh(qa_job)
+        assert qa_job.status == JobStatusEnum.failed
+        assert "401" in qa_job.error_message
+
 
 @pytest.mark.unit
 class TestAnswerGeneratorRetry:
@@ -255,6 +286,13 @@ class TestAnswerGeneratorRetry:
         mock_response.text = text
         return httpx.HTTPStatusError(
             f"{status_code} Error", request=Mock(), response=mock_response
+        )
+
+    def _make_target_http_error(self, status_code, text="Error"):
+        return TargetHttpError(
+            status_code=status_code,
+            body=text,
+            headers={"content-type": "text/plain"},
         )
 
     @pytest.mark.asyncio
@@ -287,6 +325,7 @@ class TestAnswerGeneratorRetry:
         test_db.refresh(qa_job)
         assert qa_job.status != JobStatusEnum.failed
         assert qa_job.answer_id is not None
+        mock_sleep.assert_awaited_once_with(1)
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
@@ -318,6 +357,71 @@ class TestAnswerGeneratorRetry:
         test_db.refresh(qa_job)
         assert qa_job.status != JobStatusEnum.failed
         assert qa_job.answer_id is not None
+        mock_sleep.assert_awaited_once_with(1)
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
+    @patch('src.query_generation.services.answer_generator.get_connector')
+    async def test_retry_on_target_http_429_succeeds(
+        self, mock_get_connector, mock_sleep, test_db, sample_qa_job_no_answer
+    ):
+        """Normalized TargetHttpError 429 retries and then succeeds."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        target.endpoint_type = "http"
+        target.api_endpoint = "https://api.test.com"
+        target.endpoint_config = {"response_content_path": "output"}
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.side_effect = [
+            self._make_target_http_error(429, "Rate limited"),
+            _make_connector_response(),
+        ]
+        mock_get_connector.return_value = mock_connector
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        test_db.refresh(qa_job)
+        assert qa_job.status != JobStatusEnum.failed
+        assert qa_job.answer_id is not None
+        mock_sleep.assert_awaited_once_with(1)
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
+    @patch('src.query_generation.services.answer_generator.get_connector')
+    async def test_retry_on_target_http_503_succeeds(
+        self, mock_get_connector, mock_sleep, test_db, sample_qa_job_no_answer
+    ):
+        """Normalized TargetHttpError 503 retries and then succeeds."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        target.endpoint_type = "http"
+        target.api_endpoint = "https://api.test.com"
+        target.endpoint_config = {"response_content_path": "output"}
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.side_effect = [
+            self._make_target_http_error(503, "Service unavailable"),
+            _make_connector_response(),
+        ]
+        mock_get_connector.return_value = mock_connector
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        test_db.refresh(qa_job)
+        assert qa_job.status != JobStatusEnum.failed
+        assert qa_job.answer_id is not None
+        mock_sleep.assert_awaited_once_with(1)
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
@@ -369,6 +473,34 @@ class TestAnswerGeneratorRetry:
 
         mock_connector = AsyncMock()
         mock_connector.send_message.side_effect = self._make_http_error(429, "Rate limited")
+        mock_get_connector.return_value = mock_connector
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        test_db.refresh(qa_job)
+        assert qa_job.status == JobStatusEnum.failed
+        assert qa_job.error_message is not None
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
+    @patch('src.query_generation.services.answer_generator.get_connector')
+    async def test_target_http_retry_exhaustion_fails(
+        self, mock_get_connector, mock_sleep, test_db, sample_qa_job_no_answer
+    ):
+        """Repeated normalized TargetHttpError 429 exhausts retries and fails."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        target.endpoint_type = "http"
+        target.api_endpoint = "https://api.test.com"
+        target.endpoint_config = {"response_content_path": "output"}
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.side_effect = self._make_target_http_error(429, "Rate limited")
         mock_get_connector.return_value = mock_connector
 
         generator = AnswerGenerator(test_db, qa_job.id)

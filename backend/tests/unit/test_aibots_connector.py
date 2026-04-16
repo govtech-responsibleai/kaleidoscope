@@ -35,6 +35,11 @@ SAMPLE_AIBOTS_RESPONSE = {
 class TestAibotsConnector:
     """Tests for AibotsConnector."""
 
+    def test_validate_config_requires_api_key(self):
+        """Class-level validation rejects missing api_key."""
+        with pytest.raises(ValueError, match="api_key is required"):
+            AibotsConnector.validate_config({})
+
     def test_init_requires_api_key(self):
         """Connector raises if api_key is missing."""
         with pytest.raises(ValueError, match="api_key is required"):
@@ -118,6 +123,21 @@ class TestAibotsConnector:
         conn = AibotsConnector("https://api.test.com", {"api_key": "k"})
         result = conn._parse_response("chat_1", {"response": {}})
         assert result.content == ""
+
+    @pytest.mark.asyncio
+    async def test_probe_returns_raw_response_via_default_fallback(self, monkeypatch):
+        """AIBots probe uses the base-class fallback and returns raw_response."""
+        conn = AibotsConnector("https://api.test.com", {"api_key": "k"})
+        fake_response = ConnectorResponse(
+            content="hello",
+            raw_response={"response": {"content": "hello"}, "id": "msg_1"},
+        )
+        monkeypatch.setattr(conn, "send_message", AsyncMock(return_value=fake_response))
+
+        raw = await conn.probe("hello")
+
+        assert raw == {"response": {"content": "hello"}, "id": "msg_1"}
+        conn.send_message.assert_awaited_once_with("hello")
 
     def test_optional_config_fields(self):
         """Config fields like agents, model, params are stored."""

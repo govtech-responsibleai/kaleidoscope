@@ -7,7 +7,7 @@ from typing import Any, Dict
 
 import httpx
 
-from src.common.connectors.base import ConnectorResponse, TargetConnector
+from src.common.connectors.base import ConnectorResponse, TargetConnector, TargetHttpError
 
 logger = logging.getLogger(__name__)
 
@@ -48,8 +48,12 @@ class HttpConnector(TargetConnector):
                        actual prompt text. If omitted, sends
                        {"prompt": "<text>"}.
         timeout: Request timeout in seconds (default: 60).
-        response_model_path: Dot-notation path to extract model name.
-        response_tokens_path: Dot-notation path to extract token usage dict.
+        response_model_path: Dot-notation path to extract the model name.
+        metadata_fields: Dict of {label: dot_path} pairs. Each named field
+                         is extracted from the response and stored in
+                         ConnectorResponse.metadata. Missing paths are
+                         silently ignored. E.g.
+                         {"tokens": "usage", "finish": "choices.0.finish_reason"}
     """
 
     @classmethod
@@ -60,11 +64,28 @@ class HttpConnector(TargetConnector):
 
     async def send_message(self, prompt: str) -> ConnectorResponse:
         """Send the prompt to the configured HTTP endpoint."""
+        raw = await self._request(prompt)
+        return self._parse_response(raw)
+
+    async def probe(self, prompt: str) -> Any:
+        """Probe mode — send the prompt and return the raw parsed body.
+
+        Bypasses _parse_response so the caller can inspect the response shape
+        without having to declare response_content_path first.
+        """
+        return await self._request(prompt)
+
+    async def _request(self, prompt: str) -> Any:
+        """Build body, dispatch request, return parsed body.
+
+        Raises:
+            TargetHttpError: if the endpoint responds with a 4xx or 5xx.
+        """
         method = self.config.get("method", "POST").upper()
         timeout = self.config.get("timeout", 60)
         headers = dict(self.config.get("headers", {}))
 
-        body = self._build_body(prompt)
+        body = self._build_body_from(self.config, prompt)
 
         logger.debug(f"HTTP connector: {method} {self.endpoint_url}")
 
@@ -75,14 +96,31 @@ class HttpConnector(TargetConnector):
                 json=body,
                 headers=headers,
             )
-            response.raise_for_status()
 
-        raw = response.json()
-        return self._parse_response(raw)
+        if response.status_code >= 400:
+            raise TargetHttpError(
+                status_code=response.status_code,
+                body=response.text,
+                headers=dict(response.headers),
+            )
+
+        try:
+            return response.json()
+        except ValueError:
+            # Non-JSON response — return raw text so probe can still show it.
+            return response.text
 
     def _build_body(self, prompt: str) -> Any:
-        """Build the request body, substituting {{prompt}}."""
-        template = self.config.get("body_template")
+        """Build the request body from self.config, substituting {{prompt}}.
+
+        Kept for test compatibility — production path uses _build_body_from
+        with an env-resolved config.
+        """
+        return self._build_body_from(self.config, prompt)
+
+    def _build_body_from(self, cfg: Dict[str, Any], prompt: str) -> Any:
+        """Build the request body from the given config dict."""
+        template = cfg.get("body_template")
         if template is None:
             return {"prompt": prompt}
         return self._substitute(template, prompt)
@@ -103,7 +141,12 @@ class HttpConnector(TargetConnector):
         if not content_path:
             raise ValueError("response_content_path is required in endpoint_config for HTTP connector")
 
-        content = _extract_by_path(raw, content_path)
+        try:
+            content = _extract_by_path(raw, content_path)
+        except (KeyError, IndexError, TypeError, ValueError) as exc:
+            raise ValueError(
+                f"response_content_path '{content_path}' was not found in the response."
+            ) from exc
         if not isinstance(content, str):
             content = str(content)
 
@@ -115,11 +158,10 @@ class HttpConnector(TargetConnector):
             except (KeyError, IndexError, TypeError):
                 pass
 
-        tokens = None
-        tokens_path = self.config.get("response_tokens_path")
-        if tokens_path:
+        metadata: Dict[str, Any] = {}
+        for label, path in (self.config.get("metadata_fields") or {}).items():
             try:
-                tokens = _extract_by_path(raw, tokens_path)
+                metadata[label] = _extract_by_path(raw, path)
             except (KeyError, IndexError, TypeError):
                 pass
 
@@ -127,5 +169,5 @@ class HttpConnector(TargetConnector):
             content=content,
             raw_response=raw,
             model=model,
-            tokens=tokens,
+            metadata=metadata,
         )

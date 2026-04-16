@@ -1,5 +1,5 @@
 """
-Unit tests for the extension loader fault isolation.
+Unit tests for configured extension loading.
 """
 
 import sys
@@ -8,7 +8,6 @@ from types import ModuleType
 import pytest
 
 from src.common.config import get_settings
-from src.common.connectors.registry import get_registered_types
 from src.extensions import load_extensions
 
 
@@ -22,20 +21,17 @@ def restore_extensions_setting():
 
 
 @pytest.mark.unit
-class TestExtensionLoaderFaultIsolation:
-    """A broken extension must not prevent app startup."""
+class TestExtensionLoader:
+    """Configured extension load failures should block startup."""
 
-    def test_missing_extension_module_does_not_raise(self, restore_extensions_setting):
-        """An extension that cannot be imported is logged and skipped."""
+    def test_missing_extension_module_raises(self, restore_extensions_setting):
+        """A configured extension that cannot be imported should fail startup."""
         restore_extensions_setting.kaleidoscope_extensions = "definitely_not_a_real_extension"
-        types_before = set(get_registered_types())
+        with pytest.raises(RuntimeError, match="definitely_not_a_real_extension"):
+            load_extensions()
 
-        load_extensions()
-
-        assert set(get_registered_types()) == types_before
-
-    def test_extension_register_raises_does_not_propagate(self, restore_extensions_setting):
-        """An extension whose register() raises is logged and skipped."""
+    def test_extension_register_raises(self, restore_extensions_setting):
+        """A configured extension whose register() fails should block startup."""
         def _broken_register():
             raise RuntimeError("boom")
 
@@ -44,16 +40,18 @@ class TestExtensionLoaderFaultIsolation:
         sys.modules["src.extensions.broken_register_ext"] = broken_module
         try:
             restore_extensions_setting.kaleidoscope_extensions = "broken_register_ext"
-            types_before = set(get_registered_types())
-
-            load_extensions()
-
-            assert set(get_registered_types()) == types_before
+            with pytest.raises(RuntimeError, match="broken_register_ext"):
+                load_extensions()
         finally:
             sys.modules.pop("src.extensions.broken_register_ext", None)
 
-    def test_one_broken_extension_does_not_block_a_working_one(self, restore_extensions_setting):
-        """Mixed list: working extension loads even when a sibling is broken."""
+    def test_no_extensions_is_noop(self, restore_extensions_setting):
+        """Empty extension setting should not raise."""
+        restore_extensions_setting.kaleidoscope_extensions = ""
+        load_extensions()
+
+    def test_working_extension_registers(self, restore_extensions_setting):
+        """A valid configured extension should still load successfully."""
         loaded = {"called": False}
 
         def _good_register():
@@ -63,7 +61,7 @@ class TestExtensionLoaderFaultIsolation:
         good_module.register = _good_register  # type: ignore[attr-defined]
         sys.modules["src.extensions.good_ext"] = good_module
         try:
-            restore_extensions_setting.kaleidoscope_extensions = "missing_ext, good_ext"
+            restore_extensions_setting.kaleidoscope_extensions = "good_ext"
 
             load_extensions()
 

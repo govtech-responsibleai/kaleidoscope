@@ -19,8 +19,9 @@ def load_extensions() -> None:
     """Load all extensions listed in KALEIDOSCOPE_EXTENSIONS.
 
     Reads the comma-separated setting, imports each extension module,
-    and calls its ``register()`` function. Logs and skips extensions
-    that fail to load.
+    and calls its ``register()`` function. If any configured extension
+    fails to load, startup should fail rather than silently degrading
+    the available connector set.
     """
     from src.common.config import get_settings
 
@@ -36,5 +37,6 @@ def load_extensions() -> None:
             module = importlib.import_module(f"src.extensions.{name}")
             module.register()
             logger.info(f"Loaded extension: {name}")
-        except Exception:
+        except Exception as exc:
             logger.exception(f"Failed to load extension '{name}'")
+            raise RuntimeError(f"Failed to load configured extension '{name}'") from exc

@@ -105,6 +105,7 @@ class TestRegistry:
         # Cleanup
         _registry.pop("fake", None)
 
-    def test_validate_connector_config_unknown_type_noop(self):
-        """validate_connector_config is a no-op for unregistered types."""
-        validate_connector_config("unknown_type", {"anything": True})
+    def test_validate_connector_config_unknown_type_raises(self):
+        """validate_connector_config rejects unregistered types."""
+        with pytest.raises(ValueError, match="Unsupported endpoint_type 'unknown_type'"):
+            validate_connector_config("unknown_type", {"anything": True})

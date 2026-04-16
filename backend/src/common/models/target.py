@@ -5,37 +5,9 @@ Pydantic models for Target API requests and responses.
 import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
-from enum import Enum
 from pydantic import BaseModel, Field, model_validator
 
 logger = logging.getLogger(__name__)
-
-
-class EndpointType(str, Enum):
-    """Supported endpoint types.
-
-    Built-in types are defined here. Extensions can add values at
-    startup via ``extend_endpoint_type()``.
-    """
-    http = "http"
-
-
-def extend_endpoint_type(name: str) -> None:
-    """Dynamically add a value to the EndpointType enum.
-
-    Called by the connector registry when an extension registers a new
-    connector type. No-op if the value already exists.
-    """
-    if name in EndpointType.__members__:
-        return
-
-    # Use the internal Enum API to extend the enum at runtime
-    new_member = str.__new__(EndpointType, name)
-    new_member._name_ = name
-    new_member._value_ = name
-    EndpointType._member_map_[name] = new_member
-    EndpointType._value2member_map_[name] = new_member
-    logger.debug(f"Extended EndpointType enum with '{name}'")
 
 
 class TargetBase(BaseModel):
@@ -45,14 +17,14 @@ class TargetBase(BaseModel):
     purpose: Optional[str] = Field(None, description="Purpose of the target application")
     target_users: Optional[str] = Field(None, description="Expected target users")
     api_endpoint: Optional[str] = Field(None, description="API endpoint to call for generating responses")
-    endpoint_type: Optional[EndpointType] = Field(None, description="Endpoint type: 'http', etc.")
+    endpoint_type: Optional[str] = Field(None, description="Endpoint type: 'http', 'aibots', etc. See GET /targets/connector-types for the full list.")
     endpoint_config: Optional[Dict[str, Any]] = Field(None, description="Type-specific endpoint config")
 
     @model_validator(mode='after')
     def validate_endpoint_config(self):
         if self.endpoint_type:
             from src.common.connectors.registry import validate_connector_config
-            validate_connector_config(self.endpoint_type.value, self.endpoint_config or {})
+            validate_connector_config(self.endpoint_type, self.endpoint_config or {})
         return self
 
 
@@ -68,14 +40,14 @@ class TargetUpdate(BaseModel):
     purpose: Optional[str] = None
     target_users: Optional[str] = None
     api_endpoint: Optional[str] = None
-    endpoint_type: Optional[EndpointType] = None
+    endpoint_type: Optional[str] = None
     endpoint_config: Optional[Dict[str, Any]] = None
 
     @model_validator(mode='after')
     def validate_endpoint_config(self):
         if self.endpoint_type:
             from src.common.connectors.registry import validate_connector_config
-            validate_connector_config(self.endpoint_type.value, self.endpoint_config or {})
+            validate_connector_config(self.endpoint_type, self.endpoint_config or {})
         return self
 
 
@@ -93,9 +65,11 @@ class TargetResponse(TargetBase):
 
 class TestConnectionRequest(BaseModel):
     """Request model for testing a connector configuration."""
-    endpoint_type: EndpointType = Field(..., description="Connector type to test")
+    target_id: Optional[int] = Field(None, description="Existing target ID for resolving managed auth.")
+    endpoint_type: str = Field(..., description="Connector type to test. See GET /targets/connector-types.")
     api_endpoint: str = Field(..., description="API endpoint URL")
     endpoint_config: Dict[str, Any] = Field(default_factory=dict, description="Type-specific config")
+    prompt: str = Field(default="Hello, this is a probe message.", description="Prompt text to send.")
 
 
 class TestConnectionResponse(BaseModel):
@@ -103,6 +77,33 @@ class TestConnectionResponse(BaseModel):
     success: bool
     content: Optional[str] = None
     model: Optional[str] = None
+    error: Optional[str] = None
+
+
+class ProbeRequest(BaseModel):
+    """Request model for probing a target endpoint without requiring an extraction path.
+
+    Unlike TestConnectionRequest, probe does NOT trigger connector-specific config
+    validation (e.g. response_content_path is not required). The endpoint is called
+    and the raw response body is returned for inspection.
+    """
+    target_id: Optional[int] = Field(None, description="Existing target ID for resolving managed auth.")
+    endpoint_type: str = Field(..., description="Connector type to probe.")
+    api_endpoint: str = Field(..., description="API endpoint URL")
+    endpoint_config: Dict[str, Any] = Field(default_factory=dict, description="Type-specific config")
+    prompt: str = Field(default="Hello, this is a probe message.", description="Prompt text to send.")
+
+
+class ProbeResponse(BaseModel):
+    """Response model for a probe attempt.
+
+    Distinct from TestConnectionResponse: probe returns the raw response body and
+    status code so the caller can inspect shape before declaring an extraction path.
+    """
+    success: bool
+    status_code: Optional[int] = None
+    raw_body: Optional[Any] = None
+    headers: Optional[Dict[str, str]] = None
     error: Optional[str] = None
 
 

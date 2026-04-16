@@ -12,6 +12,7 @@ import httpx
 from sqlalchemy.orm import Session
 
 from src.common.config import get_settings
+from src.common.connectors.base import TargetHttpError
 from src.common.connectors import ConnectorResponse, get_connector
 from src.common.database.models import Answer, JobStatusEnum
 from src.common.database.repositories import (
@@ -110,7 +111,7 @@ class AnswerGenerator:
             raise ValueError(f"Question with id {question_id} not found")
 
         target = question.target
-        connector = get_connector(target)  # Raises ValueError for bad config
+        connector = get_connector(target, db=self.db)  # Raises ValueError for bad config
 
         max_retries = settings.llm_num_retries
 
@@ -119,6 +120,18 @@ class AnswerGenerator:
                 response = await connector.send_message(question.text)
                 return self._save_answer(question, response, snapshot_id)
 
+            except TargetHttpError as e:
+                if e.status_code in (429, 503) and attempt < max_retries:
+                    wait = 2 ** attempt
+                    logger.warning(
+                        f"Target API returned {e.status_code}, retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries})"
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                raise APIResponseError(
+                    f"API returned error {e.status_code}: {e.body}"
+                )
             except httpx.HTTPStatusError as e:
                 if e.response.status_code in (429, 503) and attempt < max_retries:
                     wait = 2 ** attempt

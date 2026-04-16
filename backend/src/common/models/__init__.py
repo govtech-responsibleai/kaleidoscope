@@ -9,6 +9,8 @@ from src.common.models.target import (
     TargetResponse,
     TestConnectionRequest,
     TestConnectionResponse,
+    ProbeRequest,
+    ProbeResponse,
     TargetStats
 )
 from src.common.models.job import (
@@ -148,6 +150,8 @@ __all__ = [
     "TargetResponse",
     "TestConnectionRequest",
     "TestConnectionResponse",
+    "ProbeRequest",
+    "ProbeResponse",
     "TargetStats",
     # Job
     "JobType",
