@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   Box,
   Divider,
@@ -15,7 +15,32 @@ import { useParams } from "next/navigation";
 import { targetApi, webSearchApi } from "@/lib/api";
 import { TargetResponse, TargetStats, TargetUpdate } from "@/lib/types";
 import DocumentList from "@/components/overview/DocumentList";
-import ConnectorConfigFields, { validateEndpointConfig } from "@/components/overview/ConnectorConfigFields";
+import ConnectorConfigFields, { getHttpUrlError, validateEndpointConfig } from "@/components/overview/ConnectorConfigFields";
+
+interface WebDocumentSearchResult {
+  results?: unknown[];
+}
+
+interface WebDocument {
+  results?: WebDocumentSearchResult;
+}
+
+function DetailsField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+      <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+        {label}
+      </Typography>
+      {children}
+    </Box>
+  );
+}
 
 export default function TargetOverview() {
   const params = useParams();
@@ -24,23 +49,34 @@ export default function TargetOverview() {
   const [target, setTarget] = useState<TargetResponse | null>(null);
   const [stats, setStats] = useState<TargetStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [documentRefreshKey, setDocumentRefreshKey] = useState(0);
+  const [documentRefreshKey] = useState(0);
   const [editForm, setEditForm] = useState<TargetUpdate>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
   const [hasWebContext, setHasWebContext] = useState<boolean | null>(null);
   const [connectorTypes, setConnectorTypes] = useState<string[]>([]);
+  const [connectorTypesError, setConnectorTypesError] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Fetch connector types once on mount (they don't change at runtime)
   useEffect(() => {
     targetApi.getConnectorTypes()
-      .then((res) => setConnectorTypes(res.data))
-      .catch(() => setConnectorTypes(["http"]));
+      .then((res) => {
+        setConnectorTypes(res.data);
+        setConnectorTypesError(
+          res.data.length === 0
+            ? "No connector types are available in this deployment."
+            : null,
+        );
+      })
+      .catch(() => {
+        setConnectorTypes([]);
+        setConnectorTypesError("Failed to load available connector types. Reload before editing connector settings.");
+      });
   }, []);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [targetRes, statsRes] = await Promise.all([
         targetApi.get(targetId),
@@ -49,8 +85,8 @@ export default function TargetOverview() {
       setTarget(targetRes.data);
       setStats(statsRes.data);
       webSearchApi.listDocuments(targetId).then((res) => {
-        const webDocs = res.data as any[];
-        setHasWebContext(webDocs.length > 0 && webDocs.some((d: any) => d.results?.results?.length > 0));
+        const webDocs = res.data as WebDocument[];
+        setHasWebContext(webDocs.length > 0 && webDocs.some((d) => (d.results?.results?.length ?? 0) > 0));
       }).catch(() => setHasWebContext(false));
       setEditForm({
         name: targetRes.data.name,
@@ -58,7 +94,7 @@ export default function TargetOverview() {
         purpose: targetRes.data.purpose || "",
         target_users: targetRes.data.target_users || "",
         api_endpoint: targetRes.data.api_endpoint || "",
-        endpoint_type: targetRes.data.endpoint_type || "http",
+        endpoint_type: targetRes.data.endpoint_type || "",
         endpoint_config: targetRes.data.endpoint_config || {},
       });
       setHasChanges(false);
@@ -67,11 +103,11 @@ export default function TargetOverview() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [targetId]);
 
   useEffect(() => {
     fetchData();
-  }, [targetId]);
+  }, [fetchData]);
 
   const handleFormChange = (field: keyof TargetUpdate, value: unknown) => {
     setEditForm((prev) => ({ ...prev, [field]: value }));
@@ -89,8 +125,20 @@ export default function TargetOverview() {
   };
 
   const handleUpdate = async () => {
-    const endpointType = editForm.endpoint_type || "http";
-    const configError = validateEndpointConfig(endpointType, editForm.endpoint_config || {});
+    const currentEndpointType = editForm.endpoint_type || "";
+
+    if (connectorTypesError) {
+      setUpdateError("Available connector types could not be loaded. Reload before updating this target.");
+      return;
+    }
+    if (currentEndpointType === "http" && apiEndpointError) {
+      setUpdateError(apiEndpointError);
+      return;
+    }
+
+    const configError = currentEndpointType
+      ? validateEndpointConfig(currentEndpointType, editForm.endpoint_config || {})
+      : null;
     if (configError) {
       setUpdateError(configError);
       return;
@@ -112,8 +160,8 @@ export default function TargetOverview() {
           .then(() => {
             setTimeout(() => {
               webSearchApi.listDocuments(targetId).then((res) => {
-                const webDocs = res.data as any[];
-                setHasWebContext(webDocs.length > 0 && webDocs.some((d: any) => d.results?.results?.length > 0));
+                const webDocs = res.data as WebDocument[];
+                setHasWebContext(webDocs.length > 0 && webDocs.some((d) => (d.results?.results?.length ?? 0) > 0));
               }).catch(() => setHasWebContext(false));
             }, 5000);
           })
@@ -140,13 +188,33 @@ export default function TargetOverview() {
     return null;
   }
 
-  const endpointType = editForm.endpoint_type || "http";
+  const endpointType = editForm.endpoint_type || "";
   const config = editForm.endpoint_config || {};
+  const endpointTypeOptions = connectorTypes.length > 0
+    ? connectorTypes
+    : endpointType
+      ? [endpointType]
+      : [];
+  const apiEndpointError = endpointType === "http" ? getHttpUrlError(editForm.api_endpoint) : null;
 
   return (
     <Box>
-      <Box sx={{ display: "flex", gap: 4, flexDirection: { xs: "column", md: "row" }, height: "calc(100vh - 250px)" }}>
-        <Box sx={{ flex: { md: "0 0 55%" }, pl: 2 }}>
+      <Box
+        sx={{
+          display: "flex",
+          gap: 4,
+          flexDirection: { xs: "column", md: "row" },
+          alignItems: "stretch",
+          minHeight: "calc(100vh - 250px)",
+        }}
+      >
+        <Box
+          sx={{
+            flex: { md: "0 0 55%" },
+            pl: 2,
+            pb: 6,
+          }}
+        >
           <Box sx={{ mb: 3 }}>
             <Typography variant="h6" fontWeight={600}>
               Target Details
@@ -156,99 +224,137 @@ export default function TargetOverview() {
             </Typography>
           </Box>
           <Box sx={{ display: "flex", flexDirection: "column", gap: 2.5 }}>
-            <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-              <Typography variant="subtitle1" color="text.secondary" sx={{ minWidth: "120px" }}>
-                Agency:
-              </Typography>
+            <DetailsField label="Agency">
               <TextField
                 fullWidth
                 value={editForm.agency || ""}
                 onChange={(e) => handleFormChange("agency", e.target.value)}
                 size="small"
               />
-            </Box>
-            <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
-              <Typography variant="subtitle1" color="text.secondary" sx={{ minWidth: "120px", pt: 1 }}>
-                Purpose:
-              </Typography>
-              <TextField
-                fullWidth
-                multiline
-                rows={5}
-                value={editForm.purpose || ""}
-                onChange={(e) => handleFormChange("purpose", e.target.value)}
-                size="small"
-              />
-            </Box>
-            <Box sx={{ display: "flex", gap: 2, alignItems: "flex-start" }}>
-              <Typography variant="subtitle1" color="text.secondary" sx={{ minWidth: "120px", pt: 1 }}>
-                Target Users:
-              </Typography>
+            </DetailsField>
+            <DetailsField label="Purpose">
               <TextField
                 fullWidth
                 multiline
                 rows={3}
+                value={editForm.purpose || ""}
+                onChange={(e) => handleFormChange("purpose", e.target.value)}
+                size="small"
+              />
+            </DetailsField>
+            <DetailsField label="Target Users">
+              <TextField
+                fullWidth
+                multiline
+                rows={2}
                 value={editForm.target_users || ""}
                 onChange={(e) => handleFormChange("target_users", e.target.value)}
                 size="small"
               />
-            </Box>
+            </DetailsField>
 
-            <Paper variant="outlined" sx={{ p: 2, bgcolor: "grey.50", display: "flex", flexDirection: "column", gap: 2.5 }}>
-              <Typography variant="subtitle2" color="text.secondary">
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
+              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
                 Endpoint Configuration
               </Typography>
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: "grey.50", display: "flex", flexDirection: "column", gap: 2.5 }}>
+              {connectorTypesError && (
+                <Typography variant="body2" color="error">
+                  {connectorTypesError}
+                </Typography>
+              )}
 
-              <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                <Typography variant="subtitle1" color="text.secondary" sx={{ minWidth: "120px" }}>
-                  Type:
-                </Typography>
-                <TextField
-                  select
-                  fullWidth
-                  value={endpointType}
-                  onChange={handleEndpointTypeChange}
-                  disabled={connectorTypes.length <= 1}
-                  size="small"
-                >
-                  {connectorTypes.map((t) => (
-                    <MenuItem key={t} value={t}>{t}</MenuItem>
-                  ))}
-                </TextField>
-              </Box>
-              <Box sx={{ display: "flex", gap: 2, alignItems: "center" }}>
-                <Typography variant="subtitle1" color="text.secondary" sx={{ minWidth: "120px" }}>
-                  API Endpoint:
-                </Typography>
-                <TextField
-                  fullWidth
-                  value={editForm.api_endpoint || ""}
-                  onChange={(e) => handleFormChange("api_endpoint", e.target.value)}
-                  size="small"
-                  placeholder="https://api.example.com/v1/chat/completions"
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 0.75 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    Endpoint Type
+                  </Typography>
+                  <TextField
+                    select
+                    fullWidth
+                    value={endpointType}
+                    onChange={handleEndpointTypeChange}
+                    disabled={Boolean(connectorTypesError) || endpointTypeOptions.length === 0}
+                    size="small"
+                  >
+                    {endpointTypeOptions.map((t) => (
+                      <MenuItem key={t} value={t}>{t}</MenuItem>
+                    ))}
+                  </TextField>
+                </Box>
+              {endpointType === "http" ? (
+                <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 600 }}>
+                    URL
+                  </Typography>
+                  <Box sx={{ display: "flex", gap: 1, alignItems: "flex-start", width: "100%" }}>
+                    <TextField
+                      select
+                      size="small"
+                      value={String(config.method || "POST")}
+                      onChange={(e) =>
+                        handleFormChange("endpoint_config", {
+                          ...config,
+                          method: e.target.value,
+                        })
+                      }
+                      sx={{ width: 110 }}
+                    >
+                      {["POST", "GET", "PUT", "PATCH"].map((method) => (
+                        <MenuItem key={method} value={method}>{method}</MenuItem>
+                      ))}
+                    </TextField>
+                    <TextField
+                      fullWidth
+                      value={editForm.api_endpoint || ""}
+                      onChange={(e) => handleFormChange("api_endpoint", e.target.value)}
+                      size="small"
+                      placeholder="https://api.example.com/v1/chat/completions"
+                      error={Boolean(apiEndpointError)}
+                      helperText={apiEndpointError || "Enter a valid http:// or https:// endpoint URL."}
+                    />
+                  </Box>
+                </Box>
+              ) : (
+                <DetailsField label="API Endpoint">
+                  <TextField
+                    fullWidth
+                    value={editForm.api_endpoint || ""}
+                    onChange={(e) => handleFormChange("api_endpoint", e.target.value)}
+                    size="small"
+                    placeholder="https://api.example.com/v1/chat/completions"
+                  />
+                </DetailsField>
+              )}
+
+              {endpointType ? (
+                <ConnectorConfigFields
+                  endpointType={endpointType}
+                  config={config}
+                  targetId={targetId}
+                  apiEndpoint={editForm.api_endpoint}
+                  onConfigField={(field, value) => {
+                    setEditForm((prev) => ({
+                      ...prev,
+                      endpoint_config: { ...prev.endpoint_config, [field]: value },
+                    }));
+                    setHasChanges(true);
+                  }}
+                  onConfigReplace={(newConfig) => {
+                    handleFormChange("endpoint_config", newConfig);
+                  }}
+                  showAdvanced={showAdvanced}
+                  onToggleAdvanced={() => setShowAdvanced(!showAdvanced)}
+                  onJsonError={setUpdateError}
+                  variant="form"
+                  disabled={Boolean(connectorTypesError)}
                 />
-              </Box>
-
-              <ConnectorConfigFields
-                endpointType={endpointType}
-                config={config}
-                apiEndpoint={editForm.api_endpoint}
-                onConfigField={(field, value) => {
-                  setEditForm((prev) => ({
-                    ...prev,
-                    endpoint_config: { ...prev.endpoint_config, [field]: value },
-                  }));
-                  setHasChanges(true);
-                }}
-                onConfigReplace={(newConfig) => {
-                  handleFormChange("endpoint_config", newConfig);
-                }}
-                showAdvanced={showAdvanced}
-                onToggleAdvanced={() => setShowAdvanced(!showAdvanced)}
-                onJsonError={setUpdateError}
-                variant="form"
-              />
-            </Paper>
+              ) : (
+                <Typography variant="body2" color="text.secondary">
+                  Load the available connector types before editing endpoint-specific settings.
+                </Typography>
+              )}
+              </Paper>
+            </Box>
 
             {updateError && (
               <Typography variant="body2" color="error">{updateError}</Typography>
@@ -257,7 +363,7 @@ export default function TargetOverview() {
             <Button
               variant="outlined"
               onClick={handleUpdate}
-              disabled={!hasChanges || updateLoading}
+              disabled={!hasChanges || updateLoading || Boolean(connectorTypesError)}
               sx={{ mt: 1, alignSelf: "flex-end" }}
             >
               {updateLoading ? <CircularProgress size={24} /> : "Update"}
@@ -265,9 +371,24 @@ export default function TargetOverview() {
           </Box>
         </Box>
 
-        <Divider orientation="vertical" flexItem sx={{ display: { xs: "none", md: "block" } }} />
+        <Divider
+          orientation="vertical"
+          flexItem
+          sx={{
+            display: { xs: "none", md: "block" },
+            alignSelf: "stretch",
+            my: 0,
+          }}
+        />
 
-        <Box sx={{ flex: { md: "0 0 calc(45% - 64px)" }, display: "flex", flexDirection: "column", maxHeight: "100%", gap: 1 }}>
+        <Box
+          sx={{
+            flex: { md: "0 0 calc(45% - 64px)" },
+            display: "flex",
+            flexDirection: "column",
+            gap: 1,
+          }}
+        >
           <DocumentList
             key={documentRefreshKey}
             targetId={targetId}

@@ -43,7 +43,6 @@ import {
   UnifiedQAJobStartRequest,
   JudgeAlignment,
   JudgeAccuracy,
-  ResultRow,
   SnapshotResultsResponse,
   SnapshotMetricsResponse,
   ConfusionMatrix,
@@ -61,6 +60,8 @@ import {
   Status,
   TestConnectionRequest,
   TestConnectionResponse,
+  ProbeRequest,
+  ProbeResponse,
 } from "./types";
 import { sortJudges } from "./judgeOrdering";
 
@@ -200,6 +201,9 @@ export const targetApi = {
 
   testConnection: (data: TestConnectionRequest) =>
     api.post<TestConnectionResponse>("/targets/test-connection", data),
+
+  probe: (data: ProbeRequest) =>
+    api.post<ProbeResponse>("/targets/probe", data),
 };
 
 // Web search endpoints
@@ -414,7 +418,9 @@ export const snapshotApi = {
 // Answer endpoints
 export const answerApi = {
   list: (snapshotId: number, selectedOnly?: boolean) =>
-    api.get<AnswerListResponse>(`/snapshots/${snapshotId}/answers`),
+    api.get<AnswerListResponse>(`/snapshots/${snapshotId}/answers`, {
+      ...(selectedOnly === undefined ? {} : { params: { selected_only: selectedOnly } }),
+    }),
 
   get: (answerId: number) =>
     api.get<Answer>(`/answers/${answerId}`),

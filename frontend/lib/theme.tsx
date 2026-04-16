@@ -3,8 +3,8 @@
 import { createTheme, alpha } from "@mui/material/styles";
 
 export const sourceChip = {
-  generated: { label: "AI",      bgcolor: "rgba(124, 77, 255, 0.1)", color: "#5E35B1", borderColor: "rgba(124, 77, 255, 0.3)" },
-  general:   { label: "General", bgcolor: "rgba(0, 191, 165, 0.1)", color: "#00897B", borderColor: "rgba(0, 191, 165, 0.3)" },
+  generated: { label: "AI",      bgcolor: "rgba(124, 77, 255, 0.1)", color: "#5C6BC0", borderColor: "rgba(124, 77, 255, 0.3)" },
+  general:   { label: "General", bgcolor: "rgba(0, 191, 165, 0.1)", color: "#26A69A", borderColor: "rgba(0, 191, 165, 0.3)" },
 };
 
 export const getSourceChip = (source: string) => source === "generated" ? sourceChip.generated : sourceChip.general;
