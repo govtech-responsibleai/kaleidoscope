@@ -381,7 +381,7 @@ When a rubric is created, it is automatically classified into a category (`relev
 
 QA Jobs orchestrate the automated scoring pipeline:
 
-1. **Generate Answer**: Call target chatbot API to get answer
+1. **Generate Answer**: Call target application API to get answer
 2. **Extract Claims**: Split answer into sentences, check if checkworthy (claim-based only)
 3. **Score Answer**: Use judge LLM to evaluate accuracy
 
@@ -423,7 +423,7 @@ Calculate judge performance and export results.
 ```
 # Accuracy metrics
 GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/alignment   - Calculate judge alignment (F1, precision, recall, accuracy)
-GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/accuracy    - Calculate chatbot accuracy per judge
+GET    /api/v1/snapshots/{snapshot_id}/judges/{judge_id}/accuracy    - Calculate target accuracy per judge
 GET    /api/v1/snapshots/{snapshot_id}/results                       - Get aggregated results with majority vote
 POST   /api/v1/snapshots/{snapshot_id}/export                        - Export results as CSV
 GET    /api/v1/targets/{target_id}/snapshot-metrics                  - Get aggregated metrics for all snapshots of a target
@@ -448,7 +448,7 @@ This section demonstrates the complete evaluation pipeline from target creation 
 curl -X POST http://localhost:8000/api/v1/targets \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "RAI Chatbot",
+    "name": "RAI Target",
     "agency": "GovTech Singapore",
     "purpose": "Provide responsible AI guidance",
     "target_users": "Government officers",
@@ -648,7 +648,7 @@ curl -X POST http://localhost:8000/api/v1/snapshots \
   -d '{
     "target_id": 1,
     "name": "Baseline Eval",
-    "description": "Initial evaluation of RAI chatbot"
+    "description": "Initial evaluation of RAI target"
   }' | jq
 ```
 
@@ -788,7 +788,7 @@ Returns:
 }
 ```
 
-#### 7.2 Calculate Chatbot Accuracy
+#### 7.2 Calculate Target Accuracy
 
 Based on judge scores across all answers.
 

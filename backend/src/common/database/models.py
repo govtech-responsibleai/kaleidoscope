@@ -120,7 +120,7 @@ class Target(Base):
     purpose = Column(Text, nullable=True)
     target_users = Column(Text, nullable=True)
     api_endpoint = Column(String, nullable=True)
-    endpoint_type = Column(String, nullable=True)  # "aibots", "custom_api", etc.
+    endpoint_type = Column(String, nullable=True)  # "http", or extension types
     endpoint_config = Column(JSON, nullable=True)  # Type-specific config
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

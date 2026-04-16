@@ -7,6 +7,8 @@ from src.common.models.target import (
     TargetCreate,
     TargetUpdate,
     TargetResponse,
+    TestConnectionRequest,
+    TestConnectionResponse,
     TargetStats
 )
 from src.common.models.job import (
@@ -144,6 +146,8 @@ __all__ = [
     "TargetCreate",
     "TargetUpdate",
     "TargetResponse",
+    "TestConnectionRequest",
+    "TestConnectionResponse",
     "TargetStats",
     # Job
     "JobType",

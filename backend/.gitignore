@@ -210,3 +210,11 @@ __marimo__/
 # Database migrations (local-only, not committed)
 src/common/database/migrations/*
 !src/common/database/migrations/.gitkeep
+
+# Local/generated artifacts
+.DS_Store
+.claude/
+.next/
+REAL_DATA.md
+nemotron-dataset/
+openspec/

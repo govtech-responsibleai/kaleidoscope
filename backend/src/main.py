@@ -61,6 +61,11 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # Load connector extensions (e.g. KALEIDOSCOPE_EXTENSIONS=aibots)
+    from src.extensions import load_extensions
+    load_extensions()
+    logger.info("✓ Extensions loaded")
+
     # Setup Phoenix instrumentation for LLM tracking
     phoenix_url = setup_phoenix_instrumentation(project_name="kaleidoscope-api")
     if phoenix_url:

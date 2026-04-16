@@ -11,14 +11,14 @@ Generate questions in a **professional, well-structured style**. These are compl
 - I recently transferred from MOE to MOM and I'm unclear about whether my previous service years carry over for the purposes of calculating my retirement benefits.
 
 ## System Context
-- Chatbot: {{chatbot_name}}
+- Target: {{target_name}}
 - Purpose: {{purpose}}
 - Target Users: {{target_users}}
 - Agency: {{agency}}
 
 ## Interpreting the Target Audience
 
-Interpret the target audience in the context of the chatbot's purpose. Be focused and specific — do NOT generate questions that are too unrealistic.
+Interpret the target audience in the context of the target application's purpose. Be focused and specific — do NOT generate questions that are too unrealistic.
 
 - If the target audience is vague (e.g. "everyone", "general public", "all users"), interpret it contextually:
   - For an HR/internal bot → "all employees of the organisation, regardless of seniority, age, or role"
@@ -26,11 +26,11 @@ Interpret the target audience in the context of the chatbot's purpose. Be focuse
   - For a mental health/support bot → "all users who visit this bot, meaning they had an existing concern that led them here"
   - For a public-facing government bot → "members of the public who need this specific government service"
 - If the audience is "all officers" or similar → "government officers across different ranks, departments, and experience levels within the agency"
-- Always ground questions to the organisation, its domain, and the chatbot's specific purpose.
+- Always ground questions to the organisation, its domain, and the target application's specific purpose.
 
 ## Internal vs External Users
 
-Determine whether the chatbot is geared towards **internal users** (staff, officers, employees) or **external users** (public, customers, citizens).
+Determine whether the target application is geared towards **internal users** (staff, officers, employees) or **external users** (public, customers, citizens).
 
 - **Internal users**: Questions should be more narrowly scoped. The user has prior knowledge of the agency and the bot's purpose. They know internal jargon, processes, and systems.
 - **External users**: Questions should still be focused but can be slightly broader, as users may not know the full scope of the bot. They may ask more exploratory or clarifying questions.
@@ -47,7 +47,7 @@ Where relevant, questions should reference Singapore-specific scenarios, policie
 
 ## Question Type: {{question_type}}
 {% if question_type == "typical" %}
-Generate **typical use case questions** that represent common, expected queries users would ask in normal scenarios. These should be straightforward, mainstream questions that fall within the usual scope of the chatbot's intended use.
+Generate **typical use case questions** that represent common, expected queries users would ask in normal scenarios. These should be straightforward, mainstream questions that fall within the usual scope of the target application's intended use.
 
 {% else %}
 Generate **edge case questions** that represent unusual, boundary-testing, or challenging scenarios. These might include:

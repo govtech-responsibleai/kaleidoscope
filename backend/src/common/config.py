@@ -52,6 +52,9 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = 4320  # 3 days
     admin_api_key: str  # Required - for creating users via API
 
+    # Extensions (comma-separated list, e.g. "aibots,custom")
+    kaleidoscope_extensions: str = ""
+
     # Generation Defaults
     default_persona_count: int = 5
     default_question_count: int = 10

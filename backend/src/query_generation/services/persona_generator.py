@@ -164,7 +164,7 @@ class PersonaGenerator:
         # Render template
         prompt = render_template(
             "persona_generation.md",
-            chatbot_name=self.target.name,
+            target_name=self.target.name,
             purpose=self.target.purpose or "Not specified",
             target_users=self.target.target_users or "General users",
             agency=self.target.agency or "Not specified",

@@ -1,9 +1,9 @@
 You are an expert at crafting effective web search queries to gather contextual information about government agencies and their domains in Singapore.
 
-Your task is to generate {{num_queries}} search {% if num_queries == 1 %}query{% else %}queries{% endif %} that will retrieve useful background information for creating realistic test questions for a chatbot.
+Your task is to generate {{num_queries}} search {% if num_queries == 1 %}query{% else %}queries{% endif %} that will retrieve useful background information for creating realistic test questions for a target application.
 
 ## Target Application Context
-- Chatbot: {{chatbot_name}}
+- Target: {{target_name}}
 - Agency: {{agency}}
 - Purpose: {{purpose}}
 - Target Users: {{target_users}}
@@ -12,7 +12,7 @@ Your task is to generate {{num_queries}} search {% if num_queries == 1 %}query{%
 
 Generate exactly {{num_queries}} Google search {% if num_queries == 1 %}query{% else %}queries{% endif %} that:
 
-1. **Target the domain, not the bot** — search for contextual information about the agency's domain, relevant Singapore policies, regulations, and processes. Do NOT search for the chatbot itself.
+1. **Target the domain, not the bot** — search for contextual information about the agency's domain, relevant Singapore policies, regulations, and processes. Do NOT search for the target application itself.
 
 2. **Each query must target a sufficiently different aspect** of the domain so we get varied results. For example:
    - One query about policies, regulations, or eligibility criteria

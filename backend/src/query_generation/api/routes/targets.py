@@ -13,9 +13,10 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository, RubricAnswerScoreRepository
-from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse
+from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse, TestConnectionRequest, TestConnectionResponse
 from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
+from src.common.connectors.registry import get_registered_types, get_connector, validate_connector_config
 from src.common.services.export_service import ExportService, ExportFormat
 from src.common.services.premade_rubrics import list_premade_templates, get_premade_template
 
@@ -32,6 +33,50 @@ def _target_to_response(target) -> TargetResponse:
     ).model_copy(update={
         "owner_username": target.owner.username if target.owner else None,
     })
+
+
+@router.get("/connector-types", response_model=List[str])
+def list_connector_types(user_id: int = Depends(get_current_user_id)):
+    """Return the registered connector type strings."""
+    return get_registered_types()
+
+
+@router.post("/test-connection", response_model=TestConnectionResponse)
+async def test_connection(
+    request: TestConnectionRequest,
+    user_id: int = Depends(get_current_user_id),
+):
+    """Test a connector configuration by sending a probe message.
+
+    Args:
+        request: Endpoint type, URL, and config to test.
+        user_id: Current user's ID (injected via auth).
+
+    Returns:
+        TestConnectionResponse with success/error details.
+    """
+    try:
+        validate_connector_config(request.endpoint_type.value, request.endpoint_config)
+    except ValueError as e:
+        return TestConnectionResponse(success=False, error=str(e))
+
+    try:
+        from types import SimpleNamespace
+        target_stub = SimpleNamespace(
+            endpoint_type=request.endpoint_type.value,
+            api_endpoint=request.api_endpoint,
+            endpoint_config=request.endpoint_config,
+            id="test",
+        )
+        connector = get_connector(target_stub)
+        result = await connector.send_message("Hello, this is a test message.")
+        return TestConnectionResponse(
+            success=True,
+            content=result.content[:200] if result.content else None,
+            model=result.model,
+        )
+    except Exception as e:
+        return TestConnectionResponse(success=False, error=str(e))
 
 
 @router.post("", response_model=TargetResponse, status_code=status.HTTP_201_CREATED)

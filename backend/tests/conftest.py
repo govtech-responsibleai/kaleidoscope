@@ -149,10 +149,11 @@ def sample_target(test_db):
     target = Target(
         name="Test RAI Bot",
         agency="GovTech",
-        purpose="Test chatbot for responsible AI",
+        purpose="Test target for responsible AI",
         target_users="Government officers",
         api_endpoint="https://api.test.com/chat",
-        endpoint_type="aibots"
+        endpoint_type="http",
+        endpoint_config={"response_content_path": "output"},
     )
     test_db.add(target)
     test_db.commit()

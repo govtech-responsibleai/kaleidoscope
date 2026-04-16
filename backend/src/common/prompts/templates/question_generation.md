@@ -3,7 +3,7 @@ You are an expert in natural language processing and user interaction design.
 Your task is to generate realistic, natural queries that users would ask in real-world scenarios. The queries should be specific, actionable, and reflect the persona's characteristics and use cases.
 
 ## System Context
-- Chatbot: {{chatbot_name}}
+- Target: {{target_name}}
 - Purpose: {{purpose}}
 - Target Users: {{target_users}}
 - Agency: {{agency}}
@@ -16,7 +16,7 @@ Your task is to generate realistic, natural queries that users would ask in real
 
 ## Question Type: {{question_type}}
 {% if question_type == "typical" %}
-Generate **typical use case questions** that represent common, expected queries users would ask in normal scenarios. These should be straightforward, mainstream questions that fall within the usual scope of the chatbot's intended use.
+Generate **typical use case questions** that represent common, expected queries users would ask in normal scenarios. These should be straightforward, mainstream questions that fall within the usual scope of the target application's intended use.
 {% else %}
 Generate **edge case questions** that represent unusual, boundary-testing, or challenging scenarios. These might include:
 - Ambiguous or unclear phrasing
