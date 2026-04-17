@@ -3,10 +3,10 @@
 import React from "react";
 import { Box, Card, CardContent, Typography } from "@mui/material";
 import {
-  AutoAwesome as AutoAwesomeIcon,
-  Groups as GroupsIcon,
-  PersonAdd as PersonAddIcon,
-} from "@mui/icons-material";
+  IconSparkles,
+  IconUserPlus,
+  IconUsersGroup,
+} from "@tabler/icons-react";
 
 interface PersonaSelectProps {
   onGenerateAI: () => void;
@@ -30,7 +30,9 @@ export default function PersonaSelect({
     <Box display="flex" gap={2} flexWrap="wrap" justifyContent="center">
       <Card sx={cardSx} onClick={onGenerateAI}>
         <CardContent sx={{ textAlign: "center", py: 3 }}>
-          <AutoAwesomeIcon sx={{ fontSize: 40, color: "primary.main", mb: 1 }} />
+          <Box sx={{ color: "primary.main", mb: 1, display: "flex", justifyContent: "center" }}>
+            <IconSparkles size={40} stroke={1.8} />
+          </Box>
           <Typography variant="subtitle1" fontWeight={600}>
             Generate with AI
           </Typography>
@@ -41,7 +43,9 @@ export default function PersonaSelect({
       </Card>
       <Card sx={cardSx} onClick={onSampleRandom}>
         <CardContent sx={{ textAlign: "center", py: 3 }}>
-          <GroupsIcon sx={{ fontSize: 40, color: "secondary.main", mb: 1 }} />
+          <Box sx={{ color: "secondary.main", mb: 1, display: "flex", justifyContent: "center" }}>
+            <IconUsersGroup size={40} stroke={1.8} />
+          </Box>
           <Typography variant="subtitle1" fontWeight={600}>
             Random Personas
           </Typography>
@@ -52,7 +56,9 @@ export default function PersonaSelect({
       </Card>
       <Card sx={cardSx} onClick={onAddManual}>
         <CardContent sx={{ textAlign: "center", py: 3 }}>
-          <PersonAddIcon sx={{ fontSize: 40, color: "info.main", mb: 1 }} />
+          <Box sx={{ color: "info.main", mb: 1, display: "flex", justifyContent: "center" }}>
+            <IconUserPlus size={40} stroke={1.8} />
+          </Box>
           <Typography variant="subtitle1" fontWeight={600}>
             Add Manually
           </Typography>

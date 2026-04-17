@@ -2,6 +2,12 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconChevronDown,
+  IconChevronUp,
+} from "@tabler/icons-react";
+import {
   Alert,
   Box,
   Button,
@@ -17,12 +23,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import {
-  ArrowBack as ArrowBackIcon,
-  ArrowForward as ArrowForwardIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
-} from "@mui/icons-material";
 import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse, TargetRubricResponse } from "@/lib/types";
 
 import { answerApi, personaApi } from "@/lib/api";
@@ -30,6 +30,8 @@ import { groupColors } from "@/lib/theme";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
 import AnnotationForm from "./AnnotationForm";
+import { compactActionIconProps } from "@/lib/iconStyles";
+import { emptyMissingRubricCoverage, type MissingRubricCoverage } from "@/lib/evaluationCoverage";
 
 type FilterMode = "all" | "selected";
 
@@ -43,6 +45,7 @@ interface QAListProps {
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
   rubrics: TargetRubricResponse[];
+  missingRubricCoverage?: MissingRubricCoverage;
   initialQuestionId?: number | null;
 }
 
@@ -56,6 +59,7 @@ export default function QAList({
   qaMap,
   setQaMap,
   rubrics,
+  missingRubricCoverage = emptyMissingRubricCoverage,
   initialQuestionId,
 }: QAListProps) {
   const [personaMap, setPersonaMap] = useState<Record<number, PersonaResponse>>({});
@@ -529,6 +533,7 @@ export default function QAList({
                     question={question}
                     answer={answer}
                     job={jobByQuestion[question.id] ?? null}
+                    pendingMetricNames={missingRubricCoverage.pendingRubricNamesByQuestion[question.id] ?? []}
                     isActive={question.id === activeQuestionId}
                     isChecked={answer ? draftSelections.has(answer.id) : false}
                     onToggleSelection={() =>
@@ -576,7 +581,7 @@ export default function QAList({
           </Typography>
           <Stack direction="row" spacing={0.5}>
             <Button
-              startIcon={<ArrowBackIcon fontSize="small" />}
+              startIcon={<IconArrowLeft {...compactActionIconProps} />}
               onClick={handlePrev}
               disabled={prevDisabled}
               variant="outlined"
@@ -584,7 +589,7 @@ export default function QAList({
               sx={{ "& .MuiButton-startIcon": { margin: 0, padding: "3px 0" }, minWidth: 0 }}
             />
             <Button
-              endIcon={<ArrowForwardIcon fontSize="small" />}
+              endIcon={<IconArrowRight {...compactActionIconProps} />}
               onClick={handleNext}
               disabled={nextDisabled}
               variant="outlined"
@@ -629,7 +634,7 @@ export default function QAList({
             variant="text"
             size="small"
             color="primary"
-            endIcon={criteriaOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            endIcon={criteriaOpen ? <IconChevronUp {...compactActionIconProps} /> : <IconChevronDown {...compactActionIconProps} />}
             onClick={() => setCriteriaOpen((prev) => !prev)}
             sx={{ textTransform: "none", fontSize: "0.75rem", whiteSpace: "nowrap" }}
           >
@@ -693,6 +698,7 @@ export default function QAList({
               rubrics={rubrics}
               activeTab={activeTab}
               onActiveTabChange={setActiveTab}
+              pendingRubricIds={activeQuestion ? (missingRubricCoverage.pendingRubricIdsByQuestion[activeQuestion.id] ?? []) : []}
             />
           </Box>
 

@@ -6,9 +6,10 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { Warning as WarningIcon } from "@mui/icons-material";
+import { IconAlertTriangle } from "@tabler/icons-react";
 import { SnapshotMetric } from "@/lib/types";
 import AccuracyGauge from "@/components/shared/AccuracyGauge";
+import { statusIconProps } from "@/lib/iconStyles";
 
 interface SnapshotAccuracyCardProps {
   snapshotMetric: SnapshotMetric | null;
@@ -17,6 +18,7 @@ interface SnapshotAccuracyCardProps {
   showExplanatoryText?: boolean;
   showWarningBox?: boolean;
   title?: string;
+  gaugeLabel?: string;
 }
 
 export default function SnapshotAccuracyCard({
@@ -26,6 +28,7 @@ export default function SnapshotAccuracyCard({
   showExplanatoryText = false,
   showWarningBox = false,
   title = "Overall Accuracy",
+  gaugeLabel = "Aggregated Accuracy Score",
 }: SnapshotAccuracyCardProps) {
   if (loading) {
     return (
@@ -71,7 +74,7 @@ export default function SnapshotAccuracyCard({
       <AccuracyGauge
         value={hasReliableJudges ? snapshotMetric.aggregated_accuracy : null}
         size={300}
-        label="Aggregated Accuracy Score"
+        label={gaugeLabel}
       />
 
       <Stack spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
@@ -98,7 +101,7 @@ export default function SnapshotAccuracyCard({
               borderRadius: 2,
             }}
           >
-            <WarningIcon color="warning" fontSize="small" />
+            <IconAlertTriangle {...statusIconProps} color="currentColor" />
             <Box>
               <Typography variant="body2" fontWeight={500}>
                 Evaluation to be improved

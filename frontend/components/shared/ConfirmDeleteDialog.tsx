@@ -11,7 +11,8 @@ import {
   DialogTitle,
   Typography,
 } from "@mui/material";
-import { Delete as DeleteIcon } from "@mui/icons-material";
+import { IconTrash } from "@tabler/icons-react";
+import { actionIconProps } from "@/lib/iconStyles";
 
 interface ConfirmDeleteDialogProps {
   open: boolean;
@@ -92,7 +93,7 @@ export default function ConfirmDeleteDialog({
           color="error"
           variant="contained"
           disabled={deleting}
-          startIcon={deleting ? <CircularProgress size={20} /> : <DeleteIcon />}
+          startIcon={deleting ? <CircularProgress size={20} /> : <IconTrash {...actionIconProps} />}
         >
           {deleting ? "Deleting..." : "Delete"}
         </Button>

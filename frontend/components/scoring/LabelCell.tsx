@@ -13,12 +13,10 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import CheckIcon from "@mui/icons-material/Check";
-import CloseIcon from "@mui/icons-material/Close";
-import EditIcon from "@mui/icons-material/Edit";
-import RestartAltIcon from "@mui/icons-material/RestartAlt";
+import { IconCheck, IconPencil, IconRestore, IconX } from "@tabler/icons-react";
 import { AggregatedAccuracy } from "@/lib/types";
 import { answerApi } from "@/lib/api";
+import { compactActionIconProps } from "@/lib/iconStyles";
 
 interface LabelCellProps {
   answerId: number;
@@ -79,9 +77,16 @@ export default function LabelCell({
       await answerApi.deleteLabelOverride(answerId);
       setIsEditMode(false);
       onLabelChange?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const status =
+        typeof err === "object" &&
+        err !== null &&
+        "response" in err &&
+        typeof (err as { response?: { status?: number } }).response?.status === "number"
+          ? (err as { response?: { status?: number } }).response?.status
+          : undefined;
       // 404 is fine - means no override existed
-      if (err?.response?.status !== 404) {
+      if (status !== 404) {
         console.error("Failed to reset label:", err);
         alert("Failed to reset. Please try again.");
       } else {
@@ -143,7 +148,7 @@ export default function LabelCell({
               color="primary"
               sx={{ p: 0.25 }}
             >
-              <CheckIcon sx={{ fontSize: 18 }} />
+              <IconCheck {...compactActionIconProps} />
             </IconButton>
           </span>
         </Tooltip>
@@ -154,7 +159,7 @@ export default function LabelCell({
             disabled={isSaving}
             sx={{ p: 0.25 }}
           >
-            <CloseIcon sx={{ fontSize: 18 }} />
+            <IconX {...compactActionIconProps} />
           </IconButton>
         </Tooltip>
       </Stack>
@@ -187,7 +192,7 @@ export default function LabelCell({
                 disabled={isSaving}
                 sx={{ p: 0.25 }}
               >
-                <RestartAltIcon sx={{ fontSize: 16 }} />
+                <IconRestore {...compactActionIconProps} />
               </IconButton>
             </Tooltip>
           )}
@@ -197,7 +202,7 @@ export default function LabelCell({
               onClick={() => setIsEditMode(true)}
               sx={{ p: 0.25 }}
             >
-              <EditIcon sx={{ fontSize: 16 }} />
+              <IconPencil {...compactActionIconProps} />
             </IconButton>
           </Tooltip>
         </Box>

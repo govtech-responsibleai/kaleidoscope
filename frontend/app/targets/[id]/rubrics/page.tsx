@@ -3,6 +3,18 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
+  IconChecklist,
+  IconChevronDown,
+  IconCircleCheck,
+  IconCircleCheckFilled,
+  IconCut,
+  IconDeviceFloppy,
+  IconHeart,
+  IconHelpCircle,
+  IconPlus,
+  IconTrash,
+} from "@tabler/icons-react";
+import {
   Box,
   Typography,
   TextField,
@@ -23,18 +35,6 @@ import {
   CardActionArea,
   CardContent,
 } from "@mui/material";
-import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
-import {
-  Add as AddIcon,
-  DeleteOutline as DeleteOutlineIcon,
-  CheckCircle as CheckCircleIcon,
-  CheckCircleOutline as CheckCircleOutlineIcon,
-  HelpOutline as HelpOutlineIcon,
-  Save as SaveIcon,
-  FavoriteBorder as FavoriteBorderIcon,
-  ContentCut as ContentCutIcon,
-  ChecklistRtl as ChecklistRtlIcon,
-} from "@mui/icons-material";
 import { targetRubricApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
 import {
@@ -43,6 +43,7 @@ import {
   PremadeRubricTemplate,
 } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/iconStyles";
 
 const accuracyOptions = [
   { option: "Accurate", description: "All claims are supported by the provided context." },
@@ -236,10 +237,10 @@ export default function RubricsPage() {
   const totalRubricCount = 1 + premadeRubrics.length + customRubrics.length;
 
   const premadeIconMap: Record<string, React.ReactElement> = {
-    empathy: <FavoriteBorderIcon sx={{ fontSize: 36, color: "text.secondary" }} />,
-    verbosity: <ContentCutIcon sx={{ fontSize: 36, color: "text.secondary" }} />,
+    empathy: <IconHeart size={36} stroke={1.75} color="currentColor" />,
+    verbosity: <IconCut size={36} stroke={1.75} color="currentColor" />,
   };
-  const defaultPremadeIcon = <ChecklistRtlIcon sx={{ fontSize: 36, color: "text.secondary" }} />;
+  const defaultPremadeIcon = <IconChecklist size={36} stroke={1.75} color="currentColor" />;
 
   const renderOptionsReadonly = (options: RubricOption[], bestOption: string | null) => (
     <>
@@ -248,7 +249,7 @@ export default function RubricsPage() {
           <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
             <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
               <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
-              <HelpOutlineIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+              <IconHelpCircle size={14} stroke={2} color="currentColor" />
             </Box>
           </Tooltip>
         </Box>
@@ -259,8 +260,8 @@ export default function RubricsPage() {
         <Box key={option} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
           <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
             {option === bestOption
-              ? <CheckCircleIcon sx={{ fontSize: 24, color: "success.main" }} />
-              : <CheckCircleOutlineIcon sx={{ fontSize: 24, color: "text.disabled" }} />
+              ? <IconCircleCheckFilled size={24} stroke={1.8} color="#2e7d32" />
+              : <IconCircleCheck size={24} stroke={1.8} color="currentColor" />
             }
           </Box>
           <TextField value={option} disabled size="small" sx={{ width: 140, flexShrink: 0 }} />
@@ -293,7 +294,7 @@ export default function RubricsPage() {
               "&:hover": { bgcolor: accent ?? "primary.main", color: "#fff" },
             }}
           >
-            <AddIcon fontSize="small" />
+            <IconPlus {...compactActionIconProps} />
           </IconButton>
         </Tooltip>
       )}
@@ -335,7 +336,7 @@ export default function RubricsPage() {
       <Box sx={getGroupSx("fixed")}>
         <Box sx={{ mb: 2 }}>{renderGroupHeader("Fixed", 1, null, groupColors.fixed.border)}</Box>
         <Accordion variant="outlined" disableGutters>
-          <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={summarySx}>
+          <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
             <Typography fontWeight={600} sx={{ flex: 1 }}>Accuracy</Typography>
           </AccordionSummary>
           <AccordionDetails sx={{ pt: 0 }}>
@@ -357,7 +358,7 @@ export default function RubricsPage() {
         ) : (
           premadeRubrics.map((rubric) => (
             <Accordion key={rubric.id} variant="outlined" disableGutters sx={{ mb: 1 }}>
-              <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={summarySx}>
+              <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
                 <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
                 <Tooltip title="Delete rubric" arrow>
                   <IconButton
@@ -365,7 +366,7 @@ export default function RubricsPage() {
                     size="small"
                     onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
                   >
-                    <DeleteOutlineIcon fontSize="small" />
+                    <IconTrash {...compactActionIconProps} />
                   </IconButton>
                 </Tooltip>
               </AccordionSummary>
@@ -404,7 +405,7 @@ export default function RubricsPage() {
                 defaultExpanded={draft}
                 sx={{ mb: 1, ...(draft && { borderStyle: "dashed" }) }}
               >
-                <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={summarySx}>
+                <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
                   <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}>
                     <TextField
                       value={rubric.name}
@@ -430,7 +431,7 @@ export default function RubricsPage() {
                       size="small"
                       onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
                     >
-                      <DeleteOutlineIcon fontSize="small" />
+                      <IconTrash {...compactActionIconProps} />
                     </IconButton>
                   </Tooltip>
                 </AccordionSummary>
@@ -456,7 +457,7 @@ export default function RubricsPage() {
                       <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
                         <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
                           <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
-                          <HelpOutlineIcon sx={{ fontSize: 14, color: "text.disabled" }} />
+                          <IconHelpCircle size={14} stroke={2} color="currentColor" />
                         </Box>
                       </Tooltip>
                     </Box>
@@ -474,8 +475,8 @@ export default function RubricsPage() {
                           onClick={() => { if (opt.option) setBestOption(rubric.id, opt.option); }}
                         >
                           {isPositive
-                            ? <CheckCircleIcon sx={{ fontSize: 24, color: "success.main" }} />
-                            : <CheckCircleOutlineIcon sx={{ fontSize: 24, color: "text.disabled" }} />
+                            ? <IconCircleCheckFilled size={24} stroke={1.8} color="#2e7d32" />
+                            : <IconCircleCheck size={24} stroke={1.8} color="currentColor" />
                           }
                         </Box>
                         <TextField
@@ -494,13 +495,13 @@ export default function RubricsPage() {
                           onChange={(e) => updateOptionField(rubric.id, i, "description", e.target.value)}
                         />
                         <IconButton size="small" onClick={() => removeOption(rubric.id, i)}>
-                          <DeleteOutlineIcon fontSize="small" />
+                          <IconTrash {...compactActionIconProps} />
                         </IconButton>
                       </Box>
                     );
                   })}
 
-                  <Button startIcon={<AddIcon />} size="small" sx={{ mt: 0.5 }} onClick={() => addOption(rubric.id)}>
+                  <Button startIcon={<IconPlus {...actionIconProps} />} size="small" sx={{ mt: 0.5 }} onClick={() => addOption(rubric.id)}>
                     Add Option
                   </Button>
 
@@ -524,7 +525,7 @@ export default function RubricsPage() {
                             <Button
                               variant="contained"
                               size="small"
-                              startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <SaveIcon />}
+                              startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <IconDeviceFloppy {...statusIconProps} />}
                               disabled={errors.length > 0 || isSaving}
                               onClick={() => handleSave(rubric)}
                             >

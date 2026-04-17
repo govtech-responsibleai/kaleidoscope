@@ -11,16 +11,18 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { InfoOutlined as InfoOutlinedIcon } from "@mui/icons-material";
+import { IconInfoCircle } from "@tabler/icons-react";
 import { JudgeConfig, QAJob, JudgeAlignment, JudgeAccuracy } from "@/lib/types";
 import { metricsApi, questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
+import { compactActionIconProps } from "@/lib/iconStyles";
 
 interface RubricJudgeCardProps {
   judge: JudgeConfig;
   displayName: string;
   snapshotId: number;
   rubricId: number;
+  pendingCount: number | null;
   bestOption: string;
   hasQuestionsWithoutAnswers: boolean;
   onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
@@ -32,13 +34,14 @@ export default function RubricJudgeCard({
   displayName,
   snapshotId,
   rubricId,
+  pendingCount: pendingCountProp,
   bestOption,
   hasQuestionsWithoutAnswers,
   onJobStart,
   onJobComplete,
 }: RubricJudgeCardProps) {
   const [isPolling, setIsPolling] = useState(false);
-  const [pendingCount, setPendingCount] = useState<number | null>(null);
+  const [pendingCount, setPendingCount] = useState<number | null>(pendingCountProp);
   const [runTotalCount, setRunTotalCount] = useState<number | null>(null);
   const pollingRef = useRef<number | null>(null);
   const onJobCompleteRef = useRef(onJobComplete);
@@ -124,11 +127,19 @@ export default function RubricJudgeCard({
   }, [snapshotId, stopPolling]);
 
   useEffect(() => {
-    fetchPendingCount();
-  }, [fetchPendingCount]);
+    setPendingCount(pendingCountProp);
+  }, [pendingCountProp]);
+
+  useEffect(() => {
+    if (pendingCountProp === null) {
+      fetchPendingCount();
+    }
+  }, [fetchPendingCount, pendingCountProp]);
 
   const isRunning = isPolling;
   const hasAllScores = pendingCount === 0;
+  const hasSomeScores = (accuracy?.total_answers ?? 0) > 0;
+  const isPartial = !isRunning && pendingCount !== null && pendingCount > 0 && hasSomeScores;
   const totalTracked =
     runTotalCount ??
     (accuracy ? accuracy.total_answers : pendingCount ?? 0);
@@ -205,7 +216,7 @@ export default function RubricJudgeCard({
                 <Tooltip
                   title={`Measures how well this judge's choices match your rubric annotations (${alignment.sample_count} annotations). ≥50% is considered reliable.`}
                 >
-                  <InfoOutlinedIcon sx={{ fontSize: 16, cursor: "help" }} />
+                  <IconInfoCircle {...compactActionIconProps} style={{ cursor: "help" }} />
                 </Tooltip>
               </Stack>
             ) : (
@@ -221,16 +232,18 @@ export default function RubricJudgeCard({
           fullWidth
           sx={{ mt: 2 }}
           onClick={handleRun}
-          disabled={isRunning || hasAllScores || hasQuestionsWithoutAnswers || loadingMetrics}
+          disabled={isRunning || hasAllScores || loadingMetrics}
         >
           {isRunning ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
               <CircularProgress size={16} /> Running ({completedCount}/{totalTracked})
             </Box>
-          ) : hasQuestionsWithoutAnswers ? (
-            "Run in Annotations"
           ) : hasAllScores ? (
             "Completed"
+          ) : isPartial ? (
+            `Retry Missing (${pendingCount})`
+          ) : hasQuestionsWithoutAnswers ? (
+            "Run in Annotations"
           ) : (
             `Run (${pendingCount ?? 0} pending)`
           )}

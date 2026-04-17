@@ -8,16 +8,16 @@ import React, {
   useState,
 } from "react";
 import {
+  IconPlayerPause,
+  IconPlayerPlay,
+} from "@tabler/icons-react";
+import {
   Box,
   Button,
   Chip,
   CircularProgress,
   Stack,
 } from "@mui/material";
-import {
-  PlayArrow as PlayArrowIcon,
-  Pause as PauseIcon,
-} from "@mui/icons-material";
 import {
   Answer,
   QAJob,
@@ -29,6 +29,13 @@ import {
   RubricSpec,
 } from "@/lib/types";
 import { answerApi, getApiErrorMessage, judgeApi, qaJobApi, questionApi } from "@/lib/api";
+import { actionIconProps } from "@/lib/iconStyles";
+import {
+  buildMissingRubricCoverage,
+  emptyMissingRubricCoverage,
+  hasMissingRubricCoverage,
+  type MissingRubricCoverage,
+} from "@/lib/evaluationCoverage";
 
 interface QAJobControlProps {
   targetId: number;
@@ -40,6 +47,7 @@ interface QAJobControlProps {
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
   rubrics?: TargetRubricResponse[];
+  onRubricCoverageChange?: (coverage: MissingRubricCoverage) => void;
   onError?: (message: string) => void;
 }
 
@@ -68,6 +76,7 @@ export default function QAJobControl({
   qaMap,
   setQaMap,
   rubrics,
+  onRubricCoverageChange,
   onError,
 }: QAJobControlProps) {
   const [jobInAction, setJobInAction] = useState(false);
@@ -78,10 +87,15 @@ export default function QAJobControl({
   const onErrorRef = useRef(onError);
   const defaultSelectionAttemptedRef = useRef<Set<number>>(new Set());
   const defaultSelectionInFlightRef = useRef<Set<number>>(new Set());
+  const [missingRubricCoverage, setMissingRubricCoverage] = useState<MissingRubricCoverage>(emptyMissingRubricCoverage);
 
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
+
+  useEffect(() => {
+    onRubricCoverageChange?.(missingRubricCoverage);
+  }, [missingRubricCoverage, onRubricCoverageChange]);
 
   const notifyError = useCallback((message: string) => {
     onErrorRef.current?.(message);
@@ -492,7 +506,55 @@ export default function QAJobControl({
     return specs;
   }, [rubrics, targetId]);
 
+  const fetchMissingRubricCoverage = useCallback(async () => {
+    if (!snapshotId || !rubrics || rubrics.length === 0) {
+      setMissingRubricCoverage(emptyMissingRubricCoverage);
+      return;
+    }
+
+    const rubricSpecs = await resolveRubricSpecs();
+    if (rubricSpecs.length === 0) {
+      setMissingRubricCoverage(emptyMissingRubricCoverage);
+      return;
+    }
+
+    const answeredQuestionIds = new Set(
+      Object.values(qaMapRef.current)
+        .filter((entry) => entry.answer)
+        .map((entry) => entry.questionId)
+    );
+
+    const entries = await Promise.all(
+      rubricSpecs.map(async (spec) => {
+        try {
+          const response = await questionApi.listApprovedWithoutRubricScores(
+            snapshotId,
+            spec.judge_id,
+            spec.rubric_id,
+          );
+          return {
+            rubricId: spec.rubric_id,
+            questionIds: response.data
+              .map((question) => question.id)
+              .filter((questionId) => answeredQuestionIds.has(questionId)),
+          };
+        } catch {
+          return { rubricId: spec.rubric_id, questionIds: [] };
+        }
+      })
+    );
+
+    setMissingRubricCoverage(buildMissingRubricCoverage(entries, rubrics));
+  }, [snapshotId, rubrics, resolveRubricSpecs]);
+
+  useEffect(() => {
+    fetchMissingRubricCoverage().catch(() => {
+      setMissingRubricCoverage(emptyMissingRubricCoverage);
+    });
+  }, [fetchMissingRubricCoverage, qaJobs, snapshotId, qaMap]);
+
   const totalJobs = qaJobs.length;
+  const hasPendingRubricMetrics = hasMissingRubricCoverage(missingRubricCoverage);
 
   // UI chip to display progress
   const getStatusChip = () => {
@@ -519,6 +581,16 @@ export default function QAJobControl({
         <Chip
           icon={<CircularProgress size={14} />}
           label={`Evaluating \u2022 ${questionsFullyComplete}/${totalQuestions}`}
+          color="warning"
+          size="small"
+        />
+      );
+    }
+
+    if (hasPendingRubricMetrics) {
+      return (
+        <Chip
+          label={`Metrics pending • ${missingRubricCoverage.pendingQuestionCount} question${missingRubricCoverage.pendingQuestionCount === 1 ? "" : "s"}`}
           color="warning"
           size="small"
         />
@@ -569,13 +641,6 @@ export default function QAJobControl({
       return "disabled";
     }
 
-    if (
-      totalJobs === 0 ||
-      (questionsFullyComplete === totalQuestions && totalQuestions > 0)
-    ) {
-      return "start";
-    }
-
     if (runningCount > 0) {
       return "pause";
     }
@@ -584,16 +649,31 @@ export default function QAJobControl({
       return "resume";
     }
 
+    if (hasPendingRubricMetrics) {
+      return "start";
+    }
+
+    if (
+      totalJobs === 0 ||
+      (questionsFullyComplete === totalQuestions && totalQuestions > 0)
+    ) {
+      return "start";
+    }
+
     return "start";
   })();
 
   const isScoringComplete = totalQuestions > 0
     && questionsFullyComplete === totalQuestions
-    && questionsWithoutAnswers.length === 0;
+    && questionsWithoutAnswers.length === 0
+    && !hasPendingRubricMetrics;
 
   const controlButtonText = (() => {
     switch (controlState) {
       case "start":
+        if (hasPendingRubricMetrics) {
+          return "Retry Missing Metrics";
+        }
         if (failedCount > 0) {
           return "Retry Failed Evaluations";
         }
@@ -620,6 +700,31 @@ export default function QAJobControl({
     setJobInAction(true);
     try {
       const rubricSpecs = await resolveRubricSpecs();
+
+      if (hasPendingRubricMetrics) {
+        const retries = await Promise.all(
+          Object.entries(missingRubricCoverage.missingQuestionIdsByRubric).map(async ([rubricId, questionIds]) => {
+            const spec = rubricSpecs.find((entry) => entry.rubric_id === Number(rubricId));
+            if (!spec || questionIds.length === 0) {
+              return [];
+            }
+            const response = await qaJobApi.startAll(snapshotId, {
+              judge_id: baselineJudgeId,
+              question_ids: questionIds,
+              rubric_specs: [spec],
+            });
+            return response.data;
+          })
+        );
+
+        const mergedJobs = retries.flat();
+        if (mergedJobs.length > 0) {
+          setQaJobs((prev) => mergeJobs(prev, mergedJobs));
+          startPolling();
+          checkData();
+        }
+        return;
+      }
 
       // Determine which questions to evaluate
       const failedJobs = qaJobs.filter((job) => job.status === JobStatus.FAILED);
@@ -729,9 +834,9 @@ export default function QAJobControl({
             jobInAction ? (
               <CircularProgress size={16} />
             ) : controlState === "pause" ? (
-              <PauseIcon />
+              <IconPlayerPause {...actionIconProps} />
             ) : (
-              <PlayArrowIcon />
+              <IconPlayerPlay {...actionIconProps} />
             )
           }
         >

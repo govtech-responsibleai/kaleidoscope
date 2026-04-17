@@ -7,7 +7,8 @@ import {
   Button,
   CircularProgress,
 } from "@mui/material";
-import { PersonAdd as PersonAddIcon } from "@mui/icons-material";
+import { IconUserPlus } from "@tabler/icons-react";
+import { actionIconProps } from "@/lib/iconStyles";
 
 interface PersonaManualAddProps {
   onSubmit: (data: { title: string; info?: string; style?: string; use_case?: string }) => Promise<unknown>;
@@ -54,7 +55,7 @@ export default function PersonaManualAdd({
           size="small"
           onClick={handleSubmit}
           disabled={loading || !title.trim()}
-          startIcon={loading ? <CircularProgress size={16} /> : <PersonAddIcon />}
+          startIcon={loading ? <CircularProgress size={16} /> : <IconUserPlus {...actionIconProps} />}
         >
           {loading ? "Adding..." : "Add Persona"}
         </Button>

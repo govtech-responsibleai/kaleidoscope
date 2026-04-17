@@ -3,12 +3,14 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Alert, Box, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
+import { IconBraces } from "@tabler/icons-react";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
 import { Snapshot, QAJob, QAMap, TargetRubricResponse, QuestionResponse, Status } from "@/lib/types";
-import { Download as DownloadIcon } from "@mui/icons-material";
 import { snapshotApi, judgeApi, metricsApi, targetRubricApi, questionApi } from "@/lib/api";
+import { actionIconProps } from "@/lib/iconStyles";
+import { emptyMissingRubricCoverage, type MissingRubricCoverage } from "@/lib/evaluationCoverage";
 
 export default function AnnotationPage() {
   return (
@@ -42,6 +44,7 @@ function AnnotationPageContent() {
   const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
   const [qaJobs, setQaJobs] = useState<QAJob[]>([]);
   const [qaMap, setQaMap] = useState<QAMap>({});
+  const [missingRubricCoverage, setMissingRubricCoverage] = useState<MissingRubricCoverage>(emptyMissingRubricCoverage);
   const [error, setError] = useState<string | null>(null);
   const [approvedQuestions, setApprovedQuestions] = useState<QuestionResponse[]>([]);
   const [approvedQuestionsLoading, setApprovedQuestionsLoading] = useState(true);
@@ -145,6 +148,7 @@ function AnnotationPageContent() {
     updateSnapshotSelection(snapshotId);
     setQaJobs([]);
     setQaMap({});
+    setMissingRubricCoverage(emptyMissingRubricCoverage);
   }, [updateSnapshotSelection]);
 
   const handleSnapshotCreated = useCallback((snapshot: Snapshot) => {
@@ -217,7 +221,7 @@ function AnnotationPageContent() {
                 "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
               }}
             >
-              <DownloadIcon />
+              <IconBraces {...actionIconProps} />
             </IconButton>
           </span>
         </Tooltip>
@@ -233,6 +237,7 @@ function AnnotationPageContent() {
         qaMap={qaMap}
         setQaMap={setQaMap}
         rubrics={rubrics}
+        onRubricCoverageChange={setMissingRubricCoverage}
         onError={(message) => setError(message)}
       />
 
@@ -256,6 +261,7 @@ function AnnotationPageContent() {
         qaMap={qaMap}
         setQaMap={setQaMap}
         rubrics={rubrics}
+        missingRubricCoverage={missingRubricCoverage}
         initialQuestionId={questionIdFromUrl ? Number(questionIdFromUrl) : null}
       />
     </Box>

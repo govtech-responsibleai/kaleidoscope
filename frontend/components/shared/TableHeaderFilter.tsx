@@ -11,7 +11,9 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { FilterList as FilterListIcon } from "@mui/icons-material";
+import { IconFilter } from "@tabler/icons-react";
+import { actionIconProps } from "@/lib/iconStyles";
+import { compactActionButtonSx } from "@/lib/uiStyles";
 
 export interface FilterOption<T> {
   value: T;
@@ -64,11 +66,11 @@ export default function TableHeaderFilter<T extends string | number>({
           size="small"
           onClick={(e) => setAnchorEl(e.currentTarget)}
           sx={{
-            p: 0.25,
+            ...compactActionButtonSx,
             color: isActive ? "primary.main" : "action.active",
           }}
         >
-          <FilterListIcon fontSize="small" />
+          <IconFilter {...actionIconProps} />
         </IconButton>
       </Stack>
 

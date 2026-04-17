@@ -2,6 +2,11 @@
 
 import React, { useEffect, useState } from "react";
 import {
+  IconFile,
+  IconTrash,
+  IconUpload,
+} from "@tabler/icons-react";
+import {
   Box,
   Typography,
   Paper,
@@ -13,15 +18,10 @@ import {
   Button,
   CircularProgress,
 } from "@mui/material";
-import {
-  Delete as DeleteIcon,
-  CloudUpload as UploadIcon,
-  InsertDriveFile as FileIcon,
-  Visibility as ViewIcon,
-} from "@mui/icons-material";
 import { kbDocumentApi } from "@/lib/api";
 import { KBDocumentResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+import { actionIconProps, sectionIconProps } from "@/lib/iconStyles";
 
 interface DocumentListProps {
   targetId: number;
@@ -90,7 +90,7 @@ export default function DocumentList({
 
   const getFileIcon = (filename: string) => {
     const ext = filename.split(".").pop()?.toLowerCase();
-    return <FileIcon sx={{ color: ext === "pdf" ? "error.main" : "text.secondary" }} />;
+    return <IconFile {...sectionIconProps} color={ext === "pdf" ? "#d32f2f" : "currentColor"} />;
   };
 
   if (loading) {
@@ -121,7 +121,7 @@ export default function DocumentList({
           <Button
             component="label"
             variant="outlined"
-            startIcon={<UploadIcon />}
+            startIcon={<IconUpload {...actionIconProps} />}
             disabled={uploading}
             sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
           >
@@ -140,7 +140,9 @@ export default function DocumentList({
       <Box sx={{ flexGrow: 1, overflow: "auto", minHeight: 0 }}>
         {documents.length === 0 ? (
           <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
-            <FileIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
+            <Box sx={{ color: "text.secondary", mb: 2 }}>
+              <IconFile size={48} stroke={1.75} />
+            </Box>
             <Typography variant="body1" color="text.secondary"  sx={{ mb: 1 }}>
               No documents uploaded yet
             </Typography>
@@ -179,7 +181,7 @@ export default function DocumentList({
                       onClick={() => handleDeleteClick(doc.id)}
                       size="small"
                     >
-                      <DeleteIcon />
+                      <IconTrash {...actionIconProps} />
                     </IconButton>
                   </ListItemSecondaryAction>
                 </ListItem>

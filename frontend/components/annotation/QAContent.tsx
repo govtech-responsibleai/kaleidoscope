@@ -2,10 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import {
-  Alert,
   Box,
   Chip,
-  CircularProgress,
   Paper,
   Skeleton,
   Stack,
@@ -26,6 +24,7 @@ interface QAContentProps {
   rubrics: TargetRubricResponse[];
   activeTab: number;
   onActiveTabChange: (tab: number) => void;
+  pendingRubricIds?: number[];
 }
 
 export default function QAContent({
@@ -37,7 +36,9 @@ export default function QAContent({
   rubrics,
   activeTab,
   onActiveTabChange,
+  pendingRubricIds = [],
 }: QAContentProps) {
+  void onActiveTabChange;
   const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
   const [rubricScoresLoading, setRubricScoresLoading] = useState(false);
   const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
@@ -52,8 +53,7 @@ export default function QAContent({
       return;
     }
 
-    // Fetch response-level judges for rubric scoring
-    judgeApi.list(targetId)
+    judgeApi.getByCategory(activeRubric.category, targetId)
       .then((res) => setRubricJudges(res.data.filter((j) => j.judge_type === "response_level")))
       .catch(() => setRubricJudges([]));
 
@@ -67,7 +67,7 @@ export default function QAContent({
         if (cancelled) return;
         setRubricScores(res.data);
         setRubricScoresLoading(false);
-        if (res.data.length === 0) {
+        if (pendingRubricIds.includes(activeRubric.id)) {
           pollTimer = window.setTimeout(fetchScores, 5000);
         }
       } catch {
@@ -85,7 +85,7 @@ export default function QAContent({
       cancelled = true;
       if (pollTimer !== null) window.clearTimeout(pollTimer);
     };
-  }, [activeTab, rubrics, qaEntry?.answer?.id, targetId]);
+  }, [activeTab, rubrics, qaEntry?.answer?.id, targetId, pendingRubricIds]);
 
   const answer = qaEntry?.answer;
   const claims = qaEntry?.claims ?? [];
@@ -108,6 +108,7 @@ export default function QAContent({
   }, [claims, claimScores]);
 
   const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
+  const isActiveRubricPending = Boolean(activeRubric && pendingRubricIds.includes(activeRubric.id));
 
   // For custom rubric tabs, show the first (recommended) judge
   const recommendedJudge = React.useMemo(
@@ -212,7 +213,9 @@ export default function QAContent({
                 </>
               );
             })() : (
-              <Typography variant="body2" color="text.disabled">Verdict pending</Typography>
+              <Typography variant="body2" color={isActiveRubricPending ? "warning.main" : "text.disabled"}>
+                {isActiveRubricPending ? "Pending rubric evaluation" : "No judge verdict available"}
+              </Typography>
             )}
           </Stack>
         ) : null}
@@ -266,12 +269,20 @@ export default function QAContent({
                 }}
               >
                 {activeTab === 0 && claims.length > 0 ? (
-                  <ClaimHighlighter
-                    answerContent={answer.answer_content}
-                    claims={claims}
-                    claimScores={claimScores}
-                  />
-                ) : (
+                <ClaimHighlighter
+                  answerContent={answer.answer_content}
+                  claims={claims}
+                  claimScores={claimScores}
+                  isProcessingClaimScores={job?.status === "running"}
+                  missingScoreMessage="Claim score missing unexpectedly after evaluation completed."
+                  instrumentationContext={{
+                    surface: "annotation",
+                    answerId: answer.id,
+                    questionId: question.id,
+                    snapshotJobId: job?.id ?? null,
+                  }}
+                />
+              ) : (
                   <Typography variant="body1" sx={{ p: 2, whiteSpace: "pre-wrap" }}>
                     {answer.answer_content}
                   </Typography>

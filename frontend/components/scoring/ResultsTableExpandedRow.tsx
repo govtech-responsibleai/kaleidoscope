@@ -15,6 +15,7 @@ import {
   JudgeConfig,
   AnswerClaim,
   AnswerClaimScore,
+  AnswerScore,
   QuestionResponse,
   PersonaResponse,
   TargetRubricResponse,
@@ -22,11 +23,12 @@ import {
 } from "@/lib/types";
 import { answerApi, questionApi, personaApi, rubricScoreApi, judgeApi } from "@/lib/api";
 import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
+import { compactChipSx } from "@/lib/uiStyles";
 
 interface ResultsTableExpandedRowProps {
   result: ResultRow;
   targetId: number;
-  reliableJudges: JudgeConfig[];
+  tableJudges: JudgeConfig[];
   selectedJudgeIds: number[];
   rubrics: TargetRubricResponse[];
   activeRubricId: number | null;
@@ -41,7 +43,7 @@ interface ClaimsData {
 export default function ResultsTableExpandedRow({
   result,
   targetId,
-  reliableJudges,
+  tableJudges,
   selectedJudgeIds,
   rubrics,
   activeRubricId,
@@ -52,6 +54,7 @@ export default function ResultsTableExpandedRow({
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState<QuestionResponse | null>(null);
   const [persona, setPersona] = useState<PersonaResponse | null>(null);
+  const [answerScores, setAnswerScores] = useState<Map<number, AnswerScore>>(new Map());
 
   // Local rubric tab (starts synced to the table-level activeRubricId, but can be changed independently)
   const [localActiveRubricId, setLocalActiveRubricId] = useState<number | null>(activeRubricId);
@@ -62,8 +65,8 @@ export default function ResultsTableExpandedRow({
   }, [activeRubricId]);
 
   const claimBasedJudges = useMemo(
-    () => reliableJudges.filter((j) => j.judge_type === "claim_based"),
-    [reliableJudges]
+    () => tableJudges.filter((j) => j.judge_type === "claim_based"),
+    [tableJudges]
   );
 
   const selectedClaimBasedJudgeIds = useMemo(
@@ -98,7 +101,11 @@ export default function ResultsTableExpandedRow({
           const response = await answerApi.getClaims(result.answer_id, judge.id);
           const data = response.data;
           if (claims.length === 0 && data.claims.length > 0) {
-            claims = data.claims.map(({ score, ...claim }) => claim as AnswerClaim);
+            claims = data.claims.map((item) => {
+              const claim = { ...item } as AnswerClaim & { score?: unknown };
+              delete claim.score;
+              return claim as AnswerClaim;
+            });
           }
           const scores: AnswerClaimScore[] = data.claims
             .filter((item) => item.score)
@@ -118,6 +125,34 @@ export default function ResultsTableExpandedRow({
     fetchClaims();
   }, [result.answer_id, claimBasedJudges]);
 
+  useEffect(() => {
+    const fetchAnswerScores = async () => {
+      if (selectedClaimBasedJudgeIds.length === 0) {
+        setAnswerScores(new Map());
+        return;
+      }
+
+      try {
+        const entries = await Promise.all(
+          selectedClaimBasedJudgeIds.map(async (judgeId) => {
+            try {
+              const response = await answerApi.getScores(result.answer_id, judgeId);
+              return [judgeId, response.data] as const;
+            } catch {
+              return null;
+            }
+          })
+        );
+
+        setAnswerScores(new Map(entries.filter((entry): entry is readonly [number, AnswerScore] => entry !== null)));
+      } catch {
+        setAnswerScores(new Map());
+      }
+    };
+
+    fetchAnswerScores();
+  }, [result.answer_id, selectedClaimBasedJudgeIds]);
+
   // Rubric scores and judges for custom rubric tabs
   const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
   const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
@@ -130,7 +165,7 @@ export default function ResultsTableExpandedRow({
       return;
     }
 
-    judgeApi.list(targetId)
+    judgeApi.getByCategory(activeRubric.category, targetId)
       .then((res) => setRubricJudges(res.data.filter((j) => j.judge_type === "response_level")))
       .catch(() => setRubricJudges([]));
 
@@ -140,6 +175,10 @@ export default function ResultsTableExpandedRow({
   }, [localActiveRubricId, rubrics, result.answer_id, targetId]);
 
   const activeRubric = localActiveRubricId !== null ? rubrics.find((r) => r.id === localActiveRubricId) : null;
+  const selectedJudges = useMemo(
+    () => tableJudges.filter((judge) => selectedJudgeIds.includes(judge.id)),
+    [tableJudges, selectedJudgeIds]
+  );
 
   // Determine the best_option and recommended judge verdict for answer highlighting
   const bestOption = activeRubric?.best_option || activeRubric?.options?.[0]?.option || "";
@@ -156,6 +195,81 @@ export default function ResultsTableExpandedRow({
   return (
     <Box sx={{ py: 2, px: 4, bgcolor: "grey.50", borderTop: 1, borderColor: "divider" }}>
       <Stack spacing={2}>
+        <Box sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1.5, bgcolor: "white" }}>
+          <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            Judge Verdicts
+          </Typography>
+          {selectedJudges.length === 0 ? (
+            <Typography variant="body2" color="text.secondary">
+              No judges selected.
+            </Typography>
+          ) : (
+            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+              {selectedJudges.map((judge) => {
+                if (localActiveRubricId === null) {
+                  const score = answerScores.get(judge.id);
+                  const verdictLabel = score
+                    ? score.overall_label ? "Accurate" : "Inaccurate"
+                    : "Missing";
+                  const verdictColor = score
+                    ? score.overall_label ? "success" : "error"
+                    : "default";
+
+                  return (
+                    <Box
+                      key={judge.id}
+                      sx={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 1,
+                        px: 1.25,
+                        py: 0.75,
+                        border: 1,
+                        borderColor: "divider",
+                        borderRadius: 999,
+                        bgcolor: "grey.50",
+                      }}
+                    >
+                      <Typography variant="subtitle2" sx={{ whiteSpace: "normal", lineHeight: 1.35 }}>
+                        {judge.name}
+                      </Typography>
+                      <Chip label={verdictLabel} size="small" color={verdictColor} sx={compactChipSx} />
+                    </Box>
+                  );
+                }
+
+                const score = rubricScores.find((entry) => entry.judge_id === judge.id);
+                return (
+                  <Box
+                    key={judge.id}
+                    sx={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 1,
+                      px: 1.25,
+                      py: 0.75,
+                      border: 1,
+                      borderColor: "divider",
+                      borderRadius: 999,
+                      bgcolor: "grey.50",
+                    }}
+                  >
+                    <Typography variant="subtitle2" sx={{ whiteSpace: "normal", lineHeight: 1.35 }}>
+                      {judge.name}
+                    </Typography>
+                    <Chip
+                      label={score?.option_chosen ?? "Missing"}
+                      size="small"
+                      color={score ? "primary" : "default"}
+                      sx={compactChipSx}
+                    />
+                  </Box>
+                );
+              })}
+            </Stack>
+          )}
+        </Box>
+
         {/* Question & Answer Chat Bubbles */}
         <Stack spacing={2}>
           <Box display="flex" justifyContent="flex-end">
@@ -205,6 +319,13 @@ export default function ResultsTableExpandedRow({
                   multiJudgeScores={claimsData.judgeScores}
                   judges={claimBasedJudges}
                   selectedJudgeIds={selectedClaimBasedJudgeIds}
+                  missingScoreMessage="Claim score missing unexpectedly after evaluation completed."
+                  instrumentationContext={{
+                    surface: "scoring-expanded-row",
+                    answerId: result.answer_id,
+                    questionId: result.question_id,
+                    selectedJudgeIds: selectedClaimBasedJudgeIds,
+                  }}
                 />
               )}
               {/* Accuracy tab: no claims fallback */}

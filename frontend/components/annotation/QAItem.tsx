@@ -23,6 +23,7 @@ interface QAItemProps {
   question: QuestionResponse;
   answer: Answer | null;
   job: QAJob | null;
+  pendingMetricNames?: string[];
   isActive: boolean;
   isChecked: boolean;
   onToggleSelection: () => void;
@@ -32,8 +33,12 @@ interface QAItemProps {
 const getStageLabel = (
   job: QAJob | null,
   answer: Answer | null,
+  pendingMetricNames: string[],
 ): string => {
   if (!job) {
+    if (pendingMetricNames.length > 0) {
+      return `Partial • ${pendingMetricNames.length} metric${pendingMetricNames.length === 1 ? "" : "s"} pending`;
+    }
     if (answer?.has_annotation) {
       return "Annotated";
     }
@@ -41,6 +46,10 @@ const getStageLabel = (
       return "Answer Only";
     }
     return "Not Started";
+  }
+
+  if (job.status === JobStatus.COMPLETED && pendingMetricNames.length > 0) {
+    return `Partial • ${pendingMetricNames.length} metric${pendingMetricNames.length === 1 ? "" : "s"} pending`;
   }
 
   if (job.status === JobStatus.RUNNING) {
@@ -76,8 +85,12 @@ const getStageLabel = (
 const getStageColor = (
   job: QAJob | null,
   answer: Answer | null,
+  pendingMetricNames: string[],
 ): "default" | "warning" | "success" | "error" | "info" => {
   if (!job) {
+    if (pendingMetricNames.length > 0) {
+      return "warning";
+    }
     if (answer?.has_annotation) {
       return "success";
     }
@@ -91,7 +104,7 @@ const getStageColor = (
     case JobStatus.RUNNING:
       return "warning";
     case JobStatus.COMPLETED:
-      return "success";
+      return pendingMetricNames.length > 0 ? "warning" : "success";
     case JobStatus.FAILED:
       return "error";
     case JobStatus.PAUSED:
@@ -104,15 +117,11 @@ const getStageColor = (
 const isActiveStage = (job: QAJob | null): boolean =>
   job?.status === JobStatus.RUNNING;
 
-const truncate = (text: string, length = 100) => {
-  if (text.length <= length) return text;
-  return `${text.slice(0, length)}…`;
-};
-
 export default function QAItem({
   question,
   answer,
   job,
+  pendingMetricNames = [],
   isActive,
   isChecked,
   onToggleSelection,
@@ -159,14 +168,16 @@ export default function QAItem({
               </Typography>
               {job?.error_message ? (
                 <Tooltip title={job.error_message}>
-                  <Typography variant="caption" color={`${getStageColor(job, answer)}.main`} sx={{ mt: 0.25 }}>
-                    {getStageLabel(job, answer)}{isActiveStage(job) && <LoadingDots />}
+                  <Typography variant="caption" color={`${getStageColor(job, answer, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
+                    {getStageLabel(job, answer, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
                   </Typography>
                 </Tooltip>
               ) : (
-                <Typography variant="caption" color={`${getStageColor(job, answer)}.main`} sx={{ mt: 0.25 }}>
-                  {getStageLabel(job, answer)}{isActiveStage(job) && <LoadingDots />}
-                </Typography>
+                <Tooltip title={pendingMetricNames.length > 0 ? `Pending: ${pendingMetricNames.join(", ")}` : ""} disableHoverListener={pendingMetricNames.length === 0}>
+                  <Typography variant="caption" color={`${getStageColor(job, answer, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
+                    {getStageLabel(job, answer, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
+                  </Typography>
+                </Tooltip>
               )}
             </Box>
 

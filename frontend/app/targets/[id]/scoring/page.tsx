@@ -8,6 +8,7 @@ import {
   AccordionSummary,
   Alert,
   Box,
+  Button,
   CircularProgress,
   IconButton,
   Paper,
@@ -18,12 +19,12 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  Add as AddIcon,
-  ArrowBackIosNew as ArrowBackIosNewIcon,
-  ArrowForwardIos as ArrowForwardIosIcon,
-  Download as DownloadIcon,
-  ExpandMore as ExpandMoreIcon,
-} from "@mui/icons-material";
+  IconChevronDown,
+  IconChevronLeft,
+  IconChevronRight,
+  IconCode,
+  IconPlus,
+} from "@tabler/icons-react";
 import AccuracyGauge from "@/components/shared/AccuracyGauge";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
@@ -40,6 +41,7 @@ import {
   QAJob,
   SnapshotMetric,
   TargetRubricResponse,
+  Status,
 } from "@/lib/types";
 import {
   snapshotApi,
@@ -51,6 +53,7 @@ import {
   targetRubricApi,
   getApiErrorMessage,
 } from "@/lib/api";
+import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
 
 export default function ScoringPage() {
   const params = useParams();
@@ -90,6 +93,8 @@ export default function ScoringPage() {
 
   const [rubricMetrics, setRubricMetrics] = useState<SnapshotMetric[]>([]);
   const [rubricMetricsLoading, setRubricMetricsLoading] = useState(false);
+  const [approvedQuestionIds, setApprovedQuestionIds] = useState<number[]>([]);
+  const [rubricPendingCounts, setRubricPendingCounts] = useState<Record<string, number>>({});
 
   // Incremented on label override to signal JudgeCards to refetch metrics
   const [labelOverrideCount, setLabelOverrideCount] = useState(0);
@@ -99,6 +104,11 @@ export default function ScoringPage() {
 
   const judgeCardsRef = useRef<HTMLDivElement | null>(null);
   const baselineJudge = judges.find((j) => j.is_baseline) ?? null;
+  const getRubricJudgesForRubric = useCallback((rubric: TargetRubricResponse) => {
+    return judges.filter(
+      (judge) => judge.category === rubric.category && judge.judge_type === "response_level"
+    );
+  }, [judges]);
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
     setSelectedSnapshotId(snapshotId);
@@ -207,6 +217,15 @@ export default function ScoringPage() {
     }
   }, [baselineJudge]);
 
+  const fetchApprovedQuestionIds = useCallback(async () => {
+    try {
+      const response = await questionApi.listAllByTarget(targetId, { status_filter: Status.APPROVED });
+      setApprovedQuestionIds(response.map((question) => question.id));
+    } catch {
+      setApprovedQuestionIds([]);
+    }
+  }, [targetId]);
+
   const fetchQuestionsWithoutScores = useCallback(async (snapshotId: number) => {
     try {
       const counts: Record<number, number> = {};
@@ -220,13 +239,59 @@ export default function ScoringPage() {
     }
   }, [judges]);
 
+  const fetchRubricPendingCounts = useCallback(async (snapshotId: number) => {
+    if (approvedQuestionIds.length === 0) {
+      setRubricPendingCounts({});
+      return;
+    }
+
+    try {
+      const unansweredResponse = baselineJudge
+        ? await questionApi.listApprovedWithoutAnswers(snapshotId, baselineJudge.id)
+        : { data: [] as { id: number }[] };
+      const unansweredIds = new Set(unansweredResponse.data.map((question) => question.id));
+
+      const answeredApprovedIds = new Set(
+        approvedQuestionIds.filter((questionId) => !unansweredIds.has(questionId))
+      );
+
+      if (answeredApprovedIds.size === 0) {
+        setRubricPendingCounts({});
+        return;
+      }
+
+      const rubricJudgePairs = rubrics.flatMap((rubric) => {
+        const relevantJudges = getRubricJudgesForRubric(rubric);
+
+        return relevantJudges.map((judge) => ({ rubricId: rubric.id, judgeId: judge.id }));
+      });
+
+      const entries = await Promise.all(
+        rubricJudgePairs.map(async ({ rubricId, judgeId }) => {
+          try {
+            const response = await questionApi.listApprovedWithoutRubricScores(snapshotId, judgeId, rubricId);
+            const missingCount = response.data.filter((question) => answeredApprovedIds.has(question.id)).length;
+            return [`${judgeId}:${rubricId}`, missingCount] as const;
+          } catch {
+            return [`${judgeId}:${rubricId}`, 0] as const;
+          }
+        })
+      );
+
+      setRubricPendingCounts(Object.fromEntries(entries));
+    } catch {
+      setRubricPendingCounts({});
+    }
+  }, [approvedQuestionIds, baselineJudge, rubrics, getRubricJudgesForRubric]);
+
   useEffect(() => {
     fetchSnapshots();
     fetchJudges();
+    fetchApprovedQuestionIds();
     targetRubricApi.list(targetId).then((res) => {
       setRubrics(res.data);
     }).catch(() => {});
-  }, [targetId]);
+  }, [targetId, fetchApprovedQuestionIds]);
 
   useEffect(() => {
     setAnnotationStatus(null);
@@ -235,12 +300,14 @@ export default function ScoringPage() {
     setQuestionsWithoutScores({});
     setSnapshotMetric(null);
     setRubricMetrics([]);
+    setRubricPendingCounts({});
     if (selectedSnapshotId) {
       checkAnnotationCompletion(selectedSnapshotId);
       fetchQuestionsWithoutAnswers(selectedSnapshotId);
       fetchQuestionsWithoutScores(selectedSnapshotId);
+      fetchRubricPendingCounts(selectedSnapshotId);
     }
-  }, [selectedSnapshotId, checkAnnotationCompletion, fetchQuestionsWithoutAnswers, fetchQuestionsWithoutScores]);
+  }, [selectedSnapshotId, checkAnnotationCompletion, fetchQuestionsWithoutAnswers, fetchQuestionsWithoutScores, fetchRubricPendingCounts]);
 
   useEffect(() => {
     if (selectedSnapshotId && annotationStatus?.is_complete) {
@@ -249,6 +316,12 @@ export default function ScoringPage() {
       fetchRubricMetrics();
     }
   }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics, fetchRubricMetrics]);
+
+  useEffect(() => {
+    if (selectedSnapshotId && approvedQuestionIds.length > 0 && rubrics.length > 0 && judges.length > 0) {
+      fetchRubricPendingCounts(selectedSnapshotId);
+    }
+  }, [selectedSnapshotId, approvedQuestionIds, rubrics, judges, fetchRubricPendingCounts]);
 
   const handleSnapshotSelect = (snapshotId: number | null) => updateSnapshotSelection(snapshotId);
 
@@ -293,8 +366,14 @@ export default function ScoringPage() {
 
   const handleJobComplete = useCallback(async () => {
     if (!selectedSnapshotId) return;
-    await Promise.all([fetchResults(selectedSnapshotId), fetchQuestionsWithoutScores(selectedSnapshotId), fetchSnapshotMetrics(), fetchRubricMetrics()]);
-  }, [selectedSnapshotId, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics, fetchRubricMetrics]);
+    await Promise.all([
+      fetchResults(selectedSnapshotId),
+      fetchQuestionsWithoutScores(selectedSnapshotId),
+      fetchSnapshotMetrics(),
+      fetchRubricMetrics(),
+      fetchRubricPendingCounts(selectedSnapshotId),
+    ]);
+  }, [selectedSnapshotId, fetchResults, fetchQuestionsWithoutScores, fetchSnapshotMetrics, fetchRubricMetrics, fetchRubricPendingCounts]);
 
   const handleOpenDialog = (mode: "create" | "edit" | "duplicate", judge?: JudgeConfig, category?: string) => {
     setDialogMode(mode);
@@ -347,7 +426,7 @@ export default function ScoringPage() {
         </Box>
         <Tooltip title="Download data for this snapshot">
           <span>
-            <IconButton
+            <Button
               onClick={handleExportSnapshot}
               disabled={!selectedSnapshotId}
               sx={{
@@ -355,9 +434,10 @@ export default function ScoringPage() {
                 "&:hover": { bgcolor: "secondary.dark" },
                 "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
               }}
+              startIcon={<IconCode {...actionIconProps} />}
             >
-              <DownloadIcon />
-            </IconButton>
+              Export JSON
+            </Button>
           </span>
         </Tooltip>
       </Box>
@@ -476,7 +556,7 @@ export default function ScoringPage() {
                       {premadeRubrics.length > 0 && (
                         <Box sx={{ mt: 2 }}>
                           {premadeRubrics.map((rubric, idx) => {
-                            const rubricJudges = judges.filter((j) => j.category === rubric.template_key);
+                            const rubricJudges = getRubricJudgesForRubric(rubric);
                             return (
                               <Box key={rubric.id} sx={{ mb: idx < premadeRubrics.length - 1 ? 3 : 0 }}>
                                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
@@ -490,6 +570,7 @@ export default function ScoringPage() {
                                       displayName={judge.name}
                                       snapshotId={selectedSnapshotId}
                                       rubricId={rubric.id}
+                                      pendingCount={rubricPendingCounts[`${judge.id}:${rubric.id}`] ?? null}
                                       bestOption={rubric.best_option || rubric.options?.[0]?.option || ""}
                                       hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
                                       onJobStart={(judgeId) => handleRubricJobStart(judgeId, rubric.id)}
@@ -511,12 +592,12 @@ export default function ScoringPage() {
                     {/* Custom rubric judges */}
                     {customRubrics.length > 0 && (
                       <Accordion variant="outlined" disableGutters>
-                        <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                        <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />}>
                           <Typography fontWeight={600}>Custom Rubric Judges</Typography>
                         </AccordionSummary>
                         <AccordionDetails sx={{ pt: 1 }}>
                           {customRubrics.map((rubric, idx) => {
-                            const rubricJudges = judges.filter((j) => j.category === "default" && j.judge_type === "response_level");
+                            const rubricJudges = getRubricJudgesForRubric(rubric);
                             return (
                               <Box key={rubric.id} sx={{ mb: idx < customRubrics.length - 1 ? 3 : 0 }}>
                                 <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
@@ -530,6 +611,7 @@ export default function ScoringPage() {
                                       displayName={judge.name}
                                       snapshotId={selectedSnapshotId}
                                       rubricId={rubric.id}
+                                      pendingCount={rubricPendingCounts[`${judge.id}:${rubric.id}`] ?? null}
                                       bestOption={rubric.best_option || rubric.options?.[0]?.option || ""}
                                       hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
                                       onJobStart={(judgeId) => handleRubricJobStart(judgeId, rubric.id)}
@@ -627,7 +709,7 @@ function EvaluatorSection({
 }: EvaluatorSectionProps) {
   return (
     <Accordion defaultExpanded variant="outlined" disableGutters>
-      <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+      <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />}>
         <Typography fontWeight={600}>{title}</Typography>
       </AccordionSummary>
       <AccordionDetails sx={{ pt: 0 }}>
@@ -637,14 +719,14 @@ function EvaluatorSection({
           <Stack direction="row" spacing={1}>
             <Tooltip title="Add Judge">
               <IconButton size="small" color="primary" sx={{ border: 1, borderColor: "divider" }} onClick={onAddJudge}>
-                <AddIcon fontSize="small" />
+                <IconPlus {...compactActionIconProps} />
               </IconButton>
             </Tooltip>
             <IconButton size="small" sx={{ border: 1, borderColor: "divider" }} onClick={onScrollLeft} disabled={judges.length === 0}>
-              <ArrowBackIosNewIcon fontSize="small" />
+              <IconChevronLeft {...compactActionIconProps} />
             </IconButton>
             <IconButton size="small" sx={{ border: 1, borderColor: "divider" }} onClick={onScrollRight} disabled={judges.length === 0}>
-              <ArrowForwardIosIcon fontSize="small" />
+              <IconChevronRight {...compactActionIconProps} />
             </IconButton>
           </Stack>
         </Stack>

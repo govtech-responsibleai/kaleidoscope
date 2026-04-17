@@ -14,10 +14,11 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { InfoOutlined as InfoOutlinedIcon, MoreVert as MoreVertIcon } from "@mui/icons-material";
+import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
 import { JudgeConfig, JudgeAlignment, JudgeAccuracy, QAJob } from "@/lib/types";
 import { metricsApi, questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
+import { compactActionIconProps } from "@/lib/iconStyles";
 
 interface JudgeCardProps {
   judge: JudgeConfig;
@@ -211,7 +212,7 @@ export default function JudgeCard({
           </Box>
           {!judge.is_baseline && judge.is_editable && (
             <IconButton size="small" onClick={handleMenuOpen}>
-              <MoreVertIcon fontSize="small" />
+              <IconDotsVertical {...compactActionIconProps} />
             </IconButton>
           )}
         </Stack>
@@ -255,12 +256,7 @@ export default function JudgeCard({
                 <Tooltip
                   title={`Measures how well this judge's judgments match your annotations (F1 score from ${alignment.sample_count} annotations). ≥50% is considered reliable.`}
                 >
-                  <InfoOutlinedIcon
-                    sx={{
-                      fontSize: 16,
-                      cursor: "help",
-                    }}
-                  />
+                  <IconInfoCircle {...compactActionIconProps} style={{ cursor: "help" }} />
                 </Tooltip>
               </Stack>
             ) : (

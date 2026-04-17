@@ -9,13 +9,14 @@ import {
   CircularProgress,
   IconButton,
 } from "@mui/material";
-import { Add as AddIcon, Delete as DeleteIcon } from "@mui/icons-material";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
 import { targetApi } from "@/lib/api";
 import { TargetResponse } from "@/lib/types";
 import CreateTargetModal from "@/components/overview/CreateTargetModal";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import { getTargetTheme } from "@/lib/targetTheme";
+import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
 
 export default function Home() {
   const router = useRouter();
@@ -89,7 +90,7 @@ export default function Home() {
         </Typography>
         <Button
           variant="contained"
-          startIcon={<AddIcon />}
+          startIcon={<IconPlus {...actionIconProps} />}
           onClick={() => setCreateModalOpen(true)}
         >
           New Target
@@ -244,7 +245,7 @@ export default function Home() {
                         "&:hover": { opacity: 1, color: "error.main" },
                       }}
                     >
-                      <DeleteIcon fontSize="small" />
+                      <IconTrash {...compactActionIconProps} />
                     </IconButton>
                   </Box>
                 </Box>
