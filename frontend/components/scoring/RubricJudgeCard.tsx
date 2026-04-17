@@ -17,14 +17,15 @@ import {
   type Theme,
 } from "@mui/material";
 import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
-import { JudgeConfig, QAJob, JudgeAlignment, JudgeAccuracy } from "@/lib/types";
-import { metricsApi, questionApi } from "@/lib/api";
+import { JudgeConfig, QAJob, MetricJudgeScoreSummary } from "@/lib/types";
+import { questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 import { compactActionIconProps } from "@/lib/iconStyles";
 
 interface RubricJudgeCardProps {
   judge: JudgeConfig;
   displayName: string;
+  summary?: MetricJudgeScoreSummary;
   snapshotId: number;
   rubricId: number;
   pendingCount: number | null;
@@ -41,6 +42,7 @@ interface RubricJudgeCardProps {
 export default function RubricJudgeCard({
   judge,
   displayName,
+  summary,
   snapshotId,
   rubricId,
   pendingCount: pendingCountProp,
@@ -53,16 +55,13 @@ export default function RubricJudgeCard({
   onDelete,
   cardSx,
 }: RubricJudgeCardProps) {
+  const hasSummaryValues = summary?.accuracy != null && summary?.reliability != null;
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [pendingCount, setPendingCount] = useState<number | null>(pendingCountProp);
   const [runTotalCount, setRunTotalCount] = useState<number | null>(null);
   const pollingRef = useRef<number | null>(null);
   const onJobCompleteRef = useRef(onJobComplete);
-
-  const [alignment, setAlignment] = useState<JudgeAlignment | null>(null);
-  const [accuracy, setAccuracy] = useState<JudgeAccuracy | null>(null);
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
 
   useEffect(() => {
     onJobCompleteRef.current = onJobComplete;
@@ -79,22 +78,6 @@ export default function RubricJudgeCard({
       return pendingCount ?? 0;
     }
   }, [snapshotId, judge.id, rubricId, pendingCount]);
-
-  const fetchMetrics = useCallback(async () => {
-    setLoadingMetrics(true);
-    try {
-      const [alignmentRes, accuracyRes] = await Promise.all([
-        metricsApi.getRubricAlignment(snapshotId, judge.id, rubricId).catch(() => null),
-        metricsApi.getRubricAccuracy(snapshotId, judge.id, rubricId).catch(() => null),
-      ]);
-      setAlignment(alignmentRes?.data ?? null);
-      setAccuracy(accuracyRes?.data ?? null);
-    } catch {
-      // ignore
-    } finally {
-      setLoadingMetrics(false);
-    }
-  }, [snapshotId, judge.id, rubricId]);
 
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
@@ -114,7 +97,6 @@ export default function RubricJudgeCard({
         const remaining = await fetchPendingCount();
         if (remaining === 0) {
           stopPolling();
-          await fetchMetrics();
           onJobCompleteRef.current();
         }
       } catch {
@@ -124,7 +106,7 @@ export default function RubricJudgeCard({
 
     poll();
     pollingRef.current = window.setInterval(poll, 5000);
-  }, [fetchPendingCount, fetchMetrics, stopPolling]);
+  }, [fetchPendingCount, stopPolling]);
 
   useEffect(() => {
     return () => {
@@ -135,8 +117,6 @@ export default function RubricJudgeCard({
   useEffect(() => {
     setPendingCount(null);
     setRunTotalCount(null);
-    setAlignment(null);
-    setAccuracy(null);
     stopPolling();
   }, [snapshotId, stopPolling]);
 
@@ -152,18 +132,12 @@ export default function RubricJudgeCard({
 
   const isRunning = isPolling;
   const hasAllScores = pendingCount === 0;
-  const hasSomeScores = (accuracy?.total_answers ?? 0) > 0;
+  const hasSomeScores = (summary?.total_answers ?? 0) > 0;
   const isPartial = !isRunning && pendingCount !== null && pendingCount > 0 && hasSomeScores;
   const totalTracked =
     runTotalCount ??
-    (accuracy ? accuracy.total_answers : pendingCount ?? 0);
+    (summary ? summary.total_answers : pendingCount ?? 0);
   const completedCount = Math.max(totalTracked - (pendingCount ?? 0), 0);
-
-  useEffect(() => {
-    if (hasAllScores && snapshotId && !isRunning) {
-      fetchMetrics();
-    }
-  }, [hasAllScores, isRunning, snapshotId, fetchMetrics]);
 
   const handleRun = async () => {
     const initialPending = pendingCount ?? 0;
@@ -215,13 +189,13 @@ export default function RubricJudgeCard({
         <Stack spacing={1} sx={{ mt: 2, flexGrow: 1 }}>
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-              {accuracy
+              {hasSummaryValues
                 ? `This judge rates your target at`
                 : (isRunning ? `Running: ${completedCount}/${totalTracked} questions` : "Run this judge to see score")}
             </Typography>
             <Stack direction="row" spacing={0.5} alignItems="baseline">
-              <Typography variant="h4" fontWeight={700} color={accuracy ? "primary.main" : "text.disabled"}>
-                {accuracy ? `${(accuracy.accuracy * 100).toFixed(1)}%` : "--%"}
+              <Typography variant="h4" fontWeight={700} color={hasSummaryValues ? "primary.main" : "text.disabled"}>
+                {hasSummaryValues ? `${(summary.accuracy! * 100).toFixed(1)}%` : "--%"}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 {bestOption || "score"}
@@ -229,21 +203,21 @@ export default function RubricJudgeCard({
             </Stack>
 
             {/* Reliability */}
-            {alignment ? (
+            {hasSummaryValues ? (
               <Stack
                 direction="row"
                 spacing={0.5}
                 alignItems="center"
                 sx={{
                   mt: 1,
-                  color: alignment.f1 >= 0.5 ? "success.main" : "error.main"
+                  color: summary.reliability! >= 0.5 ? "success.main" : "error.main"
                 }}
               >
                 <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  {alignment.f1 >= 0.5 ? "✓" : "✗"} {(alignment.f1 * 100).toFixed(0)}% reliability
+                  {summary.reliability! >= 0.5 ? "✓" : "✗"} {(summary.reliability! * 100).toFixed(0)}% reliability
                 </Typography>
                 <Tooltip
-                  title={`Measures how well this judge's choices match your rubric annotations (${alignment.sample_count} annotations). ≥50% is considered reliable.`}
+                  title={`Measures how well this judge's choices match your rubric annotations. ≥50% is considered reliable.`}
                 >
                   <IconInfoCircle {...compactActionIconProps} style={{ cursor: "help" }} />
                 </Tooltip>
@@ -261,7 +235,7 @@ export default function RubricJudgeCard({
           fullWidth
           sx={{ mt: 2 }}
           onClick={handleRun}
-          disabled={isRunning || hasAllScores || loadingMetrics}
+          disabled={isRunning || hasAllScores}
         >
           {isRunning ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>

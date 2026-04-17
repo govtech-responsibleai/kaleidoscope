@@ -539,7 +539,8 @@ export type AggregationMethod =
   | "majority"
   | "majority_tied"
   | "no_aligned_judge"
-  | "override";
+  | "override"
+  | "pending";
 
 export interface AggregatedAccuracy {
   answer_id: number;
@@ -547,7 +548,7 @@ export interface AggregatedAccuracy {
   label: boolean | null;
   is_edited: boolean;
   metadata: string[];
-  aligned_judge_count: number;
+  aligned_judge_count?: number;
 }
 
 // Answer Label Override types
@@ -597,6 +598,56 @@ export interface SnapshotMetric {
   edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
   aligned_judges: AlignedJudge[];
+}
+
+export interface MetricJudgeScoreSummary {
+  judge_id: number;
+  name: string;
+  reliability: number | null;
+  accuracy: number | null;
+  accurate_count: number;
+  total_answers: number;
+}
+
+export interface MetricJudgeRowResult {
+  judge_id: number;
+  name: string;
+  label?: boolean | null;
+  option_value?: string | null;
+}
+
+export interface MetricAggregatedResult {
+  method: AggregationMethod;
+  label?: boolean | null;
+  option_value?: string | null;
+  is_edited: boolean;
+}
+
+export interface MetricRowResult {
+  question_id: number;
+  question_text: string | null;
+  question_type: string | null;
+  question_scope: string | null;
+  answer_id: number;
+  answer_content: string;
+  aggregated_result: MetricAggregatedResult;
+  human_label?: boolean | null;
+  human_option?: string | null;
+  judge_results: MetricJudgeRowResult[];
+}
+
+export interface MetricScoringContract extends SnapshotMetric {
+  metric_key: string;
+  metric_name: string;
+  metric_type: "accuracy" | "rubric";
+  target_label?: string | null;
+  judge_summaries: MetricJudgeScoreSummary[];
+  rows: MetricRowResult[];
+}
+
+export interface SnapshotScoringContractsResponse {
+  snapshot_id: number;
+  metrics: MetricScoringContract[];
 }
 
 export interface ScoringPendingCounts {

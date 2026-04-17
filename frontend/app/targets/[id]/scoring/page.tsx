@@ -33,6 +33,8 @@ import {
   ResultRow,
   AnnotationCompletionStatus,
   QAJob,
+  MetricJudgeScoreSummary,
+  MetricScoringContract,
   SnapshotMetric,
   TargetRubricResponse,
   JudgeType,
@@ -56,11 +58,11 @@ type SourceGroup = "fixed" | "preset" | "custom";
 interface MetricSectionConfig {
   key: string;
   title: string;
-  description: string;
   sourceGroup: SourceGroup;
   category: string;
   judgeType: JudgeType;
   rubric: TargetRubricResponse | null;
+  contract: MetricScoringContract | null;
   metric: SnapshotMetric | null;
   judges: JudgeConfig[];
   emptyMessage: string;
@@ -106,9 +108,6 @@ export default function ScoringPage() {
   });
   const [judgeToDelete, setJudgeToDelete] = useState<JudgeConfig | null>(null);
 
-  const [results, setResults] = useState<ResultRow[]>([]);
-  const [resultsLoading, setResultsLoading] = useState(false);
-
   const [annotationStatus, setAnnotationStatus] = useState<AnnotationCompletionStatus | null>(null);
   const [checkingAnnotations, setCheckingAnnotations] = useState(true);
 
@@ -120,12 +119,13 @@ export default function ScoringPage() {
 
   const [rubricMetrics, setRubricMetrics] = useState<SnapshotMetric[]>([]);
   const [rubricMetricsLoading, setRubricMetricsLoading] = useState(false);
+  const [scoringContracts, setScoringContracts] = useState<MetricScoringContract[]>([]);
   const [rubricPendingCounts, setRubricPendingCounts] = useState<Record<string, number>>({});
 
   const [labelOverrideCount, setLabelOverrideCount] = useState(0);
 
   const [error, setError] = useState<string | null>(null);
-  const [mainTab, setMainTab] = useState(0);
+  const [activeMetricTab, setActiveMetricTab] = useState(0);
   const pendingCountsRequestRef = useRef(0);
   const snapshotMetricsRequestRef = useRef(0);
 
@@ -147,6 +147,47 @@ export default function ScoringPage() {
       })
     );
   }, [judges]);
+
+  const applyScoringContracts = useCallback((contracts: MetricScoringContract[]) => {
+    setScoringContracts(contracts);
+    const accuracyContract = contracts.find((contract) => contract.metric_type === "accuracy") ?? null;
+    const rubricContracts = contracts.filter((contract) => contract.metric_type === "rubric");
+
+    setSnapshotMetric(
+      accuracyContract ? {
+        snapshot_id: accuracyContract.snapshot_id ?? selectedSnapshotId ?? 0,
+        snapshot_name: accuracyContract.snapshot_name ?? null,
+        created_at: accuracyContract.created_at ?? null,
+        rubric_id: accuracyContract.rubric_id ?? null,
+        rubric_name: accuracyContract.rubric_name ?? null,
+        aggregated_accuracy: accuracyContract.aggregated_accuracy,
+        total_answers: accuracyContract.total_answers,
+        accurate_count: accuracyContract.accurate_count,
+        inaccurate_count: accuracyContract.inaccurate_count,
+        pending_count: accuracyContract.pending_count,
+        edited_count: accuracyContract.edited_count,
+        judge_alignment_range: accuracyContract.judge_alignment_range,
+        aligned_judges: accuracyContract.aligned_judges,
+      } : null
+    );
+
+    setRubricMetrics(rubricContracts.map((contract) => ({
+      snapshot_id: contract.snapshot_id ?? selectedSnapshotId ?? 0,
+      snapshot_name: contract.snapshot_name ?? null,
+      created_at: contract.created_at ?? null,
+      rubric_id: contract.rubric_id ?? null,
+      rubric_name: contract.rubric_name ?? null,
+      aggregated_accuracy: contract.aggregated_accuracy,
+      total_answers: contract.total_answers,
+      accurate_count: contract.accurate_count,
+      inaccurate_count: contract.inaccurate_count,
+      pending_count: contract.pending_count,
+      edited_count: contract.edited_count,
+      judge_alignment_range: contract.judge_alignment_range,
+      aligned_judges: contract.aligned_judges,
+    })));
+
+  }, [selectedSnapshotId]);
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
     setSelectedSnapshotId(snapshotId);
@@ -211,54 +252,26 @@ export default function ScoringPage() {
     }
   }, []);
 
-  const fetchResults = useCallback(async (snapshotId: number, requestId?: number) => {
-    setResultsLoading(true);
-    try {
-      const response = await metricsApi.getResults(snapshotId);
-      if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      setResults(response.data ?? []);
-    } catch (resultsError) {
-      if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      setError(getApiErrorMessage(resultsError, "Failed to load results."));
-    } finally {
-      if (!requestId || requestId === snapshotMetricsRequestRef.current) {
-        setResultsLoading(false);
-      }
-    }
-  }, []);
-
-  const fetchSnapshotMetrics = useCallback(async (snapshotId: number, requestId?: number) => {
+  const fetchScoringContracts = useCallback(async (snapshotId: number, requestId?: number) => {
     setSnapshotMetricLoading(true);
+    setRubricMetricsLoading(true);
     try {
-      const response = await metricsApi.getSnapshotMetrics(targetId);
+      const response = await metricsApi.getScoringContracts(snapshotId);
       if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      const currentMetric = response.data.find((metric) => metric.snapshot_id === snapshotId) || null;
-      setSnapshotMetric(currentMetric);
-    } catch {
+      applyScoringContracts(response.data.metrics ?? []);
+    } catch (contractError) {
       if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
+      setScoringContracts([]);
       setSnapshotMetric(null);
+      setRubricMetrics([]);
+      setError(getApiErrorMessage(contractError, "Failed to load scoring data."));
     } finally {
       if (!requestId || requestId === snapshotMetricsRequestRef.current) {
         setSnapshotMetricLoading(false);
-      }
-    }
-  }, [targetId]);
-
-  const fetchRubricMetrics = useCallback(async (snapshotId: number, requestId?: number) => {
-    setRubricMetricsLoading(true);
-    try {
-      const response = await metricsApi.getRubricSnapshotMetrics(targetId, snapshotId);
-      if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      setRubricMetrics(response.data);
-    } catch {
-      if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      setRubricMetrics([]);
-    } finally {
-      if (!requestId || requestId === snapshotMetricsRequestRef.current) {
         setRubricMetricsLoading(false);
       }
     }
-  }, [targetId]);
+  }, [applyScoringContracts]);
 
   const fetchScoringPendingCounts = useCallback(async (snapshotId: number, requestId?: number) => {
     try {
@@ -286,9 +299,9 @@ export default function ScoringPage() {
 
   useEffect(() => {
     setAnnotationStatus(null);
-    setResults([]);
     setQuestionsWithoutAnswers(0);
     setQuestionsWithoutScores({});
+    setScoringContracts([]);
     setSnapshotMetric(null);
     setRubricMetrics([]);
     setRubricPendingCounts({});
@@ -305,13 +318,9 @@ export default function ScoringPage() {
   useEffect(() => {
     if (selectedSnapshotId && annotationStatus?.is_complete) {
       const requestId = ++snapshotMetricsRequestRef.current;
-      void Promise.allSettled([
-        fetchResults(selectedSnapshotId, requestId),
-        fetchSnapshotMetrics(selectedSnapshotId, requestId),
-        fetchRubricMetrics(selectedSnapshotId, requestId),
-      ]);
+      void fetchScoringContracts(selectedSnapshotId, requestId);
     }
-  }, [selectedSnapshotId, annotationStatus, fetchResults, fetchSnapshotMetrics, fetchRubricMetrics]);
+  }, [selectedSnapshotId, annotationStatus, fetchScoringContracts]);
 
   const handleSnapshotSelect = (snapshotId: number | null) => updateSnapshotSelection(snapshotId);
 
@@ -368,18 +377,14 @@ export default function ScoringPage() {
     const pendingRequestId = ++pendingCountsRequestRef.current;
     const metricsRequestId = ++snapshotMetricsRequestRef.current;
     await Promise.all([
-      fetchResults(selectedSnapshotId, metricsRequestId),
       fetchScoringPendingCounts(selectedSnapshotId, pendingRequestId),
-      fetchSnapshotMetrics(selectedSnapshotId, metricsRequestId),
-      fetchRubricMetrics(selectedSnapshotId, metricsRequestId),
+      fetchScoringContracts(selectedSnapshotId, metricsRequestId),
       fetchJudges(),
     ]);
   }, [
     selectedSnapshotId,
-    fetchResults,
     fetchScoringPendingCounts,
-    fetchSnapshotMetrics,
-    fetchRubricMetrics,
+    fetchScoringContracts,
     fetchJudges,
   ]);
 
@@ -405,12 +410,9 @@ export default function ScoringPage() {
   const handleLabelChange = useCallback(async () => {
     if (!selectedSnapshotId) return;
     const requestId = ++snapshotMetricsRequestRef.current;
-    await Promise.all([
-      fetchResults(selectedSnapshotId, requestId),
-      fetchSnapshotMetrics(selectedSnapshotId, requestId),
-    ]);
+    await fetchScoringContracts(selectedSnapshotId, requestId);
     setLabelOverrideCount((count) => count + 1);
-  }, [selectedSnapshotId, fetchResults, fetchSnapshotMetrics]);
+  }, [selectedSnapshotId, fetchScoringContracts]);
 
   const handleExportSnapshot = async () => {
     if (!selectedSnapshotId) return;
@@ -432,12 +434,14 @@ export default function ScoringPage() {
 
   const metricSections = buildMetricSections({
     rubrics,
+    scoringContracts,
     snapshotMetric,
     rubricMetrics,
     accuracyJudges,
     getRubricJudgesForRubric,
     baselineJudge,
   });
+  const activeMetricSection = metricSections[activeMetricTab] ?? metricSections[0] ?? null;
 
   if (snapshotsLoading || judgesLoading) {
     return <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>;
@@ -530,49 +534,55 @@ export default function ScoringPage() {
           )}
 
           <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-            <Tabs value={mainTab} onChange={(_, value) => setMainTab(value)}>
-              <Tab label="Scores" />
-              <Tab label="Error Analysis" />
+            <Tabs value={activeMetricTab} onChange={(_, value) => setActiveMetricTab(value)}>
+              {metricSections.map((section, index) => (
+                <Tab
+                  key={section.key}
+                  label={section.title}
+                  value={index}
+                  sx={{
+                    textTransform: "none",
+                    fontWeight: 600,
+                    color: groupColors[section.sourceGroup].border,
+                    "&.Mui-selected": {
+                      color: groupColors[section.sourceGroup].border,
+                      fontWeight: 700,
+                    },
+                  }}
+                />
+              ))}
             </Tabs>
           </Box>
 
-          {mainTab === 0 && (
+          {activeMetricSection && (
             <Stack spacing={2}>
-              {metricSections.map((section) => (
-                <MetricSection
-                  key={section.key}
-                  section={section}
-                  snapshotId={selectedSnapshotId}
-                  loading={section.rubric ? rubricMetricsLoading : snapshotMetricLoading}
-                  labelOverrideCount={labelOverrideCount}
-                  questionsWithoutScores={questionsWithoutScores}
-                  questionsWithoutAnswers={questionsWithoutAnswers}
-                  rubricPendingCounts={rubricPendingCounts}
-                  onAccuracyJobStart={handleJobStart}
-                  onRubricJobStart={handleRubricJobStart}
-                  onJobComplete={handleJobComplete}
-                  onAddJudge={(config) => openDialog("create", config)}
-                  onEditJudge={(judge, config) => openDialog("edit", config, judge)}
-                  onDuplicateJudge={(judge, config) => openDialog("duplicate", config, judge)}
-                  onDeleteJudge={handleDeleteJudge}
-                />
-              ))}
-            </Stack>
-          )}
+              <MetricSection
+                section={activeMetricSection}
+                snapshotId={selectedSnapshotId}
+                loading={activeMetricSection.rubric ? rubricMetricsLoading : snapshotMetricLoading}
+                labelOverrideCount={labelOverrideCount}
+                questionsWithoutScores={questionsWithoutScores}
+                questionsWithoutAnswers={questionsWithoutAnswers}
+                rubricPendingCounts={rubricPendingCounts}
+                onAccuracyJobStart={handleJobStart}
+                onRubricJobStart={handleRubricJobStart}
+                onJobComplete={handleJobComplete}
+                onEditJudge={(judge, config) => openDialog("edit", config, judge)}
+                onDuplicateJudge={(judge, config) => openDialog("duplicate", config, judge)}
+                onDeleteJudge={handleDeleteJudge}
+                onAddJudge={(config) => openDialog("create", config)}
+              />
 
-          {mainTab === 1 && (
-            resultsLoading ? (
-              <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}><CircularProgress /></Box>
-            ) : (
               <ResultsTable
-                results={results}
+                results={mapContractRowsToResults(activeMetricSection.contract)}
+                contract={activeMetricSection.contract}
                 targetId={targetId}
                 snapshotId={selectedSnapshotId}
-                judges={judges}
-                rubrics={rubrics}
+                judges={activeMetricSection.judges}
+                rubrics={activeMetricSection.rubric ? [activeMetricSection.rubric] : []}
                 onLabelChange={handleLabelChange}
               />
-            )
+            </Stack>
           )}
         </Stack>
       )}
@@ -616,6 +626,7 @@ export default function ScoringPage() {
 
 function buildMetricSections({
   rubrics,
+  scoringContracts,
   snapshotMetric,
   rubricMetrics,
   accuracyJudges,
@@ -623,6 +634,7 @@ function buildMetricSections({
   baselineJudge,
 }: {
   rubrics: TargetRubricResponse[];
+  scoringContracts: MetricScoringContract[];
   snapshotMetric: SnapshotMetric | null;
   rubricMetrics: SnapshotMetric[];
   accuracyJudges: JudgeConfig[];
@@ -631,65 +643,94 @@ function buildMetricSections({
 }): MetricSectionConfig[] {
   const presetRubrics = rubrics.filter((rubric) => !!rubric.template_key);
   const customRubrics = rubrics.filter((rubric) => !rubric.template_key);
+  const accuracyContract = scoringContracts.find((contract) => contract.metric_type === "accuracy") ?? null;
 
   const sections: MetricSectionConfig[] = [
     {
       key: "accuracy",
       title: "Accuracy",
-      description: "Hallucination and claim-support evaluation for generated responses.",
       sourceGroup: "fixed",
       category: "accuracy",
       judgeType: "claim_based",
       rubric: null,
+      contract: accuracyContract,
       metric: snapshotMetric,
       judges: accuracyJudges,
       emptyMessage: "Run judges to see results",
-      gaugeLabel: "Share rated accurate",
+      gaugeLabel: "Aggregated Accuracy",
       defaultPromptTemplate: baselineJudge?.prompt_template || accuracyJudges[0]?.prompt_template || "",
     },
   ];
 
   for (const rubric of presetRubrics) {
     const sectionJudges = getRubricJudgesForRubric(rubric);
+    const contract = scoringContracts.find((metric) => metric.rubric_id === rubric.id) ?? null;
     sections.push({
       key: `rubric-${rubric.id}`,
       title: rubric.name,
-      description: rubric.best_option
-        ? `Ideal outcome: ${rubric.best_option}`
-        : "Preset rubric evaluation",
       sourceGroup: "preset",
       category: rubric.category,
       judgeType: "response_level",
       rubric,
+      contract,
       metric: rubricMetrics.find((metric) => metric.rubric_id === rubric.id) ?? null,
       judges: sectionJudges,
       emptyMessage: "Run judges to see results",
-      gaugeLabel: `Share choosing ${rubric.best_option || rubric.options?.[0]?.option || "Positive"}`,
+      gaugeLabel: `Aggregated  ${rubric.name}`,
       defaultPromptTemplate: sectionJudges[0]?.prompt_template || "",
     });
   }
 
   for (const rubric of customRubrics) {
     const sectionJudges = getRubricJudgesForRubric(rubric);
+    const contract = scoringContracts.find((metric) => metric.rubric_id === rubric.id) ?? null;
     sections.push({
       key: `rubric-${rubric.id}`,
       title: rubric.name,
-      description: rubric.best_option
-        ? `Ideal outcome: ${rubric.best_option}`
-        : "Custom rubric evaluation",
       sourceGroup: "custom",
       category: rubric.category,
       judgeType: "response_level",
       rubric,
+      contract,
       metric: rubricMetrics.find((metric) => metric.rubric_id === rubric.id) ?? null,
       judges: sectionJudges,
       emptyMessage: "Run judges to see results",
-      gaugeLabel: `Share choosing ${rubric.best_option || rubric.options?.[0]?.option || "Positive"}`,
+      gaugeLabel: `Aggregated  ${rubric.name}`,
       defaultPromptTemplate: sectionJudges[0]?.prompt_template || "",
     });
   }
 
   return sections;
+}
+
+function mapContractRowsToResults(contract: MetricScoringContract | null): ResultRow[] {
+  if (!contract) {
+    return [];
+  }
+
+  return contract.rows.map((row) => ({
+    question_id: row.question_id,
+    question_text: row.question_text,
+    question_type: row.question_type,
+    question_scope: row.question_scope,
+    answer_id: row.answer_id,
+    answer_content: row.answer_content,
+    aggregated_accuracy: {
+      answer_id: row.answer_id,
+      method: row.aggregated_result.method,
+      label: row.aggregated_result.label ?? null,
+      is_edited: row.aggregated_result.is_edited,
+      metadata: row.judge_results.map((judgeResult) => {
+        const label = judgeResult.label;
+        if (typeof judgeResult.option_value === "string") {
+          return `- ${judgeResult.name}: ${label ? judgeResult.option_value : "Pending"}`;
+        }
+        return `- ${judgeResult.name}: ${label === true ? "Accurate" : label === false ? "Inaccurate" : "Pending"}`;
+      }),
+    },
+    human_label: row.human_label ?? null,
+    human_notes: null,
+  }));
 }
 
 function MetricSection({
@@ -703,10 +744,10 @@ function MetricSection({
   onAccuracyJobStart,
   onRubricJobStart,
   onJobComplete,
-  onAddJudge,
   onEditJudge,
   onDuplicateJudge,
   onDeleteJudge,
+  onAddJudge,
 }: {
   section: MetricSectionConfig;
   snapshotId: number;
@@ -718,10 +759,10 @@ function MetricSection({
   onAccuracyJobStart: (judgeId: number) => Promise<QAJob[] | null>;
   onRubricJobStart: (judgeId: number, rubricId: number) => Promise<QAJob[] | null>;
   onJobComplete: () => void;
-  onAddJudge: (config: DialogConfig) => void;
   onEditJudge: (judge: JudgeConfig, config: DialogConfig) => void;
   onDuplicateJudge: (judge: JudgeConfig, config: DialogConfig) => void;
   onDeleteJudge: (judge: JudgeConfig) => void;
+  onAddJudge: (config: DialogConfig) => void;
 }) {
   const sectionColor = groupColors[section.sourceGroup];
   const dialogConfig: DialogConfig = {
@@ -736,103 +777,46 @@ function MetricSection({
     <Paper
       variant="outlined"
       sx={{
-        borderLeft: "4px solid",
-        borderColor: sectionColor.border,
-        bgcolor: "white",
+        borderColor: "divider",
+        bgcolor: "background.paper",
         p: 2,
       }}
     >
       <Stack spacing={2}>
-        <Stack
-          direction={{ xs: "column", sm: "row" }}
-          justifyContent="space-between"
-          alignItems={{ xs: "flex-start", sm: "center" }}
-          spacing={1.5}
-        >
-          <Stack spacing={0.5}>
-            <Stack direction="row" spacing={1} alignItems="center" useFlexGap flexWrap="wrap">
-              <Typography variant="h6" fontWeight={700}>
-                {section.title}
-              </Typography>
-              <Chip
-                label={section.sourceGroup === "fixed" ? "Fixed" : section.sourceGroup === "preset" ? "Preset" : "Custom"}
-                size="small"
-                variant="outlined"
-                sx={{
-                  borderColor: sectionColor.border,
-                  color: sectionColor.border,
-                  bgcolor: "white",
-                  fontWeight: 600,
-                }}
-              />
-            </Stack>
-            <Typography variant="body2" color="text.secondary">
-              {section.description}
-            </Typography>
-          </Stack>
-
-          <Tooltip title={`Add judge for ${section.title}`}>
-            <IconButton
-              size="small"
-              onClick={() => onAddJudge(dialogConfig)}
-              sx={{
-                border: "1px solid",
-                borderColor: sectionColor.border,
-                color: sectionColor.border,
-                bgcolor: "white",
-                "&:hover": {
-                  bgcolor: sectionColor.border,
-                  color: "#fff",
-                },
-              }}
-            >
-              <IconPlus {...compactActionIconProps} />
-            </IconButton>
-          </Tooltip>
-        </Stack>
-
         <Box
           sx={{
             display: "grid",
             gap: 2,
             gridTemplateColumns: { xs: "1fr", xl: "280px minmax(0, 1fr)" },
-            alignItems: "start",
+            alignItems: "center",
           }}
         >
-          <MetricSummaryTile
-            title={section.title}
-            metric={section.metric}
-            loading={loading}
-            emptyMessage={section.emptyMessage}
-            gaugeLabel={section.gaugeLabel}
-          />
+          <Box sx={{ display: "flex", justifyContent: "center", alignSelf: "center" }}>
+            <MetricSummaryTile
+              metric={section.metric}
+              loading={loading}
+              emptyMessage={section.emptyMessage}
+              gaugeLabel={section.gaugeLabel}
+            />
+          </Box>
 
-          <Stack spacing={2}>
-            {section.judges.length > 0 ? (
-              <JudgeStrip
-                judges={section.judges}
-                section={section}
-                snapshotId={snapshotId}
-                labelOverrideCount={labelOverrideCount}
-                questionsWithoutScores={questionsWithoutScores}
-                questionsWithoutAnswers={questionsWithoutAnswers}
-                rubricPendingCounts={rubricPendingCounts}
-                onAccuracyJobStart={onAccuracyJobStart}
-                onRubricJobStart={onRubricJobStart}
-                onJobComplete={onJobComplete}
-                onEditJudge={onEditJudge}
-                onDuplicateJudge={onDuplicateJudge}
-                onDeleteJudge={onDeleteJudge}
-                dialogConfig={dialogConfig}
-              />
-            ) : (
-              <Paper variant="outlined" sx={{ bgcolor: "white", p: 2 }}>
-                <Typography variant="body2" color="text.secondary">
-                  No judges configured for this metric.
-                </Typography>
-              </Paper>
-            )}
-          </Stack>
+          <JudgeStrip
+            judges={section.judges}
+            section={section}
+            snapshotId={snapshotId}
+            labelOverrideCount={labelOverrideCount}
+            questionsWithoutScores={questionsWithoutScores}
+            questionsWithoutAnswers={questionsWithoutAnswers}
+            rubricPendingCounts={rubricPendingCounts}
+            onAccuracyJobStart={onAccuracyJobStart}
+            onRubricJobStart={onRubricJobStart}
+            onJobComplete={onJobComplete}
+            onEditJudge={onEditJudge}
+            onDuplicateJudge={onDuplicateJudge}
+            onDeleteJudge={onDeleteJudge}
+            onAddJudge={onAddJudge}
+            dialogConfig={dialogConfig}
+          />
         </Box>
       </Stack>
     </Paper>
@@ -853,6 +837,7 @@ function JudgeStrip({
   onEditJudge,
   onDuplicateJudge,
   onDeleteJudge,
+  onAddJudge,
   dialogConfig,
 }: {
   judges: JudgeConfig[];
@@ -868,8 +853,10 @@ function JudgeStrip({
   onEditJudge: (judge: JudgeConfig, config: DialogConfig) => void;
   onDuplicateJudge: (judge: JudgeConfig, config: DialogConfig) => void;
   onDeleteJudge: (judge: JudgeConfig) => void;
+  onAddJudge: (config: DialogConfig) => void;
   dialogConfig: DialogConfig;
 }) {
+  const sectionColor = groupColors[section.sourceGroup];
   return (
     <Box
       sx={{
@@ -882,14 +869,49 @@ function JudgeStrip({
       <Box
         sx={{
           display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 2,
+          mb: 1.5,
+        }}
+      >
+        <Typography variant="subtitle2" fontWeight={700} color="text.primary">
+          Judge List
+        </Typography>
+        <Tooltip title={`Add judge for ${section.title}`}>
+          <IconButton
+            size="small"
+            onClick={() => onAddJudge(dialogConfig)}
+            sx={{
+              border: "1px solid",
+              borderColor: sectionColor.border,
+              color: sectionColor.border,
+              bgcolor: "background.paper",
+              "&:hover": {
+                bgcolor: sectionColor.border,
+                color: "#fff",
+              },
+            }}
+          >
+            <IconPlus {...compactActionIconProps} />
+          </IconButton>
+        </Tooltip>
+      </Box>
+
+      <Box
+        sx={{
+          display: "flex",
           gap: 2,
           overflowX: "auto",
           pb: 1,
           scrollSnapType: "x proximity",
+          alignItems: "stretch",
+          justifyContent: "flex-start",
         }}
       >
         {judges.map((judge, index) => {
           const startsCustomGroup = judge.is_editable && !judges[index - 1]?.is_editable;
+          const judgeSummary = section.contract?.judge_summaries.find((summary) => summary.judge_id === judge.id);
 
           return (
             <Box
@@ -910,6 +932,7 @@ function JudgeStrip({
                 <RubricJudgeCard
                   judge={judge}
                   displayName={judge.name}
+                  summary={judgeSummary}
                   snapshotId={snapshotId}
                   rubricId={section.rubric.id}
                   pendingCount={rubricPendingCounts[`${judge.id}:${section.rubric.id}`] ?? null}
@@ -929,6 +952,7 @@ function JudgeStrip({
                 <JudgeCard
                   judge={judge}
                   displayName={judge.name}
+                  summary={judgeSummary}
                   snapshotId={snapshotId}
                   questionsWithoutScores={questionsWithoutScores[judge.id] || 0}
                   hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
@@ -953,13 +977,11 @@ function JudgeStrip({
 }
 
 function MetricSummaryTile({
-  title,
   metric,
   loading,
   emptyMessage,
   gaugeLabel,
 }: {
-  title: string;
   metric: SnapshotMetric | null;
   loading: boolean;
   emptyMessage: string;
@@ -976,9 +998,6 @@ function MetricSummaryTile({
   if (!metric || metric.total_answers === 0) {
     return (
       <Stack spacing={1} alignItems="center" textAlign="center">
-        <Typography variant="subtitle1" fontWeight={700}>
-          {title}
-        </Typography>
         <Typography variant="h3" fontWeight={700} color="text.disabled">
           --%
         </Typography>
@@ -995,10 +1014,6 @@ function MetricSummaryTile({
 
   return (
     <Stack spacing={1.5} alignItems="center" textAlign="center">
-      <Typography variant="subtitle1" fontWeight={700}>
-        {title}
-      </Typography>
-
       <AccuracyGauge
         value={hasReliableJudges ? metric.aggregated_accuracy : null}
         size={220}

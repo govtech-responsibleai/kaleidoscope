@@ -57,6 +57,7 @@ import {
   RubricAnnotationUpsert,
   RubricAnswerScore,
   SnapshotMetric,
+  SnapshotScoringContractsResponse,
   ScoringPendingCounts,
   Status,
   TestConnectionRequest,
@@ -564,6 +565,9 @@ export const metricsApi = {
 
   getResults: (snapshotId: number) =>
     api.get<SnapshotResultsResponse>(`/snapshots/${snapshotId}/results`),
+
+  getScoringContracts: (snapshotId: number) =>
+    api.get<SnapshotScoringContractsResponse>(`/snapshots/${snapshotId}/scoring-contracts`),
 
   getScoringPendingCounts: (snapshotId: number) =>
     api.get<ScoringPendingCounts>(`/snapshots/${snapshotId}/scoring-pending-counts`),

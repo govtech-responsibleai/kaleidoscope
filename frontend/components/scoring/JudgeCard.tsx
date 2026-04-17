@@ -17,14 +17,15 @@ import {
   type Theme,
 } from "@mui/material";
 import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
-import { JudgeConfig, JudgeAlignment, JudgeAccuracy, QAJob } from "@/lib/types";
-import { metricsApi, questionApi } from "@/lib/api";
+import { JudgeConfig, MetricJudgeScoreSummary, QAJob } from "@/lib/types";
+import { questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 import { compactActionIconProps } from "@/lib/iconStyles";
 
 interface JudgeCardProps {
   judge: JudgeConfig;
   displayName?: string;
+  summary?: MetricJudgeScoreSummary;
   snapshotId: number;
   questionsWithoutScores: number;
   hasQuestionsWithoutAnswers: boolean;
@@ -40,6 +41,7 @@ interface JudgeCardProps {
 export default function JudgeCard({
   judge,
   displayName,
+  summary,
   snapshotId,
   questionsWithoutScores,
   hasQuestionsWithoutAnswers,
@@ -51,10 +53,8 @@ export default function JudgeCard({
   labelOverrideCount,
   cardSx,
 }: JudgeCardProps) {
+  const hasSummaryValues = summary?.accuracy != null && summary?.reliability != null;
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const [alignment, setAlignment] = useState<JudgeAlignment | null>(null);
-  const [accuracy, setAccuracy] = useState<JudgeAccuracy | null>(null);
-  const [loadingMetrics, setLoadingMetrics] = useState(false);
   const [isPolling, setIsPolling] = useState(false);
   const [pendingCount, setPendingCount] = useState(questionsWithoutScores);
   const [runTotalCount, setRunTotalCount] = useState<number | null>(null);
@@ -80,22 +80,6 @@ export default function JudgeCard({
     }
   }, [snapshotId, judge.id, pendingCount]);
 
-  const fetchMetrics = useCallback(async () => {
-    setLoadingMetrics(true);
-    try {
-      const [alignmentRes, accuracyRes] = await Promise.all([
-        metricsApi.getAlignment(snapshotId, judge.id),
-        metricsApi.getAccuracy(snapshotId, judge.id),
-      ]);
-      setAlignment(alignmentRes.data);
-      setAccuracy(accuracyRes.data);
-    } catch (error) {
-      console.error("Failed to fetch metrics:", error);
-    } finally {
-      setLoadingMetrics(false);
-    }
-  }, [snapshotId, judge.id]);
-
   const stopPolling = useCallback(() => {
     if (pollingRef.current) {
       window.clearInterval(pollingRef.current);
@@ -114,7 +98,6 @@ export default function JudgeCard({
         const remaining = await fetchPendingCount();
         if (remaining === 0) {
           stopPolling();
-          await fetchMetrics();
           onJobCompleteRef.current();
         }
       } catch (error) {
@@ -124,7 +107,7 @@ export default function JudgeCard({
 
     poll();
     pollingRef.current = window.setInterval(poll, 5000);
-  }, [fetchPendingCount, fetchMetrics, stopPolling]);
+  }, [fetchPendingCount, stopPolling]);
 
   useEffect(() => {
     return () => {
@@ -134,8 +117,6 @@ export default function JudgeCard({
 
   useEffect(() => {
     setRunTotalCount(null);
-    setAlignment(null);
-    setAccuracy(null);
     stopPolling();
   }, [snapshotId, stopPolling]);
 
@@ -143,23 +124,17 @@ export default function JudgeCard({
     if (!isPolling) {
       setPendingCount(questionsWithoutScores);
       if (questionsWithoutScores === 0) {
-        setRunTotalCount(accuracy?.total_answers ?? null);
+        setRunTotalCount(summary?.total_answers ?? null);
       }
     }
-  }, [questionsWithoutScores, isPolling, accuracy]);
+  }, [questionsWithoutScores, isPolling, summary]);
 
   const isRunning = isPolling;
   const hasAllScores = pendingCount === 0;
   const totalTracked =
     runTotalCount ??
-    (accuracy ? accuracy.total_answers : pendingCount > 0 ? pendingCount : 0);
+    (summary ? summary.total_answers : pendingCount > 0 ? pendingCount : 0);
   const completedCount = Math.max(totalTracked - pendingCount, 0);
-
-  useEffect(() => {
-    if (hasAllScores && snapshotId && !isRunning) {
-      fetchMetrics();
-    }
-  }, [hasAllScores, snapshotId, isRunning, fetchMetrics, labelOverrideCount]);
 
   const handleRun = async () => {
     const initialPending = Math.max(pendingCount, questionsWithoutScores);
@@ -225,13 +200,13 @@ export default function JudgeCard({
           {/* Accuracy Statement - same structure for consistent height */}
           <Box>
             <Typography variant="body2" color="text.secondary" sx={{ mb: 0.5 }}>
-              {accuracy
+              {hasSummaryValues
                 ? "This judge rates your target at"
                 : (isRunning ? `Running: ${completedCount}/${totalTracked} questions` : "Run this judge to see accuracy")}
             </Typography>
             <Stack direction="row" spacing={0.5} alignItems="baseline">
-              <Typography variant="h4" fontWeight={700} color={accuracy ? "primary.main" : "text.disabled"}>
-                {accuracy ? `${(accuracy.accuracy * 100).toFixed(1)}%` : "--%"}
+              <Typography variant="h4" fontWeight={700} color={hasSummaryValues ? "primary.main" : "text.disabled"}>
+                {hasSummaryValues ? `${(summary.accuracy! * 100).toFixed(1)}%` : "--%"}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 accuracy
@@ -239,14 +214,14 @@ export default function JudgeCard({
             </Stack>
 
             {/* Reliability - minimalistic text */}
-            {alignment ? (
+            {hasSummaryValues ? (
               <Stack
                 direction="row"
                 spacing={0.5}
                 alignItems="center"
                 sx={{
                   mt: 1,
-                  color: alignment.f1 >= 0.5 ? "success.main" : "error.main"
+                  color: summary.reliability! >= 0.5 ? "success.main" : "error.main"
                 }}
               >
                 <Typography
@@ -255,10 +230,10 @@ export default function JudgeCard({
                     fontWeight: 500,
                   }}
                 >
-                  {alignment.f1 >= 0.5 ? "✓" : "✗"} {(alignment.f1 * 100).toFixed(0)}% reliability
+                  {summary.reliability! >= 0.5 ? "✓" : "✗"} {(summary.reliability! * 100).toFixed(0)}% reliability
                 </Typography>
                 <Tooltip
-                  title={`Measures how well this judge's judgments match your annotations (F1 score from ${alignment.sample_count} annotations). ≥50% is considered reliable.`}
+                  title={`Measures how well this judge's judgments match your annotations. ≥50% is considered reliable.`}
                 >
                   <IconInfoCircle {...compactActionIconProps} style={{ cursor: "help" }} />
                 </Tooltip>
@@ -276,7 +251,7 @@ export default function JudgeCard({
           fullWidth
           sx={{ mt: 2 }}
           onClick={handleRun}
-          disabled={isRunning || hasAllScores || loadingMetrics || hasQuestionsWithoutAnswers}
+          disabled={isRunning || hasAllScores || hasQuestionsWithoutAnswers}
         >
           {isRunning ? (
             <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -286,7 +261,7 @@ export default function JudgeCard({
             "Run in Annotations"
           ) : pendingCount > 0 ? (
             `Run (${pendingCount} pending)`
-          ) : !accuracy ? (
+          ) : !summary ? (
             "Run Judge"
           ) : (
             "Completed"
