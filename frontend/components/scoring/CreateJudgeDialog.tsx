@@ -39,8 +39,12 @@ interface CreateJudgeDialogProps {
   open: boolean;
   targetId: number;
   category: string;
+  rubricId?: number | null;
   mode: "create" | "edit" | "duplicate";
   judge?: JudgeConfig | null;
+  defaultPromptTemplate?: string;
+  lockedJudgeType?: JudgeType | null;
+  metricLabel?: string;
   onClose: () => void;
   onSuccess: () => void;
 }
@@ -49,8 +53,12 @@ export default function CreateJudgeDialog({
   open,
   targetId,
   category,
+  rubricId,
   mode,
   judge,
+  defaultPromptTemplate,
+  lockedJudgeType,
+  metricLabel,
   onClose,
   onSuccess,
 }: CreateJudgeDialogProps) {
@@ -60,7 +68,7 @@ export default function CreateJudgeDialog({
   const [promptTemplate, setPromptTemplate] = useState("");
   const [baselinePromptTemplate, setBaselinePromptTemplate] = useState("");
   const [judgeType, setJudgeType] = useState<JudgeType>("claim_based");
-  const [params, setParams] = useState<Record<string, any>>({});
+  const [params, setParams] = useState<Record<string, unknown>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<JudgeModelOption[]>([]);
@@ -149,13 +157,13 @@ export default function CreateJudgeDialog({
         setName("Custom Judge");
         setModelName(availableModels[0]?.value || "");
         setTemperature("1.0");
-        setJudgeType("claim_based");
+        setJudgeType(lockedJudgeType ?? "claim_based");
         setParams({});
         if (previousModeRef.current !== "create") {
           promptEditedRef.current = false;
         }
         if (!promptEditedRef.current) {
-          setPromptTemplate(baselinePromptTemplate || "");
+          setPromptTemplate(defaultPromptTemplate || baselinePromptTemplate || "");
         }
       }
       setError(null);
@@ -165,7 +173,13 @@ export default function CreateJudgeDialog({
     }
 
     previousModeRef.current = mode;
-  }, [open, mode, judge, baselinePromptTemplate, availableModels]);
+  }, [open, mode, judge, baselinePromptTemplate, availableModels, defaultPromptTemplate, lockedJudgeType]);
+
+  useEffect(() => {
+    if (open && mode === "create" && lockedJudgeType) {
+      setJudgeType(lockedJudgeType);
+    }
+  }, [open, mode, lockedJudgeType]);
 
   useEffect(() => {
     if (
@@ -222,10 +236,11 @@ export default function CreateJudgeDialog({
       } else {
         const data: JudgeCreate = {
           target_id: targetId,
+          rubric_id: rubricId ?? undefined,
           name: name.trim(),
           model_name: modelName.trim(),
           model_label: modelLabel,
-          judge_type: judgeType,
+          judge_type: mode === "edit" ? judgeType : (lockedJudgeType ?? judgeType),
           category,
           params: updatedParams,
           prompt_template: promptTemplate.trim() || undefined,
@@ -250,7 +265,7 @@ export default function CreateJudgeDialog({
   const getDialogTitle = () => {
     switch (mode) {
       case "create":
-        return "Create New Judge";
+        return metricLabel ? `Create ${metricLabel} Judge` : "Create New Judge";
       case "edit":
         return "Edit Judge";
       case "duplicate":
@@ -342,8 +357,10 @@ export default function CreateJudgeDialog({
             fullWidth
             value={judgeType}
             onChange={(e) => setJudgeType(e.target.value as JudgeType)}
-            disabled={loading}
-            helperText="Choose whether the judge scores each claim or the overall answer."
+            disabled={loading || (mode !== "edit" && !!lockedJudgeType)}
+            helperText={(mode !== "edit" && lockedJudgeType)
+              ? "Judge type is fixed by the selected metric."
+              : "Choose whether the judge scores each claim or the overall answer."}
           >
             <MenuItem value="claim_based">Claim-based (per claim)</MenuItem>
             <MenuItem value="response_level">Response-level (overall)</MenuItem>

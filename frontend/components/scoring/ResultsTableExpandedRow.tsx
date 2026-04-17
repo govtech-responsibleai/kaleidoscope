@@ -165,7 +165,11 @@ export default function ResultsTableExpandedRow({
       return;
     }
 
-    judgeApi.getByCategory(activeRubric.category, targetId)
+    judgeApi.getByCategory(
+      activeRubric.category,
+      targetId,
+      activeRubric.template_key ? undefined : activeRubric.id
+    )
       .then((res) => setRubricJudges(res.data.filter((j) => j.judge_type === "response_level")))
       .catch(() => setRubricJudges([]));
 

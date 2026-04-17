@@ -469,6 +469,7 @@ export interface JudgeModelOption {
 export interface JudgeConfig {
   id: number;
   target_id?: number | null;
+  rubric_id?: number | null;
   name: string;
   model_name: string;
   model_label?: string;
@@ -495,6 +496,7 @@ export interface RubricAnswerScore {
 
 export interface JudgeCreate {
   target_id: number;
+  rubric_id?: number | null;
   name: string;
   model_name: string;
   model_label?: string;
@@ -509,6 +511,7 @@ export interface JudgeUpdate {
   model_name?: string;
   model_label?: string;
   judge_type?: JudgeType;
+  rubric_id?: number | null;
   params?: Record<string, unknown>;
   prompt_template?: string;
 }
@@ -594,6 +597,12 @@ export interface SnapshotMetric {
   edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
   aligned_judges: AlignedJudge[];
+}
+
+export interface ScoringPendingCounts {
+  unanswered_question_count: number;
+  accuracy_pending_counts: Record<string, number>;
+  rubric_pending_counts: Record<string, number>;
 }
 
 export type SnapshotMetricsResponse = SnapshotMetric[];

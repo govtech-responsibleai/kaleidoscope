@@ -7,11 +7,16 @@ import {
   Card,
   CardContent,
   CircularProgress,
+  IconButton,
+  Menu,
+  MenuItem,
   Stack,
   Tooltip,
   Typography,
+  type SxProps,
+  type Theme,
 } from "@mui/material";
-import { IconInfoCircle } from "@tabler/icons-react";
+import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
 import { JudgeConfig, QAJob, JudgeAlignment, JudgeAccuracy } from "@/lib/types";
 import { metricsApi, questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
@@ -27,6 +32,10 @@ interface RubricJudgeCardProps {
   hasQuestionsWithoutAnswers: boolean;
   onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
   onJobComplete: () => void;
+  onEdit?: () => void;
+  onDuplicate?: () => void;
+  onDelete?: () => void;
+  cardSx?: SxProps<Theme>;
 }
 
 export default function RubricJudgeCard({
@@ -39,7 +48,12 @@ export default function RubricJudgeCard({
   hasQuestionsWithoutAnswers,
   onJobStart,
   onJobComplete,
+  onEdit,
+  onDuplicate,
+  onDelete,
+  cardSx,
 }: RubricJudgeCardProps) {
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [isPolling, setIsPolling] = useState(false);
   const [pendingCount, setPendingCount] = useState<number | null>(pendingCountProp);
   const [runTotalCount, setRunTotalCount] = useState<number | null>(null);
@@ -159,8 +173,12 @@ export default function RubricJudgeCard({
     }
   };
 
+  const handleMenuClose = () => {
+    setMenuAnchor(null);
+  };
+
   return (
-    <Card variant="outlined" sx={{ flex: "0 0 30%", height: "100%" }}>
+    <Card variant="outlined" sx={{ height: "100%", ...cardSx }}>
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -181,7 +199,18 @@ export default function RubricJudgeCard({
               </Typography>
             </Stack>
           </Box>
+          {judge.is_editable && (
+            <IconButton size="small" onClick={(event) => setMenuAnchor(event.currentTarget)}>
+              <IconDotsVertical {...compactActionIconProps} />
+            </IconButton>
+          )}
         </Stack>
+
+        <Menu anchorEl={menuAnchor} open={Boolean(menuAnchor)} onClose={handleMenuClose}>
+          <MenuItem onClick={() => { handleMenuClose(); onEdit?.(); }}>Edit</MenuItem>
+          <MenuItem onClick={() => { handleMenuClose(); onDuplicate?.(); }}>Duplicate</MenuItem>
+          <MenuItem onClick={() => { handleMenuClose(); onDelete?.(); }}>Delete</MenuItem>
+        </Menu>
 
         <Stack spacing={1} sx={{ mt: 2, flexGrow: 1 }}>
           <Box>

@@ -13,6 +13,8 @@ import {
   Stack,
   Tooltip,
   Typography,
+  type SxProps,
+  type Theme,
 } from "@mui/material";
 import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
 import { JudgeConfig, JudgeAlignment, JudgeAccuracy, QAJob } from "@/lib/types";
@@ -32,6 +34,7 @@ interface JudgeCardProps {
   onDuplicate: () => void;
   onDelete: () => void;
   labelOverrideCount: number;
+  cardSx?: SxProps<Theme>;
 }
 
 export default function JudgeCard({
@@ -46,6 +49,7 @@ export default function JudgeCard({
   onDuplicate,
   onDelete,
   labelOverrideCount,
+  cardSx,
 }: JudgeCardProps) {
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [alignment, setAlignment] = useState<JudgeAlignment | null>(null);
@@ -189,7 +193,7 @@ export default function JudgeCard({
   };
 
   return (
-    <Card variant="outlined" sx={{ flex: "0 0 30%" , height: "100%" }}>
+    <Card variant="outlined" sx={{ height: "100%", ...cardSx }}>
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
           <Box sx={{ flex: 1, minWidth: 0 }}>

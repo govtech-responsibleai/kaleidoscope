@@ -456,7 +456,11 @@ export default function ResultsTable({
     // Fetch response-level judges and rubric scores together, then filter judges
     const answerIds = results.map((r) => r.answer_id);
     Promise.all([
-      judgeApi.getByCategory(activeRubric.category, targetId).catch(() => ({ data: [] as JudgeConfig[] })),
+      judgeApi.getByCategory(
+        activeRubric.category,
+        targetId,
+        activeRubric.template_key ? undefined : activeRubric.id
+      ).catch(() => ({ data: [] as JudgeConfig[] })),
       Promise.all(
         answerIds.map((id) =>
           rubricScoreApi.getForAnswer(id, activeRubricId)

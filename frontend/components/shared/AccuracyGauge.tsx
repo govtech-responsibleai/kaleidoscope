@@ -35,6 +35,8 @@ export default function AccuracyGauge({
   };
 
   const gaugeColor = hasValue ? getColor(value) : theme.palette.text.disabled;
+  const numericFontSize = percentage.length >= 5 ? Math.round(size * 0.22) : Math.round(size * 0.24);
+  const percentFontSize = Math.round(numericFontSize * 0.48);
 
   return (
     <Box
@@ -98,16 +100,20 @@ export default function AccuracyGauge({
         }}
       >
         <Typography
-          variant="h2"
           fontWeight={700}
-          sx={{ color: gaugeColor, lineHeight: 1 }}
+          sx={{
+            color: gaugeColor,
+            lineHeight: 1,
+            fontSize: numericFontSize,
+            letterSpacing: "-0.03em",
+            whiteSpace: "nowrap",
+          }}
         >
           {percentage}
           <Typography
             component="span"
-            variant="h5"
             fontWeight={700}
-            sx={{ color: gaugeColor }}
+            sx={{ color: gaugeColor, fontSize: percentFontSize }}
           >
             %
           </Typography>

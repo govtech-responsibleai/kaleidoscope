@@ -57,6 +57,7 @@ import {
   RubricAnnotationUpsert,
   RubricAnswerScore,
   SnapshotMetric,
+  ScoringPendingCounts,
   Status,
   TestConnectionRequest,
   TestConnectionResponse,
@@ -514,9 +515,12 @@ export const judgeApi = {
   listAvailableModels: () =>
     api.get<JudgeModelOption[]>("/judges/available-models"),
 
-  getByCategory: (category: string, targetId?: number) =>
+  getByCategory: (category: string, targetId?: number, rubricId?: number) =>
     api.get<JudgeConfig[]>(`/judges/by-category/${category}`, {
-      params: targetId ? { target_id: targetId } : undefined,
+      params: {
+        ...(targetId ? { target_id: targetId } : {}),
+        ...(rubricId ? { rubric_id: rubricId } : {}),
+      },
     }).then((response) => ({
       ...response,
       data: sortJudges(response.data),
@@ -560,6 +564,9 @@ export const metricsApi = {
 
   getResults: (snapshotId: number) =>
     api.get<SnapshotResultsResponse>(`/snapshots/${snapshotId}/results`),
+
+  getScoringPendingCounts: (snapshotId: number) =>
+    api.get<ScoringPendingCounts>(`/snapshots/${snapshotId}/scoring-pending-counts`),
 
   exportCSV: (snapshotId: number, format: "csv" | "json" = "csv") =>
     api.get(`/targets/snapshots/${snapshotId}/export`, {
