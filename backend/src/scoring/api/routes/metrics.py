@@ -15,6 +15,7 @@ from src.common.models.metrics import (
     ConfusionMatrixResponse,
     JudgeAccuracyResponse,
     JudgeAlignmentResponse,
+    SnapshotScoringContractsResponse,
     ScoringPendingCountsResponse,
     TargetSnapshotMetric,
 )
@@ -170,6 +171,29 @@ def get_aggregated_results(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+
+@router.get("/snapshots/{snapshot_id}/scoring-contracts", response_model=SnapshotScoringContractsResponse)
+def get_snapshot_scoring_contracts(
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+):
+    """Get backend-owned scoring contracts for accuracy and rubric metrics in a snapshot."""
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found",
+        )
+
+    try:
+        service = MetricsService(db)
+        return service.get_snapshot_scoring_contracts(snapshot_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
         )
 
 

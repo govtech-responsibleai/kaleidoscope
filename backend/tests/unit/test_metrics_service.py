@@ -3,6 +3,7 @@ Unit tests for MetricsService.
 """
 
 import pytest
+from src.common.database.models import AnswerScore, Judge, JudgeTypeEnum
 
 from src.scoring.services.metrics_service import MetricsService
 from src.common.models.metrics import (
@@ -158,3 +159,77 @@ class TestMetricsService:
             assert value >= 0
 
         assert result.total_inaccurate >= 0
+
+    def test_accuracy_scoring_contract_marks_rows_pending_when_reliable_judge_missing_score(
+        self,
+        test_db,
+        sample_target,
+        sample_annotations,
+        sample_answer_scores,
+        sample_snapshot,
+    ):
+        """Rows stay pending until every reliable accuracy judge has scored them."""
+        second_judge = Judge(
+            target_id=sample_target.id,
+            category="accuracy",
+            name="Judge 2",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Second accuracy judge",
+            params={"temperature": 0.0},
+            judge_type=JudgeTypeEnum.claim_based,
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(second_judge)
+        test_db.commit()
+        test_db.refresh(second_judge)
+
+        for annotation in sample_annotations[1:]:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                judge_id=second_judge.id,
+                overall_label=annotation.label,
+                explanation="Reliable second judge",
+            ))
+        test_db.commit()
+
+        service = MetricsService(test_db)
+        contract = service.get_accuracy_scoring_contract(sample_snapshot.id)
+
+        target_row = next(row for row in contract.rows if row.answer_id == sample_annotations[0].answer_id)
+        assert any(summary.judge_id == second_judge.id for summary in contract.judge_summaries)
+        assert any(judge.judge_id == second_judge.id for judge in contract.aligned_judges)
+        assert target_row.aggregated_result.method == "pending"
+        assert target_row.aggregated_result.label is None
+
+    def test_accuracy_scoring_contract_returns_unavailable_summary_for_judge_with_no_scores(
+        self,
+        test_db,
+        sample_target,
+        sample_snapshot,
+        sample_annotations,
+    ):
+        """A created judge without any run data should expose unavailable summary values."""
+        unused_judge = Judge(
+            target_id=sample_target.id,
+            category="accuracy",
+            name="Unrun Accuracy Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Accuracy prompt",
+            params={"temperature": 0.0},
+            judge_type=JudgeTypeEnum.claim_based,
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(unused_judge)
+        test_db.commit()
+        test_db.refresh(unused_judge)
+
+        service = MetricsService(test_db)
+        contract = service.get_accuracy_scoring_contract(sample_snapshot.id)
+
+        summary = next(summary for summary in contract.judge_summaries if summary.judge_id == unused_judge.id)
+        assert summary.accuracy is None
+        assert summary.reliability is None
+        assert summary.accurate_count == 0
+        assert summary.total_answers == 0

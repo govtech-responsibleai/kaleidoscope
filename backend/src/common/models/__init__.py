@@ -140,6 +140,12 @@ from src.common.models.metrics import (
     JudgeAccuracyResponse,
     TargetSnapshotMetric,
     ConfusionMatrixResponse,
+    MetricJudgeScoreSummary,
+    MetricJudgeRowResult,
+    MetricAggregatedResult,
+    MetricRowResult,
+    MetricScoringContract,
+    SnapshotScoringContractsResponse,
 )
 
 __all__ = [
@@ -260,6 +266,12 @@ __all__ = [
     "JudgeAccuracyResponse",
     "TargetSnapshotMetric",
     "ConfusionMatrixResponse",
+    "MetricJudgeScoreSummary",
+    "MetricJudgeRowResult",
+    "MetricAggregatedResult",
+    "MetricRowResult",
+    "MetricScoringContract",
+    "SnapshotScoringContractsResponse",
     # TargetRubric
     "RubricOption",
     "PremadeRubricTemplateResponse",
