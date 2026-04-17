@@ -15,7 +15,10 @@ from src.common.database.repositories.answer_score_repo import AnswerScoreReposi
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
+from src.common.database.repositories.question_repo import QuestionRepository
 from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
+from src.common.database.repositories.snapshot_repo import SnapshotRepository
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import AnswerScore
 from src.common.models.metrics import (
     AggregatedAnswerScore,
@@ -25,6 +28,7 @@ from src.common.models.metrics import (
     JudgeAccuracyResponse,
     TargetSnapshotMetric,
     ConfusionMatrixResponse,
+    ScoringPendingCountsResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -398,6 +402,58 @@ class MetricsService:
             edited_count=edited_count,
             judge_alignment_range=judge_alignment_range,
             aligned_judges=aligned_judges,
+        )
+
+    def get_scoring_pending_counts(self, snapshot_id: int) -> ScoringPendingCountsResponse:
+        """Return snapshot-scoped pending counts for the scoring page."""
+        snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
+        if not snapshot:
+            raise ValueError(f"Snapshot {snapshot_id} not found")
+
+        target_id = snapshot.target_id
+        unanswered_question_count = QuestionRepository.count_approved_questions_without_answers(
+            self.db,
+            target_id,
+            snapshot_id,
+        )
+
+        judges = JudgeRepository.get_all(self.db, target_id=target_id)
+        accuracy_pending_counts: Dict[str, int] = {}
+        rubric_pending_counts: Dict[str, int] = {}
+
+        for judge in judges:
+            if judge.category == "accuracy" and judge.judge_type.value == "claim_based":
+                accuracy_pending_counts[str(judge.id)] = (
+                    QuestionRepository.count_approved_questions_without_scores(
+                        self.db,
+                        target_id,
+                        snapshot_id,
+                        judge.id,
+                    )
+                )
+
+        for rubric in TargetRubricRepository.get_by_target(self.db, target_id):
+            rubric_judges = [
+                judge for judge in judges
+                if judge.judge_type.value == "response_level"
+                and judge.category == rubric.category
+                and (judge.rubric_id is None or judge.rubric_id == rubric.id)
+            ]
+            for judge in rubric_judges:
+                rubric_pending_counts[f"{judge.id}:{rubric.id}"] = (
+                    QuestionRepository.count_approved_questions_without_rubric_scores(
+                        self.db,
+                        target_id,
+                        snapshot_id,
+                        judge.id,
+                        rubric.id,
+                    )
+                )
+
+        return ScoringPendingCountsResponse(
+            unanswered_question_count=unanswered_question_count,
+            accuracy_pending_counts=accuracy_pending_counts,
+            rubric_pending_counts=rubric_pending_counts,
         )
 
     def calculate_confusion_matrix(

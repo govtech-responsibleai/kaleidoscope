@@ -69,9 +69,15 @@ class TargetSnapshotMetric(BaseModel):
     aligned_judges: List[AlignedJudge] = []
 
 
+class ScoringPendingCountsResponse(BaseModel):
+    """Snapshot-scoped pending counts needed by the scoring page."""
+    unanswered_question_count: int
+    accuracy_pending_counts: Dict[str, int] = {}
+    rubric_pending_counts: Dict[str, int] = {}
+
+
 class ConfusionMatrixResponse(BaseModel):
     """Confusion matrix for inaccurate answers by question type and scope."""
     matrix: Dict[str, int]
     total_inaccurate: int
-
 

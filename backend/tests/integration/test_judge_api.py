@@ -127,3 +127,72 @@ class TestJudgeAPI:
         )
 
         assert response.status_code == 404
+
+    def test_list_judges_by_category_supports_rubric_scope(
+        self,
+        auth_client,
+        auth_headers,
+        sample_target,
+        sample_rubric_second,
+        test_db,
+    ):
+        """Category lookup should be able to narrow custom rubric judges by rubric_id."""
+        from src.common.database.models import TargetRubric
+
+        other_rubric = TargetRubric(
+            target_id=sample_target.id,
+            name="Helpfulness",
+            criteria="Evaluate whether the response is helpful",
+            options=[
+                {"option": "Helpful", "description": "Directly helpful"},
+                {"option": "Not Helpful", "description": "Does not help"},
+            ],
+            best_option="Helpful",
+            category="default",
+            position=2,
+        )
+        test_db.add(other_rubric)
+        test_db.commit()
+        test_db.refresh(other_rubric)
+
+        response_a = auth_client.post(
+            "/api/v1/judges",
+            json={
+                "target_id": sample_target.id,
+                "rubric_id": sample_rubric_second.id,
+                "name": "Custom Default Judge A",
+                "model_name": "gemini/gemini-2.5-flash-lite",
+                "prompt_template": "Rubric A prompt",
+                "params": {"temperature": 0.7},
+                "judge_type": "response_level",
+                "category": "default",
+            },
+            headers=auth_headers,
+        )
+        assert response_a.status_code == 201
+
+        response_b = auth_client.post(
+            "/api/v1/judges",
+            json={
+                "target_id": sample_target.id,
+                "rubric_id": other_rubric.id,
+                "name": "Custom Default Judge B",
+                "model_name": "gemini/gemini-2.5-flash-lite",
+                "prompt_template": "Rubric B prompt",
+                "params": {"temperature": 0.7},
+                "judge_type": "response_level",
+                "category": "default",
+            },
+            headers=auth_headers,
+        )
+        assert response_b.status_code == 201
+
+        lookup_response = auth_client.get(
+            f"/api/v1/judges/by-category/default?target_id={sample_target.id}&rubric_id={sample_rubric_second.id}",
+            headers=auth_headers,
+        )
+
+        assert lookup_response.status_code == 200
+        names = [judge["name"] for judge in lookup_response.json()]
+        assert "Custom Default Judge A" in names
+        assert "Custom Default Judge B" not in names

@@ -198,6 +198,30 @@ class QuestionRepository:
         )
 
     @staticmethod
+    def count_approved_questions_without_answers(
+        db: Session,
+        target_id: int,
+        snapshot_id: int,
+    ) -> int:
+        """Count approved questions that do not yet have answers for a snapshot."""
+        answer_exists = exists().where(
+            and_(
+                Answer.question_id == Question.id,
+                Answer.snapshot_id == snapshot_id,
+            )
+        )
+
+        return (
+            db.query(func.count(Question.id))
+            .filter(
+                Question.target_id == target_id,
+                Question.status == StatusEnum.approved,
+                not_(answer_exists),
+            )
+            .scalar()
+        ) or 0
+
+    @staticmethod
     def get_approved_questions_without_scores(
         db: Session,
         target_id: int,
@@ -244,6 +268,33 @@ class QuestionRepository:
         )
 
     @staticmethod
+    def count_approved_questions_without_scores(
+        db: Session,
+        target_id: int,
+        snapshot_id: int,
+        judge_id: int,
+    ) -> int:
+        """Count approved questions that have answers but no score for a snapshot/judge."""
+        return (
+            db.query(func.count(Question.id))
+            .select_from(Question)
+            .join(Answer, and_(
+                Answer.question_id == Question.id,
+                Answer.snapshot_id == snapshot_id
+            ))
+            .outerjoin(AnswerScore, and_(
+                AnswerScore.answer_id == Answer.id,
+                AnswerScore.judge_id == judge_id
+            ))
+            .filter(
+                Question.target_id == target_id,
+                Question.status == StatusEnum.approved,
+                AnswerScore.id.is_(None)
+            )
+            .scalar()
+        ) or 0
+
+    @staticmethod
     def get_approved_questions_without_rubric_scores(
         db: Session,
         target_id: int,
@@ -278,3 +329,32 @@ class QuestionRepository:
             .limit(limit)
             .all()
         )
+
+    @staticmethod
+    def count_approved_questions_without_rubric_scores(
+        db: Session,
+        target_id: int,
+        snapshot_id: int,
+        judge_id: int,
+        rubric_id: int,
+    ) -> int:
+        """Count approved questions that have answers but no rubric scores for a snapshot/judge/rubric combo."""
+        return (
+            db.query(func.count(Question.id))
+            .select_from(Question)
+            .join(Answer, and_(
+                Answer.question_id == Question.id,
+                Answer.snapshot_id == snapshot_id
+            ))
+            .outerjoin(RubricAnswerScore, and_(
+                RubricAnswerScore.answer_id == Answer.id,
+                RubricAnswerScore.judge_id == judge_id,
+                RubricAnswerScore.rubric_id == rubric_id
+            ))
+            .filter(
+                Question.target_id == target_id,
+                Question.status == StatusEnum.approved,
+                RubricAnswerScore.id.is_(None)
+            )
+            .scalar()
+        ) or 0

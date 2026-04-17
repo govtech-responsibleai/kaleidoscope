@@ -28,6 +28,8 @@ def run_manual_migrations(engine: Engine) -> None:
     migrations = [
         "ALTER TABLE judges ADD COLUMN IF NOT EXISTS target_id INTEGER REFERENCES targets(id) ON DELETE CASCADE",
         "CREATE INDEX IF NOT EXISTS ix_judges_target_id ON judges(target_id)",
+        "ALTER TABLE judges ADD COLUMN IF NOT EXISTS rubric_id INTEGER REFERENCES target_rubrics(id) ON DELETE CASCADE",
+        "CREATE INDEX IF NOT EXISTS ix_judges_rubric_id ON judges(rubric_id)",
         "ALTER TABLE judges ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()",
         "ALTER TABLE judges ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT NOW()",
         "UPDATE judges SET created_at = COALESCE(created_at, NOW()), updated_at = COALESCE(updated_at, NOW()) WHERE created_at IS NULL OR updated_at IS NULL",

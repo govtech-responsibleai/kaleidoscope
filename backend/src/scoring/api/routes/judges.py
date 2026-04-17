@@ -103,6 +103,7 @@ def list_available_models():
 def list_judges_by_category(
     category: str,
     target_id: Optional[int] = None,
+    rubric_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
     """
@@ -111,7 +112,12 @@ def list_judges_by_category(
     Returns judges whose category exactly matches the given value.
     When target_id is provided, includes target-scoped and global judges.
     """
-    judges = JudgeRepository.get_by_category(db, category, target_id=target_id)
+    judges = JudgeRepository.get_by_category(
+        db,
+        category,
+        target_id=target_id,
+        rubric_id=rubric_id,
+    )
     return judges
 
 

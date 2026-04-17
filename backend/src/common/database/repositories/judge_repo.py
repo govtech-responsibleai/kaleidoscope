@@ -17,6 +17,7 @@ class JudgeRepository:
         """Order seeded defaults before custom judges."""
         return query.order_by(
             case((Judge.is_editable.is_(False), 0), else_=1),
+            case((Judge.rubric_id.is_(None), 0), else_=1),
             case(
                 (Judge.name == "Judge 1 (Recommended)", 0),
                 (Judge.name == "Judge 2", 1),
@@ -77,13 +78,20 @@ class JudgeRepository:
         return judge
 
     @staticmethod
-    def get_by_category(db: Session, category: str, target_id: Optional[int] = None) -> List[Judge]:
-        """Get judges that match a given category, optionally filtered by target_id."""
+    def get_by_category(
+        db: Session,
+        category: str,
+        target_id: Optional[int] = None,
+        rubric_id: Optional[int] = None,
+    ) -> List[Judge]:
+        """Get judges that match a given category, optionally filtered by target_id and rubric scope."""
         query = db.query(Judge).filter(Judge.category == category)
         if target_id is not None:
             query = query.filter(
                 or_(Judge.target_id == target_id, Judge.target_id.is_(None))
             )
+        if rubric_id is not None:
+            query = query.filter(or_(Judge.rubric_id == rubric_id, Judge.rubric_id.is_(None)))
         return JudgeRepository._apply_list_ordering(query).all()
 
     @staticmethod

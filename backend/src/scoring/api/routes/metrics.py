@@ -15,6 +15,7 @@ from src.common.models.metrics import (
     ConfusionMatrixResponse,
     JudgeAccuracyResponse,
     JudgeAlignmentResponse,
+    ScoringPendingCountsResponse,
     TargetSnapshotMetric,
 )
 from src.scoring.services.metrics_service import MetricsService
@@ -165,6 +166,29 @@ def get_aggregated_results(
         metrics_service = MetricsService(db)
         results, _ = metrics_service.get_aggregated_results(snapshot_id)
         return results
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+
+@router.get("/snapshots/{snapshot_id}/scoring-pending-counts", response_model=ScoringPendingCountsResponse)
+def get_scoring_pending_counts(
+    snapshot_id: int,
+    db: Session = Depends(get_db)
+):
+    """Get snapshot-scoped pending counts needed by the scoring page."""
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found"
+        )
+
+    try:
+        metrics_service = MetricsService(db)
+        return metrics_service.get_scoring_pending_counts(snapshot_id)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

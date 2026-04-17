@@ -410,6 +410,7 @@ class Judge(Base):
     # FK
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     target_id = Column(Integer, ForeignKey("targets.id", ondelete="CASCADE"), nullable=True, index=True)
+    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="CASCADE"), nullable=True, index=True)
 
     # Fields
     name = Column(String, nullable=False)
@@ -427,6 +428,7 @@ class Judge(Base):
     # Relationships
     owner = relationship("User", back_populates="judges")
     target = relationship("Target", foreign_keys=[target_id])
+    rubric = relationship("TargetRubric", foreign_keys=[rubric_id])
     qa_jobs = relationship("QAJob", back_populates="judge", passive_deletes=True)
     answer_scores = relationship("AnswerScore", back_populates="judge", passive_deletes=True)
     rubric_answer_scores = relationship("RubricAnswerScore", back_populates="judge", passive_deletes=True)

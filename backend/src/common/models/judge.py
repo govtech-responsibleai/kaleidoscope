@@ -26,6 +26,7 @@ class JudgeCreate(BaseModel):
     is_baseline: bool = Field(default=False, description="Whether this is the baseline judge")
     is_editable: bool = Field(default=True, description="Whether this judge can be edited/deleted")
     category: str = Field(default="default", description="Judge category: accuracy, relevance, voice, or default")
+    rubric_id: Optional[int] = Field(None, description="Optional rubric to scope this judge to")
 
 
 class JudgeUpdate(BaseModel):
@@ -37,6 +38,7 @@ class JudgeUpdate(BaseModel):
     params: Optional[Dict[str, Any]] = None
     judge_type: Optional[JudgeType] = None
     category: Optional[str] = None
+    rubric_id: Optional[int] = None
 
 
 class JudgeResponse(BaseModel):
@@ -52,6 +54,7 @@ class JudgeResponse(BaseModel):
     is_baseline: bool
     is_editable: bool
     category: str = "default"
+    rubric_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

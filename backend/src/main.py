@@ -94,6 +94,7 @@ app.add_middleware(
     allow_origins=[
         "https://kaleidoscope.app.tc1.airbase.sg",
         "http://localhost:3000",
+        "http://127.0.2.2:3000"
     ],
     allow_credentials=True,
     allow_methods=["*"],
