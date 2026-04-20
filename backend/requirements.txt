@@ -26,9 +26,9 @@ jinja2==3.1.6
 
 # Observability (optional - Langfuse)
 langfuse>=3.0.0
-opentelemetry-api
-opentelemetry-sdk
-opentelemetry-exporter-otlp
+opentelemetry-api==1.39.1
+opentelemetry-sdk==1.39.1
+opentelemetry-exporter-otlp==1.39.1
 
 # Utilities
 python-dotenv==1.0.1

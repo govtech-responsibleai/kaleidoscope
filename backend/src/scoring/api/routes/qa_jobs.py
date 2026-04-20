@@ -5,7 +5,7 @@ API routes for QA Job management and execution.
 import asyncio
 import logging
 from typing import List
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
@@ -37,7 +37,6 @@ router = APIRouter()
 async def start_qa_jobs(
     snapshot_id: int,
     request: QAJobStart,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db)
 ):
     """

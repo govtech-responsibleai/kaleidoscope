@@ -55,12 +55,6 @@ class QAJobPauseRequest(BaseModel):
     job_ids: list[int] = Field(..., description="List of QA job IDs to pause")
 
 
-class RubricQAJobStart(BaseModel):
-    """Request model for starting rubric QA jobs in batch."""
-    judge_id: int = Field(..., description="Judge ID to use for rubric scoring")
-    question_ids: list[int] = Field(..., description="List of question IDs to process")
-    rubric_id: int = Field(..., description="Custom rubric ID to evaluate against")
-
 
 class RubricSpec(BaseModel):
     """Specifies a rubric and its judge for the unified start endpoint."""

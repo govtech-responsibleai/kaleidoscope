@@ -64,9 +64,7 @@ def setup_langfuse_instrumentation(project_name: str = "kaleidoscope-api") -> Op
         os.environ["LANGFUSE_PUBLIC_KEY"] = public_key
         os.environ["LANGFUSE_SECRET_KEY"] = secret_key
         if settings.langfuse_base_url:
-            # Set both env vars that LiteLLM/Langfuse may check
             os.environ["LANGFUSE_HOST"] = settings.langfuse_base_url
-            os.environ["LANGFUSE_OTEL_HOST"] = settings.langfuse_base_url
 
         # The OTEL HTTP exporter defaults to certifi's CA bundle, which doesn't
         # include the Cloudflare inspection CA that self-hosted instances sit behind.
