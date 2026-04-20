@@ -16,7 +16,6 @@ dotenv.load_dotenv()
 
 from src.common.config import get_settings, MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE
 
-# litellm.callbacks = ["arize_phoenix"] # See https://docs.litellm.ai/docs/observability/phoenix_integration
 settings = get_settings()
 logger = logging.getLogger(__name__)
 

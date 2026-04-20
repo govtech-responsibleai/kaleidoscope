@@ -1,8 +1,8 @@
 """
 Cost tracking utilities for LLM API calls.
 
-Works in conjunction with Arize Phoenix instrumentation for comprehensive tracking.
-Note: Phoenix automatically tracks all LiteLLM calls when instrumented.
+Works in conjunction with Langfuse instrumentation for comprehensive tracking.
+Note: Langfuse automatically tracks all LiteLLM calls when instrumented.
 """
 
 import logging
@@ -15,7 +15,7 @@ class CostTracker:
     """
     Tracks cumulative costs and token usage for a specific job or operation.
 
-    This provides in-memory tracking for immediate feedback, while Phoenix
+    This provides in-memory tracking for immediate feedback, while Langfuse
     provides persistent tracking and analytics across all API calls.
     """
 

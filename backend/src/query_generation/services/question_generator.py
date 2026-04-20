@@ -171,7 +171,11 @@ class QuestionGenerator:
                     prompt=prompt,
                     response_model=QuestionListOutput,
                     temperature=0.8,
-                    max_tokens=4000
+                    max_tokens=4000,
+                    metadata={
+                        "generation_name": "question-generation",
+                        "tags": ["question-generation"],
+                    }
                 )
 
                 self.cost_tracker.add_call(metadata)

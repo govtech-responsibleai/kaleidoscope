@@ -19,7 +19,7 @@ from src.common.config import get_settings
 from src.common.auth import auth_router, get_scoped_db
 from src.common.database.connection import init_db, SessionLocal, engine
 from src.common.database.seed import seed_default_judges, run_manual_migrations
-from src.common.llm.instrumentation import setup_phoenix_instrumentation
+from src.common.llm.instrumentation import setup_langfuse_instrumentation
 
 # Import routers from query generation
 from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, web_documents, answers
@@ -66,10 +66,10 @@ async def lifespan(app: FastAPI):
     load_extensions()
     logger.info("✓ Extensions loaded")
 
-    # Setup Phoenix instrumentation for LLM tracking
-    phoenix_url = setup_phoenix_instrumentation(project_name="kaleidoscope-api")
-    if phoenix_url:
-        logger.info(f"✓ Phoenix instrumentation enabled: {phoenix_url}")
+    # Setup Langfuse instrumentation for LLM tracking
+    langfuse_url = setup_langfuse_instrumentation()
+    if langfuse_url:
+        logger.info(f"✓ Langfuse instrumentation enabled: {langfuse_url}")
 
     logger.info("✓ API ready")
 

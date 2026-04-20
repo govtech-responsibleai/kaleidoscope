@@ -48,6 +48,7 @@ def run_manual_migrations(engine: Engine) -> None:
         # Remove judges in deprecated categories — these are system-seeded judges
         # for the old relevance/voice routing model, which is fully replaced.
         "DELETE FROM judges WHERE category IN ('relevance', 'voice')",
+        "ALTER TABLE qa_jobs ADD COLUMN IF NOT EXISTS rubric_specs JSONB",
     ]
     with engine.connect() as conn:
         for sql in migrations:
