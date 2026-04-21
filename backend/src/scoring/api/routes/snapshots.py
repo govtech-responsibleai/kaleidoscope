@@ -432,7 +432,7 @@ def get_approved_questions_without_rubric_scores(
             detail=f"Snapshot {snapshot_id} not found"
         )
 
-    questions = QuestionRepository.get_approved_questions_without_rubric_scores(
+    questions = QuestionRepository.get_approved_questions_without_scores(
         db,
         target_id=snapshot.target_id,
         snapshot_id=snapshot_id,

@@ -160,24 +160,12 @@ def get_answer_claims_with_scores(
 
     return AnswerClaimsWithScoresResponse(answer_id=answer_id, claims=claim_responses)
 
-@router.get("/{answer_id}/label-override", response_model=AnswerLabelOverrideResponse)
+@router.get("/{answer_id}/label-overrides/{rubric_id}", response_model=AnswerLabelOverrideResponse)
 def get_label_override(
     answer_id: int,
+    rubric_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get label override for a specific answer.
-
-    Args:
-        answer_id: Answer ID
-        db: Database session
-
-    Returns:
-        Label override for the answer
-
-    Raises:
-        HTTPException: If answer or override not found
-    """
     answer = AnswerRepository.get_by_id(db, answer_id)
     if not answer:
         raise HTTPException(
@@ -185,39 +173,23 @@ def get_label_override(
             detail=f"Answer {answer_id} not found"
         )
 
-    override = AnswerLabelOverrideRepository.get_by_answer(db, answer_id)
+    override = AnswerLabelOverrideRepository.get_by_answer_and_rubric(db, answer_id, rubric_id)
     if not override:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No label override found for answer {answer_id}"
+            detail=f"No label override found for answer {answer_id} and rubric {rubric_id}"
         )
 
     return override
 
 
-@router.put("/{answer_id}/label-override", response_model=AnswerLabelOverrideResponse)
+@router.put("/{answer_id}/label-overrides/{rubric_id}", response_model=AnswerLabelOverrideResponse)
 def create_or_update_label_override(
     answer_id: int,
+    rubric_id: int,
     override_data: AnswerLabelOverrideCreate,
     db: Session = Depends(get_db)
 ):
-    """
-    Create or update a label override for an answer.
-
-    This allows users to manually override the aggregated accuracy label
-    that was determined by majority vote from evaluators.
-
-    Args:
-        answer_id: Answer ID to override
-        override_data: The new label value
-        db: Database session
-
-    Returns:
-        Created or updated label override
-
-    Raises:
-        HTTPException: If answer not found
-    """
     answer = AnswerRepository.get_by_id(db, answer_id)
     if not answer:
         raise HTTPException(
@@ -228,27 +200,19 @@ def create_or_update_label_override(
     override = AnswerLabelOverrideRepository.create_or_update(
         db,
         answer_id=answer_id,
-        edited_label=override_data.edited_label
+        rubric_id=rubric_id,
+        edited_value=override_data.edited_value,
     )
 
     return override
 
 
-@router.delete("/{answer_id}/label-override", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{answer_id}/label-overrides/{rubric_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_label_override(
     answer_id: int,
+    rubric_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Delete a label override (reset to evaluator suggestion).
-
-    Args:
-        answer_id: Answer ID whose override should be deleted
-        db: Database session
-
-    Raises:
-        HTTPException: If answer or override not found
-    """
     answer = AnswerRepository.get_by_id(db, answer_id)
     if not answer:
         raise HTTPException(
@@ -256,9 +220,9 @@ def delete_label_override(
             detail=f"Answer {answer_id} not found"
         )
 
-    success = AnswerLabelOverrideRepository.delete(db, answer_id)
+    success = AnswerLabelOverrideRepository.delete(db, answer_id, rubric_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No label override found for answer {answer_id}"
+            detail=f"No label override found for answer {answer_id} and rubric {rubric_id}"
         )

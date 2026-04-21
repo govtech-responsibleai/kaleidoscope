@@ -1,27 +1,30 @@
-"""
-API routes for QA Job management and execution.
-"""
+"""API routes for QA Job management and execution."""
 
 import asyncio
 import logging
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db, SessionLocal
+from src.common.database.models import JobStatusEnum
 from src.common.database.repositories import (
-    QAJobRepository, SnapshotRepository, JudgeRepository, TargetRubricRepository
+    QAJobRepository, SnapshotRepository, JudgeRepository, TargetRubricRepository, AnswerRepository, QuestionRepository
 )
-from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
+from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.models import (
     QAJobStart,
     QAJobPauseRequest,
     QAJobResponse,
     QAJobDetailResponse,
-    RubricAnswerScoreResponse,
+    QARubricScore,
+    QARubricStatus,
+    RubricVerdictState,
     UnifiedQAJobStart,
 )
+from src.common.models.answer_score import AnswerScoreResponse
+from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
 from src.scoring.services.qa_job_processor import (
     get_or_create_qajobs_batch,
     run_qajobs_batch,
@@ -31,6 +34,139 @@ from src.scoring.services.qa_job_processor import (
 )
 
 router = APIRouter()
+
+
+def _build_verdict_status(
+    db: Session,
+    job,
+    snapshot,
+    judge,
+    *,
+    rubric_id: int,
+    rubric_name: str,
+    group: str,
+    score_lookup,
+    score_to_value,
+    score_to_explanation,
+    no_judge_msg: str = "No judge configured for this metric.",
+) -> QARubricStatus:
+    """Shared state machine for accuracy and rubric verdict resolution."""
+    if not judge:
+        return QARubricStatus(
+            rubric_id=rubric_id,
+            rubric_name=rubric_name,
+            group=group,
+            state=RubricVerdictState.no_judge_configured,
+            message=no_judge_msg,
+        )
+
+    if not job.answer_id:
+        return QARubricStatus(
+            rubric_id=rubric_id,
+            rubric_name=rubric_name,
+            group=group,
+            state=RubricVerdictState.awaiting_answer,
+            message=f'Judge "{judge.name}" is still waiting for an answer to evaluate.',
+            judge_id=judge.id,
+            judge_name=judge.name,
+        )
+
+    score = score_lookup(job.answer_id, judge.id)
+    if score:
+        return QARubricStatus(
+            rubric_id=rubric_id,
+            rubric_name=rubric_name,
+            group=group,
+            state=RubricVerdictState.success,
+            message=f'Judge "{judge.name}" produced a verdict.',
+            judge_id=judge.id,
+            judge_name=judge.name,
+            score=QARubricScore(
+                judge_id=judge.id,
+                value=score_to_value(score),
+                explanation=score_to_explanation(score),
+                created_at=score.created_at,
+            ),
+        )
+
+    if job.status == JobStatusEnum.failed:
+        return QARubricStatus(
+            rubric_id=rubric_id,
+            rubric_name=rubric_name,
+            group=group,
+            state=RubricVerdictState.job_failed,
+            message=job.error_message or "QA job failed before producing a verdict.",
+            judge_id=judge.id,
+            judge_name=judge.name,
+        )
+
+    is_pending = QuestionRepository.has_approved_question_without_score(
+        db,
+        question_id=job.question_id,
+        target_id=snapshot.target_id if snapshot else 0,
+        snapshot_id=job.snapshot_id,
+        judge_id=judge.id,
+        rubric_id=rubric_id,
+    )
+    state = RubricVerdictState.pending_evaluation if is_pending else RubricVerdictState.job_failed
+    message = (
+        f'Judge "{judge.name}" has not produced a score for this answer yet.'
+        if is_pending
+        else (job.error_message or f'QA job did not produce a score for judge "{judge.name}".')
+    )
+    return QARubricStatus(
+        rubric_id=rubric_id,
+        rubric_name=rubric_name,
+        group=group,
+        state=state,
+        message=message,
+        judge_id=judge.id,
+        judge_name=judge.name,
+    )
+
+
+def _build_accuracy_metric_status(db: Session, job) -> QARubricStatus:
+    snapshot = SnapshotRepository.get_by_id(db, job.snapshot_id)
+    if not snapshot:
+        raise ValueError(f"Snapshot {job.snapshot_id} not found")
+    accuracy_rubric = ensure_fixed_accuracy_rubric(db, snapshot.target_id)
+    judge = JudgeRepository.get_by_id(db, job.judge_id) if job.judge_id else None
+    return _build_verdict_status(
+        db, job, snapshot, judge,
+        rubric_id=accuracy_rubric.id,
+        rubric_name=accuracy_rubric.name,
+        group=accuracy_rubric.group,
+        score_lookup=lambda aid, jid: AnswerScoreRepository.get_by_answer_judge_rubric(db, aid, jid, accuracy_rubric.id),
+        score_to_value=lambda s: s.overall_label.lower(),
+        score_to_explanation=lambda s: s.explanation,
+        no_judge_msg="No accuracy judge configured for this QA job.",
+    )
+
+
+def _build_rubric_metric_status(
+    db: Session,
+    job,
+    rubric_id: int,
+    judge_id: Optional[int],
+) -> QARubricStatus:
+    snapshot = SnapshotRepository.get_by_id(db, job.snapshot_id)
+    rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    rubric_name = rubric.name if rubric else f"Rubric {rubric_id}"
+    judge = JudgeRepository.get_by_id(db, judge_id) if judge_id else None
+    if not rubric:
+        judge = None
+    return _build_verdict_status(
+        db, job, snapshot, judge,
+        rubric_id=rubric_id,
+        rubric_name=rubric_name,
+        group=rubric.group if rubric else "custom",
+        score_lookup=lambda aid, jid: AnswerScoreRepository.get_by_answer_judge_rubric(
+            db, answer_id=aid, rubric_id=rubric_id, judge_id=jid
+        ),
+        score_to_value=lambda s: s.overall_label,
+        score_to_explanation=lambda s: s.explanation,
+        no_judge_msg="No rubric judge configured for this rubric.",
+    )
 
 
 @router.post("/snapshots/{snapshot_id}/qa-jobs/start", response_model=List[QAJobResponse])
@@ -234,14 +370,14 @@ def list_qa_jobs_by_judge(
     return jobs
 
 
-@router.get("/answers/{answer_id}/rubric-scores", response_model=List[RubricAnswerScoreResponse])
+@router.get("/answers/{answer_id}/rubric-scores", response_model=List[AnswerScoreResponse])
 def get_rubric_scores_for_answer(
     answer_id: int,
     rubric_id: int,
     db: Session = Depends(get_db)
 ):
     """Get all rubric judge scores for a specific answer and rubric."""
-    scores = RubricAnswerScoreRepository.get_by_answer_and_rubric(db, answer_id, rubric_id)
+    scores = AnswerScoreRepository.get_by_answer_and_rubric(db, answer_id, rubric_id)
     return scores
 
 
@@ -257,4 +393,20 @@ def get_qa_job(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"QA job {job_id} not found"
         )
-    return job
+
+    rubric_statuses = [_build_accuracy_metric_status(db, job)]
+    for spec in (job.rubric_specs or []):
+        rubric_statuses.append(
+            _build_rubric_metric_status(
+                db,
+                job,
+                rubric_id=spec.get("rubric_id"),
+                judge_id=spec.get("judge_id"),
+            )
+        )
+
+    job_response = QAJobResponse.model_validate(job, from_attributes=True)
+    return QAJobDetailResponse(
+        **job_response.model_dump(),
+        rubric_statuses=rubric_statuses,
+    )

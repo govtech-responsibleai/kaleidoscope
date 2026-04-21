@@ -10,19 +10,26 @@ from collections import Counter
 from sqlalchemy.orm import Session
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 
-from src.common.database.repositories.annotation_repo import AnnotationRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
 from src.common.database.repositories.question_repo import QuestionRepository
-from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
 from src.common.database.repositories.snapshot_repo import SnapshotRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
-from src.common.database.models import AnswerScore, Answer, RubricAnswerScore, RubricAnnotation
+from src.common.database.models import Annotation, AnswerScore, Answer, RubricAnnotation
+from src.common.services.system_rubrics import (
+    FIXED_ACCURACY_NAME,
+    RUBRIC_GROUP_FIXED,
+    accuracy_label_from_bool,
+    best_option_for_rubric,
+    canonicalize_rubric_option_value,
+    ensure_fixed_accuracy_rubric,
+)
 from src.common.models.metrics import (
     AggregatedAnswerScore,
     AggregatedResult,
+    AggregationMethod,
     AlignedJudge,
     JudgeAlignmentResponse,
     JudgeAccuracyResponse,
@@ -41,10 +48,64 @@ logger = logging.getLogger(__name__)
 RELIABILITY_THRESHOLD = 0.5
 
 
-def _format_label(label: Optional[bool]) -> str:
+def _format_label(label: Optional[str]) -> str:
     if label is None:
         return "Pending"
-    return "Accurate" if label else "Inaccurate"
+    return label
+
+
+def _resolve_row_aggregate(
+    raw_values: List[Optional[str]],
+    override_value: Optional[str],
+    *,
+    require_reliable_baseline: bool = False,
+) -> MetricAggregatedResult:
+    """Shared state machine for accuracy and rubric row aggregation.
+
+    raw_values: per-judge string values (None means score missing/pending).
+    require_reliable_baseline: when True, override is only applied when the
+        majority baseline exists (rubric behaviour); when False, any override
+        is accepted (accuracy behaviour).
+    """
+    if not raw_values:
+        baseline_method: AggregationMethod = "no_aligned_judge"
+        baseline_value: Optional[str] = None
+    elif any(v is None for v in raw_values):
+        baseline_method = "pending"
+        baseline_value = None
+    else:
+        counts = Counter(raw_values)
+        most_common = counts.most_common()
+        if len(most_common) > 1 and most_common[0][1] == most_common[1][1]:
+            baseline_method = "majority_tied"
+            baseline_value = None
+        else:
+            baseline_method = "majority"
+            baseline_value = most_common[0][0]
+
+    if require_reliable_baseline:
+        is_edited = bool(
+            baseline_method == "majority"
+            and baseline_value is not None
+            and override_value is not None
+            and override_value != baseline_value
+        )
+    else:
+        is_edited = bool(override_value is not None and override_value != baseline_value)
+
+    if is_edited:
+        return MetricAggregatedResult(
+            method="override",
+            value=override_value,
+            baseline_value=baseline_value,
+            is_edited=True,
+        )
+    return MetricAggregatedResult(
+        method=baseline_method,
+        value=baseline_value,
+        baseline_value=baseline_value,
+        is_edited=False,
+    )
 
 
 class MetricsService:
@@ -60,12 +121,7 @@ class MetricsService:
         self.db = db
 
     def _best_option_for_rubric(self, rubric) -> str:
-        if rubric.best_option:
-            return rubric.best_option
-        options = rubric.options or []
-        if options and isinstance(options[0], dict):
-            return options[0].get("option", "")
-        return str(options[0]) if options else ""
+        return best_option_for_rubric(rubric)
 
     def _build_alignment_range(self, aligned_judges: List[AlignedJudge]) -> Optional[Dict[str, float]]:
         if not aligned_judges:
@@ -76,6 +132,7 @@ class MetricsService:
     def _summarize_contract_rows(
         self,
         rows: List[MetricRowResult],
+        resolved_value,
         is_positive,
     ) -> Tuple[int, int, int, int, float]:
         total_answers = len(rows)
@@ -86,14 +143,15 @@ class MetricsService:
 
         for row in rows:
             aggregate = row.aggregated_result
+            value = resolved_value(row)
             if aggregate.is_edited:
                 edited_count += 1
-            if aggregate.method in ("majority", "override") and is_positive(aggregate):
-                accurate_count += 1
-            elif aggregate.method in ("majority", "override"):
-                inaccurate_count += 1
-            else:
+            if value is None:
                 pending_count += 1
+            elif is_positive(value):
+                accurate_count += 1
+            else:
+                inaccurate_count += 1
 
         aggregate_score = accurate_count / total_answers if total_answers > 0 else 0.0
         return accurate_count, inaccurate_count, pending_count, edited_count, round(aggregate_score, 3)
@@ -124,6 +182,38 @@ class MetricsService:
 
         return reliability_map, judge_name_map
 
+    def _get_accuracy_human_label_map(
+        self,
+        answer_ids: List[int],
+        accuracy_rubric,
+    ) -> Dict[int, str]:
+        if not answer_ids:
+            return {}
+
+        annotations = (
+            self.db.query(RubricAnnotation.answer_id, RubricAnnotation.option_value)
+            .filter(
+                RubricAnnotation.answer_id.in_(answer_ids),
+                RubricAnnotation.rubric_id == accuracy_rubric.id,
+            )
+            .all()
+        )
+        annotation_map = {
+            answer_id: canonical
+            for answer_id, option_value in annotations
+            if (canonical := canonicalize_rubric_option_value(accuracy_rubric, option_value)) is not None
+        }
+        if annotation_map:
+            return annotation_map
+        return {
+            answer_id: accuracy_label_from_bool(label, accuracy_rubric)
+            for answer_id, label in (
+                self.db.query(Annotation.answer_id, Annotation.label)
+                .filter(Annotation.answer_id.in_(answer_ids))
+                .all()
+            )
+        }
+
     def get_accuracy_scoring_contract(self, snapshot_id: int) -> MetricScoringContract:
         answers = AnswerRepository.get_with_scores_and_annotation(self.db, snapshot_id)
         answers = sorted(answers, key=lambda answer: answer.id)
@@ -133,15 +223,23 @@ class MetricsService:
         snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
+        accuracy_rubric = ensure_fixed_accuracy_rubric(self.db, snapshot.target_id)
 
-        overrides = AnswerLabelOverrideRepository.get_by_snapshot(self.db, snapshot_id)
+        overrides = [
+            override
+            for override in AnswerLabelOverrideRepository.get_by_snapshot(self.db, snapshot_id)
+            if override.rubric_id == accuracy_rubric.id
+        ]
         override_map = {override.answer_id: override for override in overrides}
+        human_label_map = self._get_accuracy_human_label_map(
+            [answer.id for answer in answers],
+            accuracy_rubric,
+        )
         reliability_map, judge_name_map = self._get_accuracy_reliability_map(snapshot_id, answers)
 
-        relevant_judges = [
-            judge for judge in JudgeRepository.get_all(self.db, target_id=snapshot.target_id)
-            if judge.category == "accuracy" and judge.judge_type.value == "claim_based"
-        ]
+        relevant_judges = JudgeRepository.get_for_rubric(
+            self.db, accuracy_rubric.id, target_id=snapshot.target_id
+        )
         judge_ids_with_scores = {
             score.judge_id
             for answer in answers
@@ -189,38 +287,27 @@ class MetricsService:
         rows: List[MetricRowResult] = []
         for answer in answers:
             override = override_map.get(answer.id)
-            score_map = {score.judge_id: score for score in answer.scores if score.judge_id in reliable_judge_ids}
+            score_map = {
+                score.judge_id: score
+                for score in answer.scores
+                if score.judge_id in reliable_judge_ids and score.rubric_id == accuracy_rubric.id
+            }
             judge_results = [
                 MetricJudgeRowResult(
                     judge_id=judge.id,
                     name=judge.name,
-                    label=score_map.get(judge.id).overall_label if score_map.get(judge.id) else None,
+                    value=score_map.get(judge.id).overall_label if score_map.get(judge.id) else None,
                 )
                 for judge in reliable_judges
             ]
 
             metadata = [
-                f"- {judge_result.name}: {_format_label(judge_result.label)}"
+                f"- {judge_result.name}: {judge_result.value.title() if judge_result.value else 'Pending'}"
                 for judge_result in judge_results
             ]
-            if override:
-                aggregate = MetricAggregatedResult(
-                    method="override",
-                    label=override.edited_label,
-                    is_edited=True,
-                )
-            elif not reliable_judges:
-                aggregate = MetricAggregatedResult(method="no_aligned_judge", label=None)
-            elif any(score_map.get(judge.id) is None or score_map[judge.id].overall_label is None for judge in reliable_judges):
-                aggregate = MetricAggregatedResult(method="pending", label=None)
-            else:
-                labels = [score_map[judge.id].overall_label for judge in reliable_judges]
-                label_counts = Counter(labels)
-                most_common = label_counts.most_common()
-                if len(most_common) > 1 and most_common[0][1] == most_common[1][1]:
-                    aggregate = MetricAggregatedResult(method="majority_tied", label=None)
-                else:
-                    aggregate = MetricAggregatedResult(method="majority", label=most_common[0][0])
+            raw_values = [jr.value for jr in judge_results]
+            override_value = override.edited_value if override else None
+            aggregate = _resolve_row_aggregate(raw_values, override_value)
 
             question = answer.question
             rows.append(
@@ -232,21 +319,22 @@ class MetricsService:
                     answer_id=answer.id,
                     answer_content=answer.answer_content,
                     aggregated_result=aggregate,
-                    human_label=answer.annotation.label if answer.annotation else None,
+                    human_label=human_label_map.get(answer.id),
                     judge_results=judge_results,
                 )
             )
 
         accurate_count, inaccurate_count, pending_count, edited_count, aggregate_score = self._summarize_contract_rows(
             rows,
-            lambda aggregate: aggregate.label is True,
+            lambda row: row.aggregated_result.value,
+            lambda value, best_option=accuracy_rubric.best_option: value == best_option,
         )
 
         return MetricScoringContract(
-            metric_key="accuracy",
-            metric_name="Accuracy",
-            metric_type="accuracy",
-            target_label="Accurate",
+            rubric_id=accuracy_rubric.id,
+            rubric_name=accuracy_rubric.name,
+            group=accuracy_rubric.group,
+            target_label=accuracy_rubric.best_option,
             snapshot_id=snapshot_id,
             aggregated_accuracy=aggregate_score,
             total_answers=len(rows),
@@ -280,28 +368,30 @@ class MetricsService:
             (annotation.answer_id, annotation.rubric_id): annotation.option_value
             for annotation in human_annotations
         }
+        overrides = AnswerLabelOverrideRepository.get_by_snapshot(self.db, snapshot_id)
 
         contracts: List[MetricScoringContract] = []
         rubrics = TargetRubricRepository.get_by_target(self.db, target_id)
         for rubric in rubrics:
+            if rubric.group == RUBRIC_GROUP_FIXED and rubric.name == FIXED_ACCURACY_NAME:
+                continue
+            override_map: Dict[Tuple[int, int], str] = {
+                (override.answer_id, rubric.id): override.edited_value
+                for override in overrides
+                if override.rubric_id == rubric.id
+            }
             best_option = self._best_option_for_rubric(rubric)
-            relevant_judges = [
-                judge for judge in JudgeRepository.get_by_category(
-                    self.db,
-                    rubric.category,
-                    target_id=target_id,
-                    rubric_id=None if rubric.template_key else rubric.id,
-                )
-                if judge.judge_type.value == "response_level"
-            ]
+            relevant_judges = JudgeRepository.get_for_rubric(
+                self.db, rubric.id, target_id=target_id
+            )
             relevant_judge_ids = {judge.id for judge in relevant_judges}
             rubric_score_rows = (
-                self.db.query(RubricAnswerScore.answer_id, RubricAnswerScore.judge_id, RubricAnswerScore.option_chosen)
-                .join(Answer, RubricAnswerScore.answer_id == Answer.id)
+                self.db.query(AnswerScore.answer_id, AnswerScore.judge_id, AnswerScore.overall_label)
+                .join(Answer, AnswerScore.answer_id == Answer.id)
                 .filter(
                     Answer.snapshot_id == snapshot_id,
-                    RubricAnswerScore.rubric_id == rubric.id,
-                    RubricAnswerScore.judge_id.in_(relevant_judge_ids),
+                    AnswerScore.rubric_id == rubric.id,
+                    AnswerScore.judge_id.in_(relevant_judge_ids),
                 )
                 .all()
                 if relevant_judge_ids else []
@@ -356,43 +446,33 @@ class MetricsService:
             rubric_scores = []
             if reliable_judge_ids:
                 rubric_scores = (
-                    self.db.query(RubricAnswerScore)
-                    .join(Answer, RubricAnswerScore.answer_id == Answer.id)
+                    self.db.query(AnswerScore)
+                    .join(Answer, AnswerScore.answer_id == Answer.id)
                     .filter(
                         Answer.snapshot_id == snapshot_id,
-                        RubricAnswerScore.rubric_id == rubric.id,
-                        RubricAnswerScore.judge_id.in_(reliable_judge_ids),
+                        AnswerScore.rubric_id == rubric.id,
+                        AnswerScore.judge_id.in_(reliable_judge_ids),
                     )
                     .all()
                 )
-            score_map: Dict[Tuple[int, int], RubricAnswerScore] = {
+            score_map: Dict[Tuple[int, int], AnswerScore] = {
                 (score.answer_id, score.judge_id): score for score in rubric_scores
             }
 
             rows: List[MetricRowResult] = []
             for answer in answers:
+                human_option = human_annotation_map.get((answer.id, rubric.id))
+                override_option = override_map.get((answer.id, rubric.id))
                 judge_results = [
                     MetricJudgeRowResult(
                         judge_id=judge.id,
                         name=judge.name,
-                        option_value=score_map.get((answer.id, judge.id)).option_chosen if score_map.get((answer.id, judge.id)) else None,
+                        value=score_map.get((answer.id, judge.id)).overall_label if score_map.get((answer.id, judge.id)) else None,
                     )
                     for judge in reliable_judges
                 ]
-                if not reliable_judges:
-                    aggregate = MetricAggregatedResult(method="no_aligned_judge", option_value=None)
-                elif any(score_map.get((answer.id, judge.id)) is None for judge in reliable_judges):
-                    aggregate = MetricAggregatedResult(method="pending", option_value=None)
-                else:
-                    option_counts = Counter(
-                        score_map[(answer.id, judge.id)].option_chosen
-                        for judge in reliable_judges
-                    )
-                    most_common = option_counts.most_common()
-                    if len(most_common) > 1 and most_common[0][1] == most_common[1][1]:
-                        aggregate = MetricAggregatedResult(method="majority_tied", option_value=None)
-                    else:
-                        aggregate = MetricAggregatedResult(method="majority", option_value=most_common[0][0])
+                raw_values = [jr.value for jr in judge_results]
+                aggregate = _resolve_row_aggregate(raw_values, override_option, require_reliable_baseline=True)
 
                 question = answer.question
                 rows.append(
@@ -404,23 +484,22 @@ class MetricsService:
                         answer_id=answer.id,
                         answer_content=answer.answer_content,
                         aggregated_result=aggregate,
-                        human_option=human_annotation_map.get((answer.id, rubric.id)),
+                        human_option=human_option,
                         judge_results=judge_results,
                     )
                 )
 
             accurate_count, inaccurate_count, pending_count, edited_count, aggregate_score = self._summarize_contract_rows(
                 rows,
-                lambda aggregate, best_option=best_option: aggregate.option_value == best_option,
+                lambda row: row.aggregated_result.value,
+                lambda value, best_option=best_option: value == best_option,
             )
 
             contracts.append(
                 MetricScoringContract(
-                    metric_key=f"rubric:{rubric.id}",
-                    metric_name=rubric.name,
-                    metric_type="rubric",
                     rubric_id=rubric.id,
                     rubric_name=rubric.name,
+                    group=rubric.group,
                     target_label=best_option,
                     snapshot_id=snapshot_id,
                     aggregated_accuracy=aggregate_score,
@@ -462,50 +541,57 @@ class MetricsService:
         Raises:
             ValueError: If no annotations or scores found for comparison
         """
-        # Get selected annotations
-        annotations = AnnotationRepository.get_by_snapshot_selected(self.db, snapshot_id)
-
-        if not annotations:
+        snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
+        if not snapshot:
+            raise ValueError(f"Snapshot {snapshot_id} not found")
+        accuracy_rubric = ensure_fixed_accuracy_rubric(self.db, snapshot.target_id)
+        selected_answers = AnswerRepository.get_selected_for_annotation(self.db, snapshot_id)
+        answer_ids = [answer.id for answer in selected_answers]
+        annotation_map = self._get_accuracy_human_label_map(answer_ids, accuracy_rubric)
+        if not annotation_map:
             raise ValueError(f"No annotations found for snapshot {snapshot_id} with is_selected_for_annotation=True")
 
-        # Get answer IDs from annotations
-        answer_ids = [ann.answer_id for ann in annotations]
-
-        # Get judge scores for the same selected answers
-        scores = AnswerScoreRepository.get_by_snapshot_and_judge_selected(self.db, snapshot_id, judge_id)
-
+        scores = AnswerScoreRepository.get_by_snapshot_and_judge_selected(self.db, snapshot_id, judge_id, accuracy_rubric.id)
         if not scores:
             raise ValueError(f"No scores found for judge {judge_id}, snapshot {snapshot_id} on selected answers")
 
-        # Create mapping of answer_id -> annotation label
-        annotation_map = {ann.answer_id: ann.label for ann in annotations}
-
-        # Label overrides take precedence over annotations for ground truth
+        # Label overrides take precedence over rubric annotations for ground truth
         overrides = AnswerLabelOverrideRepository.get_by_snapshot(self.db, snapshot_id)
-        override_map = {o.answer_id: o.edited_label for o in overrides}
+        override_map = {
+            o.answer_id: canonicalize_rubric_option_value(accuracy_rubric, o.edited_value)
+            for o in overrides
+            if o.rubric_id == accuracy_rubric.id
+        }
         for answer_id, label in override_map.items():
-            if answer_id in annotation_map:
+            if answer_id in annotation_map and label is not None:
                 annotation_map[answer_id] = label
 
         # Create mapping of answer_id -> score label
-        score_map = {score.answer_id: score.overall_label for score in scores}
+        score_map = {
+            score.answer_id: canonicalize_rubric_option_value(accuracy_rubric, score.overall_label)
+            for score in scores
+        }
 
         # Build aligned lists for sklearn
         y_true = []  # Human annotations (ground truth)
         y_pred = []  # Judge predictions
 
+        best_option = accuracy_rubric.best_option
         for answer_id in answer_ids:
             if answer_id in annotation_map and answer_id in score_map:
-                y_true.append(annotation_map[answer_id])
-                y_pred.append(score_map[answer_id])
+                score_value = score_map[answer_id]
+                if score_value is None:
+                    continue
+                y_true.append(annotation_map[answer_id] == best_option)
+                y_pred.append(score_value == best_option)
 
         if not y_true:
             raise ValueError(f"No overlapping annotations and scores found for snapshot {snapshot_id}, judge {judge_id}")
 
-        # Calculate metrics using sklearn. Positive Label: False (Inaccurate), Negative Label: True (Accurate)
-        f1 = f1_score(y_true, y_pred, average="macro", pos_label=False, zero_division=0)
-        precision = precision_score(y_true, y_pred, average='binary', pos_label=False, zero_division=0)
-        recall = recall_score(y_true, y_pred, average='binary', pos_label=False, zero_division=0)
+        # Positive outcome follows the rubric's best_option.
+        f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+        precision = precision_score(y_true, y_pred, average='binary', pos_label=True, zero_division=0)
+        recall = recall_score(y_true, y_pred, average='binary', pos_label=True, zero_division=0)
         accuracy = accuracy_score(y_true, y_pred)
 
         logger.info(
@@ -536,13 +622,21 @@ class MetricsService:
         Raises:
             ValueError: If no scores found
         """
-        scores = AnswerScoreRepository.get_by_snapshot_and_judge(self.db, snapshot_id, judge_id)
+        snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
+        if not snapshot:
+            raise ValueError(f"Snapshot {snapshot_id} not found")
+        accuracy_rubric = ensure_fixed_accuracy_rubric(self.db, snapshot.target_id)
+        scores = AnswerScoreRepository.get_by_snapshot_and_judge(self.db, snapshot_id, judge_id, accuracy_rubric.id)
 
         if not scores:
             raise ValueError(f"No scores found for judge {judge_id}, snapshot {snapshot_id}")
 
         total_count = len(scores)
-        accurate_count = sum(1 for score in scores if score.overall_label is True)
+        accurate_count = sum(
+            1
+            for score in scores
+            if canonicalize_rubric_option_value(accuracy_rubric, score.overall_label) == accuracy_rubric.best_option
+        )
         accuracy = accurate_count / total_count if total_count > 0 else 0.0
 
         logger.info(
@@ -584,7 +678,7 @@ class MetricsService:
 
         for row in contract.rows:
             metadata = [
-                f"- {judge_result.name}: {_format_label(judge_result.label)}"
+                f"- {judge_result.name}: {judge_result.value.title() if judge_result.value else 'Pending'}"
                 for judge_result in row.judge_results
             ]
             results.append(
@@ -598,7 +692,7 @@ class MetricsService:
                     aggregated_accuracy=AggregatedAnswerScore(
                         answer_id=row.answer_id,
                         method=row.aggregated_result.method,
-                        label=row.aggregated_result.label,
+                        label=row.aggregated_result.value,
                         is_edited=row.aggregated_result.is_edited,
                         metadata=metadata,
                     ),
@@ -657,36 +751,33 @@ class MetricsService:
             snapshot_id,
         )
 
-        judges = JudgeRepository.get_all(self.db, target_id=target_id)
         accuracy_pending_counts: Dict[str, int] = {}
         rubric_pending_counts: Dict[str, int] = {}
 
-        for judge in judges:
-            if judge.category == "accuracy" and judge.judge_type.value == "claim_based":
-                accuracy_pending_counts[str(judge.id)] = (
+        accuracy_rubric = ensure_fixed_accuracy_rubric(self.db, target_id)
+        for judge in JudgeRepository.get_for_rubric(
+            self.db, accuracy_rubric.id, target_id=target_id
+        ):
+            accuracy_pending_counts[str(judge.id)] = (
+                QuestionRepository.count_approved_questions_without_scores(
+                    self.db,
+                    target_id,
+                    snapshot_id,
+                    judge.id,
+                )
+            )
+
+        for rubric in TargetRubricRepository.get_by_target(self.db, target_id):
+            if rubric.group == RUBRIC_GROUP_FIXED and rubric.name == FIXED_ACCURACY_NAME:
+                continue
+            for judge in JudgeRepository.get_for_rubric(self.db, rubric.id, target_id=target_id):
+                rubric_pending_counts[f"{judge.id}:{rubric.id}"] = (
                     QuestionRepository.count_approved_questions_without_scores(
                         self.db,
                         target_id,
                         snapshot_id,
                         judge.id,
-                    )
-                )
-
-        for rubric in TargetRubricRepository.get_by_target(self.db, target_id):
-            rubric_judges = [
-                judge for judge in judges
-                if judge.judge_type.value == "response_level"
-                and judge.category == rubric.category
-                and (judge.rubric_id is None or judge.rubric_id == rubric.id)
-            ]
-            for judge in rubric_judges:
-                rubric_pending_counts[f"{judge.id}:{rubric.id}"] = (
-                    QuestionRepository.count_approved_questions_without_rubric_scores(
-                        self.db,
-                        target_id,
-                        snapshot_id,
-                        judge.id,
-                        rubric.id,
+                        rubric_id=rubric.id,
                     )
                 )
 
@@ -736,6 +827,7 @@ class MetricsService:
             aggregated_results, _ = self.get_aggregated_results(snapshot_id)
         except ValueError as e:
             raise ValueError(f"Failed to get aggregated results: {str(e)}")
+        accuracy_rubric = ensure_fixed_accuracy_rubric(self.db, target_id)
 
         # Initialize confusion matrix counters
         matrix = {
@@ -749,7 +841,11 @@ class MetricsService:
         for result in aggregated_results:
             agg = result.aggregated_accuracy
             # Include overridden inaccurate answers
-            if agg.label is False and agg.method in ("majority", "override"):
+            if (
+                agg.label is not None
+                and agg.label != accuracy_rubric.best_option
+                and agg.method in ("majority", "override")
+            ):
                 q_type = result.question_type
                 q_scope = result.question_scope
                 if q_type and q_scope:
@@ -778,18 +874,25 @@ class MetricsService:
         Treats best_option as the positive class (True), all others as negative (False).
         Returns f1, precision, recall, accuracy, and sample_count.
         """
-        human_labels = RubricAnswerScoreRepository.get_human_labels_by_snapshot_selected(
-            self.db, snapshot_id, rubric_id
+        human_labels = (
+            self.db.query(RubricAnnotation)
+            .join(Answer, RubricAnnotation.answer_id == Answer.id)
+            .filter(
+                Answer.snapshot_id == snapshot_id,
+                Answer.is_selected_for_annotation == True,
+                RubricAnnotation.rubric_id == rubric_id,
+            )
+            .all()
         )
-        judge_scores = RubricAnswerScoreRepository.get_by_snapshot_and_rubric_and_judge_selected(
-            self.db, snapshot_id, rubric_id, judge_id
+        judge_scores = AnswerScoreRepository.get_by_snapshot_and_judge_selected(
+            self.db, snapshot_id, judge_id, rubric_id
         )
 
         if not human_labels or not judge_scores:
             raise ValueError(f"No data for rubric alignment: judge {judge_id}, rubric {rubric_id}, snapshot {snapshot_id}")
 
         human_map = {label.answer_id: label.option_value for label in human_labels}
-        judge_map = {score.answer_id: score.option_chosen for score in judge_scores}
+        judge_map = {score.answer_id: score.overall_label for score in judge_scores}
 
         # Convert to binary: best_option → True, anything else → False
         y_true = []
@@ -822,15 +925,15 @@ class MetricsService:
         Calculate what % of answers this judge gave the best option for a rubric.
         best_option is treated as "accurate" (positive label).
         """
-        scores = RubricAnswerScoreRepository.get_by_snapshot_and_rubric_and_judge(
-            self.db, snapshot_id, rubric_id, judge_id
+        scores = AnswerScoreRepository.get_by_snapshot_and_judge(
+            self.db, snapshot_id, judge_id, rubric_id
         )
 
         if not scores:
             raise ValueError(f"No rubric scores for judge {judge_id}, rubric {rubric_id}, snapshot {snapshot_id}")
 
         total = len(scores)
-        accurate_count = sum(1 for s in scores if s.option_chosen == best_option)
+        accurate_count = sum(1 for s in scores if s.overall_label == best_option)
         accuracy = accurate_count / total if total > 0 else 0.0
 
         return JudgeAccuracyResponse(
