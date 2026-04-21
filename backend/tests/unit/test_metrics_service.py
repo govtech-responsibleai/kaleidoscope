@@ -3,7 +3,12 @@ Unit tests for MetricsService.
 """
 
 import pytest
-from src.common.database.models import AnswerScore, Judge, JudgeTypeEnum
+from src.common.database.models import (
+    AnswerLabelOverride,
+    AnswerScore,
+    Judge,
+    RubricAnnotation,
+)
 
 from src.scoring.services.metrics_service import MetricsService
 from src.common.models.metrics import (
@@ -167,16 +172,16 @@ class TestMetricsService:
         sample_annotations,
         sample_answer_scores,
         sample_snapshot,
+        sample_judge_claim_based,
     ):
         """Rows stay pending until every reliable accuracy judge has scored them."""
         second_judge = Judge(
             target_id=sample_target.id,
-            category="accuracy",
+            rubric_id=sample_judge_claim_based.rubric_id,
             name="Judge 2",
             model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
             prompt_template="Second accuracy judge",
             params={"temperature": 0.0},
-            judge_type=JudgeTypeEnum.claim_based,
             is_baseline=False,
             is_editable=True,
         )
@@ -187,8 +192,9 @@ class TestMetricsService:
         for annotation in sample_annotations[1:]:
             test_db.add(AnswerScore(
                 answer_id=annotation.answer_id,
+                rubric_id=second_judge.rubric_id,
                 judge_id=second_judge.id,
-                overall_label=annotation.label,
+                overall_label="Accurate" if annotation.label else "Inaccurate",
                 explanation="Reliable second judge",
             ))
         test_db.commit()
@@ -200,7 +206,7 @@ class TestMetricsService:
         assert any(summary.judge_id == second_judge.id for summary in contract.judge_summaries)
         assert any(judge.judge_id == second_judge.id for judge in contract.aligned_judges)
         assert target_row.aggregated_result.method == "pending"
-        assert target_row.aggregated_result.label is None
+        assert target_row.aggregated_result.value is None
 
     def test_accuracy_scoring_contract_returns_unavailable_summary_for_judge_with_no_scores(
         self,
@@ -208,16 +214,16 @@ class TestMetricsService:
         sample_target,
         sample_snapshot,
         sample_annotations,
+        sample_judge_claim_based,
     ):
         """A created judge without any run data should expose unavailable summary values."""
         unused_judge = Judge(
             target_id=sample_target.id,
-            category="accuracy",
+            rubric_id=sample_judge_claim_based.rubric_id,
             name="Unrun Accuracy Judge",
             model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
             prompt_template="Accuracy prompt",
             params={"temperature": 0.0},
-            judge_type=JudgeTypeEnum.claim_based,
             is_baseline=False,
             is_editable=True,
         )
@@ -233,3 +239,152 @@ class TestMetricsService:
         assert summary.reliability is None
         assert summary.accurate_count == 0
         assert summary.total_answers == 0
+
+    def test_accuracy_scoring_contract_uses_persisted_override_for_row_state(
+        self,
+        test_db,
+        sample_annotations,
+        sample_answer_scores,
+        sample_snapshot,
+    ):
+        """Persisted accuracy overrides should remain visible in the scoring contract after refresh."""
+        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_snapshot.target_id)
+        target_answer_id = sample_annotations[8].answer_id
+        test_db.add(AnswerLabelOverride(answer_id=target_answer_id, rubric_id=accuracy_rubric.id, edited_value="Accurate"))
+        test_db.commit()
+
+        service = MetricsService(test_db)
+        contract = service.get_accuracy_scoring_contract(sample_snapshot.id)
+
+        row = next(row for row in contract.rows if row.answer_id == target_answer_id)
+        assert row.aggregated_result.method == "override"
+        assert row.aggregated_result.value == "Accurate"
+        assert row.aggregated_result.baseline_value == "Inaccurate"
+        assert row.aggregated_result.is_edited is True
+        assert contract.accurate_count == 9
+        assert contract.inaccurate_count == 1
+        assert contract.edited_count == 1
+
+    def test_rubric_scoring_contract_ignores_rubric_annotations_as_scoring_overrides(
+        self,
+        test_db,
+        sample_target,
+        sample_snapshot,
+        sample_annotations,
+        sample_rubric,
+    ):
+        """Rubric annotations remain ground truth and do not change the scoring-table aggregate by themselves."""
+        rubric_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Tone prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(rubric_judge)
+        test_db.commit()
+        test_db.refresh(rubric_judge)
+
+        answers = [annotation.answer for annotation in sample_annotations]
+        overridden_answer_id = answers[0].id
+        negative_control_answer_id = answers[1].id
+        for answer in answers:
+            test_db.add(AnswerScore(
+                answer_id=answer.id,
+                rubric_id=sample_rubric.id,
+                judge_id=rubric_judge.id,
+                overall_label="Casual" if answer.id in {overridden_answer_id, negative_control_answer_id} else "Professional",
+                explanation="Judged tone",
+            ))
+            test_db.add(RubricAnnotation(
+                answer_id=answer.id,
+                rubric_id=sample_rubric.id,
+                option_value="Casual" if answer.id == negative_control_answer_id else "Professional",
+            ))
+        test_db.commit()
+
+        service = MetricsService(test_db)
+        contract = next(
+            contract for contract in service.get_rubric_scoring_contracts(sample_target.id, sample_snapshot.id)
+            if contract.rubric_id == sample_rubric.id
+        )
+
+        row = next(row for row in contract.rows if row.answer_id == overridden_answer_id)
+        assert row.aggregated_result.method == "majority"
+        assert row.aggregated_result.value == "Casual"
+        assert row.aggregated_result.baseline_value == "Casual"
+        assert row.aggregated_result.is_edited is False
+        assert row.human_option == "Professional"
+        assert contract.accurate_count == 8
+        assert contract.inaccurate_count == 2
+        assert contract.edited_count == 0
+        assert contract.aggregated_accuracy == 0.8
+
+    def test_rubric_scoring_contract_counts_scoring_override_in_aggregate_summary(
+        self,
+        test_db,
+        sample_target,
+        sample_snapshot,
+        sample_annotations,
+        sample_rubric,
+    ):
+        """Rubric metric summaries should recalculate when a saved human rubric label differs from judge majority."""
+        rubric_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Tone prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(rubric_judge)
+        test_db.commit()
+        test_db.refresh(rubric_judge)
+
+        answers = [annotation.answer for annotation in sample_annotations]
+        overridden_answer_id = answers[0].id
+        negative_control_answer_id = answers[1].id
+        for answer in answers:
+            test_db.add(AnswerScore(
+                answer_id=answer.id,
+                rubric_id=sample_rubric.id,
+                judge_id=rubric_judge.id,
+                overall_label="Casual" if answer.id in {overridden_answer_id, negative_control_answer_id} else "Professional",
+                explanation="Judged tone",
+            ))
+            test_db.add(RubricAnnotation(
+                answer_id=answer.id,
+                rubric_id=sample_rubric.id,
+                option_value="Casual" if answer.id == negative_control_answer_id else "Professional",
+            ))
+        test_db.commit()
+
+        test_db.add(AnswerLabelOverride(
+            answer_id=overridden_answer_id,
+            rubric_id=sample_rubric.id,
+            edited_value="Professional",
+        ))
+        test_db.commit()
+
+        service = MetricsService(test_db)
+        contract = next(
+            contract for contract in service.get_rubric_scoring_contracts(sample_target.id, sample_snapshot.id)
+            if contract.rubric_id == sample_rubric.id
+        )
+
+        row = next(row for row in contract.rows if row.answer_id == overridden_answer_id)
+        assert row.aggregated_result.method == "override"
+        assert row.aggregated_result.value == "Professional"
+        assert row.aggregated_result.baseline_value == "Casual"
+        assert row.aggregated_result.is_edited is True
+        assert row.human_option == "Professional"
+        assert contract.accurate_count == 9
+        assert contract.inaccurate_count == 1
+        assert contract.edited_count == 1
+        assert contract.aggregated_accuracy == 0.9

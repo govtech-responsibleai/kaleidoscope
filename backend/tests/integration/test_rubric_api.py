@@ -8,7 +8,7 @@ and annotation completeness gating.
 import pytest
 
 from src.common.database.models import (
-    RubricAnswerScore, RubricAnnotation,
+    AnswerScore, RubricAnnotation,
 )
 
 
@@ -38,16 +38,115 @@ class TestRubric:
         assert len(data["options"]) == 2
         assert data["target_id"] == sample_target.id
         assert "id" in data
-        assert "category" in data
+        assert data["group"] == "custom"
+
+    def test_create_preset_rubric_is_rejected(self, test_client, sample_target):
+        payload = {
+            "name": "Empathy",
+            "criteria": "Does the response show empathy?",
+            "options": [
+                {"option": "Empathetic", "description": "Shows empathy"},
+                {"option": "Not Empathetic", "description": "Lacks empathy"},
+            ],
+            "best_option": "Empathetic",
+            "group": "preset",
+        }
+        resp = test_client.post(
+            f"/api/v1/targets/{sample_target.id}/rubrics",
+            json=payload,
+        )
+        assert resp.status_code == 400
+        assert resp.json()["detail"] == "Only custom rubrics can be created through this endpoint"
 
     def test_list_rubrics(self, test_client, sample_target, sample_rubric, sample_rubric_second):
-        """Create 2 rubrics, GET list -> returns both."""
+        """GET list includes backend-owned fixed/preset rubrics plus existing custom rubrics."""
         resp = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics")
         assert resp.status_code == 200
         rubrics = resp.json()
-        assert len(rubrics) == 2
+        assert len(rubrics) == 5
         names = {r["name"] for r in rubrics}
-        assert names == {"Tone of Voice", "Response Relevance"}
+        assert names == {"Accuracy", "Empathy", "Verbosity", "Tone of Voice", "Response Relevance"}
+
+    def test_fixed_accuracy_cannot_be_updated(self, test_client, sample_target):
+        rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
+        fixed = next(r for r in rubrics if r["group"] == "fixed")
+
+        resp = test_client.put(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{fixed['id']}",
+            json={"name": "Changed Accuracy"},
+        )
+        assert resp.status_code == 400
+
+    def test_fixed_accuracy_cannot_be_deleted(self, test_client, sample_target):
+        rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
+        fixed = next(r for r in rubrics if r["group"] == "fixed")
+
+        resp = test_client.delete(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{fixed['id']}",
+        )
+        assert resp.status_code == 400
+
+    def test_preset_rubric_cannot_be_updated(self, test_client, test_db, sample_target):
+        """Preset (Empathy) rubric update -> 400."""
+        from src.common.database.models import TargetRubric
+        rubric = TargetRubric(
+            target_id=sample_target.id,
+            name="Empathy",
+            criteria="Does the response show empathy?",
+            options=[{"option": "Empathetic", "description": "Shows empathy"}, {"option": "Not empathetic", "description": "Lacks empathy"}],
+            best_option="Empathetic",
+            group="preset",
+            scoring_mode="response_level",
+            position=1,
+        )
+        test_db.add(rubric)
+        test_db.commit()
+        test_db.refresh(rubric)
+
+        resp = test_client.put(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{rubric.id}",
+            json={"name": "Changed Empathy"},
+        )
+        assert resp.status_code == 400
+
+    def test_preset_rubric_cannot_be_deleted(self, test_client, test_db, sample_target):
+        """Preset (Empathy) rubric delete -> 400."""
+        from src.common.database.models import TargetRubric
+        rubric = TargetRubric(
+            target_id=sample_target.id,
+            name="Empathy",
+            criteria="Does the response show empathy?",
+            options=[{"option": "Empathetic", "description": "Shows empathy"}, {"option": "Not empathetic", "description": "Lacks empathy"}],
+            best_option="Empathetic",
+            group="preset",
+            scoring_mode="response_level",
+            position=1,
+        )
+        test_db.add(rubric)
+        test_db.commit()
+        test_db.refresh(rubric)
+
+        resp = test_client.delete(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{rubric.id}",
+        )
+        assert resp.status_code == 400
+
+    def test_reserved_custom_name_is_auto_suffixed(self, test_client, sample_target):
+        payload = {
+            "name": "Accuracy",
+            "criteria": "Custom accuracy-like rubric",
+            "options": [
+                {"option": "Good", "description": "Good"},
+                {"option": "Bad", "description": "Bad"},
+            ],
+            "best_option": "Good",
+        }
+        resp = test_client.post(
+            f"/api/v1/targets/{sample_target.id}/rubrics",
+            json=payload,
+        )
+        assert resp.status_code == 201
+        assert resp.json()["name"].startswith("Accuracy (")
 
     def test_update_rubric_name(self, test_client, sample_target, sample_rubric):
         """PUT name change -> 200, name updated."""
@@ -59,7 +158,7 @@ class TestRubric:
         assert resp.json()["name"] == "Updated Tone"
 
     def test_delete_rubric(self, test_client, sample_target, sample_rubric):
-        """DELETE -> 204, then GET list -> gone."""
+        """DELETE removes the custom rubric but preserves backend-owned fixed/preset rubrics."""
         resp = test_client.delete(
             f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
         )
@@ -67,7 +166,7 @@ class TestRubric:
 
         list_resp = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics")
         assert list_resp.status_code == 200
-        assert len(list_resp.json()) == 0
+        assert {rubric["name"] for rubric in list_resp.json()} == {"Accuracy", "Empathy", "Verbosity"}
 
     def test_update_options_deletes_stale_scores(
         self, test_client, test_db, sample_target, sample_rubric,
@@ -75,18 +174,18 @@ class TestRubric:
     ):
         """Updating rubric options purges existing scores."""
         # Insert a score via ORM
-        score = RubricAnswerScore(
+        score = AnswerScore(
             answer_id=sample_answer.id,
             rubric_id=sample_rubric.id,
             judge_id=sample_judge_claim_based.id,
-            option_chosen="Professional",
+            overall_label="Professional",
             explanation="Good tone",
         )
         test_db.add(score)
         test_db.commit()
 
         # Verify score exists
-        assert test_db.query(RubricAnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 1
+        assert test_db.query(AnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 1
 
         # Update options (should trigger purge)
         resp = test_client.put(
@@ -103,18 +202,18 @@ class TestRubric:
 
         # Scores should be purged
         test_db.expire_all()
-        assert test_db.query(RubricAnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 0
+        assert test_db.query(AnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 0
 
     def test_update_name_preserves_scores(
         self, test_client, test_db, sample_target, sample_rubric,
         sample_answer, sample_judge_claim_based,
     ):
         """Changing only name does NOT purge scores."""
-        score = RubricAnswerScore(
+        score = AnswerScore(
             answer_id=sample_answer.id,
             rubric_id=sample_rubric.id,
             judge_id=sample_judge_claim_based.id,
-            option_chosen="Professional",
+            overall_label="Professional",
             explanation="Good tone",
         )
         test_db.add(score)
@@ -127,7 +226,7 @@ class TestRubric:
         assert resp.status_code == 200
 
         test_db.expire_all()
-        assert test_db.query(RubricAnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 1
+        assert test_db.query(AnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 1
 
     def test_incomplete_when_rubric_annotations_missing(
         self, test_client, test_db, sample_target, sample_snapshot,

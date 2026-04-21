@@ -9,7 +9,7 @@ import pytest
 class TestJudgeAPI:
     """Integration tests for judge API."""
 
-    def test_judge_crud_flow(self, auth_client, auth_headers):
+    def test_judge_crud_flow(self, auth_client, auth_headers, sample_target, sample_rubric):
         """
         Test complete judge CRUD flow with authentication.
 
@@ -24,11 +24,12 @@ class TestJudgeAPI:
         create_response = auth_client.post(
             "/api/v1/judges",
             json={
+                "target_id": sample_target.id,
+                "rubric_id": sample_rubric.id,
                 "name": "Custom Judge",
-                "model_name": "gemini/gemini-2.5-flash-lite",
+                "model_name": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
                 "prompt_template": "Test prompt template",
                 "params": {"temperature": 0.7},
-                "judge_type": "claim_based"
             },
             headers=auth_headers
         )
@@ -85,16 +86,31 @@ class TestJudgeAPI:
         )
         assert get_deleted.status_code == 404
 
+    def test_create_judge_requires_rubric_id(self, auth_client, auth_headers, sample_target):
+        response = auth_client.post(
+            "/api/v1/judges",
+            json={
+                "target_id": sample_target.id,
+                "name": "Judge Without Rubric",
+                "model_name": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+                "prompt_template": "Test prompt template",
+                "params": {"temperature": 0.7},
+            },
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert response.json()["detail"] == "rubric_id is required for user-created judges"
+
     def test_create_judge_without_auth_returns_401(self, auth_client):
         """Test that creating a judge without authentication returns 401."""
         response = auth_client.post(
             "/api/v1/judges",
             json={
                 "name": "Test Judge",
-                "model_name": "gemini/gemini-2.5-flash-lite",
+                "model_name": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
                 "prompt_template": "Test",
                 "params": {},
-                "judge_type": "claim_based"
             }
         )
 
@@ -128,7 +144,7 @@ class TestJudgeAPI:
 
         assert response.status_code == 404
 
-    def test_list_judges_by_category_supports_rubric_scope(
+    def test_list_judges_by_rubric_excludes_other_rubric_judges(
         self,
         auth_client,
         auth_headers,
@@ -136,7 +152,7 @@ class TestJudgeAPI:
         sample_rubric_second,
         test_db,
     ):
-        """Category lookup should be able to narrow custom rubric judges by rubric_id."""
+        """Rubric lookup should return only judges scoped to that rubric."""
         from src.common.database.models import TargetRubric
 
         other_rubric = TargetRubric(
@@ -148,7 +164,6 @@ class TestJudgeAPI:
                 {"option": "Not Helpful", "description": "Does not help"},
             ],
             best_option="Helpful",
-            category="default",
             position=2,
         )
         test_db.add(other_rubric)
@@ -161,11 +176,9 @@ class TestJudgeAPI:
                 "target_id": sample_target.id,
                 "rubric_id": sample_rubric_second.id,
                 "name": "Custom Default Judge A",
-                "model_name": "gemini/gemini-2.5-flash-lite",
+                "model_name": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
                 "prompt_template": "Rubric A prompt",
                 "params": {"temperature": 0.7},
-                "judge_type": "response_level",
-                "category": "default",
             },
             headers=auth_headers,
         )
@@ -177,18 +190,16 @@ class TestJudgeAPI:
                 "target_id": sample_target.id,
                 "rubric_id": other_rubric.id,
                 "name": "Custom Default Judge B",
-                "model_name": "gemini/gemini-2.5-flash-lite",
+                "model_name": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
                 "prompt_template": "Rubric B prompt",
                 "params": {"temperature": 0.7},
-                "judge_type": "response_level",
-                "category": "default",
             },
             headers=auth_headers,
         )
         assert response_b.status_code == 201
 
         lookup_response = auth_client.get(
-            f"/api/v1/judges/by-category/default?target_id={sample_target.id}&rubric_id={sample_rubric_second.id}",
+            f"/api/v1/judges/by-rubric/{sample_rubric_second.id}?target_id={sample_target.id}",
             headers=auth_headers,
         )
 
@@ -196,3 +207,75 @@ class TestJudgeAPI:
         names = [judge["name"] for judge in lookup_response.json()]
         assert "Custom Default Judge A" in names
         assert "Custom Default Judge B" not in names
+
+    def test_get_baseline_by_rubric_returns_rubric_scoped_baseline(
+        self,
+        auth_client,
+        auth_headers,
+        sample_target,
+        sample_rubric_second,
+        test_db,
+    ):
+        from src.common.database.models import Judge
+
+        rubric_baseline = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric_second.id,
+            name="Scoped Baseline",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Scoped prompt",
+            params={},
+            is_baseline=True,
+            is_editable=False,
+        )
+        global_baseline = Judge(
+            name="Global Baseline",
+            model_name="azure/gpt-5-mini-2025-08-07",
+            prompt_template="Global prompt",
+            params={},
+            is_baseline=True,
+            is_editable=False,
+        )
+        test_db.add_all([rubric_baseline, global_baseline])
+        test_db.commit()
+        test_db.refresh(rubric_baseline)
+
+        response = auth_client.get(
+            f"/api/v1/judges/by-rubric/{sample_rubric_second.id}/baseline?target_id={sample_target.id}",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        payload = response.json()
+        assert payload["id"] == rubric_baseline.id
+        assert payload["rubric_id"] == sample_rubric_second.id
+        assert payload["is_baseline"] is True
+
+    def test_get_baseline_by_rubric_does_not_fall_back_to_global_baseline(
+        self,
+        auth_client,
+        auth_headers,
+        sample_rubric_second,
+        test_db,
+    ):
+        from src.common.database.models import Judge
+
+        global_baseline = Judge(
+            name="Global Baseline",
+            model_name="azure/gpt-5-mini-2025-08-07",
+            prompt_template="Global prompt",
+            params={},
+            is_baseline=True,
+            is_editable=False,
+        )
+        test_db.add(global_baseline)
+        test_db.commit()
+        test_db.refresh(global_baseline)
+
+        response = auth_client.get(
+            f"/api/v1/judges/by-rubric/{sample_rubric_second.id}/baseline",
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == f"Baseline judge not found for rubric {sample_rubric_second.id}"

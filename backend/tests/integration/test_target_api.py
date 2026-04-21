@@ -6,6 +6,7 @@ import pytest
 
 from src.common.connectors.http_auth import decrypt_http_auth_secret
 from src.common.database.repositories import TargetHttpAuthSecretRepository, TargetRepository
+from src.common.services.system_rubrics import FIXED_ACCURACY_NAME
 
 
 @pytest.mark.integration
@@ -40,6 +41,16 @@ class TestTargetAPI:
         assert target_data["name"] == "Test Bot"
         assert target_data["agency"] == "Test Agency"
         target_id = target_data["id"]
+
+        rubrics_response = auth_client.get(
+            f"/api/v1/targets/{target_id}/rubrics",
+            headers=auth_headers,
+        )
+        assert rubrics_response.status_code == 200
+        rubrics = rubrics_response.json()
+        assert len(rubrics) == 1
+        assert rubrics[0]["name"] == FIXED_ACCURACY_NAME
+        assert rubrics[0]["group"] == "fixed"
 
         # 2. List targets
         list_response = auth_client.get(

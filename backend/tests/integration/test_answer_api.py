@@ -8,6 +8,13 @@ import math
 
 import pytest
 
+from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+
+
+def _accuracy_override_path(test_db, sample_answer) -> str:
+    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_answer.snapshot.target_id)
+    return f"/api/v1/answers/{sample_answer.id}/label-overrides/{accuracy_rubric.id}"
+
 
 @pytest.mark.integration
 class TestAnswerSelectionAPI:
@@ -105,8 +112,9 @@ class TestAnswerClaimsAPI:
         # Create answer score and claim scores for the judge
         answer_score = AnswerScore(
             answer_id=sample_answer.id,
+            rubric_id=sample_judge_claim_based.rubric_id,
             judge_id=sample_judge_claim_based.id,
-            overall_label=True
+            overall_label="Accurate"
         )
         test_db.add(answer_score)
         test_db.commit()
@@ -168,88 +176,69 @@ class TestAnswerClaimsAPI:
 class TestLabelOverrideAPI:
     """Integration tests for answer label override endpoints."""
 
-    def test_create_label_override(self, test_client, sample_answer):
+    def test_create_label_override(self, test_client, test_db, sample_answer):
         """
-        Test PUT /answers/{answer_id}/label-override creates an override.
+        Test PUT /answers/{answer_id}/label-overrides/accuracy creates an override.
         """
-        response = test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": False}
-        )
+        response = test_client.put(_accuracy_override_path(test_db, sample_answer), json={"edited_value": "inaccurate"})
 
         assert response.status_code == 200
         data = response.json()
         assert data["answer_id"] == sample_answer.id
-        assert data["edited_label"] is False
+        assert isinstance(data["rubric_id"], int)
+        assert data["edited_value"] == "Inaccurate"
 
-    def test_update_label_override(self, test_client, sample_answer):
+    def test_update_label_override(self, test_client, test_db, sample_answer):
         """
-        Test PUT /answers/{answer_id}/label-override updates existing override.
+        Test PUT /answers/{answer_id}/label-overrides/accuracy updates existing override.
         """
         # Create initial override
-        test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": False}
-        )
+        path = _accuracy_override_path(test_db, sample_answer)
+        test_client.put(path, json={"edited_value": "inaccurate"})
 
         # Update to different value
-        response = test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": True}
-        )
+        response = test_client.put(path, json={"edited_value": "accurate"})
 
         assert response.status_code == 200
         data = response.json()
-        assert data["edited_label"] is True
+        assert data["edited_value"] == "Accurate"
 
-    def test_get_label_override(self, test_client, sample_answer):
+    def test_get_label_override(self, test_client, test_db, sample_answer):
         """
-        Test GET /answers/{answer_id}/label-override returns the override.
+        Test GET /answers/{answer_id}/label-overrides/accuracy returns the override.
         """
         # Create override first
-        test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": True}
-        )
+        path = _accuracy_override_path(test_db, sample_answer)
+        test_client.put(path, json={"edited_value": "accurate"})
 
-        response = test_client.get(
-            f"/api/v1/answers/{sample_answer.id}/label-override"
-        )
+        response = test_client.get(path)
 
         assert response.status_code == 200
         data = response.json()
         assert data["answer_id"] == sample_answer.id
-        assert data["edited_label"] is True
+        assert data["edited_value"] == "Accurate"
 
-    def test_get_label_override_not_found(self, test_client, sample_answer):
-        """Test GET /answers/{answer_id}/label-override returns 404 when no override exists."""
-        response = test_client.get(
-            f"/api/v1/answers/{sample_answer.id}/label-override"
-        )
+    def test_get_label_override_not_found(self, test_client, test_db, sample_answer):
+        """Test GET /answers/{answer_id}/label-overrides/accuracy returns 404 when no override exists."""
+        response = test_client.get(_accuracy_override_path(test_db, sample_answer))
 
         assert response.status_code == 404
 
-    def test_delete_label_override(self, test_client, sample_answer):
+    def test_delete_label_override(self, test_client, test_db, sample_answer):
         """
-        Test DELETE /answers/{answer_id}/label-override removes the override.
+        Test DELETE /answers/{answer_id}/label-overrides/accuracy removes the override.
         """
         # Create override first
-        test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": True}
-        )
+        path = _accuracy_override_path(test_db, sample_answer)
+        test_client.put(path, json={"edited_value": "accurate"})
 
         # Delete it
-        response = test_client.delete(
-            f"/api/v1/answers/{sample_answer.id}/label-override"
-        )
+        response = test_client.delete(path)
 
         assert response.status_code == 204
 
         # Verify it's gone
-        get_response = test_client.get(
-            f"/api/v1/answers/{sample_answer.id}/label-override"
-        )
+        get_response = test_client.get(path)
         assert get_response.status_code == 404
 
 
@@ -261,10 +250,7 @@ class TestLabelOverrideReliability:
         """Label override should not create or modify annotations."""
         from src.common.database.models import Annotation
 
-        test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": False}
-        )
+        test_client.put(_accuracy_override_path(test_db, sample_answer), json={"edited_value": "inaccurate"})
 
         annotation = test_db.query(Annotation).filter(
             Annotation.answer_id == sample_answer.id
@@ -281,13 +267,9 @@ class TestLabelOverrideReliability:
         test_db.commit()
 
         # Create and delete override
-        test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": True}
-        )
-        test_client.delete(
-            f"/api/v1/answers/{sample_answer.id}/label-override"
-        )
+        path = _accuracy_override_path(test_db, sample_answer)
+        test_client.put(path, json={"edited_value": "accurate"})
+        test_client.delete(path)
 
         # Annotation should still exist with original values
         test_db.refresh(annotation)
@@ -314,8 +296,9 @@ class TestLabelOverrideReliability:
         # Judge: Accurate
         score = AnswerScore(
             answer_id=sample_answer.id,
+            rubric_id=sample_judge_claim_based.rubric_id,
             judge_id=sample_judge_claim_based.id,
-            overall_label=True,
+            overall_label="Accurate",
             explanation="Judge thinks accurate"
         )
         test_db.add(score)
@@ -329,10 +312,7 @@ class TestLabelOverrideReliability:
         assert response.json()["accuracy"] == 0.0
 
         # Override to Accurate (True) — now matches judge
-        test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": True}
-        )
+        test_client.put(_accuracy_override_path(test_db, sample_answer), json={"edited_value": "accurate"})
 
         response = test_client.get(
             f"/api/v1/snapshots/{sample_answer.snapshot_id}/judges/{sample_judge_claim_based.id}/alignment"
@@ -354,17 +334,15 @@ class TestLabelOverrideReliability:
 
         score = AnswerScore(
             answer_id=sample_answer.id,
+            rubric_id=sample_judge_claim_based.rubric_id,
             judge_id=sample_judge_claim_based.id,
-            overall_label=True,
+            overall_label="Accurate",
             explanation="Judge thinks accurate"
         )
         test_db.add(score)
         test_db.commit()
 
-        test_client.put(
-            f"/api/v1/answers/{sample_answer.id}/label-override",
-            json={"edited_label": False}
-        )
+        test_client.put(_accuracy_override_path(test_db, sample_answer), json={"edited_value": "inaccurate"})
 
         # No selected annotations exist → 400
         response = test_client.get(

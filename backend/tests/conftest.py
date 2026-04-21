@@ -12,7 +12,7 @@ from src.common.database.models import (
     Target, Job, Persona, Question, Answer, AnswerClaim, AnswerScore, AnswerClaimScore,
     Annotation, QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
     TargetRubric, RubricAnnotation,
-    StatusEnum, JobTypeEnum, JobStatusEnum, QAJobTypeEnum, QAJobStageEnum, JudgeTypeEnum,
+    StatusEnum, JobTypeEnum, JobStatusEnum, QAJobTypeEnum, QAJobStageEnum,
     QuestionTypeEnum, QuestionScopeEnum
 )
 from src.common.auth.utils import create_access_token
@@ -351,13 +351,27 @@ def sample_answer(test_db, sample_question, sample_snapshot):
 @pytest.fixture
 def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
     """Create a sample QA job for testing."""
-    # Create a judge first
+    # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
+    accuracy_rubric = TargetRubric(
+        target_id=sample_snapshot.target_id,
+        name="Accuracy",
+        criteria="Are the claims accurate?",
+        options=[{"option": "Accurate"}, {"option": "Inaccurate"}],
+        group="fixed",
+        scoring_mode="claim_based",
+        position=0,
+    )
+    test_db.add(accuracy_rubric)
+    test_db.commit()
+    test_db.refresh(accuracy_rubric)
+
+    # Create a judge bound to the accuracy rubric
     judge = Judge(
         name="Test Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-        judge_type=JudgeTypeEnum.claim_based,
+        rubric_id=accuracy_rubric.id,
         is_baseline=True,
         is_editable=False
     )
@@ -407,13 +421,27 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
     test_db.commit()
     test_db.refresh(question)
 
-    # Create judge
+    # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
+    accuracy_rubric = TargetRubric(
+        target_id=sample_target.id,
+        name="Accuracy",
+        criteria="Are the claims accurate?",
+        options=[{"option": "Accurate"}, {"option": "Inaccurate"}],
+        group="fixed",
+        scoring_mode="claim_based",
+        position=0,
+    )
+    test_db.add(accuracy_rubric)
+    test_db.commit()
+    test_db.refresh(accuracy_rubric)
+
+    # Create judge bound to the accuracy rubric
     judge = Judge(
         name="Error Test Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-        judge_type=JudgeTypeEnum.claim_based,
+        rubric_id=accuracy_rubric.id,
         is_baseline=True,
         is_editable=False
     )
@@ -444,14 +472,27 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
 
 
 @pytest.fixture
-def sample_judge_claim_based(test_db):
-    """Create a claim-based judge for testing."""
+def sample_judge_claim_based(test_db, sample_target):
+    """Create a claim-based judge (with accuracy rubric) for testing."""
+    accuracy_rubric = TargetRubric(
+        target_id=sample_target.id,
+        name="Accuracy",
+        criteria="Are the claims accurate?",
+        options=[{"option": "Accurate"}, {"option": "Inaccurate"}],
+        group="fixed",
+        scoring_mode="claim_based",
+        position=0,
+    )
+    test_db.add(accuracy_rubric)
+    test_db.commit()
+    test_db.refresh(accuracy_rubric)
+
     judge = Judge(
         name="Claim-Based Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test prompt template",
         params={"temperature": 0.7},
-        judge_type=JudgeTypeEnum.claim_based,
+        rubric_id=accuracy_rubric.id,
         is_baseline=False,
         is_editable=True
     )
@@ -466,10 +507,9 @@ def sample_judge_response_level(test_db):
     """Create a response-level judge for testing."""
     judge = Judge(
         name="Response-Level Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test prompt template",
         params={"temperature": 0.5},
-        judge_type=JudgeTypeEnum.response_level,
         is_baseline=False,
         is_editable=True
     )
@@ -606,8 +646,9 @@ def sample_answer_scores(test_db, sample_annotations, sample_judge_claim_based):
     for annotation, label in zip(sample_annotations, labels):
         score = AnswerScore(
             answer_id=annotation.answer_id,
+            rubric_id=sample_judge_claim_based.rubric_id,
             judge_id=sample_judge_claim_based.id,
-            overall_label=label,
+            overall_label="Accurate" if label else "Inaccurate",
             explanation="Test explanation"
         )
         test_db.add(score)
@@ -763,7 +804,6 @@ def sample_rubric(test_db, sample_target):
             {"option": "Casual", "description": "Informal and casual tone"},
         ],
         best_option="Professional",
-        category="voice",
         position=0,
     )
     test_db.add(rubric)
@@ -784,7 +824,6 @@ def sample_rubric_second(test_db, sample_target):
             {"option": "Irrelevant", "description": "Does not address the question"},
         ],
         best_option="Relevant",
-        category="default",
         position=1,
     )
     test_db.add(rubric)

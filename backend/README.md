@@ -346,19 +346,14 @@ Judges are LLM-based evaluators that assess answer quality. Two evaluation types
 - **Claim-based**: Extracts claims from answers, evaluates each claim, then aggregates to overall label
 - **Response-level**: Evaluates the entire answer holistically in a single LLM call
 
-Judges have a **category** that determines which evaluation dimension they serve:
-
-- `accuracy` — evaluates factual accuracy against knowledge base (default)
-- `relevance` — evaluates how relevant the response is to the question
-- `voice` — evaluates tone, style, and communication quality
-- `common` — general-purpose judges that participate in all rubric evaluations
+Judges are scoped either to a rubric (`rubric_id=<target_rubric.id>`) or to the global default pool (`rubric_id=NULL`) used for custom rubric evaluation. Each rubric-scoped or global pool has one recommended baseline judge plus additional comparison judges.
 
 ```
 GET    /api/v1/judges                                 - List all judges
 POST   /api/v1/judges                                 - Create custom judge
-GET    /api/v1/judges/baseline                        - Get baseline judge
+GET    /api/v1/judges/baseline?rubric_id={rubric_id} - Get baseline judge for a rubric
 GET    /api/v1/judges/available-models                - List available LLM models
-GET    /api/v1/judges/by-category/{category}          - Get judges for a rubric category (includes common judges)
+GET    /api/v1/judges/by-rubric/{rubric_id}           - Get judges for a rubric
 GET    /api/v1/judges/{judge_id}                      - Get judge details
 PUT    /api/v1/judges/{judge_id}                      - Update judge (if editable)
 DELETE /api/v1/judges/{judge_id}                      - Delete judge (if editable)
@@ -370,12 +365,12 @@ Define custom evaluation criteria per target beyond accuracy (e.g., relevance, t
 
 ```
 GET    /api/v1/targets/{target_id}/rubrics             - List all rubrics for target
-POST   /api/v1/targets/{target_id}/rubrics             - Create a rubric (auto-classified into category)
+POST   /api/v1/targets/{target_id}/rubrics             - Create a rubric
 PUT    /api/v1/targets/{target_id}/rubrics/{rubric_id} - Update a rubric
 DELETE /api/v1/targets/{target_id}/rubrics/{rubric_id} - Delete a rubric
 ```
 
-When a rubric is created, it is automatically classified into a category (`relevance`, `voice`, or `default`) using an LLM. This determines which judges are assigned to evaluate it.
+Fixed and preset rubrics get seeded rubric-scoped judges automatically. Custom rubrics use the global default judge pool unless users add rubric-specific custom judges.
 
 ### QA Jobs
 

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.models import Target, Judge, User, JudgeTypeEnum
+from src.common.database.models import Target, Judge, User
 from src.common.auth import auth_router, get_scoped_db, get_current_user_id
 from src.common.auth.utils import create_access_token
 from src.common.config import get_settings
@@ -124,30 +124,30 @@ def judges_for_users(test_db, user_a, user_b):
     """Create judges owned by different users plus a baseline judge."""
     judge_a = Judge(
         name="User A Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-        judge_type=JudgeTypeEnum.claim_based,
+
         is_baseline=False,
         is_editable=True,
         user_id=user_a.id
     )
     judge_b = Judge(
         name="User B Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-        judge_type=JudgeTypeEnum.claim_based,
+
         is_baseline=False,
         is_editable=True,
         user_id=user_b.id
     )
     baseline_judge = Judge(
         name="Baseline Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Baseline template",
         params={},
-        judge_type=JudgeTypeEnum.claim_based,
+
         is_baseline=True,
         is_editable=False,
         user_id=None  # Baseline judges have no user_id

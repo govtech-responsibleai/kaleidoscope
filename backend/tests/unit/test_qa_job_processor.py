@@ -8,11 +8,11 @@ from unittest.mock import Mock, patch, AsyncMock
 
 from src.scoring.services.qa_job_processor import (
     QAJobProcessor, run_qajob, run_qajobs_batch,
-    pause_qajob, pause_qajobs_batch, get_or_create_qajobs_batch,
+    pause_qajob, pause_qajobs_batch, get_or_create_qajobs_batch, create_all_jobs,
 )
 from src.common.database.models import (
     JobStatusEnum, QAJobStageEnum, QAJobTypeEnum,
-    Answer, AnswerClaim, AnswerScore, Judge, JudgeTypeEnum,
+    Answer, AnswerClaim, AnswerScore, Judge,
     Question, QuestionTypeEnum, QuestionScopeEnum, StatusEnum,
 )
 from src.common.database.repositories.qa_job_repo import QAJobRepository
@@ -210,6 +210,77 @@ class TestQAJobProcessor:
         test_db.refresh(job)
         assert job.status == JobStatusEnum.completed
         assert job.stage == QAJobStageEnum.completed
+
+    def test_create_all_jobs_merges_rubric_specs_for_existing_job(
+        self,
+        test_db,
+        sample_snapshot,
+        sample_qa_job,
+        sample_rubric,
+        sample_rubric_second,
+    ):
+        """Retrying one missing rubric must preserve the job's existing configured metrics."""
+        sample_qa_job.snapshot_id = sample_snapshot.id
+        sample_qa_job.rubric_specs = [
+            {"rubric_id": sample_rubric.id, "judge_id": 101},
+        ]
+        test_db.commit()
+
+        jobs = create_all_jobs(
+            db=test_db,
+            snapshot_id=sample_snapshot.id,
+            judge_id=sample_qa_job.judge_id,
+            question_ids=[sample_qa_job.question_id],
+            rubric_specs=[{"rubric_id": sample_rubric_second.id, "judge_id": 202}],
+            job_ids=[sample_qa_job.id],
+        )
+
+        assert len(jobs) == 1
+        test_db.refresh(sample_qa_job)
+        assert sample_qa_job.rubric_specs == [
+            {"rubric_id": sample_rubric.id, "judge_id": 101},
+            {"rubric_id": sample_rubric_second.id, "judge_id": 202},
+        ]
+
+    def test_uses_claim_processing_true_for_accuracy_judge(
+        self, test_db, sample_snapshot, sample_question, sample_judge_claim_based
+    ):
+        """_uses_claim_processing returns True when judge is bound to a claim-based rubric."""
+        processor = QAJobProcessor(
+            test_db, sample_snapshot.id, sample_question.id, sample_judge_claim_based.id
+        )
+        assert processor._uses_claim_processing() is True
+
+    def test_uses_claim_processing_false_for_response_level_judge(
+        self, test_db, sample_snapshot, sample_question, sample_judge_response_level
+    ):
+        """_uses_claim_processing returns False when judge has no rubric_id."""
+        processor = QAJobProcessor(
+            test_db, sample_snapshot.id, sample_question.id, sample_judge_response_level.id
+        )
+        assert processor._uses_claim_processing() is False
+
+    @pytest.mark.asyncio
+    @patch("src.scoring.services.qa_job_processor.extract_and_check_claims", new_callable=AsyncMock)
+    @patch("src.scoring.services.qa_job_processor.AnswerJudge")
+    @patch("src.scoring.services.qa_job_processor.SessionLocal")
+    async def test_score_accuracy_triggers_claim_processing_for_fixed_rubric(
+        self, MockSessionLocal, MockAnswerJudge, mock_extract_claims, test_db, sample_qa_job
+    ):
+        """_score_claim_level runs claim extraction when judge is bound to a claim-based rubric."""
+        from src.scoring.services.qa_job_processor import _score_claim_level
+
+        MockSessionLocal.return_value = test_db
+
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.score = AsyncMock()
+        mock_judge_instance.cost_tracker.get_summary.return_value = {
+            "prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0
+        }
+
+        await _score_claim_level(sample_qa_job.id)
+
+        mock_extract_claims.assert_awaited_once()
 
 
 @pytest.mark.unit
@@ -459,10 +530,10 @@ class TestQAJobPipelineResume:
         # Create judge B
         judge_b = Judge(
             name="Judge B",
-            model_name="gemini/gemini-2.5-flash-lite",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
             prompt_template="Template B",
             params={},
-            judge_type=JudgeTypeEnum.claim_based,
+            rubric_id=sample_judge_claim_based.rubric_id,
             is_baseline=False,
             is_editable=True,
         )
