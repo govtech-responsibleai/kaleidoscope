@@ -483,7 +483,7 @@ export default function CreateTargetModal({
             Create new target application
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Configure your Target Application. Provide as much information as possible to enhance evaluation quality.
+            Configure your Target. Provide as much information as possible to enhance evaluation quality.
           </Typography>
         </Box>
 

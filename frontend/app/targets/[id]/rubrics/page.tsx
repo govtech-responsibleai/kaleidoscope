@@ -3,13 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  IconChecklist,
   IconChevronDown,
   IconCircleCheck,
   IconCircleCheckFilled,
-  IconCut,
   IconDeviceFloppy,
-  IconHeart,
   IconHelpCircle,
   IconPlus,
   IconTrash,
@@ -23,35 +20,17 @@ import {
   IconButton,
   CircularProgress,
   Tooltip,
-  Dialog,
-  DialogTitle,
-  DialogContent,
   Chip,
   Accordion,
   AccordionSummary,
   AccordionDetails,
   Alert,
-  Card,
-  CardActionArea,
-  CardContent,
 } from "@mui/material";
 import { targetRubricApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
-import {
-  TargetRubricResponse,
-  RubricOption,
-  PremadeRubricTemplate,
-} from "@/lib/types";
+import { TargetRubricResponse, RubricOption } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/iconStyles";
-
-const accuracyOptions = [
-  { option: "Accurate", description: "All claims are supported by the provided context." },
-  { option: "Inaccurate", description: "One or more claims are not supported or hallucinated." },
-];
-
-const ACCURACY_CRITERIA =
-  "Are the claims in the response supported by the provided context, or do they contain hallucinations?";
 
 export default function RubricsPage() {
   const params = useParams();
@@ -64,11 +43,6 @@ export default function RubricsPage() {
   const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
   const [rubricToDelete, setRubricToDelete] = useState<TargetRubricResponse | null>(null);
 
-  const [premadeDialogOpen, setPremadeDialogOpen] = useState(false);
-  const [premadeTemplates, setPremadeTemplates] = useState<PremadeRubricTemplate[]>([]);
-  const [premadeLoading, setPremadeLoading] = useState(false);
-  const [addingPremade, setAddingPremade] = useState<string | null>(null);
-
   useEffect(() => {
     targetRubricApi.list(targetId).then((res) => {
       setRubrics(res.data);
@@ -79,7 +53,8 @@ export default function RubricsPage() {
     });
   }, [targetId]);
 
-  const isPremade = (rubric: TargetRubricResponse) => !!rubric.template_key;
+  const isFixed = (rubric: TargetRubricResponse) => rubric.group === "fixed";
+  const isPremade = (rubric: TargetRubricResponse) => rubric.group === "preset";
   const isDraft = (rubricId: number) => rubricId < 0;
 
   const isDirty = (rubric: TargetRubricResponse) => {
@@ -96,45 +71,11 @@ export default function RubricsPage() {
     const tempId = -Date.now();
     const placeholder: TargetRubricResponse = {
       id: tempId, target_id: targetId, name: "", criteria: "",
-      options: [], best_option: null, position: 0, category: "default",
-      judge_prompt: null, template_key: null,
+      options: [], best_option: null, position: 0,
+      judge_prompt: null, group: "custom", scoring_mode: "response_level",
       created_at: "", updated_at: "",
     };
     setRubrics((prev) => [...prev, placeholder]);
-  };
-
-  const openPremadeDialog = async () => {
-    setPremadeDialogOpen(true);
-    setPremadeLoading(true);
-    try {
-      const res = await targetRubricApi.listPremade(targetId);
-      setPremadeTemplates(res.data);
-    } catch {
-      setPremadeTemplates([]);
-    } finally {
-      setPremadeLoading(false);
-    }
-  };
-
-  const addPremadeRubric = async (template: PremadeRubricTemplate) => {
-    setAddingPremade(template.key);
-    try {
-      const res = await targetRubricApi.create(targetId, {
-        name: template.name,
-        criteria: template.criteria,
-        options: template.options,
-        best_option: template.best_option,
-        template_key: template.key,
-      });
-      setRubrics((prev) => [...prev, res.data]);
-      setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
-      setPremadeTemplates((prev) => prev.filter((t) => t.key !== template.key));
-    } catch {
-      // dialog will close
-    } finally {
-      setAddingPremade(null);
-      setPremadeDialogOpen(false);
-    }
   };
 
   const updateField = (rubricId: number, patch: Partial<TargetRubricResponse>) => {
@@ -232,15 +173,10 @@ export default function RubricsPage() {
     }
   };
 
+  const fixedRubrics = rubrics.filter((r) => isFixed(r));
   const premadeRubrics = rubrics.filter((r) => isPremade(r));
-  const customRubrics = rubrics.filter((r) => !isPremade(r));
-  const totalRubricCount = 1 + premadeRubrics.length + customRubrics.length;
-
-  const premadeIconMap: Record<string, React.ReactElement> = {
-    empathy: <IconHeart size={36} stroke={1.75} color="currentColor" />,
-    verbosity: <IconCut size={36} stroke={1.75} color="currentColor" />,
-  };
-  const defaultPremadeIcon = <IconChecklist size={36} stroke={1.75} color="currentColor" />;
+  const customRubrics = rubrics.filter((r) => r.group === "custom");
+  const totalRubricCount = fixedRubrics.length + premadeRubrics.length + customRubrics.length;
 
   const renderOptionsReadonly = (options: RubricOption[], bestOption: string | null) => (
     <>
@@ -334,42 +270,35 @@ export default function RubricsPage() {
 
       {/* FIXED group */}
       <Box sx={getGroupSx("fixed")}>
-        <Box sx={{ mb: 2 }}>{renderGroupHeader("Fixed", 1, null, groupColors.fixed.border)}</Box>
-        <Accordion variant="outlined" disableGutters>
-          <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
-            <Typography fontWeight={600} sx={{ flex: 1 }}>Accuracy</Typography>
-          </AccordionSummary>
-          <AccordionDetails sx={{ pt: 0 }}>
-            <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-              Criteria
-            </Typography>
-            <TextField value={ACCURACY_CRITERIA} fullWidth disabled multiline size="small" sx={{ mb: 2 }} />
-            <Divider sx={{ mb: 2 }} />
-            {renderOptionsReadonly(accuracyOptions, "Accurate")}
-          </AccordionDetails>
-        </Accordion>
+        <Box sx={{ mb: 2 }}>{renderGroupHeader("Fixed", fixedRubrics.length, null, groupColors.fixed.border)}</Box>
+        {fixedRubrics.map((rubric) => (
+          <Accordion key={rubric.id} variant="outlined" disableGutters>
+            <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
+              <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
+            </AccordionSummary>
+            <AccordionDetails sx={{ pt: 0 }}>
+              <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+                Criteria
+              </Typography>
+              <TextField value={rubric.criteria} fullWidth disabled multiline size="small" sx={{ mb: 2 }} />
+              <Divider sx={{ mb: 2 }} />
+              {renderOptionsReadonly(rubric.options, rubric.best_option)}
+            </AccordionDetails>
+          </Accordion>
+        ))}
       </Box>
 
       {/* PRESET group */}
       <Box sx={getGroupSx("preset")}>
-        <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, openPremadeDialog, groupColors.preset.border)}</Box>
+        <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, null, groupColors.preset.border)}</Box>
         {premadeRubrics.length === 0 ? (
-          renderEmptyState("No preset rubrics added yet. Click + to browse templates.")
+          renderEmptyState("No preset rubrics are configured for this target.")
         ) : (
           premadeRubrics.map((rubric) => (
             <Accordion key={rubric.id} variant="outlined" disableGutters sx={{ mb: 1 }}>
               <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
                 <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
-                <Tooltip title="Delete rubric" arrow>
-                  <IconButton
-                    component="div"
-                    size="small"
-                    onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
-                  >
-                    <IconTrash {...compactActionIconProps} />
-                  </IconButton>
-                </Tooltip>
-              </AccordionSummary>
+                  </AccordionSummary>
               <AccordionDetails sx={{ pt: 0 }}>
                 <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
                   Criteria
@@ -542,66 +471,6 @@ export default function RubricsPage() {
           })
         )}
       </Box>
-
-      {/* Preset rubric selection dialog */}
-      <Dialog open={premadeDialogOpen} onClose={() => setPremadeDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Preset Rubric</DialogTitle>
-        <DialogContent>
-          {premadeLoading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : premadeTemplates.length === 0 ? (
-            <Typography color="text.secondary" sx={{ py: 2 }}>
-              All preset rubrics have already been added to this target.
-            </Typography>
-          ) : (
-            <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", pt: 1, justifyContent: "center" }}>
-              {premadeTemplates.map((template) => (
-                <Card
-                  key={template.key}
-                  variant="outlined"
-                  sx={{ flex: "1 1 180px", maxWidth: 220, position: "relative" }}
-                >
-                  <CardActionArea
-                    onClick={() => addPremadeRubric(template)}
-                    disabled={addingPremade !== null}
-                    sx={{ p: 2, textAlign: "center" }}
-                  >
-                    {addingPremade === template.key && (
-                      <Box sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
-                        <CircularProgress size={24} />
-                      </Box>
-                    )}
-                    <Box sx={{ mb: 1, opacity: addingPremade === template.key ? 0.3 : 1 }}>
-                      {premadeIconMap[template.key] ?? defaultPremadeIcon}
-                    </Box>
-                    <Typography
-                      fontWeight={600}
-                      sx={{ mb: 0.5, opacity: addingPremade === template.key ? 0.3 : 1 }}
-                    >
-                      {template.name}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      sx={{
-                        display: "-webkit-box",
-                        WebkitLineClamp: 3,
-                        WebkitBoxOrient: "vertical",
-                        overflow: "hidden",
-                        opacity: addingPremade === template.key ? 0.3 : 1,
-                      }}
-                    >
-                      {template.criteria}
-                    </Typography>
-                  </CardActionArea>
-                </Card>
-              ))}
-            </Box>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <ConfirmDeleteDialog
         open={rubricToDelete !== null}

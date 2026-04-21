@@ -3,7 +3,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Alert, Box, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
-import { IconBraces } from "@tabler/icons-react";
+import { IconCode } from "@tabler/icons-react";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
@@ -110,16 +110,6 @@ function AnnotationPageContent() {
     }
   }, [targetId, selectedSnapshotId, updateSnapshotSelection]);
 
-  const fetchBaselineJudge = useCallback(async () => {
-    try {
-      const response = await judgeApi.getBaseline();
-      setBaselineJudgeId(response.data.id);
-    } catch (err) {
-      console.error("Failed to load baseline judge:", err);
-      setError("Failed to load judge configuration.");
-    }
-  }, []);
-
   const fetchApprovedQuestions = useCallback(async () => {
     setApprovedQuestionsLoading(true);
     try {
@@ -139,10 +129,40 @@ function AnnotationPageContent() {
 
   useEffect(() => {
     fetchSnapshots();
-    fetchBaselineJudge();
     fetchApprovedQuestions();
     targetRubricApi.list(targetId).then((res) => setRubrics(res.data)).catch(() => {});
-  }, [fetchSnapshots, fetchBaselineJudge, fetchApprovedQuestions, targetId]);
+  }, [fetchSnapshots, fetchApprovedQuestions, targetId]);
+
+  useEffect(() => {
+    const fixedRubric = rubrics.find((rubric) => rubric.group === "fixed");
+    if (!fixedRubric) {
+      setBaselineJudgeId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const fetchBaselineJudge = async () => {
+      try {
+        const response = await judgeApi.getBaseline(fixedRubric.id);
+        if (!cancelled) {
+          setBaselineJudgeId(response.data.id);
+        }
+      } catch (err) {
+        console.error("Failed to load baseline judge:", err);
+        if (!cancelled) {
+          setBaselineJudgeId(null);
+          setError("Failed to load judge configuration.");
+        }
+      }
+    };
+
+    void fetchBaselineJudge();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [rubrics]);
 
   const handleSnapshotSelect = useCallback((snapshotId: number | null) => {
     updateSnapshotSelection(snapshotId);
@@ -221,7 +241,7 @@ function AnnotationPageContent() {
                 "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
               }}
             >
-              <IconBraces {...actionIconProps} />
+              <IconCode {...actionIconProps} />
             </IconButton>
           </span>
         </Tooltip>

@@ -21,8 +21,8 @@ import {
   IconLayoutDashboard,
   IconLogout,
   IconMessageQuestion,
-  IconMessageReport,
-  IconRobot,
+  IconMessageChatbot,
+  IconRobotFace,
   IconShieldCog,
   IconTool,
 } from "@tabler/icons-react";
@@ -71,8 +71,8 @@ export default function Navigation({ children }: NavigationProps) {
   const targetNavItems = [
     { label: "Overview", icon: <IconHome2 {...navIconProps} />, tab: "overview", path: `/targets/${targetId}` },
     { label: "Evaluation Set", icon: <IconMessageQuestion {...navIconProps} />, tab: "questions", path: `/targets/${targetId}/questions` },
-    { label: "Annotations", icon: <IconMessageReport {...navIconProps} />, tab: "annotation", path: `/targets/${targetId}/annotation` },
-    { label: "Scoring", icon: <IconRobot {...navIconProps} />, tab: "scoring", path: `/targets/${targetId}/scoring` },
+    { label: "Annotations", icon: <IconMessageChatbot {...navIconProps} />, tab: "annotation", path: `/targets/${targetId}/annotation` },
+    { label: "Scoring", icon: <IconRobotFace {...navIconProps} />, tab: "scoring", path: `/targets/${targetId}/scoring` },
     { label: "Report", icon: <IconChartLine {...navIconProps} />, tab: "report", path: `/targets/${targetId}/report` },
   ];
 

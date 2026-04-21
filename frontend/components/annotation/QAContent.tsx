@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Box,
   Chip,
@@ -10,8 +10,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, RubricAnswerScore, JudgeConfig } from "@/lib/types";
-import { rubricScoreApi, judgeApi } from "@/lib/api";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, RubricAnswerScore, JudgeConfig, QARubricStatus } from "@/lib/types";
+import { rubricScoreApi, judgeApi, qaJobApi } from "@/lib/api";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
@@ -39,22 +39,35 @@ export default function QAContent({
   pendingRubricIds = [],
 }: QAContentProps) {
   void onActiveTabChange;
+  const visibleRubrics = React.useMemo(
+    () => rubrics.filter((rubric) => rubric.group !== "fixed"),
+    [rubrics],
+  );
+  const fixedAccuracyRubric = React.useMemo(
+    () => rubrics.find((rubric) => rubric.group === "fixed") ?? null,
+    [rubrics],
+  );
   const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
   const [rubricScoresLoading, setRubricScoresLoading] = useState(false);
   const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
+  const [jobDetail, setJobDetail] = useState<QAJob | null>(job);
+  const [rubricVerdictLoading, setRubricVerdictLoading] = useState(false);
+  const hasLoadedJobDetailRef = useRef(false);
 
   // Fetch rubric judges and scores when a custom rubric tab is active and an answer exists.
   useEffect(() => {
-    const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
+    const activeRubric = activeTab > 0 ? visibleRubrics[activeTab - 1] : null;
     const answerId = qaEntry?.answer?.id;
     if (!activeRubric || !answerId) {
       setRubricScores([]);
       setRubricJudges([]);
+      setJobDetail(job);
+      setRubricVerdictLoading(false);
       return;
     }
 
-    judgeApi.getByCategory(activeRubric.category, targetId)
-      .then((res) => setRubricJudges(res.data.filter((j) => j.judge_type === "response_level")))
+    judgeApi.getForRubric(activeRubric.id, targetId)
+      .then((res) => setRubricJudges(res.data))
       .catch(() => setRubricJudges([]));
 
     let cancelled = false;
@@ -85,7 +98,55 @@ export default function QAContent({
       cancelled = true;
       if (pollTimer !== null) window.clearTimeout(pollTimer);
     };
-  }, [activeTab, rubrics, qaEntry?.answer?.id, targetId, pendingRubricIds]);
+  }, [activeTab, visibleRubrics, qaEntry?.answer?.id, targetId, pendingRubricIds]);
+
+  useEffect(() => {
+    if (!job?.id) {
+      setJobDetail(job);
+      setRubricVerdictLoading(false);
+      hasLoadedJobDetailRef.current = false;
+      return;
+    }
+
+    let cancelled = false;
+    let pollTimer: number | null = null;
+
+    const fetchJobDetail = async () => {
+      try {
+        if (!cancelled && !hasLoadedJobDetailRef.current) setRubricVerdictLoading(true);
+        const response = await qaJobApi.get(job.id);
+        if (cancelled) return;
+        const fetched = response.data;
+        setJobDetail((prev) => {
+          if (
+            prev?.id === fetched.id &&
+            prev?.status === fetched.status &&
+            prev?.stage === fetched.stage &&
+            JSON.stringify(prev?.rubric_statuses) === JSON.stringify(fetched.rubric_statuses)
+          ) {
+            return prev;
+          }
+          return fetched;
+        });
+        hasLoadedJobDetailRef.current = true;
+        if (fetched.stage !== QAJobStageEnum.COMPLETED && fetched.status === "running") {
+          pollTimer = window.setTimeout(fetchJobDetail, 5000);
+        }
+      } catch {
+        if (!cancelled && job.stage !== QAJobStageEnum.COMPLETED && job.status === "running") {
+          pollTimer = window.setTimeout(fetchJobDetail, 5000);
+        }
+      } finally {
+        if (!cancelled) setRubricVerdictLoading(false);
+      }
+    };
+
+    void fetchJobDetail();
+    return () => {
+      cancelled = true;
+      if (pollTimer !== null) window.clearTimeout(pollTimer);
+    };
+  }, [job?.id, job?.status, job?.stage]);
 
   const answer = qaEntry?.answer;
   const claims = qaEntry?.claims ?? [];
@@ -107,7 +168,7 @@ export default function QAContent({
     return { totalCheckworthy: checkworthyIds.size, scored, inaccurate };
   }, [claims, claimScores]);
 
-  const activeRubric = activeTab > 0 ? rubrics[activeTab - 1] : null;
+  const activeRubric = activeTab > 0 ? visibleRubrics[activeTab - 1] : null;
   const isActiveRubricPending = Boolean(activeRubric && pendingRubricIds.includes(activeRubric.id));
 
   // For custom rubric tabs, show the first (recommended) judge
@@ -119,6 +180,12 @@ export default function QAContent({
     () => recommendedJudge ? rubricScores.find((s) => s.judge_id === recommendedJudge.id) : undefined,
     [rubricScores, recommendedJudge]
   );
+  const activeMetricStatus: QARubricStatus | null = React.useMemo(() => {
+    const activeRubricId = activeTab === 0 ? fixedAccuracyRubric?.id ?? null : activeRubric?.id ?? null;
+    if (!activeRubricId) return null;
+    return jobDetail?.rubric_statuses?.find((status) => status.rubric_id === activeRubricId) ?? null;
+  }, [activeTab, fixedAccuracyRubric?.id, activeRubric?.id, jobDetail?.rubric_statuses]);
+  const verdictScore = activeMetricStatus?.score;
 
   if (!answer) {
     let message = "Waiting for target application answer to be generated before running primary judge.";
@@ -157,8 +224,8 @@ export default function QAContent({
         py: 2,
         bgcolor: activeTab === 0
           ? (answerScore ? (answerScore.overall_label ? "#f0faf0" : "#fef0f0") : undefined)
-          : (recommendedScore
-            ? ((recommendedScore.option_chosen === (activeRubric?.best_option || activeRubric?.options?.[0]?.option || "")) ? "#f0faf0" : "#fef0f0")
+          : (verdictScore
+            ? ((verdictScore.value === (activeRubric?.best_option || activeRubric?.options?.[0]?.option || "")) ? "#f0faf0" : "#fef0f0")
             : undefined),
       }}>
         {activeTab === 0 ? (
@@ -185,16 +252,21 @@ export default function QAContent({
                 </Typography>
               </>
             ) : (
-              <Typography variant="body2" color="text.disabled">Verdict pending</Typography>
+              <Typography
+                variant="body2"
+                color={activeMetricStatus?.state === "job_failed" ? "error.main" : "text.disabled"}
+              >
+                {activeMetricStatus?.message ?? "Verdict pending"}
+              </Typography>
             )}
           </Stack>
         ) : activeRubric ? (
           <Stack spacing={1}>
-            {rubricScoresLoading ? (
+            {rubricVerdictLoading ? (
               <Skeleton variant="text" width={220} height={24} />
-            ) : recommendedScore ? (() => {
+            ) : activeMetricStatus?.state === "success" && activeMetricStatus.score ? (() => {
               const best = activeRubric.best_option || activeRubric.options?.[0]?.option || "";
-              const isPositive = recommendedScore.option_chosen === best;
+              const isPositive = activeMetricStatus.score.value === best;
               const color = isPositive ? "success.main" : activeRubric.options.length <= 2 ? "error.main" : "text.primary";
               return (
                 <>
@@ -204,17 +276,30 @@ export default function QAContent({
                     </Tooltip>
                     Judge recommends{" "}
                     <Box component="span" fontWeight={700} color={color}>
-                      {recommendedScore.option_chosen}
+                      {activeMetricStatus.score.value}
                     </Box>
                   </Typography>
                   <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
-                    {recommendedScore.explanation}
+                    {activeMetricStatus.score.explanation}
                   </Typography>
                 </>
               );
             })() : (
-              <Typography variant="body2" color={isActiveRubricPending ? "warning.main" : "text.disabled"}>
-                {isActiveRubricPending ? "Pending rubric evaluation" : "No judge verdict available"}
+              <Typography
+                variant="body2"
+                color={
+                  activeMetricStatus?.state === "job_failed"
+                    ? "error.main"
+                    : activeMetricStatus?.state === "pending_evaluation" ||
+                      activeMetricStatus?.state === "awaiting_answer" ||
+                      activeMetricStatus?.state === "no_judge_configured"
+                    ? "warning.main"
+                    : isActiveRubricPending
+                    ? "warning.main"
+                    : "text.disabled"
+                }
+              >
+                {activeMetricStatus?.message ?? (isActiveRubricPending ? "Pending rubric evaluation" : "No judge verdict available")}
               </Typography>
             )}
           </Stack>

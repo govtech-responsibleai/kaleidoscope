@@ -75,17 +75,20 @@ export default function QAList({
     setActiveTabRaw(tab);
   }, []);
   const [fullyAnnotatedIds, setFullyAnnotatedIds] = useState<Set<number>>(new Set());
+  const visibleRubrics = useMemo(
+    () => rubrics.filter((rubric) => rubric.group !== "fixed"),
+    [rubrics]
+  );
+  const fixedAccuracyRubric = useMemo(
+    () => rubrics.find((rubric) => rubric.group === "fixed") ?? null,
+    [rubrics]
+  );
 
   const activeRubricId = useMemo(() => {
-    if (activeTab === 0) return null;
-    const rubric = rubrics[activeTab - 1];
+    if (activeTab === 0) return fixedAccuracyRubric?.id ?? null;
+    const rubric = visibleRubrics[activeTab - 1];
     return rubric?.id ?? null;
-  }, [activeTab, rubrics]);
-
-  const activeRubricLabel = useMemo(() => {
-    if (activeTab === 0) return "Accuracy";
-    return rubrics[activeTab - 1]?.name ?? "Accuracy";
-  }, [activeTab, rubrics]);
+  }, [activeTab, fixedAccuracyRubric?.id, visibleRubrics]);
 
   const handleCompletenessChanged = useCallback(
     (answerId: number, isComplete: boolean) => {
@@ -612,8 +615,8 @@ export default function QAList({
                 : { borderColor: "divider", "&:hover": { bgcolor: groupColors.fixed.bg } }),
             }}
           />
-          {rubrics.map((r, i) => {
-            const accent = r.template_key ? groupColors.preset.border : groupColors.custom.border;
+          {rubrics.filter((r) => r.group !== "fixed").map((r, i) => {
+            const accent = r.group === "preset" ? groupColors.preset.border : groupColors.custom.border;
             return (
               <Chip
                 key={r.id}
@@ -624,7 +627,7 @@ export default function QAList({
                   fontWeight: 600, fontSize: "0.8rem", height: 32,
                   ...(activeTab === i + 1
                     ? { bgcolor: accent, color: "#fff", borderColor: "transparent", "&:hover": { bgcolor: accent, opacity: 0.9 } }
-                    : { borderColor: "divider", "&:hover": { bgcolor: r.template_key ? groupColors.preset.bg : groupColors.custom.bg } }),
+                    : { borderColor: "divider", "&:hover": { bgcolor: r.group === "preset" ? groupColors.preset.bg : groupColors.custom.bg } }),
                 }}
               />
             );
@@ -658,14 +661,14 @@ export default function QAList({
                     </Typography>
                   </Stack>
                 </>
-              ) : rubrics[activeTab - 1] ? (
+              ) : visibleRubrics[activeTab - 1] ? (
                 <>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                    {rubrics[activeTab - 1].criteria || <em>No criteria defined.</em>}
+                    {visibleRubrics[activeTab - 1].criteria || <em>No criteria defined.</em>}
                   </Typography>
-                  {rubrics[activeTab - 1].options.length > 0 && (
+                  {visibleRubrics[activeTab - 1].options.length > 0 && (
                     <Stack spacing={0.25}>
-                      {rubrics[activeTab - 1].options.map((opt) => (
+                      {visibleRubrics[activeTab - 1].options.map((opt) => (
                         <Typography key={opt.option} variant="caption" color="text.secondary">
                           <Box component="span" fontWeight={700}>{opt.option}</Box> — {opt.description}
                         </Typography>

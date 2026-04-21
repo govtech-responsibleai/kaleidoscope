@@ -488,19 +488,20 @@ export default function QAJobControl({
   // Resolve rubric specs: for each non-accuracy rubric, fetch its specialist judge
   const resolveRubricSpecs = useCallback(async (): Promise<RubricSpec[]> => {
     if (!rubrics) return [];
-    const nonAccuracyRubrics = rubrics.filter((r) => r.category !== "accuracy");
+    const nonAccuracyRubrics = rubrics.filter((r) => r.group !== "fixed");
     if (nonAccuracyRubrics.length === 0) return [];
 
     const specs: RubricSpec[] = [];
     for (const rubric of nonAccuracyRubrics) {
       try {
-        const resp = await judgeApi.getByCategory(rubric.category, targetId);
+        const resp = await judgeApi.getForRubric(rubric.id, targetId);
         const judges = resp.data;
-        if (judges.length > 0) {
-          specs.push({ rubric_id: rubric.id, judge_id: judges[0].id });
+        const baselineJudge = judges.find((judge) => judge.is_baseline) ?? null;
+        if (baselineJudge) {
+          specs.push({ rubric_id: rubric.id, judge_id: baselineJudge.id });
         }
       } catch (err) {
-        console.error(`Failed to fetch judges for rubric category ${rubric.category}:`, err);
+        console.error(`Failed to fetch judges for rubric ${rubric.id}:`, err);
       }
     }
     return specs;
@@ -711,7 +712,7 @@ export default function QAJobControl({
             const response = await qaJobApi.startAll(snapshotId, {
               judge_id: baselineJudgeId,
               question_ids: questionIds,
-              rubric_specs: [spec],
+              rubric_specs: rubricSpecs.length > 0 ? rubricSpecs : [spec],
             });
             return response.data;
           })
@@ -787,9 +788,11 @@ export default function QAJobControl({
 
     setJobInAction(true);
     try {
+      const rubricSpecs = await resolveRubricSpecs();
       const response = await qaJobApi.startAll(snapshotId, {
         judge_id: baselineJudgeId,
         question_ids: pausedJobs.map((job) => job.question_id),
+        rubric_specs: rubricSpecs.length > 0 ? rubricSpecs : undefined,
         job_ids: pausedJobs.map((job) => job.id),
       });
       const resumedIds = new Set(pausedJobs.map((job) => job.id));
