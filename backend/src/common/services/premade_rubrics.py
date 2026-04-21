@@ -154,7 +154,7 @@ Is the response length well-calibrated for what the question actually requires?
 
 **Other Comments:** Any additional observations or edge cases not captured above.
 """,
-        "recommended_model": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        "recommended_model": "gemini/gemini-3.1-flash-lite-preview-global",
     },
 }
 
@@ -163,12 +163,12 @@ def list_premade_templates() -> list[dict]:
     """Return summary info for all pre-made templates (excludes judge_prompt)."""
     return [
         {
-            "key": key,
             "name": tmpl["name"],
             "criteria": tmpl["criteria"],
             "options": tmpl["options"],
             "best_option": tmpl["best_option"],
             "recommended_model": tmpl["recommended_model"],
+            "group": "preset",
         }
         for key, tmpl in PREMADE_RUBRIC_TEMPLATES.items()
     ]

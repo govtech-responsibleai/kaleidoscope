@@ -80,12 +80,6 @@ class QAJobStageEnum(enum.Enum):
     scoring_answers = "scoring_answers" # Any type of answer scoring, e.g. claim scoring or response scoring
     completed = "completed" # Any type of answer scoring, e.g. claim scoring or response scoring
 
-class JudgeTypeEnum(enum.Enum):
-    """Type of judge evaluation."""
-    claim_based = "claim_based"  # Evaluates claims individually, then aggregates
-    response_level = "response_level"  # Evaluates entire response holistically
-
-
 ##### AUTH #####
 
 class User(Base):
@@ -284,7 +278,6 @@ class Answer(Base):
     question = relationship("Question", back_populates="answers")
     claims = relationship("AnswerClaim", back_populates="answer", cascade="all, delete-orphan")
     scores = relationship("AnswerScore", back_populates="answer", cascade="all, delete-orphan")
-    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="answer", cascade="all, delete-orphan")
     rubric_annotations = relationship("RubricAnnotation", back_populates="answer", cascade="all, delete-orphan")
     annotation = relationship("Annotation", back_populates="answer", uselist=False, cascade="all, delete-orphan")
 
@@ -418,10 +411,8 @@ class Judge(Base):
     model_label = Column(String, nullable=True)
     prompt_template = Column(Text, nullable=False)
     params = Column(JSON, nullable=False, default=dict)
-    judge_type = Column(Enum(JudgeTypeEnum), nullable=False)
     is_baseline = Column(Boolean, default=False, nullable=False)
     is_editable = Column(Boolean, default=True, nullable=False)
-    category = Column(String, nullable=False, default="accuracy")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
@@ -431,7 +422,6 @@ class Judge(Base):
     rubric = relationship("TargetRubric", foreign_keys=[rubric_id])
     qa_jobs = relationship("QAJob", back_populates="judge", passive_deletes=True)
     answer_scores = relationship("AnswerScore", back_populates="judge", passive_deletes=True)
-    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="judge", passive_deletes=True)
 
 
 
@@ -483,7 +473,7 @@ class AnswerClaimScore(Base):
 
 class AnswerScore(Base):
     """
-    One row per (answer, judge) pair:
+    One row per (answer, rubric, judge) triple:
     - aggregate score at answer level
     - can optionally be broken down into claim-level scores
     """
@@ -493,20 +483,23 @@ class AnswerScore(Base):
     id = Column(Integer, primary_key=True, index=True)
     # FK
     answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=True)
+    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="CASCADE"), nullable=True, index=True)
     judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=True)
 
     # Fields
-    overall_label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate (Hallucinated)
+    overall_label = Column(String, nullable=False)  # Aggregated label
     explanation = Column(Text, nullable=True)  # Aggregated explanation
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     answer = relationship("Answer", back_populates="scores")
+    rubric = relationship("TargetRubric", back_populates="answer_scores")
     judge = relationship("Judge", back_populates="answer_scores")
     claim_scores = relationship("AnswerClaimScore", back_populates="answer_score", cascade="all, delete-orphan")
 
     __table_args__ = (
-        UniqueConstraint("answer_id", "judge_id", name="uix_answer_judge_score"),
+        UniqueConstraint("answer_id", "rubric_id", "judge_id", name="uix_answer_rubric_judge_score"),
     )
 
 class Annotation(Base):
@@ -533,19 +526,23 @@ class Annotation(Base):
 
 class AnswerLabelOverride(Base):
     """
-    User override for aggregated accuracy label at answer level.
-    Allows users to manually correct the majority-vote label.
+    User override for one rubric's effective final answer label.
     """
     __tablename__ = "answer_label_overrides"
 
     id = Column(Integer, primary_key=True, index=True)
-    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    metric_name = Column(String(50), nullable=False, default="accuracy")
-    edited_label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate
+    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
+    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="CASCADE"), nullable=False, index=True)
+    edited_value = Column(String, nullable=False)
     edited_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("answer_id", "rubric_id", name="uix_answer_label_override"),
+    )
 
     # Relationships
     answer = relationship("Answer")
+    rubric = relationship("TargetRubric")
 
 
 class TargetRubric(Base):
@@ -558,17 +555,17 @@ class TargetRubric(Base):
     criteria = Column(Text, nullable=False, default="")
     options = Column(JSON, nullable=False, default=list)
     position = Column(Integer, nullable=False, default=0)
-    category = Column(String, nullable=False, default="default")  # legacy, no longer written to
+    group = Column(String, nullable=False, default="custom")
+    scoring_mode = Column(String, nullable=False, default="response_level")
     best_option = Column(String, nullable=True)  # user-specified positive option for scoring
     judge_prompt = Column(Text, nullable=True)  # complete judge prompt for this rubric
-    template_key = Column(String, nullable=True)  # pre-made template identifier (e.g. "empathy"), null for custom
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     # Relationships
     target = relationship("Target", back_populates="custom_rubrics")
     rubric_annotations = relationship("RubricAnnotation", back_populates="rubric", cascade="all, delete-orphan")
-    rubric_answer_scores = relationship("RubricAnswerScore", back_populates="rubric", cascade="all, delete-orphan")
+    answer_scores = relationship("AnswerScore", back_populates="rubric", cascade="all, delete-orphan")
 
 
 class RubricAnnotation(Base):
@@ -593,29 +590,3 @@ class RubricAnnotation(Base):
 
     def __repr__(self):
         return f"<RubricAnnotation(id={self.id}, answer_id={self.answer_id}, rubric_id={self.rubric_id})>"
-
-
-class RubricAnswerScore(Base):
-    """LLM judge score for a custom rubric on a single answer."""
-    __tablename__ = "rubric_answer_scores"
-
-    id = Column(Integer, primary_key=True, index=True)
-    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, index=True)
-    rubric_id = Column(Integer, ForeignKey("target_rubrics.id", ondelete="CASCADE"), nullable=False, index=True)
-    judge_id = Column(Integer, ForeignKey("judges.id", ondelete="CASCADE"), nullable=False, index=True)
-    option_chosen = Column(String, nullable=False)
-    explanation = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
-
-    __table_args__ = (
-        UniqueConstraint("answer_id", "rubric_id", "judge_id", name="uix_answer_rubric_judge_score"),
-    )
-
-    # Relationships
-    answer = relationship("Answer", back_populates="rubric_answer_scores")
-    rubric = relationship("TargetRubric", back_populates="rubric_answer_scores")
-    judge = relationship("Judge", back_populates="rubric_answer_scores")
-
-    def __repr__(self):
-        return f"<RubricAnswerScore(id={self.id}, answer_id={self.answer_id}, rubric_id={self.rubric_id})>"

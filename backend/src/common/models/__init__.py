@@ -73,7 +73,6 @@ from src.common.models.answer import (
     DefaultSelectionResponse,
 )
 from src.common.models.judge import (
-    JudgeType,
     JudgeCreate,
     JudgeUpdate,
     JudgeResponse,
@@ -102,6 +101,9 @@ from src.common.models.qa_job import (
     JobStatus as QAJobStatus,
     QAJobType,
     QAJobStage,
+    RubricVerdictState,
+    QARubricScore,
+    QARubricStatus,
     QAJobCreate,
     QAJobStart,
     QAJobPauseRequest,
@@ -112,7 +114,6 @@ from src.common.models.qa_job import (
     RubricSpec,
     UnifiedQAJobStart,
 )
-from src.common.models.rubric_answer_score import RubricAnswerScoreResponse
 from src.common.models.answer_label_override import (
     AnswerLabelOverrideCreate,
     AnswerLabelOverrideResponse
@@ -213,7 +214,6 @@ __all__ = [
     "AnswerBulkSelection",
     "DefaultSelectionResponse",
     # Judge
-    "JudgeType",
     "JudgeCreate",
     "JudgeUpdate",
     "JudgeResponse",
@@ -238,6 +238,9 @@ __all__ = [
     "QAJobStatus",
     "QAJobType",
     "QAJobStage",
+    "RubricVerdictState",
+    "QARubricScore",
+    "QARubricStatus",
     "QAJobCreate",
     "QAJobStart",
     "QAJobPauseRequest",
@@ -247,8 +250,6 @@ __all__ = [
     "RubricQAJobStart",
     "RubricSpec",
     "UnifiedQAJobStart",
-    # RubricAnswerScore
-    "RubricAnswerScoreResponse",
     # AnswerLabelOverride
     "AnswerLabelOverrideCreate",
     "AnswerLabelOverrideResponse",

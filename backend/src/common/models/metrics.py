@@ -11,7 +11,7 @@ class AggregatedAnswerScore(BaseModel):
     """Aggregated score for an answer using reliable judges only."""
     answer_id: int
     method: AggregationMethod
-    label: Optional[bool] = None
+    label: Optional[str] = None
     is_edited: bool = False
     metadata: List[str] = Field(default_factory=list)
 
@@ -25,7 +25,7 @@ class AggregatedResult(BaseModel):
     answer_id: int
     answer_content: str
     aggregated_accuracy: AggregatedAnswerScore
-    human_label: Optional[bool] = None
+    human_label: Optional[str] = None
     human_notes: Optional[str] = None
 
 
@@ -96,15 +96,14 @@ class MetricJudgeRowResult(BaseModel):
     """Per-judge row-level output for a metric-scoped scoring contract."""
     judge_id: int
     name: str
-    label: Optional[bool] = None
-    option_value: Optional[str] = None
+    value: Optional[str] = None
 
 
 class MetricAggregatedResult(BaseModel):
     """Aggregated row-level output for accuracy or rubric metrics."""
     method: AggregationMethod
-    label: Optional[bool] = None
-    option_value: Optional[str] = None
+    value: Optional[str] = None
+    baseline_value: Optional[str] = None
     is_edited: bool = False
 
 
@@ -117,19 +116,16 @@ class MetricRowResult(BaseModel):
     answer_id: int
     answer_content: str
     aggregated_result: MetricAggregatedResult
-    human_label: Optional[bool] = None
+    human_label: Optional[str] = None
     human_option: Optional[str] = None
     judge_results: List[MetricJudgeRowResult] = Field(default_factory=list)
 
 
-MetricType = Literal["accuracy", "rubric"]
-
-
 class MetricScoringContract(TargetSnapshotMetric):
-    """Backend-owned scoring contract for one metric context."""
-    metric_key: str
-    metric_name: str
-    metric_type: MetricType
+    """Backend-owned scoring contract for one rubric context."""
+    rubric_id: int
+    rubric_name: str
+    group: str
     target_label: Optional[str] = None
     judge_summaries: List[MetricJudgeScoreSummary] = Field(default_factory=list)
     rows: List[MetricRowResult] = Field(default_factory=list)

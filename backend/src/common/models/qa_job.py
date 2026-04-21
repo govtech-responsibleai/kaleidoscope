@@ -33,6 +33,38 @@ class QAJobStage(str, Enum):
     completed = "completed"
 
 
+class RubricVerdictState(str, Enum):
+    """Availability state for one rubric's verdict on the annotation page."""
+
+    no_judge_configured = "no_judge_configured"
+    awaiting_answer = "awaiting_answer"
+    pending_evaluation = "pending_evaluation"
+    job_failed = "job_failed"
+    success = "success"
+
+
+class QARubricScore(BaseModel):
+    """Resolved verdict details for one rubric in a QA job."""
+
+    judge_id: int
+    value: str
+    explanation: Optional[str] = None
+    created_at: datetime
+
+
+class QARubricStatus(BaseModel):
+    """Backend-owned verdict availability for one rubric in a QA job."""
+
+    rubric_id: int
+    rubric_name: str
+    group: str
+    state: RubricVerdictState
+    message: str
+    judge_id: Optional[int] = None
+    judge_name: Optional[str] = None
+    score: Optional[QARubricScore] = None
+
+
 class QAJobCreate(BaseModel):
     """Request model for creating a QA job."""
     snapshot_id: int = Field(..., description="Snapshot ID")
@@ -101,11 +133,10 @@ class QAJobDetailResponse(QAJobResponse):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_cost: float = 0.0
+    rubric_statuses: list[QARubricStatus] = Field(default_factory=list)
 
 
 class QAJobListResponse(BaseModel):
     """Response model for listing QA jobs."""
     jobs: list[QAJobResponse]
     total: int
-
-
