@@ -33,11 +33,9 @@ import {
   ResultRow,
   AnnotationCompletionStatus,
   QAJob,
-  MetricJudgeScoreSummary,
   MetricScoringContract,
   SnapshotMetric,
   TargetRubricResponse,
-  JudgeType,
 } from "@/lib/types";
 import {
   snapshotApi,
@@ -59,8 +57,6 @@ interface MetricSectionConfig {
   key: string;
   title: string;
   sourceGroup: SourceGroup;
-  category: string;
-  judgeType: JudgeType;
   rubric: TargetRubricResponse | null;
   contract: MetricScoringContract | null;
   metric: SnapshotMetric | null;
@@ -71,9 +67,7 @@ interface MetricSectionConfig {
 }
 
 interface DialogConfig {
-  category: string;
   rubricId: number | null;
-  judgeType: JudgeType | null;
   metricLabel: string;
   defaultPromptTemplate: string;
 }
@@ -100,9 +94,7 @@ export default function ScoringPage() {
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | "duplicate">("create");
   const [dialogJudge, setDialogJudge] = useState<JudgeConfig | null>(null);
   const [dialogConfig, setDialogConfig] = useState<DialogConfig>({
-    category: "accuracy",
     rubricId: null,
-    judgeType: null,
     metricLabel: "Accuracy",
     defaultPromptTemplate: "",
   });
@@ -129,29 +121,46 @@ export default function ScoringPage() {
   const pendingCountsRequestRef = useRef(0);
   const snapshotMetricsRequestRef = useRef(0);
 
+  const fixedRubric = rubrics.find((r) => r.group === "fixed") ?? null;
   const accuracyJudges = sortJudges(
-    judges.filter((judge) => judge.category === "accuracy" && judge.judge_type === "claim_based")
+    judges.filter((judge) => judge.rubric_id === fixedRubric?.id)
   );
   const baselineJudge = accuracyJudges.find((judge) => judge.is_baseline) ?? null;
 
   const getRubricJudgesForRubric = useCallback((rubric: TargetRubricResponse) => {
     return sortJudges(
-      judges.filter((judge) => {
-        if (judge.judge_type !== "response_level" || judge.category !== rubric.category) {
-          return false;
-        }
-        if (rubric.template_key) {
-          return judge.rubric_id == null || judge.rubric_id === rubric.id;
-        }
-        return judge.rubric_id == null || judge.rubric_id === rubric.id;
-      })
+      judges.filter((judge) => judge.rubric_id === rubric.id)
     );
   }, [judges]);
 
+  const fetchJudgesForRubrics = useCallback(async (currentRubrics: TargetRubricResponse[]) => {
+    setJudgesLoading(true);
+    try {
+      if (currentRubrics.length === 0) {
+        setJudges([]);
+        return;
+      }
+      const responses = await Promise.all(
+        currentRubrics.map((rubric) => judgeApi.getForRubric(rubric.id, targetId))
+      );
+      const deduped = new Map<number, JudgeConfig>();
+      responses.forEach((response) => {
+        response.data.forEach((judge) => {
+          deduped.set(judge.id, judge);
+        });
+      });
+      setJudges(sortJudges(Array.from(deduped.values())));
+    } catch (judgeError) {
+      setError(getApiErrorMessage(judgeError, "Failed to load judges."));
+    } finally {
+      setJudgesLoading(false);
+    }
+  }, [targetId]);
+
   const applyScoringContracts = useCallback((contracts: MetricScoringContract[]) => {
     setScoringContracts(contracts);
-    const accuracyContract = contracts.find((contract) => contract.metric_type === "accuracy") ?? null;
-    const rubricContracts = contracts.filter((contract) => contract.metric_type === "rubric");
+    const accuracyContract = contracts.find((contract) => contract.group === "fixed") ?? null;
+    const rubricContracts = contracts.filter((contract) => contract.group !== "fixed");
 
     setSnapshotMetric(
       accuracyContract ? {
@@ -224,18 +233,6 @@ export default function ScoringPage() {
     }
   }, [targetId, selectedSnapshotId, updateSnapshotSelection]);
 
-  const fetchJudges = useCallback(async () => {
-    setJudgesLoading(true);
-    try {
-      const response = await judgeApi.list(targetId);
-      setJudges(response.data);
-    } catch (judgeError) {
-      setError(getApiErrorMessage(judgeError, "Failed to load judges."));
-    } finally {
-      setJudgesLoading(false);
-    }
-  }, [targetId]);
-
   const checkAnnotationCompletion = useCallback(async (snapshotId: number, requestId?: number) => {
     setCheckingAnnotations(true);
     try {
@@ -291,11 +288,16 @@ export default function ScoringPage() {
 
   useEffect(() => {
     fetchSnapshots();
-    fetchJudges();
     targetRubricApi.list(targetId).then((res) => {
       setRubrics(res.data);
-    }).catch(() => {});
-  }, [targetId, fetchJudges, fetchSnapshots]);
+      void fetchJudgesForRubrics(res.data);
+    }).catch((rubricError) => {
+      setRubrics([]);
+      setJudges([]);
+      setJudgesLoading(false);
+      setError(getApiErrorMessage(rubricError, "Failed to load rubrics."));
+    });
+  }, [targetId, fetchJudgesForRubrics, fetchSnapshots]);
 
   useEffect(() => {
     setAnnotationStatus(null);
@@ -379,13 +381,14 @@ export default function ScoringPage() {
     await Promise.all([
       fetchScoringPendingCounts(selectedSnapshotId, pendingRequestId),
       fetchScoringContracts(selectedSnapshotId, metricsRequestId),
-      fetchJudges(),
+      fetchJudgesForRubrics(rubrics),
     ]);
   }, [
     selectedSnapshotId,
     fetchScoringPendingCounts,
     fetchScoringContracts,
-    fetchJudges,
+    fetchJudgesForRubrics,
+    rubrics,
   ]);
 
   const openDialog = (
@@ -590,19 +593,17 @@ export default function ScoringPage() {
       <CreateJudgeDialog
         open={dialogOpen}
         targetId={targetId}
-        category={dialogConfig.category}
         rubricId={dialogConfig.rubricId}
         mode={dialogMode}
         judge={dialogJudge}
         defaultPromptTemplate={dialogConfig.defaultPromptTemplate}
-        lockedJudgeType={dialogConfig.judgeType}
         metricLabel={dialogConfig.metricLabel}
         onClose={() => {
           setDialogOpen(false);
           setDialogJudge(null);
         }}
         onSuccess={async () => {
-          await fetchJudges();
+          await fetchJudgesForRubrics(rubrics);
           setDialogOpen(false);
           setDialogJudge(null);
         }}
@@ -614,7 +615,7 @@ export default function ScoringPage() {
         onConfirm={async () => {
           if (!judgeToDelete) return;
           await judgeApi.delete(judgeToDelete.id);
-          await fetchJudges();
+          await fetchJudgesForRubrics(rubrics);
           setJudgeToDelete(null);
         }}
         title="Delete Judge"
@@ -641,62 +642,32 @@ function buildMetricSections({
   getRubricJudgesForRubric: (rubric: TargetRubricResponse) => JudgeConfig[];
   baselineJudge: JudgeConfig | null;
 }): MetricSectionConfig[] {
-  const presetRubrics = rubrics.filter((rubric) => !!rubric.template_key);
-  const customRubrics = rubrics.filter((rubric) => !rubric.template_key);
-  const accuracyContract = scoringContracts.find((contract) => contract.metric_type === "accuracy") ?? null;
-
-  const sections: MetricSectionConfig[] = [
-    {
-      key: "accuracy",
-      title: "Accuracy",
-      sourceGroup: "fixed",
-      category: "accuracy",
-      judgeType: "claim_based",
-      rubric: null,
-      contract: accuracyContract,
-      metric: snapshotMetric,
-      judges: accuracyJudges,
-      emptyMessage: "Run judges to see results",
-      gaugeLabel: "Aggregated Accuracy",
-      defaultPromptTemplate: baselineJudge?.prompt_template || accuracyJudges[0]?.prompt_template || "",
-    },
+  const sections: MetricSectionConfig[] = [];
+  const orderedRubrics = [
+    ...rubrics.filter((rubric) => rubric.group === "fixed"),
+    ...rubrics.filter((rubric) => rubric.group === "preset"),
+    ...rubrics.filter((rubric) => rubric.group === "custom"),
   ];
 
-  for (const rubric of presetRubrics) {
+  for (const rubric of orderedRubrics) {
     const sectionJudges = getRubricJudgesForRubric(rubric);
     const contract = scoringContracts.find((metric) => metric.rubric_id === rubric.id) ?? null;
     sections.push({
       key: `rubric-${rubric.id}`,
       title: rubric.name,
-      sourceGroup: "preset",
-      category: rubric.category,
-      judgeType: "response_level",
+      sourceGroup: rubric.group,
       rubric,
       contract,
-      metric: rubricMetrics.find((metric) => metric.rubric_id === rubric.id) ?? null,
-      judges: sectionJudges,
+      metric: rubric.group === "fixed"
+        ? snapshotMetric
+        : rubricMetrics.find((metric) => metric.rubric_id === rubric.id) ?? null,
+      judges: rubric.group === "fixed" ? accuracyJudges : sectionJudges,
       emptyMessage: "Run judges to see results",
-      gaugeLabel: `Aggregated  ${rubric.name}`,
-      defaultPromptTemplate: sectionJudges[0]?.prompt_template || "",
-    });
-  }
-
-  for (const rubric of customRubrics) {
-    const sectionJudges = getRubricJudgesForRubric(rubric);
-    const contract = scoringContracts.find((metric) => metric.rubric_id === rubric.id) ?? null;
-    sections.push({
-      key: `rubric-${rubric.id}`,
-      title: rubric.name,
-      sourceGroup: "custom",
-      category: rubric.category,
-      judgeType: "response_level",
-      rubric,
-      contract,
-      metric: rubricMetrics.find((metric) => metric.rubric_id === rubric.id) ?? null,
-      judges: sectionJudges,
-      emptyMessage: "Run judges to see results",
-      gaugeLabel: `Aggregated  ${rubric.name}`,
-      defaultPromptTemplate: sectionJudges[0]?.prompt_template || "",
+      gaugeLabel: `Share labeled ${contract?.target_label || rubric.best_option || rubric.options?.[0]?.option || rubric.name}`,
+      defaultPromptTemplate:
+        rubric.group === "fixed"
+          ? baselineJudge?.prompt_template || accuracyJudges[0]?.prompt_template || ""
+          : sectionJudges[0]?.prompt_template || "",
     });
   }
 
@@ -718,14 +689,10 @@ function mapContractRowsToResults(contract: MetricScoringContract | null): Resul
     aggregated_accuracy: {
       answer_id: row.answer_id,
       method: row.aggregated_result.method,
-      label: row.aggregated_result.label ?? null,
+      label: row.aggregated_result.value ?? null,
       is_edited: row.aggregated_result.is_edited,
       metadata: row.judge_results.map((judgeResult) => {
-        const label = judgeResult.label;
-        if (typeof judgeResult.option_value === "string") {
-          return `- ${judgeResult.name}: ${label ? judgeResult.option_value : "Pending"}`;
-        }
-        return `- ${judgeResult.name}: ${label === true ? "Accurate" : label === false ? "Inaccurate" : "Pending"}`;
+        return `- ${judgeResult.name}: ${judgeResult.value ?? "Pending"}`;
       }),
     },
     human_label: row.human_label ?? null,
@@ -766,9 +733,7 @@ function MetricSection({
 }) {
   const sectionColor = groupColors[section.sourceGroup];
   const dialogConfig: DialogConfig = {
-    category: section.category,
-    rubricId: section.rubric && !section.rubric.template_key ? section.rubric.id : null,
-    judgeType: section.judgeType,
+    rubricId: section.rubric?.id ?? null,
     metricLabel: section.title,
     defaultPromptTemplate: section.defaultPromptTemplate,
   };
@@ -928,7 +893,7 @@ function JudgeStrip({
                 scrollSnapAlign: "start",
               }}
             >
-              {section.rubric ? (
+              {section.rubric && section.rubric.group !== "fixed" ? (
                 <RubricJudgeCard
                   judge={judge}
                   displayName={judge.name}

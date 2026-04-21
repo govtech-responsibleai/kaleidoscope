@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Card,
@@ -35,12 +35,37 @@ interface SnapshotAccuracyChartProps {
 export default function SnapshotAccuracyChart({
   data,
   loading,
-  title = "Metric Trends Across Snapshots",
+  title,
 }: SnapshotAccuracyChartProps) {
   const theme = useTheme();
+  const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(0);
 
   const legendItems = useMemo(() => data[0]?.metrics ?? [], [data]);
+  const requiredChartWidth = useMemo(() => {
+    const snapshotCount = Math.max(data.length, 1);
+    const metricCount = Math.max(legendItems.length, 1);
+    const groupWidth = Math.max(150, metricCount * 52);
+    return Math.max(640, snapshotCount * groupWidth);
+  }, [data.length, legendItems.length]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const updateWidth = () => {
+      setAvailableWidth(containerRef.current?.clientWidth ?? 0);
+    };
+
+    updateWidth();
+
+    const observer = new ResizeObserver(() => {
+      updateWidth();
+    });
+
+    observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [data.length, loading]);
 
   useEffect(() => {
     if (!svgRef.current || data.length === 0 || loading) return;
@@ -48,7 +73,8 @@ export default function SnapshotAccuracyChart({
     d3.select(svgRef.current).selectAll("*").remove();
 
     const margin = { top: 28, right: 24, bottom: 72, left: 60 };
-    const containerWidth = svgRef.current.clientWidth || 700;
+    const chartWidth = Math.max(availableWidth || 0, requiredChartWidth);
+    const containerWidth = chartWidth || 700;
     const containerHeight = 360;
     const width = containerWidth - margin.left - margin.right;
     const height = containerHeight - margin.top - margin.bottom;
@@ -177,7 +203,7 @@ export default function SnapshotAccuracyChart({
     return () => {
       tooltip.remove();
     };
-  }, [data, loading, legendItems, theme]);
+  }, [availableWidth, data, loading, legendItems, requiredChartWidth, theme]);
 
   return (
     <Card
@@ -191,14 +217,16 @@ export default function SnapshotAccuracyChart({
     >
       <CardContent sx={{ p: 3 }}>
         <Stack spacing={2}>
-          <Box>
-            <Typography variant="h5" fontWeight={700}>
-              {title}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-              Compare selected metrics across snapshots in one view.
-            </Typography>
-          </Box>
+          {title && (
+            <Box>
+              <Typography variant="h5" fontWeight={700}>
+                {title}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                Compare selected metrics across snapshots in one view.
+              </Typography>
+            </Box>
+          )}
 
           {legendItems.length > 0 && (
             <Stack direction="row" spacing={1} useFlexGap flexWrap="wrap">
@@ -244,7 +272,26 @@ export default function SnapshotAccuracyChart({
               </Typography>
             </Box>
           ) : (
-            <svg ref={svgRef} style={{ width: "100%", height: "100%" }} />
+            <Box
+              ref={containerRef}
+              sx={{
+                width: "100%",
+                overflowX: "auto",
+                overflowY: "hidden",
+                pb: 1,
+              }}
+            >
+              <Box sx={{ width: Math.max(availableWidth || 0, requiredChartWidth) }}>
+                <svg
+                  ref={svgRef}
+                  style={{
+                    width: Math.max(availableWidth || 0, requiredChartWidth),
+                    height: "100%",
+                    display: "block",
+                  }}
+                />
+              </Box>
+            </Box>
           )}
         </Stack>
       </CardContent>

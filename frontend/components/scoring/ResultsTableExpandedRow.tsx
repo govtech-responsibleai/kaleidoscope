@@ -65,8 +65,8 @@ export default function ResultsTableExpandedRow({
   }, [activeRubricId]);
 
   const claimBasedJudges = useMemo(
-    () => tableJudges.filter((j) => j.judge_type === "claim_based"),
-    [tableJudges]
+    () => rubrics.some((r) => r.group === "fixed") ? tableJudges : [],
+    [tableJudges, rubrics]
   );
 
   const selectedClaimBasedJudgeIds = useMemo(
@@ -165,12 +165,8 @@ export default function ResultsTableExpandedRow({
       return;
     }
 
-    judgeApi.getByCategory(
-      activeRubric.category,
-      targetId,
-      activeRubric.template_key ? undefined : activeRubric.id
-    )
-      .then((res) => setRubricJudges(res.data.filter((j) => j.judge_type === "response_level")))
+    judgeApi.getForRubric(activeRubric.id, targetId)
+      .then((res) => setRubricJudges(res.data))
       .catch(() => setRubricJudges([]));
 
     rubricScoreApi.getForAnswer(result.answer_id, activeRubric.id)

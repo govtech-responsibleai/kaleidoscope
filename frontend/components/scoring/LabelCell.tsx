@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Box,
   Chip,
@@ -14,58 +14,93 @@ import {
   Typography,
 } from "@mui/material";
 import { IconCheck, IconPencil, IconRestore, IconX } from "@tabler/icons-react";
-import { AggregatedAccuracy } from "@/lib/types";
-import { answerApi } from "@/lib/api";
+import axios from "axios";
+import { answerApi, getApiErrorMessage } from "@/lib/api";
 import { compactActionIconProps } from "@/lib/iconStyles";
+
+export interface LabelCellOption {
+  value: string;
+  label: string;
+  color: ChipProps["color"];
+}
 
 interface LabelCellProps {
   answerId: number;
-  aggregatedAccuracy: AggregatedAccuracy | undefined;
-  chipLabel: string;
+  rubricId: number;
+  value: string | null | undefined;
+  baselineValue: string | null | undefined;
+  displayLabel: string;
   chipColor: ChipProps["color"];
   helperText: string | null;
+  options: LabelCellOption[];
+  isEditable?: boolean;
+  showEditedBadge?: boolean;
+  resetTooltip?: string;
+  editTooltip?: string;
   onLabelChange?: () => void;
 }
 
+const getOptionMeta = (
+  options: LabelCellOption[],
+  value: string | null | undefined,
+  fallbackLabel: string,
+  fallbackColor: ChipProps["color"],
+): LabelCellOption => {
+  if (!value) {
+    return { value: "", label: fallbackLabel, color: fallbackColor };
+  }
+  return options.find((option) => option.value === value) ?? {
+    value,
+    label: fallbackLabel,
+    color: fallbackColor,
+  };
+};
+
 export default function LabelCell({
   answerId,
-  aggregatedAccuracy,
-  chipLabel,
+  rubricId,
+  value,
+  baselineValue,
+  displayLabel,
   chipColor,
   helperText,
+  options,
+  isEditable = true,
+  showEditedBadge = false,
+  resetTooltip = "Reset to judge suggestion",
+  editTooltip = "Edit suggested label",
   onLabelChange,
 }: LabelCellProps) {
+  const currentValue = value ?? "";
   const [isEditMode, setIsEditMode] = useState(false);
-  const [selectedLabel, setSelectedLabel] = useState<string>(
-    aggregatedAccuracy?.label === true
-      ? "accurate"
-      : aggregatedAccuracy?.label === false
-      ? "inaccurate"
-      : ""
-  );
+  const [selectedValue, setSelectedValue] = useState<string>(currentValue);
   const [isSaving, setIsSaving] = useState(false);
 
-  const handleSave = async () => {
-    if (!selectedLabel) return;
+  useEffect(() => {
+    setSelectedValue(currentValue);
+  }, [currentValue]);
 
-    // Check if label actually changed
-    const currentLabel = aggregatedAccuracy?.label;
-    const newLabel = selectedLabel === "accurate";
-    if (currentLabel === newLabel) {
+  const selectedOption = useMemo(
+    () => getOptionMeta(options, selectedValue || value, displayLabel, chipColor),
+    [options, selectedValue, value, displayLabel, chipColor],
+  );
+
+  const handleSave = async () => {
+    if (!selectedValue) return;
+    if (selectedValue === currentValue) {
       setIsEditMode(false);
       return;
     }
 
     setIsSaving(true);
     try {
-      await answerApi.updateLabelOverride(answerId, {
-        edited_label: newLabel,
+      await answerApi.updateLabelOverride(answerId, rubricId, {
+        edited_value: selectedValue,
       });
       setIsEditMode(false);
       onLabelChange?.();
     } catch (err) {
-      console.error("Failed to save label:", err);
-      alert("Failed to save. Please try again.");
+      alert(getApiErrorMessage(err, "Failed to save. Please try again."));
     } finally {
       setIsSaving(false);
     }
@@ -74,21 +109,13 @@ export default function LabelCell({
   const handleReset = async () => {
     setIsSaving(true);
     try {
-      await answerApi.deleteLabelOverride(answerId);
+      await answerApi.deleteLabelOverride(answerId, rubricId);
       setIsEditMode(false);
       onLabelChange?.();
     } catch (err: unknown) {
-      const status =
-        typeof err === "object" &&
-        err !== null &&
-        "response" in err &&
-        typeof (err as { response?: { status?: number } }).response?.status === "number"
-          ? (err as { response?: { status?: number } }).response?.status
-          : undefined;
-      // 404 is fine - means no override existed
-      if (status !== 404) {
-        console.error("Failed to reset label:", err);
-        alert("Failed to reset. Please try again.");
+      const httpStatus = axios.isAxiosError(err) ? err.response?.status : undefined;
+      if (httpStatus !== 404) {
+        alert(getApiErrorMessage(err, "Failed to reset. Please try again."));
       } else {
         setIsEditMode(false);
         onLabelChange?.();
@@ -99,44 +126,38 @@ export default function LabelCell({
   };
 
   const handleCancel = () => {
-    setSelectedLabel(
-      aggregatedAccuracy?.label === true
-        ? "accurate"
-        : aggregatedAccuracy?.label === false
-        ? "inaccurate"
-        : ""
-    );
+    setSelectedValue(currentValue);
     setIsEditMode(false);
   };
+
+  if (!isEditable) {
+    return <Chip label={displayLabel} color={chipColor} size="small" />;
+  }
 
   if (isEditMode) {
     return (
       <Stack direction="row" alignItems="center" spacing={0.5}>
-        <FormControl size="small" sx={{ flex: 1 }}>
+        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
           <Select
-            value={selectedLabel}
-            onChange={(e) => setSelectedLabel(e.target.value)}
+            value={selectedValue}
+            onChange={(event) => setSelectedValue(event.target.value)}
             displayEmpty
-            renderValue={(value) => {
-              if (!value) return <Typography variant="body2" color="text.secondary">Select...</Typography>;
-              return (
-                <Chip
-                  label={value === "accurate" ? "Accurate" : "Inaccurate"}
-                  color={value === "accurate" ? "success" : "error"}
-                  size="small"
-                />
-              );
+            renderValue={(selected) => {
+              if (!selected) {
+                return <Typography variant="body2" color="text.secondary">Select...</Typography>;
+              }
+              const option = getOptionMeta(options, selected, displayLabel, chipColor);
+              return <Chip label={option.label} color={option.color} size="small" />;
             }}
           >
             <MenuItem value="" disabled>
               <Typography variant="body2" color="text.secondary">Select...</Typography>
             </MenuItem>
-            <MenuItem value="accurate">
-              <Chip label="Accurate" color="success" size="small" />
-            </MenuItem>
-            <MenuItem value="inaccurate">
-              <Chip label="Inaccurate" color="error" size="small" />
-            </MenuItem>
+            {options.map((option) => (
+              <MenuItem key={option.value} value={option.value}>
+                <Chip label={option.label} color={option.color} size="small" />
+              </MenuItem>
+            ))}
           </Select>
         </FormControl>
         <Tooltip title="Save">
@@ -144,7 +165,7 @@ export default function LabelCell({
             <IconButton
               size="small"
               onClick={handleSave}
-              disabled={isSaving || !selectedLabel}
+              disabled={isSaving || !selectedValue}
               color="primary"
               sx={{ p: 0.25 }}
             >
@@ -153,12 +174,7 @@ export default function LabelCell({
           </span>
         </Tooltip>
         <Tooltip title="Cancel">
-          <IconButton
-            size="small"
-            onClick={handleCancel}
-            disabled={isSaving}
-            sx={{ p: 0.25 }}
-          >
+          <IconButton size="small" onClick={handleCancel} disabled={isSaving} sx={{ p: 0.25 }}>
             <IconX {...compactActionIconProps} />
           </IconButton>
         </Tooltip>
@@ -169,39 +185,24 @@ export default function LabelCell({
   return (
     <Stack spacing={0.5}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
-        {/* Left: Chip and edited text */}
         <Box display="flex" alignItems="center" gap={0.5}>
-          <Chip label={chipLabel} color={chipColor} size="small" />
-          {aggregatedAccuracy?.is_edited && (
-            <Typography
-              color="text.secondary"
-              sx={{ fontStyle: "italic", fontSize: "0.7rem" }}
-            >
+          <Chip label={displayLabel} color={chipColor} size="small" />
+          {showEditedBadge && (
+            <Typography color="text.secondary" sx={{ fontStyle: "italic", fontSize: "0.7rem" }}>
               (edited)
             </Typography>
           )}
         </Box>
-
-        {/* Right: Edit and reset icons */}
         <Box display="flex" alignItems="center" gap={0.5}>
-          {aggregatedAccuracy?.is_edited && (
-            <Tooltip title="Reset to judge suggestion">
-              <IconButton
-                size="small"
-                onClick={handleReset}
-                disabled={isSaving}
-                sx={{ p: 0.25 }}
-              >
+          {showEditedBadge && baselineValue && (
+            <Tooltip title={resetTooltip}>
+              <IconButton size="small" onClick={handleReset} disabled={isSaving} sx={{ p: 0.25 }}>
                 <IconRestore {...compactActionIconProps} />
               </IconButton>
             </Tooltip>
           )}
-          <Tooltip title="Edit suggested label">
-            <IconButton
-              size="small"
-              onClick={() => setIsEditMode(true)}
-              sx={{ p: 0.25 }}
-            >
+          <Tooltip title={editTooltip}>
+            <IconButton size="small" onClick={() => setIsEditMode(true)} sx={{ p: 0.25 }}>
               <IconPencil {...compactActionIconProps} />
             </IconButton>
           </Tooltip>
