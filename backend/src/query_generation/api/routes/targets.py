@@ -12,7 +12,8 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository, RubricAnswerScoreRepository
+from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository
+from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse, TestConnectionRequest, TestConnectionResponse, ProbeRequest, ProbeResponse
 from src.common.connectors.base import TargetHttpError
 from src.common.connectors.http_auth import prepare_http_config_for_storage, persist_http_auth_secret
@@ -20,7 +21,15 @@ from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
 from src.common.connectors.registry import get_registered_types, get_connector, validate_connector_config
 from src.common.services.export_service import ExportService, ExportFormat
-from src.common.services.premade_rubrics import list_premade_templates, get_premade_template
+from src.common.services.premade_rubrics import list_premade_templates
+from src.common.database.seed import ensure_system_judges, ensure_judges
+from src.common.services.system_rubrics import (
+    RUBRIC_GROUP_CUSTOM,
+    RUBRIC_GROUP_FIXED,
+    RUBRIC_GROUP_PRESET,
+    ensure_system_rubrics,
+    suffix_reserved_name,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -208,6 +217,8 @@ def create_target(
     target_data["endpoint_config"] = endpoint_config
     target_data["user_id"] = user_id
     created_target = TargetRepository.create(db, target_data)
+    ensure_system_rubrics(db)
+    ensure_system_judges(db)
     if target_data.get("endpoint_type") == "http":
         persist_http_auth_secret(
             db,
@@ -651,6 +662,7 @@ def list_rubrics(
     target = TargetRepository.get_by_id(db, target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
+    ensure_system_rubrics(db)
     return TargetRubricRepository.get_by_target(db, target_id)
 
 
@@ -663,12 +675,12 @@ def list_premade_rubrics(
     target = TargetRepository.get_by_id(db, target_id)
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
-    existing_keys = {
-        r.template_key
+    existing_preset_names = {
+        r.name
         for r in TargetRubricRepository.get_by_target(db, target_id)
-        if r.template_key
+        if r.group == RUBRIC_GROUP_PRESET
     }
-    return [t for t in list_premade_templates() if t["key"] not in existing_keys]
+    return [t for t in list_premade_templates() if t["name"] not in existing_preset_names]
 
 
 @router.post("/{target_id}/rubrics", response_model=TargetRubricResponse, status_code=status.HTTP_201_CREATED)
@@ -681,20 +693,11 @@ def create_rubric(
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
 
-    # Pre-made template path
-    if rubric.template_key:
-        tmpl = get_premade_template(rubric.template_key)
-        if not tmpl:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown template key: {rubric.template_key}")
-        data = {
-            "name": tmpl["name"],
-            "criteria": tmpl["criteria"],
-            "options": tmpl["options"],
-            "best_option": tmpl["best_option"],
-            "judge_prompt": tmpl["judge_prompt"],
-            "template_key": rubric.template_key,
-        }
-        return TargetRubricRepository.create(db, target_id, data)
+    if rubric.group != RUBRIC_GROUP_CUSTOM:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only custom rubrics can be created through this endpoint",
+        )
 
     # Custom rubric path — validate completeness
     if not rubric.name or not rubric.name.strip():
@@ -713,22 +716,27 @@ def create_rubric(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
 
     data = rubric.model_dump()
+    data["group"] = RUBRIC_GROUP_CUSTOM
     data["options"] = [o.model_dump() for o in rubric.options if o.option.strip()]
+    existing_names = [r.name for r in TargetRubricRepository.get_by_target(db, target_id)]
+    data["name"] = suffix_reserved_name(rubric.name.strip(), existing_names)
 
     # Generate judge prompt via LLM augmenter, fall back to template if it fails
     from src.common.services.rubric_augmenter import generate_judge_prompt, build_fallback_judge_prompt
     options_dicts = [o.model_dump() for o in rubric.options if o.option.strip()]
     try:
         data["judge_prompt"] = generate_judge_prompt(
-            rubric.name, rubric.criteria, options_dicts, rubric.best_option
+            data["name"], rubric.criteria, options_dicts, rubric.best_option
         )
     except Exception as e:
         logger.warning(f"Augmenter failed for rubric '{rubric.name}', using fallback: {e}")
         data["judge_prompt"] = build_fallback_judge_prompt(
-            rubric.name, rubric.criteria, options_dicts, rubric.best_option
+            data["name"], rubric.criteria, options_dicts, rubric.best_option
         )
 
-    return TargetRubricRepository.create(db, target_id, data)
+    created = TargetRubricRepository.create(db, target_id, data)
+    ensure_judges(db, int(created.id))  # type: ignore[arg-type]
+    return created
 
 
 @router.put("/{target_id}/rubrics/{rubric_id}", response_model=TargetRubricResponse)
@@ -743,11 +751,11 @@ def update_rubric(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
 
     # Block editing of pre-made rubric content
-    if existing_rubric.template_key:
-        editable_fields = {"name", "criteria", "options", "best_option", "judge_prompt", "template_key"}
+    if existing_rubric.group != RUBRIC_GROUP_CUSTOM:
+        editable_fields = {"name", "criteria", "options", "best_option", "judge_prompt", "group"}
         changed = rubric_update.model_dump(exclude_unset=True)
         if any(k in changed for k in editable_fields):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Pre-made rubrics cannot be edited")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fixed and preset rubrics cannot be edited")
 
     data = rubric_update.model_dump(exclude_unset=True)
 
@@ -779,13 +787,13 @@ def update_rubric(
         old_option_names = {o["option"] for o in existing_options}
         new_option_names = {o["option"] for o in data["options"]}
         if old_option_names != new_option_names:
-            deleted = RubricAnswerScoreRepository.delete_scores_by_rubric(db, rubric_id)
+            deleted = AnswerScoreRepository.delete_scores_by_rubric(db, rubric_id)
             if deleted:
                 logger.info(f"Rubric {rubric_id} options changed — purged {deleted} stale scores")
 
     # Regenerate judge prompt if rubric content changed (custom rubrics only)
     content_changed = any(k in data for k in ("name", "criteria", "options"))
-    if content_changed and not existing_rubric.template_key:
+    if content_changed and existing_rubric.group == RUBRIC_GROUP_CUSTOM:
         from src.common.services.rubric_augmenter import generate_judge_prompt, build_fallback_judge_prompt
         name = data.get("name", existing_rubric.name)
         criteria = data.get("criteria", existing_rubric.criteria)
@@ -810,6 +818,11 @@ def delete_rubric(
     rubric_id: int,
     db: Session = Depends(get_db)
 ):
+    existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not existing_rubric or existing_rubric.target_id != target_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+    if existing_rubric.group != RUBRIC_GROUP_CUSTOM:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fixed and preset rubrics cannot be deleted")
     success = TargetRubricRepository.delete(db, rubric_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")

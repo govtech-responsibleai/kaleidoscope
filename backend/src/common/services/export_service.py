@@ -30,11 +30,12 @@ class ExportFormat(str, Enum):
     JSON = "json"
 
 
-def _format_label(label: bool | None) -> str:
-    """Format boolean label as human-readable string."""
+def _format_label(label: bool | str | None) -> str:
     if label is None:
         return "Pending"
-    return "Accurate" if label else "Inaccurate"
+    if isinstance(label, bool):
+        return "Accurate" if label else "Inaccurate"
+    return label.title()
 
 
 class ExportService:

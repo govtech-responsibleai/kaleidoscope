@@ -18,7 +18,8 @@ from sqlalchemy.exc import OperationalError
 from src.common.config import get_settings
 from src.common.auth import auth_router, get_scoped_db
 from src.common.database.connection import init_db, SessionLocal, engine
-from src.common.database.seed import seed_default_judges, run_manual_migrations
+from src.common.database.seed import ensure_system_judges, run_manual_migrations
+from src.common.services.system_rubrics import ensure_system_rubrics
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
 
 # Import routers from query generation
@@ -55,9 +56,10 @@ async def lifespan(app: FastAPI):
     # Seed default data
     db = SessionLocal()
     try:
-        seed_default_judges(db)
+        ensure_system_rubrics(db)
+        ensure_system_judges(db)
     except Exception as e:
-        logger.error(f"Failed to seed default judges: {e}")
+        logger.error(f"Failed to seed default data: {e}")
     finally:
         db.close()
 

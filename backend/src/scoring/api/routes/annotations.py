@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import AnnotationRepository, AnswerRepository, SnapshotRepository
-from src.common.database.models import RubricAnnotation
+from src.common.database.models import RubricAnnotation, TargetRubric
 from src.common.models import (
     AnnotationCreate,
     AnnotationUpdate,
@@ -18,10 +18,12 @@ from src.common.models import (
     AnnotationBulkCreate,
     AnnotationListResponse
 )
+from src.common.services.system_rubrics import canonicalize_rubric_option_value
 
 
 class RubricAnnotationUpsert(BaseModel):
     option_value: str
+    notes: str | None = None
 
 
 class RubricAnnotationResponse(BaseModel):
@@ -29,6 +31,7 @@ class RubricAnnotationResponse(BaseModel):
     answer_id: int
     rubric_id: int
     option_value: str
+    notes: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -312,6 +315,8 @@ def upsert_rubric_annotation(
     answer = AnswerRepository.get_by_id(db, answer_id)
     if not answer:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Answer {answer_id} not found")
+    rubric = db.query(TargetRubric).filter(TargetRubric.id == rubric_id).first()
+    option_value = canonicalize_rubric_option_value(rubric, data.option_value) if rubric else data.option_value
 
     existing = db.query(RubricAnnotation).filter(
         RubricAnnotation.answer_id == answer_id,
@@ -319,13 +324,20 @@ def upsert_rubric_annotation(
     ).first()
 
     if existing:
-        existing.option_value = data.option_value
+        existing.option_value = option_value
+        if "notes" in data.model_fields_set:
+            existing.notes = data.notes
         existing.updated_at = datetime.utcnow()
         db.commit()
         db.refresh(existing)
         return existing
     else:
-        label = RubricAnnotation(answer_id=answer_id, rubric_id=rubric_id, option_value=data.option_value)
+        label = RubricAnnotation(
+            answer_id=answer_id,
+            rubric_id=rubric_id,
+            option_value=option_value,
+            notes=data.notes,
+        )
         db.add(label)
         db.commit()
         db.refresh(label)
