@@ -350,6 +350,7 @@ export interface QAJob {
   prompt_tokens: number;
   completion_tokens: number;
   total_cost: number;
+  rubric_statuses?: QARubricStatus[];
   created_at: string;
   updated_at: string;
 }
@@ -459,8 +460,6 @@ export interface AnnotationCompletionStatus {
 }
 
 // Judge types
-export type JudgeType = "claim_based" | "response_level";
-
 export interface JudgeModelOption {
   value: string;
   label: string;
@@ -474,12 +473,10 @@ export interface JudgeConfig {
   model_name: string;
   model_label?: string;
   temperature?: number;
-  judge_type: JudgeType;
   is_baseline: boolean;
   is_editable: boolean;
   params: Record<string, unknown>;
   prompt_template?: string;
-  category: string;
   created_at: string;
   updated_at: string;
 }
@@ -494,14 +491,37 @@ export interface RubricAnswerScore {
   created_at: string;
 }
 
+export type RubricVerdictState =
+  | "no_judge_configured"
+  | "awaiting_answer"
+  | "pending_evaluation"
+  | "job_failed"
+  | "success";
+
+export interface QARubricScore {
+  judge_id: number;
+  value: string;
+  explanation: string;
+  created_at: string;
+}
+
+export interface QARubricStatus {
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
+  state: RubricVerdictState;
+  message: string;
+  judge_id: number | null;
+  judge_name: string | null;
+  score: QARubricScore | null;
+}
+
 export interface JudgeCreate {
   target_id: number;
   rubric_id?: number | null;
   name: string;
   model_name: string;
   model_label?: string;
-  judge_type: JudgeType;
-  category?: string;
   params?: Record<string, unknown>;
   prompt_template?: string;
 }
@@ -510,7 +530,6 @@ export interface JudgeUpdate {
   name?: string;
   model_name?: string;
   model_label?: string;
-  judge_type?: JudgeType;
   rubric_id?: number | null;
   params?: Record<string, unknown>;
   prompt_template?: string;
@@ -545,7 +564,7 @@ export type AggregationMethod =
 export interface AggregatedAccuracy {
   answer_id: number;
   method: AggregationMethod;
-  label: boolean | null;
+  label: string | null;
   is_edited: boolean;
   metadata: string[];
   aligned_judge_count?: number;
@@ -555,13 +574,13 @@ export interface AggregatedAccuracy {
 export interface AnswerLabelOverride {
   id: number;
   answer_id: number;
-  metric_name: string;
-  edited_label: boolean;
+  rubric_id: number;
+  edited_value: string;
   edited_at: string;
 }
 
 export interface AnswerLabelOverrideCreate {
-  edited_label: boolean;
+  edited_value: string;
 }
 
 export interface ResultRow {
@@ -612,14 +631,13 @@ export interface MetricJudgeScoreSummary {
 export interface MetricJudgeRowResult {
   judge_id: number;
   name: string;
-  label?: boolean | null;
-  option_value?: string | null;
+  value?: string | null;
 }
 
 export interface MetricAggregatedResult {
   method: AggregationMethod;
-  label?: boolean | null;
-  option_value?: string | null;
+  value?: string | null;
+  baseline_value?: string | null;
   is_edited: boolean;
 }
 
@@ -637,9 +655,9 @@ export interface MetricRowResult {
 }
 
 export interface MetricScoringContract extends SnapshotMetric {
-  metric_key: string;
-  metric_name: string;
-  metric_type: "accuracy" | "rubric";
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
   target_label?: string | null;
   judge_summaries: MetricJudgeScoreSummary[];
   rows: MetricRowResult[];
@@ -711,7 +729,7 @@ export interface TargetRubricCreate {
   criteria: string;
   options: RubricOption[];
   best_option?: string | null;
-  template_key?: string | null;
+  group?: "fixed" | "preset" | "custom";
 }
 
 export interface TargetRubricUpdate {
@@ -729,20 +747,20 @@ export interface TargetRubricResponse {
   options: RubricOption[];
   best_option: string | null;
   position: number;
-  category: string;
   judge_prompt: string | null;
-  template_key: string | null;
+  group: "fixed" | "preset" | "custom";
+  scoring_mode: "claim_based" | "response_level";
   created_at: string;
   updated_at: string;
 }
 
 export interface PremadeRubricTemplate {
-  key: string;
   name: string;
   criteria: string;
   options: RubricOption[];
   best_option: string;
   recommended_model: string;
+  group: "preset";
 }
 
 // Admin / User Management types

@@ -441,15 +441,14 @@ export const answerApi = {
   selectDefault: (snapshotId: number) =>
     api.post(`/snapshots/${snapshotId}/answers/select-default`),
 
-  // Label override methods
-  getLabelOverride: (answerId: number) =>
-    api.get<AnswerLabelOverride>(`/answers/${answerId}/label-override`),
+  getLabelOverride: (answerId: number, rubricId: number) =>
+    api.get<AnswerLabelOverride>(`/answers/${answerId}/label-overrides/${rubricId}`),
 
-  updateLabelOverride: (answerId: number, data: AnswerLabelOverrideCreate) =>
-    api.put<AnswerLabelOverride>(`/answers/${answerId}/label-override`, data),
+  updateLabelOverride: (answerId: number, rubricId: number, data: AnswerLabelOverrideCreate) =>
+    api.put<AnswerLabelOverride>(`/answers/${answerId}/label-overrides/${rubricId}`, data),
 
-  deleteLabelOverride: (answerId: number) =>
-    api.delete(`/answers/${answerId}/label-override`),
+  deleteLabelOverride: (answerId: number, rubricId: number) =>
+    api.delete(`/answers/${answerId}/label-overrides/${rubricId}`),
 };
 
 // Annotation endpoints
@@ -507,8 +506,8 @@ export const judgeApi = {
   delete: (judgeId: number) =>
     api.delete(`/judges/${judgeId}`),
 
-  getBaseline: () =>
-    api.get<JudgeConfig>("/judges/baseline"),
+  getBaseline: (rubricId: number) =>
+    api.get<JudgeConfig>(`/judges/by-rubric/${rubricId}/baseline`),
 
   seedDefaults: () =>
     api.post<JudgeConfig[]>("/judges/seed"),
@@ -516,11 +515,10 @@ export const judgeApi = {
   listAvailableModels: () =>
     api.get<JudgeModelOption[]>("/judges/available-models"),
 
-  getByCategory: (category: string, targetId?: number, rubricId?: number) =>
-    api.get<JudgeConfig[]>(`/judges/by-category/${category}`, {
+  getForRubric: (rubricId: number, targetId?: number) =>
+    api.get<JudgeConfig[]>(`/judges/by-rubric/${rubricId}`, {
       params: {
         ...(targetId ? { target_id: targetId } : {}),
-        ...(rubricId ? { rubric_id: rubricId } : {}),
       },
     }).then((response) => ({
       ...response,

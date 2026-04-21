@@ -6,7 +6,6 @@ import { JudgeConfig } from "./types";
 export function sortJudges(judges: JudgeConfig[]): JudgeConfig[] {
   return [...judges].sort((a, b) => {
     if (a.is_editable !== b.is_editable) return a.is_editable ? 1 : -1;
-    if ((a.rubric_id ?? null) !== (b.rubric_id ?? null)) return a.rubric_id == null ? -1 : 1;
     if (a.is_baseline !== b.is_baseline) return a.is_baseline ? -1 : 1;
     const rank = (judge: JudgeConfig) => {
       if (judge.name === "Judge 1 (Recommended)") return 0;
