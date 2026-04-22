@@ -5,28 +5,28 @@ import {
   Alert,
   Box,
   Chip,
+  ChipProps,
   CircularProgress,
   Stack,
   Tooltip,
   Typography,
 } from "@mui/material";
 import {
-  ResultRow,
+  ScoringRowResult,
   JudgeConfig,
   AnswerClaim,
   AnswerClaimScore,
-  AnswerScore,
   QuestionResponse,
   PersonaResponse,
   TargetRubricResponse,
   RubricAnswerScore,
 } from "@/lib/types";
-import { answerApi, questionApi, personaApi, rubricScoreApi, judgeApi } from "@/lib/api";
+import { answerApi, questionApi, personaApi, rubricScoreApi } from "@/lib/api";
 import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
 import { compactChipSx } from "@/lib/uiStyles";
 
 interface ResultsTableExpandedRowProps {
-  result: ResultRow;
+  result: ScoringRowResult;
   targetId: number;
   tableJudges: JudgeConfig[];
   selectedJudgeIds: number[];
@@ -39,6 +39,21 @@ interface ClaimsData {
   claims: AnswerClaim[];
   judgeScores: Map<number, AnswerClaimScore[]>;
 }
+
+const isBinaryRubric = (rubric: TargetRubricResponse | null): boolean => (rubric?.options.length ?? 0) === 2;
+
+const getRubricOptionColor = (
+  value: string | null | undefined,
+  rubric: TargetRubricResponse | null,
+): ChipProps["color"] => {
+  if (!value || !rubric) {
+    return "default";
+  }
+  if (value === rubric.best_option) {
+    return "success";
+  }
+  return isBinaryRubric(rubric) ? "error" : "primary";
+};
 
 export default function ResultsTableExpandedRow({
   result,
@@ -54,19 +69,15 @@ export default function ResultsTableExpandedRow({
   const [error, setError] = useState<string | null>(null);
   const [question, setQuestion] = useState<QuestionResponse | null>(null);
   const [persona, setPersona] = useState<PersonaResponse | null>(null);
-  const [answerScores, setAnswerScores] = useState<Map<number, AnswerScore>>(new Map());
-
-  // Local rubric tab (starts synced to the table-level activeRubricId, but can be changed independently)
-  const [localActiveRubricId, setLocalActiveRubricId] = useState<number | null>(activeRubricId);
-
-  // Sync when parent changes
-  useEffect(() => {
-    setLocalActiveRubricId(activeRubricId);
-  }, [activeRubricId]);
+  const activeRubric = useMemo(
+    () => activeRubricId !== null ? rubrics.find((rubric) => rubric.id === activeRubricId) ?? null : null,
+    [activeRubricId, rubrics]
+  );
+  const isClaimBasedRubric = activeRubric?.scoring_mode === "claim_based";
 
   const claimBasedJudges = useMemo(
-    () => rubrics.some((r) => r.group === "fixed") ? tableJudges : [],
-    [tableJudges, rubrics]
+    () => isClaimBasedRubric ? tableJudges : [],
+    [isClaimBasedRubric, tableJudges]
   );
 
   const selectedClaimBasedJudgeIds = useMemo(
@@ -92,13 +103,17 @@ export default function ResultsTableExpandedRow({
 
   useEffect(() => {
     const fetchClaims = async () => {
-      if (claimBasedJudges.length === 0) { setLoading(false); return; }
+      if (!isClaimBasedRubric || claimBasedJudges.length === 0) {
+        setClaimsData(null);
+        setLoading(false);
+        return;
+      }
       setLoading(true); setError(null);
       try {
         const judgeScores = new Map<number, AnswerClaimScore[]>();
         let claims: AnswerClaim[] = [];
         const fetchPromises = claimBasedJudges.map(async (judge) => {
-          const response = await answerApi.getClaims(result.answer_id, judge.id);
+          const response = await answerApi.getClaims(result.answer_id, judge.id, activeRubricId ?? undefined);
           const data = response.data;
           if (claims.length === 0 && data.claims.length > 0) {
             claims = data.claims.map((item) => {
@@ -123,58 +138,21 @@ export default function ResultsTableExpandedRow({
       }
     };
     fetchClaims();
-  }, [result.answer_id, claimBasedJudges]);
-
-  useEffect(() => {
-    const fetchAnswerScores = async () => {
-      if (selectedClaimBasedJudgeIds.length === 0) {
-        setAnswerScores(new Map());
-        return;
-      }
-
-      try {
-        const entries = await Promise.all(
-          selectedClaimBasedJudgeIds.map(async (judgeId) => {
-            try {
-              const response = await answerApi.getScores(result.answer_id, judgeId);
-              return [judgeId, response.data] as const;
-            } catch {
-              return null;
-            }
-          })
-        );
-
-        setAnswerScores(new Map(entries.filter((entry): entry is readonly [number, AnswerScore] => entry !== null)));
-      } catch {
-        setAnswerScores(new Map());
-      }
-    };
-
-    fetchAnswerScores();
-  }, [result.answer_id, selectedClaimBasedJudgeIds]);
+  }, [result.answer_id, claimBasedJudges, isClaimBasedRubric, activeRubricId]);
 
   // Rubric scores and judges for custom rubric tabs
   const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
-  const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
 
   useEffect(() => {
-    const activeRubric = localActiveRubricId !== null ? rubrics.find((r) => r.id === localActiveRubricId) : null;
     if (!activeRubric || !result.answer_id) {
       setRubricScores([]);
-      setRubricJudges([]);
       return;
     }
-
-    judgeApi.getForRubric(activeRubric.id, targetId)
-      .then((res) => setRubricJudges(res.data))
-      .catch(() => setRubricJudges([]));
 
     rubricScoreApi.getForAnswer(result.answer_id, activeRubric.id)
       .then((res) => setRubricScores(res.data))
       .catch(() => setRubricScores([]));
-  }, [localActiveRubricId, rubrics, result.answer_id, targetId]);
-
-  const activeRubric = localActiveRubricId !== null ? rubrics.find((r) => r.id === localActiveRubricId) : null;
+  }, [activeRubric, result.answer_id, targetId]);
   const selectedJudges = useMemo(
     () => tableJudges.filter((judge) => selectedJudgeIds.includes(judge.id)),
     [tableJudges, selectedJudgeIds]
@@ -183,14 +161,14 @@ export default function ResultsTableExpandedRow({
   // Determine the best_option and recommended judge verdict for answer highlighting
   const bestOption = activeRubric?.best_option || activeRubric?.options?.[0]?.option || "";
   const recommendedJudge = useMemo(
-    () => rubricJudges[0] ?? null,
-    [rubricJudges]
+    () => tableJudges[0] ?? null,
+    [tableJudges]
   );
   const recommendedScore = useMemo(
     () => recommendedJudge ? rubricScores.find((s) => s.judge_id === recommendedJudge.id) : undefined,
     [rubricScores, recommendedJudge]
   );
-  const isPositiveVerdict = recommendedScore ? recommendedScore.option_chosen === bestOption : null;
+  const isPositiveVerdict = recommendedScore ? recommendedScore.overall_label === bestOption : null;
 
   return (
     <Box sx={{ py: 2, px: 4, bgcolor: "grey.50", borderTop: 1, borderColor: "divider" }}>
@@ -206,38 +184,6 @@ export default function ResultsTableExpandedRow({
           ) : (
             <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
               {selectedJudges.map((judge) => {
-                if (localActiveRubricId === null) {
-                  const score = answerScores.get(judge.id);
-                  const verdictLabel = score
-                    ? score.overall_label ? "Accurate" : "Inaccurate"
-                    : "Missing";
-                  const verdictColor = score
-                    ? score.overall_label ? "success" : "error"
-                    : "default";
-
-                  return (
-                    <Box
-                      key={judge.id}
-                      sx={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 1,
-                        px: 1.25,
-                        py: 0.75,
-                        border: 1,
-                        borderColor: "divider",
-                        borderRadius: 999,
-                        bgcolor: "grey.50",
-                      }}
-                    >
-                      <Typography variant="subtitle2" sx={{ whiteSpace: "normal", lineHeight: 1.35 }}>
-                        {judge.name}
-                      </Typography>
-                      <Chip label={verdictLabel} size="small" color={verdictColor} sx={compactChipSx} />
-                    </Box>
-                  );
-                }
-
                 const score = rubricScores.find((entry) => entry.judge_id === judge.id);
                 return (
                   <Box
@@ -258,9 +204,9 @@ export default function ResultsTableExpandedRow({
                       {judge.name}
                     </Typography>
                     <Chip
-                      label={score?.option_chosen ?? "Missing"}
+                      label={score?.overall_label ?? "Missing"}
                       size="small"
-                      color={score ? "primary" : "default"}
+                      color={score ? getRubricOptionColor(score.overall_label, activeRubric) : "default"}
                       sx={compactChipSx}
                     />
                   </Box>
@@ -298,7 +244,7 @@ export default function ResultsTableExpandedRow({
           <Box display="flex" justifyContent="flex-start">
             <Box sx={{
               maxWidth: { xs: "100%", sm: "85%" },
-              ...(localActiveRubricId === null && { px: 1, py: 0.5 }),
+              ...(isClaimBasedRubric && { px: 1, py: 0.5 }),
               borderRadius: "30px 30px 30px 0",
               border: (theme) => `1px solid ${theme.palette.divider}`,
               bgcolor: "white",
@@ -311,8 +257,7 @@ export default function ResultsTableExpandedRow({
                 </Box>
               )}
               {error && <Alert severity="error" sx={{ m: 1 }}>{error}</Alert>}
-              {/* Accuracy tab: claim-level highlighting */}
-              {!loading && !error && localActiveRubricId === null && claimsData && claimsData.claims.length > 0 && (
+              {!loading && !error && isClaimBasedRubric && claimsData && claimsData.claims.length > 0 && (
                 <ClaimHighlighter
                   answerContent={result.answer_content}
                   claims={claimsData.claims}
@@ -328,24 +273,22 @@ export default function ResultsTableExpandedRow({
                   }}
                 />
               )}
-              {/* Accuracy tab: no claims fallback */}
-              {!loading && !error && localActiveRubricId === null && (!claimsData || claimsData.claims.length === 0) && (
+              {!loading && !error && isClaimBasedRubric && (!claimsData || claimsData.claims.length === 0) && (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, whiteSpace: "pre-wrap" }}>
                   {result.answer_content}
                 </Typography>
               )}
-              {/* Custom rubric tab: whole-response highlighting with hover tooltip */}
-              {localActiveRubricId !== null && (
+              {!isClaimBasedRubric && activeRubric && (
                 <Tooltip
                   title={
                     rubricScores.length === 0 ? "No judge scores yet" : (
                       <Stack spacing={1}>
                         {(() => {
-                          return rubricJudges.map((judge) => {
+                          return tableJudges.map((judge) => {
                             const score = rubricScores.find((s) => s.judge_id === judge.id);
                             if (!score) return null;
                             const displayName = judge.name;
-                            const isPositive = score.option_chosen === bestOption;
+                            const isPositive = score.overall_label === bestOption;
                             return (
                               <Box
                                 key={judge.id}
@@ -362,7 +305,7 @@ export default function ResultsTableExpandedRow({
                                   fontWeight={600}
                                   sx={{ color: isPositive ? "rgba(144, 238, 144, 1)" : "rgba(255, 182, 182, 1)" }}
                                 >
-                                  {displayName}: {score.option_chosen}
+                                  {displayName}: {score.overall_label}
                                 </Typography>
                                 {score.explanation && (
                                   <Typography variant="body2" sx={{ mt: 0.5, fontSize: "0.75rem" }}>
@@ -414,7 +357,7 @@ export default function ResultsTableExpandedRow({
           </Box>
         </Stack>
 
-        {/* Custom rubric: human annotation + criteria */}
+        {/* Active rubric: human annotation + criteria */}
         {activeRubric && (
           <Box sx={{ p: 2, border: 1, borderColor: "divider", borderRadius: 1, bgcolor: "white" }}>
             <Typography variant="overline" color="text.secondary" display="block" sx={{ mb: 1 }}>

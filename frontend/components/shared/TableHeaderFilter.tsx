@@ -58,7 +58,7 @@ export default function TableHeaderFilter<T extends string | number>({
 
   return (
     <>
-      <Stack direction="row" alignItems="center" spacing={0.5} justifyContent="center">
+      <Stack direction="row" alignItems="center" spacing={0.5} justifyContent="flex-start">
         <Typography variant="body2" fontWeight={600}>
           {label}
         </Typography>

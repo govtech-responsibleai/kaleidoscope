@@ -29,9 +29,9 @@ import {
   IconFileTypeCsv,
 } from "@tabler/icons-react";
 import {
-  MetricScoringContract,
-  MetricAggregatedResult,
-  ResultRow,
+  ScoringContract,
+  AggregatedRowResult,
+  ScoringRowResult,
   JudgeConfig,
   QuestionResponse,
   PersonaResponse,
@@ -55,8 +55,8 @@ import {
 } from "@/lib/uiStyles";
 
 interface ResultsTableProps {
-  results: ResultRow[];
-  contract: MetricScoringContract | null;
+  results: ScoringRowResult[];
+  contract: ScoringContract | null;
   targetId: number;
   snapshotId: number;
   judges: JudgeConfig[];
@@ -71,8 +71,24 @@ interface JudgeVerdictSummary {
   summaryColor: ChipProps["color"];
 }
 
-const getAccuracyAggregatePresentation = (
-  aggregate: MetricAggregatedResult | undefined,
+const isBinaryRubric = (rubric: TargetRubricResponse | null): boolean => (rubric?.options.length ?? 0) === 2;
+
+const getRubricOptionColor = (
+  value: string | null | undefined,
+  rubric: TargetRubricResponse | null,
+): ChipProps["color"] => {
+  if (!value || !rubric) {
+    return "default";
+  }
+  if (value === rubric.best_option) {
+    return "success";
+  }
+  return isBinaryRubric(rubric) ? "error" : "primary";
+};
+
+const getAggregatePresentation = (
+  aggregate: AggregatedRowResult | undefined,
+  rubric: TargetRubricResponse | null,
 ): Pick<JudgeVerdictSummary, "aggregateLabel" | "aggregateColor" | "helperText"> => {
   if (!aggregate) {
     return { aggregateLabel: "No data", aggregateColor: "default", helperText: null };
@@ -94,12 +110,12 @@ const getAccuracyAggregatePresentation = (
     };
   }
 
-  if (aggregate.value === "accurate") {
-    return { aggregateLabel: "Accurate", aggregateColor: "success", helperText: null };
-  }
-
-  if (aggregate.value === "inaccurate") {
-    return { aggregateLabel: "Inaccurate", aggregateColor: "error", helperText: null };
+  if (aggregate.value) {
+    return {
+      aggregateLabel: truncate(aggregate.value, 18),
+      aggregateColor: getRubricOptionColor(aggregate.value, rubric),
+      helperText: null,
+    };
   }
 
   return { aggregateLabel: "No data", aggregateColor: "default", helperText: null };
@@ -110,68 +126,14 @@ const truncate = (value: string, length: number) => {
   return value.length > length ? `${value.slice(0, length)}…` : value;
 };
 
-const summarizeAccuracyVotes = (
-  accurateCount: number,
-  inaccurateCount: number,
-  missingCount: number,
-  selectedJudgeCount: number,
-): JudgeVerdictSummary => {
-  const labeledCount = accurateCount + inaccurateCount;
-
-  if (selectedJudgeCount === 0) {
-    return {
-      aggregateLabel: "No judges selected",
-      aggregateColor: "warning",
-      helperText: "Please select at least one judge.",
-      summaryLabel: "No judges selected",
-      summaryColor: "warning",
-    };
-  }
-
-  if (labeledCount === 0) {
-    return {
-      aggregateLabel: "No data",
-      aggregateColor: "default",
-      helperText: null,
-      summaryLabel: missingCount > 0 ? `${missingCount} missing` : "No judge outputs",
-      summaryColor: "default",
-    };
-  }
-
-  if (accurateCount === inaccurateCount) {
-    return {
-      aggregateLabel: "Tie",
-      aggregateColor: "warning",
-      helperText: "Equal votes.",
-      summaryLabel: `${accurateCount} accurate, ${inaccurateCount} inaccurate${missingCount > 0 ? `, ${missingCount} missing` : ""}`,
-      summaryColor: "warning",
-    };
-  }
-
-  const winnerIsAccurate = accurateCount > inaccurateCount;
-  const winnerCount = Math.max(accurateCount, inaccurateCount);
-  const loserCount = Math.min(accurateCount, inaccurateCount);
-  const summaryParts = loserCount === 0
-    ? [`${winnerCount}/${labeledCount} ${winnerIsAccurate ? "accurate" : "inaccurate"}`]
-    : [`${winnerCount} agree`, `${loserCount} disagree`];
-
-  if (missingCount > 0) {
-    summaryParts.push(`${missingCount} missing`);
-  }
-
-  return {
-    aggregateLabel: winnerIsAccurate ? "Accurate" : "Inaccurate",
-    aggregateColor: winnerIsAccurate ? "success" : "error",
-    helperText: null,
-    summaryLabel: summaryParts.join(", "),
-    summaryColor: loserCount > 0 || missingCount > 0 ? "warning" : winnerIsAccurate ? "success" : "error",
-  };
-};
+const getHumanSelectedOption = (row: ScoringRowResult | null): string | null =>
+  row?.human_option ?? row?.human_label ?? null;
 
 const summarizeRubricVotes = (
   optionCounts: Map<string, number>,
   missingCount: number,
   selectedJudgeCount: number,
+  rubric: TargetRubricResponse | null,
 ): JudgeVerdictSummary => {
   if (selectedJudgeCount === 0) {
     return {
@@ -212,12 +174,12 @@ const summarizeRubricVotes = (
 
   return {
     aggregateLabel: truncate(majorityOption, 18),
-    aggregateColor: disagreementCount === 0 ? "success" : "primary",
+    aggregateColor: disagreementCount === 0 ? getRubricOptionColor(majorityOption, rubric) : "primary",
     helperText: null,
     summaryLabel: disagreementCount === 0
       ? `${majorityCount}/${labeledCount} agree${missingCount > 0 ? `, ${missingCount} missing` : ""}`
       : `${majorityCount} agree, ${disagreementCount} disagree${missingCount > 0 ? `, ${missingCount} missing` : ""}`,
-    summaryColor: disagreementCount > 0 || missingCount > 0 ? "warning" : "success",
+    summaryColor: disagreementCount > 0 || missingCount > 0 ? "warning" : getRubricOptionColor(majorityOption, rubric),
   };
 };
 
@@ -231,9 +193,8 @@ export default function ResultsTable({
   onLabelChange,
 }: ResultsTableProps) {
   const theme = useTheme();
-  const isAccuracy = contract?.group === "fixed";
   const [page, setPage] = useState(0);
-  const [selectedLabels, setSelectedLabels] = useState<string[]>(["accurate", "inaccurate"]);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [showDisagreementsOnly, setShowDisagreementsOnly] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
@@ -246,41 +207,28 @@ export default function ResultsTable({
 
   const rowsPerPage = 10;
   const rowMap = useMemo(
-    () => new Map((contract?.rows ?? []).map((row) => [row.answer_id, row] as const)),
-    [contract]
+    () => new Map(results.map((row) => [row.answer_id, row] as const)),
+    [results]
   );
   const activeRubric = useMemo(
     () => rubrics.find((rubric) => rubric.id === contract?.rubric_id) ?? null,
     [contract?.rubric_id, rubrics],
   );
-  const labelFilterOptions: FilterOption<string>[] = useMemo(() => [
-    { value: "accurate", label: "Accurate" },
-    { value: "inaccurate", label: "Inaccurate" },
-  ], []);
-  const accuracyLabelOptions: LabelCellOption[] = useMemo(
-    () => [
-      { value: "accurate", label: "Accurate", color: "success" },
-      { value: "inaccurate", label: "Inaccurate", color: "error" },
-    ],
-    [],
-  );
+  const labelFilterOptions: FilterOption<string>[] = useMemo(() => (
+    activeRubric?.options.map((option) => ({ value: option.option, label: option.option })) ?? []
+  ), [activeRubric]);
   const rubricLabelOptions: LabelCellOption[] = useMemo(
     () =>
       activeRubric?.options.map((option) => ({
         value: option.option,
         label: option.option,
-        color:
-          option.option === activeRubric.best_option
-            ? "success"
-            : activeRubric.options.length <= 2
-            ? "error"
-            : "primary",
+        color: getRubricOptionColor(option.option, activeRubric),
       })) ?? [],
-    [activeRubric?.id, activeRubric?.options, activeRubric?.best_option],
+    [activeRubric],
   );
   const rubricEditingEnabled = useMemo(
-    () => !isAccuracy && (contract?.aligned_judges.length ?? 0) > 0,
-    [isAccuracy, contract?.aligned_judges.length],
+    () => Boolean(activeRubric) && rubricLabelOptions.length > 0,
+    [activeRubric, rubricLabelOptions.length],
   );
 
   const reliableJudgeIds = useMemo(
@@ -309,6 +257,11 @@ export default function ResultsTable({
       return next;
     });
   };
+
+  useEffect(() => {
+    setSelectedLabels(activeRubric?.options.map((option) => option.option) ?? []);
+    setPage(0);
+  }, [activeRubric]);
 
   useEffect(() => {
     const fetchQuestionsAndPersonas = async () => {
@@ -347,29 +300,16 @@ export default function ResultsTable({
         return typeMatch && scopeMatch && personaMatch;
       });
     }
-    if (isAccuracy && selectedLabels.length < 2) {
+    if (activeRubric && selectedLabels.length > 0 && selectedLabels.length < activeRubric.options.length) {
       filtered = filtered.filter((result) => {
-        const aggregated = result.aggregated_accuracy;
-        const isAccurate = aggregated?.label === "accurate";
-        if (selectedLabels.includes("inaccurate") && !selectedLabels.includes("accurate")) return aggregated?.label === "inaccurate";
-        if (selectedLabels.includes("accurate") && !selectedLabels.includes("inaccurate")) return isAccurate;
-        return true;
+        const aggregatedValue = result.aggregated_result.value;
+        return aggregatedValue ? selectedLabels.includes(aggregatedValue) : false;
       });
     }
     if (showDisagreementsOnly) {
       filtered = filtered.filter((result) => {
         const row = rowMap.get(result.answer_id);
         const selectedTableJudges = tableJudges.filter((judge) => selectedJudges.has(judge.id));
-        if (isAccuracy) {
-          const labels = row
-            ? row.judge_results
-                .filter((judgeResult) => selectedTableJudges.some((judge) => judge.id === judgeResult.judge_id))
-                .map((judgeResult) => judgeResult.value)
-                .filter((label): label is string => typeof label === "string")
-            : [];
-          return new Set(labels).size > 1;
-        }
-
         const selectedValues = row
           ? row.judge_results
               .filter((judgeResult) => selectedTableJudges.some((judge) => judge.id === judgeResult.judge_id))
@@ -380,7 +320,7 @@ export default function ResultsTable({
       });
     }
     return filtered;
-  }, [results, questionsMap, selectedTypes, selectedScopes, selectedPersonaIds, isAccuracy, selectedLabels, showDisagreementsOnly, rowMap, tableJudges, selectedJudges]);
+  }, [results, questionsMap, selectedTypes, selectedScopes, selectedPersonaIds, activeRubric, selectedLabels, showDisagreementsOnly, rowMap, tableJudges, selectedJudges]);
 
   const paginatedResults = useMemo(
     () => filteredResults.slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage),
@@ -398,9 +338,12 @@ export default function ResultsTable({
   }, [tableJudges]);
 
   const handleExport = async () => {
+    if (!activeRubric) {
+      return;
+    }
     setExporting(true);
     try {
-      const response = await metricsApi.exportCSV(snapshotId, "csv");
+      const response = await metricsApi.exportCSV(snapshotId, activeRubric.id, "csv");
       const blob = response.data;
       const disposition = response.headers?.["content-disposition"];
       let filename = `snapshot_${snapshotId}_results.csv`;
@@ -487,14 +430,14 @@ export default function ResultsTable({
               <TableCell sx={{ ...tableHeaderCellSx, width: "5%" }}>ID</TableCell>
               <TableCell sx={{ ...tableHeaderCellSx, width: "28%" }}>Question</TableCell>
               <TableCell sx={{ ...tableHeaderCellSx, width: "28%" }}>Answer</TableCell>
-              {isAccuracy ? (
+              {activeRubric ? (
                 <TableCell sx={{ ...tableHeaderCellSx, width: "110px" }}>
                   <TableHeaderFilter
-                    label="Accuracy"
+                    label={activeRubric.name}
                     options={labelFilterOptions}
                     value={selectedLabels}
                     onChange={(labels) => { setSelectedLabels(labels); setPage(0); }}
-                    allSelectedLabel="All Labels"
+                    allSelectedLabel={`All ${activeRubric.name} Labels`}
                   />
                 </TableCell>
               ) : (
@@ -515,21 +458,11 @@ export default function ResultsTable({
               const row = rowMap.get(result.answer_id) ?? null;
               const isExpanded = expandedRows.has(result.answer_id);
               const selectedTableJudges = tableJudges.filter((judge) => selectedJudges.has(judge.id));
-        const activeRubricId = !isAccuracy ? contract?.rubric_id ?? null : null;
-              const answerRubricLabels = !isAccuracy && row?.human_option && activeRubricId !== null
-                ? ({ [activeRubricId]: row.human_option } as Record<number, string>)
+              const activeRubricId = contract?.rubric_id ?? null;
+              const humanSelectedOption = getHumanSelectedOption(row);
+              const answerRubricLabels = humanSelectedOption && activeRubricId !== null
+                ? ({ [activeRubricId]: humanSelectedOption } as Record<number, string>)
                 : {};
-
-              const accuracyVoteCounts = selectedTableJudges.reduce(
-                (counts, judge) => {
-                  const label = row?.judge_results.find((judgeResult) => judgeResult.judge_id === judge.id)?.value;
-                  if (label === "accurate") counts.accurate += 1;
-                  else if (label === "inaccurate") counts.inaccurate += 1;
-                  else counts.missing += 1;
-                  return counts;
-                },
-                { accurate: 0, inaccurate: 0, missing: 0 }
-              );
 
               const rubricVoteCounts = selectedTableJudges.reduce((counts, judge) => {
                 const value = row?.judge_results.find((judgeResult) => judgeResult.judge_id === judge.id)?.value;
@@ -541,19 +474,14 @@ export default function ResultsTable({
                 return counts;
               }, { options: new Map<string, number>(), missing: 0 });
 
-              const accuracySummary = summarizeAccuracyVotes(
-                accuracyVoteCounts.accurate,
-                accuracyVoteCounts.inaccurate,
-                accuracyVoteCounts.missing,
-                selectedTableJudges.length,
-              );
               const rubricSummary = summarizeRubricVotes(
                 rubricVoteCounts.options,
                 rubricVoteCounts.missing,
                 selectedTableJudges.length,
+                activeRubric,
               );
-              const effectiveAccuracyAggregate = getAccuracyAggregatePresentation(row?.aggregated_result);
-              const summary = isAccuracy ? accuracySummary : rubricSummary;
+              const aggregatePresentation = getAggregatePresentation(row?.aggregated_result, activeRubric);
+              const summary = rubricSummary;
               const totalColSpan = 6;
 
               return (
@@ -569,7 +497,7 @@ export default function ResultsTable({
                       <Typography
                         variant="body2"
                         component="a"
-                        href={`/targets/${targetId}/annotation?snapshot=${snapshotId}&question=${result.question_id}`}
+                        href={`/targets/${targetId}/annotation?snapshot=${snapshotId}&question=${result.question_id}${activeRubric ? `&rubric=${activeRubric.id}` : ""}`}
                         sx={{
                           color: "primary.main",
                           cursor: "pointer",
@@ -590,32 +518,25 @@ export default function ResultsTable({
                     </TableCell>
 
                     <TableCell>
-                      {isAccuracy || activeRubric ? (
+                      {activeRubric ? (
                         <LabelCell
                           answerId={result.answer_id}
                           rubricId={contract?.rubric_id ?? 0}
                           value={row?.aggregated_result.value}
                           baselineValue={row?.aggregated_result.baseline_value}
-                          displayLabel={isAccuracy ? effectiveAccuracyAggregate.aggregateLabel : (row?.aggregated_result.value ?? "Pending")}
-                          chipColor={isAccuracy ? effectiveAccuracyAggregate.aggregateColor : rubricSummary.aggregateColor}
+                          displayLabel={aggregatePresentation.aggregateLabel}
+                          chipColor={aggregatePresentation.aggregateColor}
                           helperText={
-                            isAccuracy
-                              ? effectiveAccuracyAggregate.helperText
-                              : row?.aggregated_result.is_edited && row?.aggregated_result.baseline_value
+                            aggregatePresentation.helperText ??
+                              (row?.aggregated_result.is_edited && row?.aggregated_result.baseline_value
                               ? `Baseline: ${row.aggregated_result.baseline_value}`
-                              : null
+                              : null)
                           }
-                          options={isAccuracy ? accuracyLabelOptions : rubricLabelOptions}
-                          isEditable={
-                            !isAccuracy
-                              ? rubricEditingEnabled &&
-                                (row?.aggregated_result.method === "majority" ||
-                                  row?.aggregated_result.method === "override")
-                              : undefined
-                          }
+                          options={rubricLabelOptions}
+                          isEditable={rubricEditingEnabled}
                           showEditedBadge={row?.aggregated_result.is_edited ?? false}
-                          resetTooltip={!isAccuracy ? "Reset to aggregated label" : undefined}
-                          editTooltip={!isAccuracy ? "Edit rubric label" : undefined}
+                          resetTooltip="Reset to aggregated label"
+                          editTooltip="Edit rubric label"
                           onLabelChange={onLabelChange}
                         />
                       ) : (

@@ -8,10 +8,10 @@ interface AccuracyGaugeProps {
   label?: string;
 }
 
-export default function AccuracyGauge({
+export default function ScoreGauge({
   value,
   size = 180,
-  label = "Aggregated Accuracy",
+  label = "Aggregated Score",
 }: AccuracyGaugeProps) {
   const theme = useTheme();
   const hasValue = value !== null;

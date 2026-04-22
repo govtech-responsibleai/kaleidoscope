@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 import * as d3 from "d3";
 
-export interface SnapshotMetricSeriesValue {
+export interface SnapshotScoreSeriesValue {
   key: string;
   label: string;
   color: string;
@@ -20,29 +20,29 @@ export interface SnapshotMetricSeriesValue {
   totalAnswers?: number | null;
 }
 
-export interface SnapshotMetricSeriesPoint {
+export interface SnapshotScoreSeriesPoint {
   snapshotId: number;
   snapshotName: string;
-  metrics: SnapshotMetricSeriesValue[];
+  series: SnapshotScoreSeriesValue[];
 }
 
-interface SnapshotAccuracyChartProps {
-  data: SnapshotMetricSeriesPoint[];
+interface SnapshotScoreChartProps {
+  data: SnapshotScoreSeriesPoint[];
   loading: boolean;
   title?: string;
 }
 
-export default function SnapshotAccuracyChart({
+export default function SnapshotScoreChart({
   data,
   loading,
   title,
-}: SnapshotAccuracyChartProps) {
+}: SnapshotScoreChartProps) {
   const theme = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [availableWidth, setAvailableWidth] = useState(0);
 
-  const legendItems = useMemo(() => data[0]?.metrics ?? [], [data]);
+  const legendItems = useMemo(() => data[0]?.series ?? [], [data]);
   const requiredChartWidth = useMemo(() => {
     const snapshotCount = Math.max(data.length, 1);
     const metricCount = Math.max(legendItems.length, 1);
@@ -161,7 +161,7 @@ export default function SnapshotAccuracyChart({
 
     groups
       .selectAll("rect.metric-bar")
-      .data((d) => d.metrics.map((metric) => ({ ...metric, snapshotName: d.snapshotName })))
+      .data((d) => d.series.map((metric) => ({ ...metric, snapshotName: d.snapshotName })))
       .enter()
       .filter((d) => d.value !== null)
       .append("rect")
@@ -189,7 +189,7 @@ export default function SnapshotAccuracyChart({
 
     groups
       .selectAll("text.metric-empty")
-      .data((d) => d.metrics.map((metric) => ({ ...metric })))
+      .data((d) => d.series.map((metric) => ({ ...metric })))
       .enter()
       .filter((d) => d.value === null)
       .append("text")

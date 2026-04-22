@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
+  Alert,
   Box,
   Chip,
   ChipProps,
@@ -75,24 +76,28 @@ export default function LabelCell({
   const [isEditMode, setIsEditMode] = useState(false);
   const [selectedValue, setSelectedValue] = useState<string>(currentValue);
   const [isSaving, setIsSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setSelectedValue(currentValue);
   }, [currentValue]);
 
-  const selectedOption = useMemo(
-    () => getOptionMeta(options, selectedValue || value, displayLabel, chipColor),
-    [options, selectedValue, value, displayLabel, chipColor],
-  );
+  useEffect(() => {
+    setSelectedValue(currentValue);
+    setIsEditMode(false);
+    setErrorMessage(null);
+  }, [rubricId, currentValue]);
 
   const handleSave = async () => {
     if (!selectedValue) return;
     if (selectedValue === currentValue) {
+      setErrorMessage(null);
       setIsEditMode(false);
       return;
     }
 
     setIsSaving(true);
+    setErrorMessage(null);
     try {
       await answerApi.updateLabelOverride(answerId, rubricId, {
         edited_value: selectedValue,
@@ -100,7 +105,7 @@ export default function LabelCell({
       setIsEditMode(false);
       onLabelChange?.();
     } catch (err) {
-      alert(getApiErrorMessage(err, "Failed to save. Please try again."));
+      setErrorMessage(getApiErrorMessage(err, "Failed to save. Please try again."));
     } finally {
       setIsSaving(false);
     }
@@ -108,6 +113,7 @@ export default function LabelCell({
 
   const handleReset = async () => {
     setIsSaving(true);
+    setErrorMessage(null);
     try {
       await answerApi.deleteLabelOverride(answerId, rubricId);
       setIsEditMode(false);
@@ -115,7 +121,7 @@ export default function LabelCell({
     } catch (err: unknown) {
       const httpStatus = axios.isAxiosError(err) ? err.response?.status : undefined;
       if (httpStatus !== 404) {
-        alert(getApiErrorMessage(err, "Failed to reset. Please try again."));
+        setErrorMessage(getApiErrorMessage(err, "Failed to reset. Please try again."));
       } else {
         setIsEditMode(false);
         onLabelChange?.();
@@ -127,6 +133,7 @@ export default function LabelCell({
 
   const handleCancel = () => {
     setSelectedValue(currentValue);
+    setErrorMessage(null);
     setIsEditMode(false);
   };
 
@@ -136,48 +143,55 @@ export default function LabelCell({
 
   if (isEditMode) {
     return (
-      <Stack direction="row" alignItems="center" spacing={0.5}>
-        <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
-          <Select
-            value={selectedValue}
-            onChange={(event) => setSelectedValue(event.target.value)}
-            displayEmpty
-            renderValue={(selected) => {
-              if (!selected) {
-                return <Typography variant="body2" color="text.secondary">Select...</Typography>;
-              }
-              const option = getOptionMeta(options, selected, displayLabel, chipColor);
-              return <Chip label={option.label} color={option.color} size="small" />;
-            }}
-          >
-            <MenuItem value="" disabled>
-              <Typography variant="body2" color="text.secondary">Select...</Typography>
-            </MenuItem>
-            {options.map((option) => (
-              <MenuItem key={option.value} value={option.value}>
-                <Chip label={option.label} color={option.color} size="small" />
-              </MenuItem>
-            ))}
-          </Select>
-        </FormControl>
-        <Tooltip title="Save">
-          <span>
-            <IconButton
-              size="small"
-              onClick={handleSave}
-              disabled={isSaving || !selectedValue}
-              color="primary"
-              sx={{ p: 0.25 }}
+      <Stack spacing={0.5}>
+        <Stack direction="row" alignItems="center" spacing={0.5}>
+          <FormControl size="small" sx={{ flex: 1, minWidth: 0 }}>
+            <Select
+              value={selectedValue}
+              onChange={(event) => setSelectedValue(event.target.value)}
+              displayEmpty
+              renderValue={(selected) => {
+                if (!selected) {
+                  return <Typography variant="body2" color="text.secondary">Select...</Typography>;
+                }
+                const option = getOptionMeta(options, selected, displayLabel, chipColor);
+                return <Chip label={option.label} color={option.color} size="small" />;
+              }}
             >
-              <IconCheck {...compactActionIconProps} />
+              <MenuItem value="" disabled>
+                <Typography variant="body2" color="text.secondary">Select...</Typography>
+              </MenuItem>
+              {options.map((option) => (
+                <MenuItem key={option.value} value={option.value}>
+                  <Chip label={option.label} color={option.color} size="small" />
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
+          <Tooltip title="Save">
+            <span>
+              <IconButton
+                size="small"
+                onClick={handleSave}
+                disabled={isSaving || !selectedValue}
+                color="primary"
+                sx={{ p: 0.25 }}
+              >
+                <IconCheck {...compactActionIconProps} />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title="Cancel">
+            <IconButton size="small" onClick={handleCancel} disabled={isSaving} sx={{ p: 0.25 }}>
+              <IconX {...compactActionIconProps} />
             </IconButton>
-          </span>
-        </Tooltip>
-        <Tooltip title="Cancel">
-          <IconButton size="small" onClick={handleCancel} disabled={isSaving} sx={{ p: 0.25 }}>
-            <IconX {...compactActionIconProps} />
-          </IconButton>
-        </Tooltip>
+          </Tooltip>
+        </Stack>
+        {errorMessage && (
+          <Alert severity="error" sx={{ py: 0, "& .MuiAlert-message": { py: 0.25 } }}>
+            {errorMessage}
+          </Alert>
+        )}
       </Stack>
     );
   }
@@ -202,7 +216,14 @@ export default function LabelCell({
             </Tooltip>
           )}
           <Tooltip title={editTooltip}>
-            <IconButton size="small" onClick={() => setIsEditMode(true)} sx={{ p: 0.25 }}>
+            <IconButton
+              size="small"
+              onClick={() => {
+                setErrorMessage(null);
+                setIsEditMode(true);
+              }}
+              sx={{ p: 0.25 }}
+            >
               <IconPencil {...compactActionIconProps} />
             </IconButton>
           </Tooltip>
@@ -212,6 +233,11 @@ export default function LabelCell({
         <Typography variant="caption" color="text.secondary">
           {helperText}
         </Typography>
+      )}
+      {errorMessage && (
+        <Alert severity="error" sx={{ py: 0, "& .MuiAlert-message": { py: 0.25 } }}>
+          {errorMessage}
+        </Alert>
       )}
     </Stack>
   );

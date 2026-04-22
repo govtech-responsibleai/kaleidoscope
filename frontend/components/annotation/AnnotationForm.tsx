@@ -12,9 +12,10 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
-import { Answer, RubricAnnotation, TargetRubricResponse } from "@/lib/types";
+import { Answer, AnswerAnnotation, TargetRubricResponse } from "@/lib/types";
 import { annotationApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
+import { orderRubricsForDisplay } from "@/lib/rubrics";
 
 const toggleSx = {
   "& .MuiToggleButton-root": {
@@ -163,7 +164,7 @@ export default function AnnotationForm({
   const rubricRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
   const annotatableRubrics = useMemo(
-    () => rubrics.filter((rubric) => rubric.options.length >= 2 && !!rubric.best_option),
+    () => orderRubricsForDisplay(rubrics).filter((rubric) => rubric.options.length >= 2 && !!rubric.best_option),
     [rubrics]
   );
 
@@ -200,13 +201,13 @@ export default function AnnotationForm({
       return;
     }
 
-    const fetchRubricAnnotations = async () => {
+    const fetchAnnotations = async () => {
       setLoading(true);
       try {
-        const response = await annotationApi.getRubricAnnotations(answer.id);
+        const response = await annotationApi.listByAnswer(answer.id);
         const labelMap: Record<number, string> = {};
         const notesMap: Record<number, string> = {};
-        response.data.forEach((annotation: RubricAnnotation) => {
+        response.data.forEach((annotation: AnswerAnnotation) => {
           labelMap[annotation.rubric_id] = annotation.option_value;
           notesMap[annotation.rubric_id] = annotation.notes ?? "";
         });
@@ -220,7 +221,7 @@ export default function AnnotationForm({
       }
     };
 
-    void fetchRubricAnnotations();
+    void fetchAnnotations();
   }, [answer?.id]);
 
   const handleRubricNotesSave = async (rubricId: number, value: string) => {
@@ -228,7 +229,7 @@ export default function AnnotationForm({
     const currentOption = rubricLabels[rubricId];
     if (!currentOption) return;
     try {
-      await annotationApi.upsertRubricAnnotation(answer.id, rubricId, {
+      await annotationApi.upsertByAnswerAndRubric(answer.id, rubricId, {
         option_value: currentOption,
         notes: value,
       });
@@ -242,7 +243,7 @@ export default function AnnotationForm({
     setRubricLabels((prev) => ({ ...prev, [rubricId]: optionValue }));
     setSavingRubric(rubricId);
     try {
-      await annotationApi.upsertRubricAnnotation(answer.id, rubricId, { option_value: optionValue });
+      await annotationApi.upsertByAnswerAndRubric(answer.id, rubricId, { option_value: optionValue });
       onAnnotationSaved();
     } catch (err) {
       console.error("Failed to save rubric label:", err);

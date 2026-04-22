@@ -36,7 +36,7 @@ import {
   IconUserPlus,
 } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
-import { adminApi, authApi } from "@/lib/api";
+import { adminApi, authApi, getApiErrorMessage } from "@/lib/api";
 import { UserResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/iconStyles";
@@ -85,8 +85,8 @@ export default function AdminPage() {
       const response = await adminApi.listUsers();
       setUsers(response.data);
       setError(null);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load users");
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, "Failed to load users"));
     } finally {
       setLoading(false);
     }
@@ -103,8 +103,8 @@ export default function AdminPage() {
       });
       setCreatedCreds({ username: newUsername, password: newPassword });
       await fetchUsers();
-    } catch (err: any) {
-      setCreateError(err?.response?.data?.detail || "Failed to create user");
+    } catch (err: unknown) {
+      setCreateError(getApiErrorMessage(err, "Failed to create user"));
     } finally {
       setCreating(false);
     }
@@ -117,8 +117,8 @@ export default function AdminPage() {
       setDeleteOpen(false);
       setUserToDelete(null);
       await fetchUsers();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to delete user");
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, "Failed to delete user"));
     }
   };
 

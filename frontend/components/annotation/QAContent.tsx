@@ -21,9 +21,7 @@ interface QAContentProps {
   persona: PersonaResponse | null;
   qaEntry?: QARecord;
   job: QAJob | null;
-  rubrics: TargetRubricResponse[];
-  activeTab: number;
-  onActiveTabChange: (tab: number) => void;
+  activeRubric: TargetRubricResponse | null;
   pendingRubricIds?: number[];
 }
 
@@ -33,30 +31,18 @@ export default function QAContent({
   persona,
   qaEntry,
   job,
-  rubrics,
-  activeTab,
-  onActiveTabChange,
+  activeRubric,
   pendingRubricIds = [],
 }: QAContentProps) {
-  void onActiveTabChange;
-  const visibleRubrics = React.useMemo(
-    () => rubrics.filter((rubric) => rubric.group !== "fixed"),
-    [rubrics],
-  );
-  const fixedAccuracyRubric = React.useMemo(
-    () => rubrics.find((rubric) => rubric.group === "fixed") ?? null,
-    [rubrics],
-  );
   const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
   const [rubricScoresLoading, setRubricScoresLoading] = useState(false);
   const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
   const [jobDetail, setJobDetail] = useState<QAJob | null>(job);
   const [rubricVerdictLoading, setRubricVerdictLoading] = useState(false);
   const hasLoadedJobDetailRef = useRef(false);
+  const isClaimBasedRubric = activeRubric?.scoring_mode === "claim_based";
 
-  // Fetch rubric judges and scores when a custom rubric tab is active and an answer exists.
   useEffect(() => {
-    const activeRubric = activeTab > 0 ? visibleRubrics[activeTab - 1] : null;
     const answerId = qaEntry?.answer?.id;
     if (!activeRubric || !answerId) {
       setRubricScores([]);
@@ -98,7 +84,7 @@ export default function QAContent({
       cancelled = true;
       if (pollTimer !== null) window.clearTimeout(pollTimer);
     };
-  }, [activeTab, visibleRubrics, qaEntry?.answer?.id, targetId, pendingRubricIds]);
+  }, [activeRubric, qaEntry?.answer?.id, targetId, pendingRubricIds, job]);
 
   useEffect(() => {
     if (!job?.id) {
@@ -168,7 +154,6 @@ export default function QAContent({
     return { totalCheckworthy: checkworthyIds.size, scored, inaccurate };
   }, [claims, claimScores]);
 
-  const activeRubric = activeTab > 0 ? visibleRubrics[activeTab - 1] : null;
   const isActiveRubricPending = Boolean(activeRubric && pendingRubricIds.includes(activeRubric.id));
 
   // For custom rubric tabs, show the first (recommended) judge
@@ -181,10 +166,10 @@ export default function QAContent({
     [rubricScores, recommendedJudge]
   );
   const activeMetricStatus: QARubricStatus | null = React.useMemo(() => {
-    const activeRubricId = activeTab === 0 ? fixedAccuracyRubric?.id ?? null : activeRubric?.id ?? null;
+    const activeRubricId = activeRubric?.id ?? null;
     if (!activeRubricId) return null;
     return jobDetail?.rubric_statuses?.find((status) => status.rubric_id === activeRubricId) ?? null;
-  }, [activeTab, fixedAccuracyRubric?.id, activeRubric?.id, jobDetail?.rubric_statuses]);
+  }, [activeRubric?.id, jobDetail?.rubric_statuses]);
   const verdictScore = activeMetricStatus?.score;
 
   if (!answer) {
@@ -222,13 +207,13 @@ export default function QAContent({
       <Box sx={{
         px: 2,
         py: 2,
-        bgcolor: activeTab === 0
+        bgcolor: isClaimBasedRubric
           ? (answerScore ? (answerScore.overall_label ? "#f0faf0" : "#fef0f0") : undefined)
           : (verdictScore
             ? ((verdictScore.value === (activeRubric?.best_option || activeRubric?.options?.[0]?.option || "")) ? "#f0faf0" : "#fef0f0")
             : undefined),
       }}>
-        {activeTab === 0 ? (
+        {isClaimBasedRubric ? (
           <Stack spacing={1}>
             {answerScore ? (
               <>
@@ -347,13 +332,12 @@ export default function QAContent({
               <Box
                 sx={{
                   maxWidth: { xs: "100%", sm: "85%" },
-                  px: 1,
-                  py: 0.5,
+                  ...(isClaimBasedRubric && { px: 1, py: 0.5 }),
                   borderRadius: "30px 30px 30px 0",
                   border: (theme) => `1px solid ${theme.palette.divider}`,
                 }}
               >
-                {activeTab === 0 && claims.length > 0 ? (
+                {isClaimBasedRubric && claims.length > 0 ? (
                 <ClaimHighlighter
                   answerContent={answer.answer_content}
                   claims={claims}

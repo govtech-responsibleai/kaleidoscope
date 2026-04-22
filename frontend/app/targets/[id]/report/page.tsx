@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
   Button,
@@ -27,18 +27,19 @@ import {
 import { useParams } from "next/navigation";
 import { targetApi, snapshotApi, judgeApi, metricsApi, targetRubricApi } from "@/lib/api";
 import { TargetResponse, TargetStats, SnapshotMetric, Snapshot, TargetRubricResponse } from "@/lib/types";
-import SnapshotAccuracyChart, {
-  type SnapshotMetricSeriesPoint,
+import SnapshotScoreChart, {
+  type SnapshotScoreSeriesPoint,
 } from "@/components/overview/SnapshotAccuracyChart";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { actionIconProps, statIconProps } from "@/lib/iconStyles";
+import { orderRubricsForDisplay } from "@/lib/rubrics";
 
-type MetricDefinition = {
+type RubricSeriesDefinition = {
   key: string;
   label: string;
   color: string;
-  rubricId: number | null;
+  rubricId: number;
 };
 
 const detailCardSx = {
@@ -58,11 +59,10 @@ export default function TargetReport() {
   const [snapshotMetrics, setSnapshotMetrics] = useState<SnapshotMetric[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
-  const [allRubricMetrics, setAllRubricMetrics] = useState<SnapshotMetric[]>([]);
   const [downloading, setDownloading] = useState(false);
-  const [selectedMetricKeys, setSelectedMetricKeys] = useState<string[]>([]);
-  const [metricMenuAnchor, setMetricMenuAnchor] = useState<null | HTMLElement>(null);
-  const previousMetricKeysRef = useRef<string[]>([]);
+  const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<string[]>([]);
+  const [seriesMenuAnchor, setSeriesMenuAnchor] = useState<null | HTMLElement>(null);
+  const previousSeriesKeysRef = useRef<string[]>([]);
 
   const metricColors = useMemo(
     () => [
@@ -76,34 +76,24 @@ export default function TargetReport() {
     [theme]
   );
 
-  const metricDefinitions = useMemo<MetricDefinition[]>(() => {
-    const rubricDefinitions = rubrics.map((rubric, index) => ({
+  const rubricSeriesDefinitions = useMemo<RubricSeriesDefinition[]>(() => {
+    return orderRubricsForDisplay(rubrics).map((rubric, index) => ({
       key: `rubric-${rubric.id}`,
       label: rubric.name,
-      color: metricColors[(index + 1) % metricColors.length],
+      color: metricColors[index % metricColors.length],
       rubricId: rubric.id,
     }));
-
-    return [
-      {
-        key: "accuracy",
-        label: "Accuracy",
-        color: metricColors[0],
-        rubricId: null,
-      },
-      ...rubricDefinitions,
-    ];
   }, [metricColors, rubrics]);
 
-  const selectedMetrics = useMemo(
+  const selectedSeries = useMemo(
     () =>
-      selectedMetricKeys
-        .map((key) => metricDefinitions.find((definition) => definition.key === key))
-        .filter((definition): definition is MetricDefinition => Boolean(definition)),
-    [metricDefinitions, selectedMetricKeys]
+      selectedSeriesKeys
+        .map((key) => rubricSeriesDefinitions.find((definition) => definition.key === key))
+        .filter((definition): definition is RubricSeriesDefinition => Boolean(definition)),
+    [rubricSeriesDefinitions, selectedSeriesKeys]
   );
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       const [targetRes, statsRes, snapshotsRes, metricsRes, rubricsRes] = await Promise.all([
         targetApi.get(targetId),
@@ -127,84 +117,74 @@ export default function TargetReport() {
       });
       setJudgeCount(uniqueJudgeIds.size);
 
-      try {
-        const rubricMetricsRes = await metricsApi.getAllRubricSnapshotMetrics(targetId);
-        setAllRubricMetrics(rubricMetricsRes.data ?? []);
-      } catch {
-        setAllRubricMetrics([]);
-      }
-
     } catch (error) {
       console.error("Failed to fetch target data:", error);
     } finally {
       setLoading(false);
       setMetricsLoading(false);
     }
-  };
-
-  useEffect(() => {
-    void fetchData();
   }, [targetId]);
 
   useEffect(() => {
-    const metricKeys = metricDefinitions.map((definition) => definition.key);
+    void fetchData();
+  }, [fetchData]);
 
-    setSelectedMetricKeys((current) => {
-      const previousMetricKeys = previousMetricKeysRef.current;
-      const validKeys = current.filter((key) => metricKeys.includes(key));
+  useEffect(() => {
+    const seriesKeys = rubricSeriesDefinitions.map((definition) => definition.key);
+
+    setSelectedSeriesKeys((current) => {
+      const previousSeriesKeys = previousSeriesKeysRef.current;
+      const validKeys = current.filter((key) => seriesKeys.includes(key));
       const hadFullPreviousSelection =
-        previousMetricKeys.length > 0 &&
-        previousMetricKeys.every((key) => current.includes(key));
-      const hasNewMetricKeys = metricKeys.some((key) => !previousMetricKeys.includes(key));
+        previousSeriesKeys.length > 0 &&
+        previousSeriesKeys.every((key) => current.includes(key));
+      const hasNewSeriesKeys = seriesKeys.some((key) => !previousSeriesKeys.includes(key));
 
       let next: string[];
-      if (validKeys.length === 0 && metricKeys.length > 0) {
-        next = metricKeys;
-      } else if (hadFullPreviousSelection && hasNewMetricKeys) {
-        next = metricKeys;
+      if (validKeys.length === 0 && seriesKeys.length > 0) {
+        next = seriesKeys;
+      } else if (hadFullPreviousSelection && hasNewSeriesKeys) {
+        next = seriesKeys;
       } else {
         next = validKeys;
       }
 
-      previousMetricKeysRef.current = metricKeys;
+      previousSeriesKeysRef.current = seriesKeys;
 
       if (next.length === current.length && next.every((k, i) => k === current[i])) {
         return current;
       }
       return next;
     });
-  }, [metricDefinitions]);
+  }, [rubricSeriesDefinitions]);
 
   const sortedSnapshots = useMemo(
     () => [...snapshots].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
     [snapshots]
   );
 
-  const chartData = useMemo<SnapshotMetricSeriesPoint[]>(() => {
+  const chartData = useMemo<SnapshotScoreSeriesPoint[]>(() => {
     return sortedSnapshots.map((snapshot) => ({
       snapshotId: snapshot.id,
       snapshotName: snapshot.name,
-      metrics: selectedMetrics.map((definition) => {
-        const metric =
-          definition.rubricId === null
-            ? snapshotMetrics.find((entry) => entry.snapshot_id === snapshot.id) ?? null
-            : allRubricMetrics.find(
-                (entry) => entry.snapshot_id === snapshot.id && entry.rubric_id === definition.rubricId
-              ) ?? null;
+      series: selectedSeries.map((definition) => {
+        const metric = snapshotMetrics.find(
+          (entry) => entry.snapshot_id === snapshot.id && entry.rubric_id === definition.rubricId
+        ) ?? null;
 
         return {
           key: definition.key,
           label: definition.label,
           color: definition.color,
-          value: metric?.aggregated_accuracy ?? null,
+          value: metric?.aggregated_score ?? null,
           totalAnswers: metric?.total_answers ?? null,
         };
       }),
     }));
-  }, [allRubricMetrics, selectedMetrics, snapshotMetrics, sortedSnapshots]);
+  }, [selectedSeries, snapshotMetrics, sortedSnapshots]);
 
-  const toggleMetric = (key: string) => {
-    setSelectedMetricKeys((current) => {
+  const toggleSeries = (key: string) => {
+    setSelectedSeriesKeys((current) => {
       if (current.includes(key)) {
         if (current.length === 1) return current;
         return current.filter((value) => value !== key);
@@ -398,37 +378,37 @@ export default function TargetReport() {
                 <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between">
                   <Box>
                     <Typography variant="h6" fontWeight={700}>
-                      Metrics Across Snapshots
+                      Rubric Scores Across Snapshots
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-                      Compare the selected metrics across every available snapshot in one grouped chart.
+                      Compare rubric-level aggregate scores across every available snapshot in one grouped chart.
                     </Typography>
                   </Box>
 
                   <Button
                     variant="outlined"
                     endIcon={<IconChevronDown {...actionIconProps} />}
-                    onClick={(event) => setMetricMenuAnchor(event.currentTarget)}
+                    onClick={(event) => setSeriesMenuAnchor(event.currentTarget)}
                     sx={{ minWidth: { xs: "100%", sm: 220 }, justifyContent: "space-between", flexShrink: 0 }}
                   >
-                    {selectedMetrics.length === metricDefinitions.length
-                      ? `All metrics (${selectedMetrics.length})`
-                      : selectedMetrics.map((metric) => metric.label).join(" • ")}
+                    {selectedSeries.length === rubricSeriesDefinitions.length
+                      ? `All rubrics (${selectedSeries.length})`
+                      : selectedSeries.map((series) => series.label).join(" • ")}
                   </Button>
 
                   <Menu
-                    anchorEl={metricMenuAnchor}
-                    open={Boolean(metricMenuAnchor)}
-                    onClose={() => setMetricMenuAnchor(null)}
+                    anchorEl={seriesMenuAnchor}
+                    open={Boolean(seriesMenuAnchor)}
+                    onClose={() => setSeriesMenuAnchor(null)}
                   >
-                    {metricDefinitions.map((metric) => (
-                      <MenuItem key={metric.key} onClick={() => toggleMetric(metric.key)}>
-                        <Checkbox checked={selectedMetricKeys.includes(metric.key)} />
+                    {rubricSeriesDefinitions.map((series) => (
+                      <MenuItem key={series.key} onClick={() => toggleSeries(series.key)}>
+                        <Checkbox checked={selectedSeriesKeys.includes(series.key)} />
                         <ListItemText
-                          primary={metric.label}
+                          primary={series.label}
                           secondary={
-                            selectedMetricKeys.includes(metric.key)
-                              ? `Order ${selectedMetricKeys.indexOf(metric.key) + 1}`
+                            selectedSeriesKeys.includes(series.key)
+                              ? `Order ${selectedSeriesKeys.indexOf(series.key) + 1}`
                               : undefined
                           }
                         />
@@ -437,68 +417,7 @@ export default function TargetReport() {
                   </Menu>
                 </Stack>
 
-                {/*
-                  Previous report design kept a snapshot breakdown selector and a horizontal
-                  gauge row here. It is intentionally commented out rather than deleted so
-                  the older layout can be restored if product direction changes again.
-
-                  <Divider />
-
-                  <Box>
-                    <Typography variant="subtitle2" fontWeight={700}>
-                      Snapshot Breakdown
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, mb: 2 }}>
-                      {selectedSnapshot
-                        ? `Showing ${selectedSnapshot.name} across ${selectedMetrics.length || 0} selected metric${selectedMetrics.length === 1 ? "" : "s"}.`
-                        : "Select one snapshot to inspect the current metric breakdown."}
-                    </Typography>
-
-                    <SnapshotHeader
-                      targetId={targetId}
-                      snapshots={snapshots}
-                      selectedSnapshotId={selectedSnapshotId}
-                      onSelectSnapshot={updateSnapshotSelection}
-                      onSnapshotCreated={handleSnapshotCreated}
-                      onSnapshotDeleted={handleSnapshotCreated}
-                      loading={loading}
-                    />
-                  </Box>
-
-                  <Box
-                    sx={{
-                      overflowX: "auto",
-                      pb: 1,
-                    }}
-                  >
-                    <Stack direction="row" spacing={2} sx={{ width: "max-content", minWidth: "100%" }}>
-                      {selectedSnapshotMetrics.map(({ definition, metric }) => (
-                        <Card
-                          key={definition.key}
-                          variant="outlined"
-                          sx={{
-                            borderColor: "grey.200",
-                            minWidth: { xs: 260, md: 300 },
-                            flexShrink: 0,
-                          }}
-                        >
-                          <CardContent>
-                            <SnapshotAccuracyCard
-                              snapshotMetric={metric}
-                              loading={false}
-                              emptyMessage={`No ${definition.label.toLowerCase()} data for this snapshot`}
-                              showWarningBox={definition.rubricId === null}
-                              title={definition.label}
-                              gaugeLabel={definition.gaugeLabel}
-                            />
-                          </CardContent>
-                        </Card>
-                      ))}
-                    </Stack>
-                  </Box>
-                */}
-
-                <SnapshotAccuracyChart
+                <SnapshotScoreChart
                   data={chartData}
                   loading={metricsLoading}
                 />

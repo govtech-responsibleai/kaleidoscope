@@ -336,12 +336,14 @@ export interface RubricSpec {
   judge_id: number;
 }
 
+export type RubricSpecMap = Record<number, RubricSpec>;
+
 export interface QAJob {
   id: number;
   snapshot_id: number;
   question_id: number;
   answer_id: number | null;
-  judge_id: number;
+  judge_id: number | null;
   rubric_specs: RubricSpec[] | null;
   type: string;
   status: JobStatus;
@@ -362,7 +364,6 @@ export interface QAJobStartRequest {
 }
 
 export interface UnifiedQAJobStartRequest {
-  judge_id: number;
   question_ids: number[];
   rubric_specs?: RubricSpec[];
   job_ids?: number[];
@@ -432,26 +433,6 @@ export interface BulkSelectionRequest {
   selections: { answer_id: number; is_selected: boolean }[];
 }
 
-// Annotation types
-export interface AnnotationCreate {
-  answer_id: number;
-  label: boolean;
-  notes?: string;
-}
-
-export interface AnnotationBulkCreate {
-  annotations: AnnotationCreate[];
-}
-
-export interface Annotation {
-  id: number;
-  answer_id: number;
-  label: boolean;
-  notes?: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface AnnotationCompletionStatus {
   selected_ids: number[];
   selected_and_annotated_ids: number[];
@@ -486,7 +467,7 @@ export interface RubricAnswerScore {
   answer_id: number;
   rubric_id: number;
   judge_id: number;
-  option_chosen: string;
+  overall_label: string;
   explanation: string;
   created_at: string;
 }
@@ -561,7 +542,7 @@ export type AggregationMethod =
   | "override"
   | "pending";
 
-export interface AggregatedAccuracy {
+export interface AggregatedScore {
   answer_id: number;
   method: AggregationMethod;
   label: string | null;
@@ -590,8 +571,9 @@ export interface ResultRow {
   question_scope: string | null;
   answer_id: number;
   answer_content: string;
-  aggregated_accuracy: AggregatedAccuracy;
-  human_label: boolean | null;
+  aggregated_score: AggregatedScore;
+  human_label: string | null;
+  human_option?: string | null;
   human_notes: string | null;
 }
 
@@ -609,7 +591,7 @@ export interface SnapshotMetric {
   created_at: string;
   rubric_id?: number | null;
   rubric_name?: string | null;
-  aggregated_accuracy: number;
+  aggregated_score: number;
   total_answers: number;
   accurate_count: number;
   inaccurate_count: number;
@@ -619,7 +601,7 @@ export interface SnapshotMetric {
   aligned_judges: AlignedJudge[];
 }
 
-export interface MetricJudgeScoreSummary {
+export interface JudgeScoreSummary {
   judge_id: number;
   name: string;
   reliability: number | null;
@@ -628,50 +610,50 @@ export interface MetricJudgeScoreSummary {
   total_answers: number;
 }
 
-export interface MetricJudgeRowResult {
+export interface JudgeRowResult {
   judge_id: number;
   name: string;
   value?: string | null;
 }
 
-export interface MetricAggregatedResult {
+export interface AggregatedRowResult {
   method: AggregationMethod;
   value?: string | null;
   baseline_value?: string | null;
   is_edited: boolean;
 }
 
-export interface MetricRowResult {
+export interface ScoringRowResult {
   question_id: number;
   question_text: string | null;
   question_type: string | null;
   question_scope: string | null;
   answer_id: number;
   answer_content: string;
-  aggregated_result: MetricAggregatedResult;
-  human_label?: boolean | null;
+  aggregated_result: AggregatedRowResult;
+  human_label?: string | null;
   human_option?: string | null;
-  judge_results: MetricJudgeRowResult[];
+  judge_results: JudgeRowResult[];
 }
 
-export interface MetricScoringContract extends SnapshotMetric {
+export interface ScoringContract extends SnapshotMetric {
   rubric_id: number;
   rubric_name: string;
   group: "fixed" | "preset" | "custom";
   target_label?: string | null;
-  judge_summaries: MetricJudgeScoreSummary[];
-  rows: MetricRowResult[];
+  judge_summaries: JudgeScoreSummary[];
+  rows: ScoringRowResult[];
 }
 
 export interface SnapshotScoringContractsResponse {
   snapshot_id: number;
-  metrics: MetricScoringContract[];
+  metrics: ScoringContract[];
 }
 
 export interface ScoringPendingCounts {
   unanswered_question_count: number;
-  accuracy_pending_counts: Record<string, number>;
-  rubric_pending_counts: Record<string, number>;
+  rubric_id: number;
+  pending_counts: Record<string, number>;
 }
 
 export type SnapshotMetricsResponse = SnapshotMetric[];
@@ -702,13 +684,13 @@ export interface QARecord {
 
 export type QAMap = Record<number, QARecord>;
 
-// Rubric annotation types
-export interface RubricAnnotationUpsert {
+// Answer annotation types
+export interface AnswerAnnotationUpsert {
   option_value: string;
   notes?: string;
 }
 
-export interface RubricAnnotation {
+export interface AnswerAnnotation {
   id: number;
   answer_id: number;
   rubric_id: number;

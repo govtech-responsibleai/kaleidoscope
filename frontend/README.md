@@ -380,7 +380,8 @@ The frontend integrates with the Kaleidoscope backend API:
 - `POST /annotations/bulk` - Bulk create annotations
 - `GET /snapshots/:id/annotations` - List annotations for snapshot
 - `GET /snapshots/:id/annotations/completion-status` - Check annotation completion status
-- `GET /answers/:id/annotations` - Get annotation for specific answer
+- `GET /answers/:id/annotations` - List annotation rows for specific answer
+- `GET /answers/:id/annotations/:rubricId` - Get annotation row for a specific answer and rubric
 - `GET /annotations/:id` - Get annotation by ID
 - `PUT /annotations/:id` - Update annotation
 - `DELETE /annotations/:id` - Delete annotation
@@ -414,22 +415,19 @@ The frontend integrates with the Kaleidoscope backend API:
 - `POST /annotations/bulk` - Bulk create annotations
 - `GET /snapshots/:id/annotations` - List annotations for snapshot
 - `GET /snapshots/:id/annotations/completion-status` - Check annotation completion status
-- `GET /answers/:id/annotations` - Get annotation for specific answer
+- `GET /answers/:id/annotations` - List annotation rows for specific answer
+- `GET /answers/:id/annotations/:rubricId` - Get annotation row for a specific answer and rubric
 - `GET /annotations/:id` - Get annotation by ID
 - `PUT /annotations/:id` - Update annotation
 - `DELETE /annotations/:id` - Delete annotation
-- `GET /answers/:id/rubric-annotations` - Get rubric annotations for an answer
-- `PUT /answers/:id/rubric-annotations/:rubricId` - Upsert a rubric annotation
+- `PUT /answers/:id/annotations/:rubricId` - Upsert an annotation row for a rubric
 
 ### Metrics & Export Endpoints
-- `GET /snapshots/:id/judges/:judgeId/alignment` - Get judge alignment metrics (F1, precision, recall, accuracy)
-- `GET /snapshots/:id/judges/:judgeId/accuracy` - Get judge accuracy on all responses
 - `GET /snapshots/:id/judges/:judgeId/rubrics/:rubricId/alignment` - Rubric judge alignment (F1)
 - `GET /snapshots/:id/judges/:judgeId/rubrics/:rubricId/accuracy` - Rubric judge accuracy
 - `GET /snapshots/:id/results` - Get aggregated results with judge breakdown
 - `GET /targets/snapshots/:id/export` - Export snapshot results (CSV by default; pass `?include_evaluators=true` to receive a ZIP with CSV + judge JSON)
-- `GET /targets/:id/snapshot-metrics` - Get aggregated metrics for all snapshots of a target
-- `GET /targets/:id/rubric-snapshot-metrics?snapshot_id=:id` - Get aggregated rubric metrics for a snapshot
+- `GET /targets/:id/snapshot-metrics` - Get rubric-oriented aggregated metrics for one or all snapshots of a target
 
 ## Configuration
 
@@ -506,7 +504,7 @@ The Overview page provides comprehensive performance tracking across snapshot it
 - Shows count of reliable evaluators
 
 **Metrics Calculation:**
-- `aggregated_accuracy`: Percentage of accurate responses based on majority vote from judges with F1 ≥ 0.5
+- `aggregated_score`: Percentage of best-option responses based on majority vote from judges with F1 ≥ 0.5
 - `accurate_count` / `inaccurate_count` / `pending_count`: Breakdown by aggregated label
 - `judge_alignment_range`: Min and max F1 scores of judges that aligned with human annotations
 - `aligned_judges`: List of judges meeting the reliability threshold (F1 ≥ 0.5)

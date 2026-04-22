@@ -8,7 +8,7 @@ import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
 import { Snapshot, QAJob, QAMap, TargetRubricResponse, QuestionResponse, Status } from "@/lib/types";
-import { snapshotApi, judgeApi, metricsApi, targetRubricApi, questionApi } from "@/lib/api";
+import { snapshotApi, metricsApi, targetRubricApi, questionApi } from "@/lib/api";
 import { actionIconProps } from "@/lib/iconStyles";
 import { emptyMissingRubricCoverage, type MissingRubricCoverage } from "@/lib/evaluationCoverage";
 
@@ -35,13 +35,14 @@ function AnnotationPageContent() {
   // Initialize from URL if available
   const snapshotIdFromUrl = searchParams.get("snapshot");
   const questionIdFromUrl = searchParams.get("question");
+  const rubricIdFromUrl = searchParams.get("rubric");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
     snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null
   );
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
-  const [baselineJudgeId, setBaselineJudgeId] = useState<number | null>(null);
   const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
+  const [activeRubricId, setActiveRubricId] = useState<number | null>(rubricIdFromUrl ? Number(rubricIdFromUrl) : null);
   const [qaJobs, setQaJobs] = useState<QAJob[]>([]);
   const [qaMap, setQaMap] = useState<QAMap>({});
   const [missingRubricCoverage, setMissingRubricCoverage] = useState<MissingRubricCoverage>(emptyMissingRubricCoverage);
@@ -133,37 +134,6 @@ function AnnotationPageContent() {
     targetRubricApi.list(targetId).then((res) => setRubrics(res.data)).catch(() => {});
   }, [fetchSnapshots, fetchApprovedQuestions, targetId]);
 
-  useEffect(() => {
-    const fixedRubric = rubrics.find((rubric) => rubric.group === "fixed");
-    if (!fixedRubric) {
-      setBaselineJudgeId(null);
-      return;
-    }
-
-    let cancelled = false;
-
-    const fetchBaselineJudge = async () => {
-      try {
-        const response = await judgeApi.getBaseline(fixedRubric.id);
-        if (!cancelled) {
-          setBaselineJudgeId(response.data.id);
-        }
-      } catch (err) {
-        console.error("Failed to load baseline judge:", err);
-        if (!cancelled) {
-          setBaselineJudgeId(null);
-          setError("Failed to load judge configuration.");
-        }
-      }
-    };
-
-    void fetchBaselineJudge();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [rubrics]);
-
   const handleSnapshotSelect = useCallback((snapshotId: number | null) => {
     updateSnapshotSelection(snapshotId);
     setQaJobs([]);
@@ -177,9 +147,9 @@ function AnnotationPageContent() {
   }, [fetchSnapshots, updateSnapshotSelection]);
 
   const handleExportSnapshot = async () => {
-    if (!selectedSnapshotId) return;
+    if (!selectedSnapshotId || !activeRubricId) return;
     try {
-      const response = await metricsApi.exportJSON(selectedSnapshotId);
+      const response = await metricsApi.exportJSON(selectedSnapshotId, activeRubricId);
       const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -250,7 +220,6 @@ function AnnotationPageContent() {
       <QAJobControl
         targetId={targetId}
         snapshotId={selectedSnapshotId}
-        baselineJudgeId={baselineJudgeId}
         approvedQuestionIds={approvedQuestionIds}
         qaJobs={qaJobs}
         setQaJobs={setQaJobs}
@@ -283,6 +252,8 @@ function AnnotationPageContent() {
         rubrics={rubrics}
         missingRubricCoverage={missingRubricCoverage}
         initialQuestionId={questionIdFromUrl ? Number(questionIdFromUrl) : null}
+        initialRubricId={rubricIdFromUrl ? Number(rubricIdFromUrl) : null}
+        onActiveRubricChange={setActiveRubricId}
       />
     </Box>
   );
