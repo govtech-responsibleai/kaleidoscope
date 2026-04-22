@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 AggregationMethod = Literal["majority", "majority_tied", "no_aligned_judge", "override", "pending"]
 
 
-class AggregatedAnswerScore(BaseModel):
+class AggregatedScore(BaseModel):
     """Aggregated score for an answer using reliable judges only."""
     answer_id: int
     method: AggregationMethod
@@ -24,7 +24,7 @@ class AggregatedResult(BaseModel):
     question_scope: Optional[str] = None
     answer_id: int
     answer_content: str
-    aggregated_accuracy: AggregatedAnswerScore
+    aggregated_score: AggregatedScore
     human_label: Optional[str] = None
     human_notes: Optional[str] = None
 
@@ -52,14 +52,14 @@ class JudgeAccuracyResponse(BaseModel):
     accurate_count: int
 
 
-class TargetSnapshotMetric(BaseModel):
+class SnapshotMetric(BaseModel):
     """Metrics for a single snapshot within a target-level metrics view."""
     snapshot_id: Optional[int] = None
     snapshot_name: Optional[str] = None
     created_at: Optional[str] = None
     rubric_id: Optional[int] = None
     rubric_name: Optional[str] = None
-    aggregated_accuracy: float
+    aggregated_score: float
     total_answers: int
     accurate_count: int
     inaccurate_count: int
@@ -70,10 +70,10 @@ class TargetSnapshotMetric(BaseModel):
 
 
 class ScoringPendingCountsResponse(BaseModel):
-    """Snapshot-scoped pending counts needed by the scoring page."""
+    """Rubric-scoped pending counts needed by one scoring section."""
     unanswered_question_count: int
-    accuracy_pending_counts: Dict[str, int] = Field(default_factory=dict)
-    rubric_pending_counts: Dict[str, int] = Field(default_factory=dict)
+    rubric_id: int
+    pending_counts: Dict[str, int] = Field(default_factory=dict)
 
 
 class ConfusionMatrixResponse(BaseModel):
@@ -82,7 +82,7 @@ class ConfusionMatrixResponse(BaseModel):
     total_inaccurate: int
 
 
-class MetricJudgeScoreSummary(BaseModel):
+class JudgeScoreSummary(BaseModel):
     """Per-judge summary returned inside a metric-scoped scoring contract."""
     judge_id: int
     name: str
@@ -92,14 +92,14 @@ class MetricJudgeScoreSummary(BaseModel):
     total_answers: int
 
 
-class MetricJudgeRowResult(BaseModel):
+class JudgeRowResult(BaseModel):
     """Per-judge row-level output for a metric-scoped scoring contract."""
     judge_id: int
     name: str
     value: Optional[str] = None
 
 
-class MetricAggregatedResult(BaseModel):
+class AggregatedRowResult(BaseModel):
     """Aggregated row-level output for accuracy or rubric metrics."""
     method: AggregationMethod
     value: Optional[str] = None
@@ -107,7 +107,7 @@ class MetricAggregatedResult(BaseModel):
     is_edited: bool = False
 
 
-class MetricRowResult(BaseModel):
+class ScoringRowResult(BaseModel):
     """One answer row within a metric-scoped scoring contract."""
     question_id: int
     question_text: Optional[str] = None
@@ -115,23 +115,33 @@ class MetricRowResult(BaseModel):
     question_scope: Optional[str] = None
     answer_id: int
     answer_content: str
-    aggregated_result: MetricAggregatedResult
+    aggregated_result: AggregatedRowResult
     human_label: Optional[str] = None
     human_option: Optional[str] = None
-    judge_results: List[MetricJudgeRowResult] = Field(default_factory=list)
+    judge_results: List[JudgeRowResult] = Field(default_factory=list)
 
 
-class MetricScoringContract(TargetSnapshotMetric):
+class ScoringContract(SnapshotMetric):
     """Backend-owned scoring contract for one rubric context."""
     rubric_id: int
     rubric_name: str
     group: str
     target_label: Optional[str] = None
-    judge_summaries: List[MetricJudgeScoreSummary] = Field(default_factory=list)
-    rows: List[MetricRowResult] = Field(default_factory=list)
+    judge_summaries: List[JudgeScoreSummary] = Field(default_factory=list)
+    rows: List[ScoringRowResult] = Field(default_factory=list)
 
 
 class SnapshotScoringContractsResponse(BaseModel):
     """All metric-scoped scoring contracts for one snapshot."""
     snapshot_id: int
-    metrics: List[MetricScoringContract] = Field(default_factory=list)
+    metrics: List[ScoringContract] = Field(default_factory=list)
+
+
+# Legacy aliases kept temporarily while callers migrate to rubric-oriented names.
+TargetSnapshotMetric = SnapshotMetric
+AggregatedAnswerScore = AggregatedScore
+MetricJudgeScoreSummary = JudgeScoreSummary
+MetricJudgeRowResult = JudgeRowResult
+MetricAggregatedResult = AggregatedRowResult
+MetricRowResult = ScoringRowResult
+MetricScoringContract = ScoringContract

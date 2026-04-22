@@ -211,7 +211,7 @@ class TestQAJobProcessor:
         assert job.status == JobStatusEnum.completed
         assert job.stage == QAJobStageEnum.completed
 
-    def test_create_all_jobs_merges_rubric_specs_for_existing_job(
+    def test_create_all_jobs_overwrites_rubric_specs_for_existing_job(
         self,
         test_db,
         sample_snapshot,
@@ -219,7 +219,7 @@ class TestQAJobProcessor:
         sample_rubric,
         sample_rubric_second,
     ):
-        """Retrying one missing rubric must preserve the job's existing configured metrics."""
+        """Retrying with an explicit spec set should replace the stored rubric plan."""
         sample_qa_job.snapshot_id = sample_snapshot.id
         sample_qa_job.rubric_specs = [
             {"rubric_id": sample_rubric.id, "judge_id": 101},
@@ -229,7 +229,6 @@ class TestQAJobProcessor:
         jobs = create_all_jobs(
             db=test_db,
             snapshot_id=sample_snapshot.id,
-            judge_id=sample_qa_job.judge_id,
             question_ids=[sample_qa_job.question_id],
             rubric_specs=[{"rubric_id": sample_rubric_second.id, "judge_id": 202}],
             job_ids=[sample_qa_job.id],
@@ -238,7 +237,6 @@ class TestQAJobProcessor:
         assert len(jobs) == 1
         test_db.refresh(sample_qa_job)
         assert sample_qa_job.rubric_specs == [
-            {"rubric_id": sample_rubric.id, "judge_id": 101},
             {"rubric_id": sample_rubric_second.id, "judge_id": 202},
         ]
 
@@ -261,26 +259,90 @@ class TestQAJobProcessor:
         assert processor._uses_claim_processing() is False
 
     @pytest.mark.asyncio
-    @patch("src.scoring.services.qa_job_processor.extract_and_check_claims", new_callable=AsyncMock)
-    @patch("src.scoring.services.qa_job_processor.AnswerJudge")
+    @patch("src.scoring.services.qa_job_processor._score_rubric_spec", new_callable=AsyncMock)
+    @patch("src.scoring.services.qa_job_processor._generate_answer", new_callable=AsyncMock)
     @patch("src.scoring.services.qa_job_processor.SessionLocal")
-    async def test_score_accuracy_triggers_claim_processing_for_fixed_rubric(
-        self, MockSessionLocal, MockAnswerJudge, mock_extract_claims, test_db, sample_qa_job
+    async def test_run_job_phased_schedules_claim_based_rubric_specs_directly(
+        self, MockSessionLocal, mock_generate_answer, mock_score_rubric_spec, test_db, sample_snapshot, sample_question, sample_answer, sample_qa_job
     ):
-        """_score_claim_level runs claim extraction when judge is bound to a claim-based rubric."""
-        from src.scoring.services.qa_job_processor import _score_claim_level
+        """Claim-based jobs should schedule rubric specs directly through _score_rubric_spec."""
+        from src.scoring.services.qa_job_processor import _run_job_phased
 
-        MockSessionLocal.return_value = test_db
+        sample_qa_job.rubric_specs = [{"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id}]
+        sample_qa_job.snapshot_id = sample_snapshot.id
+        sample_qa_job.question_id = sample_question.id
+        sample_qa_job.answer_id = sample_answer.id
+        sample_qa_job.status = JobStatusEnum.running
+        sample_qa_job.stage = QAJobStageEnum.starting
+        test_db.commit()
+        mock_session = Mock(wraps=test_db)
+        mock_session.close = Mock()
+        MockSessionLocal.return_value = mock_session
 
-        mock_judge_instance = MockAnswerJudge.return_value
-        mock_judge_instance.score = AsyncMock()
-        mock_judge_instance.cost_tracker.get_summary.return_value = {
+        mock_generate_answer.return_value = None
+        mock_score_rubric_spec.return_value = {
             "prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0
         }
 
-        await _score_claim_level(sample_qa_job.id)
+        await _run_job_phased(
+            sample_qa_job.id,
+            sample_snapshot.id,
+            sample_question.id,
+            sample_qa_job.rubric_specs,
+        )
 
-        mock_extract_claims.assert_awaited_once()
+        mock_score_rubric_spec.assert_awaited_once_with(
+            sample_qa_job.id,
+            sample_qa_job.judge_id,
+            sample_qa_job.judge.rubric_id,
+        )
+
+    @pytest.mark.asyncio
+    @patch("src.scoring.services.qa_job_processor._score_rubric_spec", new_callable=AsyncMock)
+    @patch("src.scoring.services.qa_job_processor._generate_answer", new_callable=AsyncMock)
+    @patch("src.scoring.services.qa_job_processor.SessionLocal")
+    async def test_run_job_phased_fails_when_scheduled_score_is_not_persisted(
+        self,
+        MockSessionLocal,
+        mock_generate_answer,
+        mock_score_rubric_spec,
+        test_db,
+        sample_snapshot,
+        sample_question,
+        sample_answer,
+        sample_qa_job,
+    ):
+        """Unified jobs stay failed, not completed, when a scheduled score never lands in storage."""
+        from src.scoring.services.qa_job_processor import _run_job_phased
+
+        sample_qa_job.snapshot_id = sample_snapshot.id
+        sample_qa_job.question_id = sample_question.id
+        sample_qa_job.answer_id = sample_answer.id
+        sample_qa_job.status = JobStatusEnum.running
+        sample_qa_job.stage = QAJobStageEnum.starting
+        sample_qa_job.rubric_specs = [{"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id}]
+        test_db.commit()
+
+        mock_session = Mock(wraps=test_db)
+        mock_session.close = Mock()
+        MockSessionLocal.return_value = mock_session
+        mock_score_rubric_spec.return_value = {
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_cost": 0.0,
+        }
+
+        await _run_job_phased(
+            sample_qa_job.id,
+            sample_snapshot.id,
+            sample_question.id,
+            sample_qa_job.rubric_specs,
+        )
+
+        failed_job = QAJobRepository.get_by_id(test_db, sample_qa_job.id)
+        assert failed_job is not None
+        assert failed_job.status == JobStatusEnum.failed
+        assert "Missing persisted scores for scheduled rubric specs" in (failed_job.error_message or "")
 
 
 @pytest.mark.unit
@@ -522,8 +584,9 @@ class TestQAJobPipelineResume:
         self._create_checked_claims(test_db, answer.id)
         AnswerScoreRepository.create(test_db, {
             "answer_id": answer.id,
+            "rubric_id": sample_judge_claim_based.rubric_id,
             "judge_id": sample_judge_claim_based.id,
-            "overall_label": True,
+            "overall_label": "Accurate",
             "explanation": "All claims supported.",
         })
 

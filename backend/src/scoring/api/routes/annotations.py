@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import AnnotationRepository, AnswerRepository, SnapshotRepository
-from src.common.database.models import RubricAnnotation, TargetRubric
+from src.common.database.models import Annotation, TargetRubric
 from src.common.models import (
     AnnotationCreate,
     AnnotationUpdate,
@@ -21,12 +21,12 @@ from src.common.models import (
 from src.common.services.system_rubrics import canonicalize_rubric_option_value
 
 
-class RubricAnnotationUpsert(BaseModel):
+class AnswerAnnotationUpsert(BaseModel):
     option_value: str
     notes: str | None = None
 
 
-class RubricAnnotationResponse(BaseModel):
+class AnswerAnnotationRecordResponse(BaseModel):
     id: int
     answer_id: int
     rubric_id: int
@@ -39,6 +39,27 @@ class RubricAnnotationResponse(BaseModel):
         from_attributes = True
 
 router = APIRouter()
+
+
+def _get_answer_or_404(db: Session, answer_id: int):
+    answer = AnswerRepository.get_by_id(db, answer_id)
+    if not answer:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Answer {answer_id} not found",
+        )
+    return answer
+
+
+def _get_answer_annotation_row(db: Session, answer_id: int, rubric_id: int) -> Annotation | None:
+    return (
+        db.query(Annotation)
+        .filter(
+            Annotation.answer_id == answer_id,
+            Annotation.rubric_id == rubric_id,
+        )
+        .first()
+    )
 
 
 @router.post("/annotations", response_model=AnnotationResponse, status_code=status.HTTP_201_CREATED)
@@ -60,12 +81,7 @@ def create_annotation(
         HTTPException: If answer not found
     """
     # Verify answer exists
-    answer = AnswerRepository.get_by_id(db, annotation.answer_id)
-    if not answer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Answer {annotation.answer_id} not found"
-        )
+    _get_answer_or_404(db, annotation.answer_id)
 
     annotation_data = annotation.model_dump()
     created_annotation = AnnotationRepository.create(db, annotation_data)
@@ -94,12 +110,7 @@ def bulk_create_annotations(
     """
     # Verify all answers exist
     for annotation in request.annotations:
-        answer = AnswerRepository.get_by_id(db, annotation.answer_id)
-        if not answer:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Answer {annotation.answer_id} not found"
-            )
+        _get_answer_or_404(db, annotation.answer_id)
 
     # Create all annotations
     annotations_data = [ann.model_dump() for ann in request.annotations]
@@ -174,39 +185,42 @@ def check_annotation_completion_status(
     return completion_status
 
 
-@router.get("/answers/{answer_id}/annotations", response_model=AnnotationResponse)
-def get_annotation_for_answer(
+@router.get("/answers/{answer_id}/annotations", response_model=List[AnswerAnnotationRecordResponse])
+def list_annotations_for_answer(
     answer_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get annotation for a specific answer.
+    """List all annotation rows for an answer."""
+    _get_answer_or_404(db, answer_id)
+    return db.query(Annotation).filter(Annotation.answer_id == answer_id).all()
 
-    There is a one-to-one relationship between answers and annotations.
+
+@router.get("/answers/{answer_id}/annotations/{rubric_id}", response_model=AnswerAnnotationRecordResponse)
+def get_annotation_for_answer(
+    answer_id: int,
+    rubric_id: int,
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific annotation row for an answer and rubric.
 
     Args:
         answer_id: Answer ID
+        rubric_id: Rubric ID
         db: Database session
 
     Returns:
-        Annotation for the answer
+        Annotation row for the answer and rubric
 
     Raises:
         HTTPException: If answer or annotation not found
     """
-    # Verify answer exists
-    answer = AnswerRepository.get_by_id(db, answer_id)
-    if not answer:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Answer {answer_id} not found"
-        )
-
-    annotation = AnnotationRepository.get_by_answer(db, answer_id)
+    _get_answer_or_404(db, answer_id)
+    annotation = _get_answer_annotation_row(db, answer_id, rubric_id)
     if not annotation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No annotation found for answer {answer_id}"
+            detail=f"No annotation found for answer {answer_id} and rubric {rubric_id}"
         )
 
     return annotation
@@ -291,37 +305,19 @@ def delete_annotation(
             detail=f"Annotation {annotation_id} not found"
         )
 
-
-@router.get("/answers/{answer_id}/rubric-annotations", response_model=List[RubricAnnotationResponse])
-def get_rubric_annotations_for_answer(
-    answer_id: int,
-    db: Session = Depends(get_db)
-):
-    """Get all custom rubric labels for an answer."""
-    answer = AnswerRepository.get_by_id(db, answer_id)
-    if not answer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Answer {answer_id} not found")
-    return db.query(RubricAnnotation).filter(RubricAnnotation.answer_id == answer_id).all()
-
-
-@router.put("/answers/{answer_id}/rubric-annotations/{rubric_id}", response_model=RubricAnnotationResponse)
-def upsert_rubric_annotation(
+@router.put("/answers/{answer_id}/annotations/{rubric_id}", response_model=AnswerAnnotationRecordResponse)
+def upsert_annotation(
     answer_id: int,
     rubric_id: int,
-    data: RubricAnnotationUpsert,
+    data: AnswerAnnotationUpsert,
     db: Session = Depends(get_db)
 ):
-    """Create or update a custom rubric label for an answer."""
-    answer = AnswerRepository.get_by_id(db, answer_id)
-    if not answer:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Answer {answer_id} not found")
+    """Create or update an annotation row for an answer and rubric."""
+    _get_answer_or_404(db, answer_id)
     rubric = db.query(TargetRubric).filter(TargetRubric.id == rubric_id).first()
     option_value = canonicalize_rubric_option_value(rubric, data.option_value) if rubric else data.option_value
 
-    existing = db.query(RubricAnnotation).filter(
-        RubricAnnotation.answer_id == answer_id,
-        RubricAnnotation.rubric_id == rubric_id
-    ).first()
+    existing = _get_answer_annotation_row(db, answer_id, rubric_id)
 
     if existing:
         existing.option_value = option_value
@@ -332,7 +328,7 @@ def upsert_rubric_annotation(
         db.refresh(existing)
         return existing
     else:
-        label = RubricAnnotation(
+        label = Annotation(
             answer_id=answer_id,
             rubric_id=rubric_id,
             option_value=option_value,

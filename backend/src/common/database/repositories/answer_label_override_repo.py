@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from src.common.database.models import Answer, AnswerLabelOverride, TargetRubric
-from src.common.services.system_rubrics import canonicalize_rubric_option_value
+from src.common.services.system_rubrics import canonicalize_rubric_option_value, rubric_option_values
 
 
 class AnswerLabelOverrideRepository:
@@ -20,7 +20,17 @@ class AnswerLabelOverrideRepository:
         edited_value: str,
     ) -> AnswerLabelOverride:
         rubric = db.query(TargetRubric).filter(TargetRubric.id == rubric_id).first()
-        canonical_value = canonicalize_rubric_option_value(rubric, edited_value) if rubric else edited_value
+        if rubric is None:
+            raise ValueError(f"Rubric {rubric_id} not found")
+
+        canonical_value = canonicalize_rubric_option_value(rubric, edited_value)
+        if canonical_value is None:
+            raise ValueError("edited_value must be a non-empty rubric option")
+
+        if canonical_value not in rubric_option_values(rubric):
+            raise ValueError(
+                f"edited_value must match one of the rubric options for rubric {rubric_id}"
+            )
 
         override = (
             db.query(AnswerLabelOverride)
@@ -43,8 +53,12 @@ class AnswerLabelOverrideRepository:
             )
             db.add(override)
 
-        db.commit()
-        db.refresh(override)
+        try:
+            db.commit()
+            db.refresh(override)
+        except Exception:
+            db.rollback()
+            raise
         return override
 
     @staticmethod

@@ -17,121 +17,12 @@ from src.common.models.metrics import (
     JudgeAlignmentResponse,
     SnapshotScoringContractsResponse,
     ScoringPendingCountsResponse,
-    TargetSnapshotMetric,
+    SnapshotMetric,
 )
+from src.common.services.system_rubrics import FixedAccuracyRubricInvariantError
 from src.scoring.services.metrics_service import MetricsService
 
 router = APIRouter()
-
-
-
-@router.get(
-    "/snapshots/{snapshot_id}/judges/{judge_id}/alignment",
-    response_model=JudgeAlignmentResponse,
-)
-def get_judge_alignment(
-    snapshot_id: int,
-    judge_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Calculate judge alignment metrics.
-
-    Compares the judge's labels with human annotations on the selected subset
-    to calculate F1 score, precision, recall, and accuracy.
-
-    Args:
-        snapshot_id: Snapshot ID
-        judge_id: Judge ID to evaluate
-        db: Database session
-
-    Returns:
-        Dict with metrics: {f1, precision, recall, accuracy, sample_count}
-
-    Raises:
-        HTTPException: If snapshot, judge not found, or no data for comparison
-    """
-    # Verify snapshot exists
-    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
-    if not snapshot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Snapshot {snapshot_id} not found"
-        )
-
-    # Verify judge exists
-    judge = JudgeRepository.get_by_id(db, judge_id)
-    if not judge:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Judge {judge_id} not found"
-        )
-
-    # Calculate alignment metrics
-    try:
-        metrics_service = MetricsService(db)
-        metrics = metrics_service.calculate_judge_alignment(snapshot_id, judge_id)
-        return metrics
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
-
-@router.get(
-    "/snapshots/{snapshot_id}/judges/{judge_id}/accuracy",
-    response_model=JudgeAccuracyResponse,
-)
-def get_target_accuracy(
-    snapshot_id: int,
-    judge_id: int,
-    db: Session = Depends(get_db)
-):
-    """
-    Calculate target accuracy based on judge scores.
-
-    Calculates the percentage of accurate responses as determined by
-    the judge's evaluation of all responses in the snapshot.
-
-    Args:
-        snapshot_id: Snapshot ID
-        judge_id: Judge ID
-        db: Database session
-
-    Returns:
-        Dict with: {accuracy, total_answers, accurate_count}
-
-    Raises:
-        HTTPException: If snapshot, judge not found, or no scores available
-    """
-    # Verify snapshot exists
-    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
-    if not snapshot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Snapshot {snapshot_id} not found"
-        )
-
-    # Verify judge exists
-    judge = JudgeRepository.get_by_id(db, judge_id)
-    if not judge:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Judge {judge_id} not found"
-        )
-
-    # Calculate accuracy
-    try:
-        metrics_service = MetricsService(db)
-        accuracy_data = metrics_service.calculate_accuracy(snapshot_id, judge_id)
-        return accuracy_data
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
-
 
 @router.get("/snapshots/{snapshot_id}/results", response_model=List[AggregatedResult])
 def get_aggregated_results(
@@ -167,6 +58,11 @@ def get_aggregated_results(
         metrics_service = MetricsService(db)
         results, _ = metrics_service.get_aggregated_results(snapshot_id)
         return results
+    except FixedAccuracyRubricInvariantError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -179,7 +75,7 @@ def get_snapshot_scoring_contracts(
     snapshot_id: int,
     db: Session = Depends(get_db),
 ):
-    """Get backend-owned scoring contracts for accuracy and rubric metrics in a snapshot."""
+    """Get backend-owned scoring contracts for all rubric metrics in a snapshot."""
     snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
     if not snapshot:
         raise HTTPException(
@@ -190,6 +86,11 @@ def get_snapshot_scoring_contracts(
     try:
         service = MetricsService(db)
         return service.get_snapshot_scoring_contracts(snapshot_id)
+    except FixedAccuracyRubricInvariantError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -197,22 +98,37 @@ def get_snapshot_scoring_contracts(
         )
 
 
-@router.get("/snapshots/{snapshot_id}/scoring-pending-counts", response_model=ScoringPendingCountsResponse)
+@router.get(
+    "/snapshots/{snapshot_id}/rubrics/{rubric_id}/scoring-pending-counts",
+    response_model=ScoringPendingCountsResponse,
+)
 def get_scoring_pending_counts(
     snapshot_id: int,
+    rubric_id: int,
     db: Session = Depends(get_db)
 ):
-    """Get snapshot-scoped pending counts needed by the scoring page."""
+    """Get rubric-scoped pending counts needed by one scoring section."""
     snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
     if not snapshot:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Snapshot {snapshot_id} not found"
         )
+    rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not rubric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rubric {rubric_id} not found"
+        )
 
     try:
         metrics_service = MetricsService(db)
-        return metrics_service.get_scoring_pending_counts(snapshot_id)
+        return metrics_service.get_scoring_pending_counts(snapshot_id, rubric_id)
+    except FixedAccuracyRubricInvariantError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -220,9 +136,10 @@ def get_scoring_pending_counts(
         )
 
 
-@router.get("/targets/{target_id}/snapshot-metrics", response_model=List[TargetSnapshotMetric])
+@router.get("/targets/{target_id}/snapshot-metrics", response_model=List[SnapshotMetric])
 def get_target_snapshot_metrics(
     target_id: int,
+    snapshot_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -249,34 +166,19 @@ def get_target_snapshot_metrics(
             detail=f"Target {target_id} not found"
         )
 
-    # Get all snapshots for the target
-    snapshots = SnapshotRepository.get_by_target(db, target_id)
-
-    # Calculate metrics for each snapshot
     metrics_service = MetricsService(db)
-    snapshot_metrics = []
-
-    for snapshot in snapshots:
-        try:
-            summary = metrics_service.calculate_snapshot_summary(snapshot.id)
-            snapshot_metrics.append(
-                summary.model_copy(
-                    update={
-                        "snapshot_id": snapshot.id,
-                        "snapshot_name": snapshot.name,
-                        "created_at": snapshot.created_at.isoformat(),
-                    }
-                )
-            )
-        except ValueError:
-            # No answers for this snapshot, skip it
-            continue
-        except Exception:
-            # Log but don't fail the entire request
-            logger.exception("Failed to calculate metrics for snapshot %s", snapshot.id)
-            continue
-
-    return snapshot_metrics
+    try:
+        return metrics_service.calculate_snapshot_metrics(target_id, snapshot_id)
+    except FixedAccuracyRubricInvariantError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
 
 
 @router.get(
@@ -285,6 +187,7 @@ def get_target_snapshot_metrics(
 )
 def get_confusion_matrix(
     target_id: int,
+    rubric_id: int = Query(...),
     snapshot_id: Optional[int] = Query(None),
     db: Session = Depends(get_db)
 ):
@@ -297,6 +200,7 @@ def get_confusion_matrix(
 
     Args:
         target_id: Target ID
+        rubric_id: Rubric ID
         snapshot_id: Optional snapshot ID (uses latest if not provided)
         db: Database session
 
@@ -317,8 +221,13 @@ def get_confusion_matrix(
     # Calculate confusion matrix
     try:
         metrics_service = MetricsService(db)
-        confusion_matrix = metrics_service.calculate_confusion_matrix(target_id, snapshot_id)
+        confusion_matrix = metrics_service.calculate_confusion_matrix(target_id, rubric_id, snapshot_id)
         return confusion_matrix
+    except FixedAccuracyRubricInvariantError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -410,50 +319,3 @@ def get_rubric_judge_accuracy(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         )
-
-
-@router.get(
-    "/targets/{target_id}/rubric-snapshot-metrics",
-    response_model=List[TargetSnapshotMetric],
-)
-def get_rubric_snapshot_metrics(
-    target_id: int,
-    snapshot_id: Optional[int] = Query(None),
-    db: Session = Depends(get_db),
-):
-    """Get aggregated rubric metrics. If snapshot_id is omitted, returns metrics for all snapshots."""
-    target = TargetRepository.get_by_id(db, target_id)
-    if not target:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Target {target_id} not found",
-        )
-    service = MetricsService(db)
-    if snapshot_id is not None:
-        snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
-        if not snapshot:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Snapshot {snapshot_id} not found",
-            )
-        try:
-            return service.calculate_rubric_snapshot_metrics(target_id, snapshot_id)
-        except ValueError as e:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-
-    # No snapshot_id: aggregate rubric metrics across all snapshots
-    snapshots = SnapshotRepository.get_by_target(db, target_id)
-    all_metrics = []
-    for snapshot in snapshots:
-        try:
-            metrics = service.calculate_rubric_snapshot_metrics(target_id, snapshot.id)
-            for m in metrics:
-                all_metrics.append(m.model_copy(update={
-                    "snapshot_id": snapshot.id,
-                    "snapshot_name": snapshot.name,
-                    "created_at": snapshot.created_at.isoformat(),
-                }))
-        except Exception:
-            logger.exception("Failed to calculate rubric metrics for snapshot %s", snapshot.id)
-            continue
-    return all_metrics

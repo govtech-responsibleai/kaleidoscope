@@ -1,6 +1,6 @@
 import pytest
 
-from src.common.database.models import AnswerLabelOverride, AnswerScore, RubricAnnotation, Snapshot, TargetRubric, Answer
+from src.common.database.models import AnswerLabelOverride, AnswerScore, Annotation, Snapshot, TargetRubric, Answer
 from src.common.services.system_rubrics import ensure_system_rubrics
 
 
@@ -43,7 +43,7 @@ def test_ensure_system_rubrics_canonicalizes_fixed_accuracy_storage(test_db, sam
                 overall_label="accurate",
                 explanation="legacy score",
             ),
-            RubricAnnotation(
+            Annotation(
                 answer_id=answer.id,
                 rubric_id=legacy_accuracy.id,
                 option_value="inaccurate",
@@ -63,7 +63,7 @@ def test_ensure_system_rubrics_canonicalizes_fixed_accuracy_storage(test_db, sam
 
     rubric = test_db.get(TargetRubric, legacy_accuracy.id)
     score = test_db.query(AnswerScore).filter(AnswerScore.rubric_id == legacy_accuracy.id).one()
-    annotation = test_db.query(RubricAnnotation).filter(RubricAnnotation.rubric_id == legacy_accuracy.id).one()
+    annotation = test_db.query(Annotation).filter(Annotation.rubric_id == legacy_accuracy.id).one()
     override = test_db.query(AnswerLabelOverride).filter(AnswerLabelOverride.rubric_id == legacy_accuracy.id).one()
 
     assert rubric.best_option == "Accurate"

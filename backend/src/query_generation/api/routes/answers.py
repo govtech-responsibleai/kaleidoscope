@@ -64,6 +64,7 @@ def delete_answer(
 def get_answer_score(
     answer_id: int,
     judge_id: int,
+    rubric_id: int | None = Query(None, description="Optional rubric ID to scope the score lookup"),
     db: Session = Depends(get_db)
 ):
     """
@@ -91,7 +92,7 @@ def get_answer_score(
         )
 
     # Get score
-    score = AnswerScoreRepository.get_by_answer_and_judge(db, answer_id, judge_id)
+    score = AnswerScoreRepository.get_by_answer_and_judge(db, answer_id, judge_id, rubric_id=rubric_id)
     if not score:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -105,6 +106,7 @@ def get_answer_score(
 def get_answer_claims_with_scores(
     answer_id: int,
     judge_id: int = Query(..., description="Judge ID to get claim scores from"),
+    rubric_id: int | None = Query(None, description="Optional rubric ID to scope the answer score lookup"),
     db: Session = Depends(get_db)
 ):
     """
@@ -136,7 +138,12 @@ def get_answer_claims_with_scores(
     claims = AnswerClaimRepository.get_by_answer(db, answer_id)
 
     # Get answer score to retrieve claim scores
-    answer_score = AnswerScoreRepository.get_by_answer_and_judge(db, answer_id, judge_id)
+    answer_score = AnswerScoreRepository.get_by_answer_and_judge(
+        db,
+        answer_id,
+        judge_id,
+        rubric_id=rubric_id,
+    )
 
     claim_score_map = {}
     if answer_score:
@@ -197,12 +204,17 @@ def create_or_update_label_override(
             detail=f"Answer {answer_id} not found"
         )
 
-    override = AnswerLabelOverrideRepository.create_or_update(
-        db,
-        answer_id=answer_id,
-        rubric_id=rubric_id,
-        edited_value=override_data.edited_value,
-    )
+    try:
+        override = AnswerLabelOverrideRepository.create_or_update(
+            db,
+            answer_id=answer_id,
+            rubric_id=rubric_id,
+            edited_value=override_data.edited_value,
+        )
+    except ValueError as exc:
+        detail = str(exc)
+        status_code = status.HTTP_404_NOT_FOUND if "not found" in detail.lower() else status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=detail) from exc
 
     return override
 

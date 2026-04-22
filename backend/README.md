@@ -390,22 +390,22 @@ GET    /api/v1/qa-jobs/{job_id}                              - Get job details w
 
 ### Annotations
 
-Manual annotations allow humans to label answers for judge validation. Accuracy annotations use a boolean label (accurate/inaccurate), while rubric annotations select from the rubric's defined options.
+Manual annotations are now rubric-backed for both fixed Accuracy and ordinary rubrics. The legacy `/annotations` endpoints remain as compatibility wrappers over the fixed Accuracy rubric row, while answer-level `/answers/{answer_id}/annotations` routes expose the canonical per-rubric records. The underlying database table is still named `rubric_annotations` in this slice.
 
 ```
-# Accuracy annotations
+# Fixed Accuracy annotation compatibility endpoints
 POST   /api/v1/annotations                                       - Create single annotation
 POST   /api/v1/annotations/bulk                                  - Bulk create annotations
 GET    /api/v1/snapshots/{snapshot_id}/annotations               - List annotations for snapshot
 GET    /api/v1/snapshots/{snapshot_id}/annotations/completion-status  - Check completion progress
-GET    /api/v1/answers/{answer_id}/annotations                   - Get annotation for answer
 GET    /api/v1/annotations/{annotation_id}                       - Get annotation by ID
 PUT    /api/v1/annotations/{annotation_id}                       - Update annotation
 DELETE /api/v1/annotations/{annotation_id}                       - Delete annotation
 
-# Rubric annotations
-GET    /api/v1/answers/{answer_id}/rubric-annotations            - Get all rubric annotations for an answer
-PUT    /api/v1/answers/{answer_id}/rubric-annotations/{rubric_id} - Upsert a rubric annotation
+# Canonical answer annotation records
+GET    /api/v1/answers/{answer_id}/annotations                   - List all annotation rows for an answer
+GET    /api/v1/answers/{answer_id}/annotations/{rubric_id}       - Get one annotation row for an answer and rubric
+PUT    /api/v1/answers/{answer_id}/annotations/{rubric_id}       - Upsert an annotation row for a rubric
 
 # Rubric scores (LLM judge results)
 GET    /api/v1/answers/{answer_id}/rubric-scores?rubric_id={id}  - Get judge scores for an answer+rubric

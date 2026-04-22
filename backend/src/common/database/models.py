@@ -5,7 +5,7 @@ SQLAlchemy ORM models for the database schema.
 from datetime import datetime
 from sqlalchemy import (
     Boolean, Column, Integer, String, Text, DateTime, ForeignKey,
-    Enum, Float, UniqueConstraint, JSON, func, Index
+    Enum, Float, UniqueConstraint, JSON, Index
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import text
@@ -278,8 +278,7 @@ class Answer(Base):
     question = relationship("Question", back_populates="answers")
     claims = relationship("AnswerClaim", back_populates="answer", cascade="all, delete-orphan")
     scores = relationship("AnswerScore", back_populates="answer", cascade="all, delete-orphan")
-    rubric_annotations = relationship("RubricAnnotation", back_populates="answer", cascade="all, delete-orphan")
-    annotation = relationship("Annotation", back_populates="answer", uselist=False, cascade="all, delete-orphan")
+    annotations = relationship("Annotation", back_populates="answer", cascade="all, delete-orphan")
 
     # Unique constraint: one answer per question per snapshot
     __table_args__ = (
@@ -502,28 +501,6 @@ class AnswerScore(Base):
         UniqueConstraint("answer_id", "rubric_id", "judge_id", name="uix_answer_rubric_judge_score"),
     )
 
-class Annotation(Base):
-    """
-    Human annotation at answer level.
-    """
-    __tablename__ = "annotations"
-
-    id = Column(Integer, primary_key=True, index=True)
-
-    answer_id = Column(Integer, ForeignKey("answers.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
-    # if you have annotators / annotation sets, add FKs here:
-    # annotation_set_id = Column(Integer, ForeignKey("annotation_sets.id"), nullable=False)
-    # annotator_id = Column(Integer, ForeignKey("annotators.id"), nullable=True)
-
-    label = Column(Boolean, nullable=False)  # True = Accurate, False = Inaccurate
-    notes = Column(Text, nullable=True)
-
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Relationships
-    answer = relationship("Answer", back_populates="annotation")
-
-
 class AnswerLabelOverride(Base):
     """
     User override for one rubric's effective final answer label.
@@ -564,11 +541,11 @@ class TargetRubric(Base):
 
     # Relationships
     target = relationship("Target", back_populates="custom_rubrics")
-    rubric_annotations = relationship("RubricAnnotation", back_populates="rubric", cascade="all, delete-orphan")
+    annotations = relationship("Annotation", back_populates="rubric", cascade="all, delete-orphan")
     answer_scores = relationship("AnswerScore", back_populates="rubric", cascade="all, delete-orphan")
 
 
-class RubricAnnotation(Base):
+class Annotation(Base):
     """Per-rubric human annotation for a single answer."""
     __tablename__ = "rubric_annotations"
 
@@ -585,8 +562,8 @@ class RubricAnnotation(Base):
     )
 
     # Relationships
-    answer = relationship("Answer", back_populates="rubric_annotations")
-    rubric = relationship("TargetRubric", back_populates="rubric_annotations")
+    answer = relationship("Answer", back_populates="annotations")
+    rubric = relationship("TargetRubric", back_populates="annotations")
 
     def __repr__(self):
-        return f"<RubricAnnotation(id={self.id}, answer_id={self.answer_id}, rubric_id={self.rubric_id})>"
+        return f"<Annotation(id={self.id}, answer_id={self.answer_id}, rubric_id={self.rubric_id})>"

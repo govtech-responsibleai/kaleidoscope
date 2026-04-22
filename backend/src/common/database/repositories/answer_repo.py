@@ -62,7 +62,7 @@ class AnswerRepository:
         if eager_load:
             query = query.options(
                 joinedload(Answer.question),
-                joinedload(Answer.annotation)
+                joinedload(Answer.annotations),
             )
         return query.order_by(Answer.id).offset(skip).limit(limit).all()
 
@@ -158,7 +158,7 @@ class AnswerRepository:
             db.query(Answer)
             .options(
                 joinedload(Answer.scores),
-                joinedload(Answer.annotation),
+                joinedload(Answer.annotations),
                 joinedload(Answer.question)
             )
             .filter(Answer.snapshot_id == snapshot_id)

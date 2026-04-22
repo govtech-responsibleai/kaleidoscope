@@ -248,6 +248,17 @@ def run_manual_migrations(engine: Engine) -> None:
             END IF;
         END $$;
         """,
+        """
+        DO $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name = 'answer_label_overrides' AND column_name = 'edited_label'
+            ) THEN
+                ALTER TABLE answer_label_overrides DROP COLUMN IF EXISTS edited_label;
+            END IF;
+        END $$;
+        """,
     ]
     with engine.connect() as conn:
         for sql in migrations:

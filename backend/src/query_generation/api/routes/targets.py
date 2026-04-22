@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from src.common.database.connection import get_db
 from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
-from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse, TestConnectionRequest, TestConnectionResponse, ProbeRequest, ProbeResponse
+from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TargetRubricCreate, TargetRubricUpdate, TargetRubricResponse, PremadeRubricTemplateResponse, TestConnectionRequest, TestConnectionResponse, ProbeRequest, ProbeResponse, RubricSpec
 from src.common.connectors.base import TargetHttpError
 from src.common.connectors.http_auth import prepare_http_config_for_storage, persist_http_auth_secret
 from src.common.database.models import StatusEnum
@@ -27,8 +27,15 @@ from src.common.services.system_rubrics import (
     RUBRIC_GROUP_CUSTOM,
     RUBRIC_GROUP_FIXED,
     RUBRIC_GROUP_PRESET,
-    ensure_system_rubrics,
+    build_preset_definition,
     suffix_reserved_name,
+    ensure_system_rubrics,
+)
+from src.common.services.rubric_specs import (
+    RubricSpecResolutionError,
+    resolve_target_rubric_specs,
+    rubric_spec_map,
+    validate_target_rubric_spec,
 )
 
 logger = logging.getLogger(__name__)
@@ -277,6 +284,56 @@ def get_target(
             detail=f"Target {target_id} not found"
         )
     return _target_to_response(target)
+
+
+@router.get("/{target_id}/rubric-specs", response_model=dict[int, RubricSpec])
+def get_target_rubric_specs(
+    target_id: int,
+    db: Session = Depends(get_db),
+):
+    """Return the backend-owned baseline rubric spec set for a target."""
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target {target_id} not found",
+        )
+
+    try:
+        specs = resolve_target_rubric_specs(db, target_id)
+    except RubricSpecResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Each target rubric must have exactly one baseline judge.",
+                "errors": exc.errors,
+            },
+        ) from exc
+    return rubric_spec_map(specs)
+
+
+@router.get("/{target_id}/rubric-specs/{rubric_id}/judges/{judge_id}", response_model=RubricSpec)
+def get_target_rubric_spec(
+    target_id: int,
+    rubric_id: int,
+    judge_id: int,
+    db: Session = Depends(get_db),
+):
+    """Validate and return one rubric/judge spec for a target."""
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Target {target_id} not found",
+        )
+
+    spec = validate_target_rubric_spec(db, target_id, rubric_id, judge_id)
+    if spec is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Judge {judge_id} is not valid for rubric {rubric_id} on target {target_id}",
+        )
+    return spec
 
 
 @router.put("/{target_id}", response_model=TargetResponse)
@@ -584,6 +641,7 @@ def export_questions(
 @router.get("/snapshots/{snapshot_id}/export")
 def export_snapshot(
     snapshot_id: int,
+    rubric_id: int | None = Query(None),
     format: ExportFormat = Query(ExportFormat.CSV),
     include_evaluators: bool = Query(False),
     db: Session = Depends(get_db)
@@ -606,8 +664,9 @@ def export_snapshot(
         export_service = ExportService(db)
         results_data, evaluator_payload = export_service.export_snapshot(
             snapshot_id,
-            format,
-            include_evaluators=include_evaluators
+            format=format,
+            include_evaluators=include_evaluators,
+            rubric_id=rubric_id,
         )
 
         if format == ExportFormat.JSON:
@@ -693,45 +752,64 @@ def create_rubric(
     if not target:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Target {target_id} not found")
 
-    if rubric.group != RUBRIC_GROUP_CUSTOM:
+    existing_rubrics = TargetRubricRepository.get_by_target(db, target_id)
+    existing_names = [r.name for r in existing_rubrics]
+
+    if rubric.group == RUBRIC_GROUP_PRESET:
+        definition = build_preset_definition(rubric.name.strip())
+        if not definition:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unknown preset rubric template",
+            )
+        if any(
+            existing_rubric.group == RUBRIC_GROUP_PRESET
+            and existing_rubric.name.strip().lower() == definition["name"].strip().lower()
+            for existing_rubric in existing_rubrics
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Preset rubric already added to this target",
+            )
+        data = definition
+    elif rubric.group == RUBRIC_GROUP_CUSTOM:
+        # Custom rubric path — validate completeness
+        if not rubric.name or not rubric.name.strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric name is required")
+        if not rubric.criteria or not rubric.criteria.strip():
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric criteria is required")
+        non_empty_options = [o for o in rubric.options if o.option.strip()]
+        if len(non_empty_options) < 2:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least 2 non-empty options are required")
+        if not rubric.best_option:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option is required")
+        non_empty_names = [o.option.strip() for o in non_empty_options]
+        if len(set(n.lower() for n in non_empty_names)) != len(non_empty_names):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Option names must be unique")
+        if rubric.best_option.strip() not in non_empty_names:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
+
+        data = rubric.model_dump()
+        data["group"] = RUBRIC_GROUP_CUSTOM
+        data["options"] = [o.model_dump() for o in rubric.options if o.option.strip()]
+        data["name"] = suffix_reserved_name(rubric.name.strip(), existing_names)
+
+        # Generate judge prompt via LLM augmenter, fall back to template if it fails
+        from src.common.services.rubric_augmenter import generate_judge_prompt, build_fallback_judge_prompt
+        options_dicts = [o.model_dump() for o in rubric.options if o.option.strip()]
+        try:
+            data["judge_prompt"] = generate_judge_prompt(
+                data["name"], rubric.criteria, options_dicts, rubric.best_option
+            )
+        except Exception as e:
+            logger.warning(f"Augmenter failed for rubric '{rubric.name}', using fallback: {e}")
+            data["judge_prompt"] = build_fallback_judge_prompt(
+                data["name"], rubric.criteria, options_dicts, rubric.best_option
+            )
+    else:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Only custom rubrics can be created through this endpoint",
-        )
-
-    # Custom rubric path — validate completeness
-    if not rubric.name or not rubric.name.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric name is required")
-    if not rubric.criteria or not rubric.criteria.strip():
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Rubric criteria is required")
-    non_empty_options = [o for o in rubric.options if o.option.strip()]
-    if len(non_empty_options) < 2:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="At least 2 non-empty options are required")
-    if not rubric.best_option:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option is required")
-    non_empty_names = [o.option.strip() for o in non_empty_options]
-    if len(set(n.lower() for n in non_empty_names)) != len(non_empty_names):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Option names must be unique")
-    if rubric.best_option.strip() not in non_empty_names:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="best_option must match one of the option names")
-
-    data = rubric.model_dump()
-    data["group"] = RUBRIC_GROUP_CUSTOM
-    data["options"] = [o.model_dump() for o in rubric.options if o.option.strip()]
-    existing_names = [r.name for r in TargetRubricRepository.get_by_target(db, target_id)]
-    data["name"] = suffix_reserved_name(rubric.name.strip(), existing_names)
-
-    # Generate judge prompt via LLM augmenter, fall back to template if it fails
-    from src.common.services.rubric_augmenter import generate_judge_prompt, build_fallback_judge_prompt
-    options_dicts = [o.model_dump() for o in rubric.options if o.option.strip()]
-    try:
-        data["judge_prompt"] = generate_judge_prompt(
-            data["name"], rubric.criteria, options_dicts, rubric.best_option
-        )
-    except Exception as e:
-        logger.warning(f"Augmenter failed for rubric '{rubric.name}', using fallback: {e}")
-        data["judge_prompt"] = build_fallback_judge_prompt(
-            data["name"], rubric.criteria, options_dicts, rubric.best_option
         )
 
     created = TargetRubricRepository.create(db, target_id, data)
@@ -821,8 +899,8 @@ def delete_rubric(
     existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
     if not existing_rubric or existing_rubric.target_id != target_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
-    if existing_rubric.group != RUBRIC_GROUP_CUSTOM:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fixed and preset rubrics cannot be deleted")
+    if existing_rubric.group == RUBRIC_GROUP_FIXED:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fixed rubrics cannot be deleted")
     success = TargetRubricRepository.delete(db, rubric_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")

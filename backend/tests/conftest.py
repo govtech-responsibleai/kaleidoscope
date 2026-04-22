@@ -3,6 +3,7 @@ Pytest fixtures for testing.
 """
 
 import pytest
+from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
@@ -10,8 +11,8 @@ from fastapi.testclient import TestClient
 from src.common.database.connection import Base
 from src.common.database.models import (
     Target, Job, Persona, Question, Answer, AnswerClaim, AnswerScore, AnswerClaimScore,
-    Annotation, QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
-    TargetRubric, RubricAnnotation,
+    QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
+    TargetRubric, Annotation,
     StatusEnum, JobTypeEnum, JobStatusEnum, QAJobTypeEnum, QAJobStageEnum,
     QuestionTypeEnum, QuestionScopeEnum
 )
@@ -27,6 +28,14 @@ TEST_PASSWORD_HASHES = {
     "password_b": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
     "adminpass": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
 }
+
+
+@dataclass
+class SampleAnnotationRecord:
+    answer: Answer
+    answer_id: int
+    label: bool
+    notes: str | None
 
 
 def get_test_password_hash(password: str) -> str:
@@ -351,19 +360,10 @@ def sample_answer(test_db, sample_question, sample_snapshot):
 @pytest.fixture
 def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
     """Create a sample QA job for testing."""
+    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+
     # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
-    accuracy_rubric = TargetRubric(
-        target_id=sample_snapshot.target_id,
-        name="Accuracy",
-        criteria="Are the claims accurate?",
-        options=[{"option": "Accurate"}, {"option": "Inaccurate"}],
-        group="fixed",
-        scoring_mode="claim_based",
-        position=0,
-    )
-    test_db.add(accuracy_rubric)
-    test_db.commit()
-    test_db.refresh(accuracy_rubric)
+    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_snapshot.target_id)
 
     # Create a judge bound to the accuracy rubric
     judge = Judge(
@@ -397,6 +397,8 @@ def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
 @pytest.fixture
 def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas):
     """Create a QA job without an existing answer for testing API errors."""
+    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+
     # Create snapshot
     snapshot = Snapshot(
         target_id=sample_target.id,
@@ -422,18 +424,7 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
     test_db.refresh(question)
 
     # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
-    accuracy_rubric = TargetRubric(
-        target_id=sample_target.id,
-        name="Accuracy",
-        criteria="Are the claims accurate?",
-        options=[{"option": "Accurate"}, {"option": "Inaccurate"}],
-        group="fixed",
-        scoring_mode="claim_based",
-        position=0,
-    )
-    test_db.add(accuracy_rubric)
-    test_db.commit()
-    test_db.refresh(accuracy_rubric)
+    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
 
     # Create judge bound to the accuracy rubric
     judge = Judge(
@@ -474,18 +465,9 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
 @pytest.fixture
 def sample_judge_claim_based(test_db, sample_target):
     """Create a claim-based judge (with accuracy rubric) for testing."""
-    accuracy_rubric = TargetRubric(
-        target_id=sample_target.id,
-        name="Accuracy",
-        criteria="Are the claims accurate?",
-        options=[{"option": "Accurate"}, {"option": "Inaccurate"}],
-        group="fixed",
-        scoring_mode="claim_based",
-        position=0,
-    )
-    test_db.add(accuracy_rubric)
-    test_db.commit()
-    test_db.refresh(accuracy_rubric)
+    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+
+    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
 
     judge = Judge(
         name="Claim-Based Judge",
@@ -586,6 +568,8 @@ def sample_kb_documents(test_db, sample_target):
 @pytest.fixture
 def sample_annotations(test_db, sample_answer, sample_target, sample_job, sample_personas):
     """Create sample annotations for testing."""
+    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+
     # Create additional questions and snapshots to avoid UNIQUE constraint
     additional_answers = []
     for i in range(9):
@@ -616,23 +600,31 @@ def sample_annotations(test_db, sample_answer, sample_target, sample_job, sample
     test_db.commit()
 
     # Create annotations (7 accurate, 3 inaccurate)
-    annotations = []
+    annotations: list[SampleAnnotationRecord] = []
     all_answers = [sample_answer] + additional_answers
     labels = [True, True, True, True, True, True, True, False, False, False]
+    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
 
     for answer, label in zip(all_answers, labels):
         answer.is_selected_for_annotation = True
-        annotation = Annotation(
-            answer_id=answer.id,
-            label=label,
-            notes="Test notes"
+        test_db.add(
+            Annotation(
+                answer_id=answer.id,
+                rubric_id=accuracy_rubric.id,
+                option_value="Accurate" if label else "Inaccurate",
+                notes="Test notes",
+            )
         )
-        test_db.add(annotation)
-        annotations.append(annotation)
+        annotations.append(
+            SampleAnnotationRecord(
+                answer=answer,
+                answer_id=answer.id,
+                label=label,
+                notes="Test notes",
+            )
+        )
 
     test_db.commit()
-    for annotation in annotations:
-        test_db.refresh(annotation)
     return annotations
 
 

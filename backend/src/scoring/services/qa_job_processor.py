@@ -41,12 +41,7 @@ def _job_needs_scoring(
     if not job.answer_id:
         return True
 
-    judge = JudgeRepository.get_by_id(db, job.judge_id) if job.judge_id else None
-    accuracy_rubric_id = judge.rubric_id if judge else None
-    if AnswerScoreRepository.get_by_answer_judge_rubric(db, job.answer_id, job.judge_id, accuracy_rubric_id) is None:
-        return True
-
-    for spec in rubric_specs or []:
+    for spec in (rubric_specs or job.rubric_specs or []):
         if AnswerScoreRepository.get_by_answer_judge_rubric(
             db, job.answer_id, spec["judge_id"], spec["rubric_id"]
         ) is None:
@@ -55,17 +50,55 @@ def _job_needs_scoring(
     return False
 
 
-def _merge_rubric_specs(
-    existing_specs: Optional[List[dict]],
-    new_specs: Optional[List[dict]],
+def _normalize_rubric_specs(
+    rubric_specs: Optional[List[dict]],
 ) -> Optional[List[dict]]:
-    """Merge rubric specs by rubric_id, preserving existing metrics unless explicitly replaced."""
-    merged: dict[int, dict] = {}
-    for spec in existing_specs or []:
-        merged[spec["rubric_id"]] = spec
-    for spec in new_specs or []:
-        merged[spec["rubric_id"]] = spec
-    return list(merged.values()) or None
+    """Deduplicate rubric specs by rubric_id while preserving the latest explicit selection."""
+    normalized: dict[int, dict] = {}
+    for spec in rubric_specs or []:
+        normalized[spec["rubric_id"]] = {
+            "rubric_id": spec["rubric_id"],
+            "judge_id": spec["judge_id"],
+        }
+    return list(normalized.values()) or None
+
+
+def _primary_judge_id(rubric_specs: Optional[List[dict]]) -> Optional[int]:
+    if not rubric_specs:
+        return None
+    return rubric_specs[0]["judge_id"]
+
+
+def _verify_expected_scores(
+    db: Session,
+    job_id: int,
+    rubric_specs: Optional[List[dict]] = None,
+) -> None:
+    job = QAJobRepository.get_by_id(db, job_id)
+    if not job:
+        raise RuntimeError(f"QAJob {job_id} not found")
+    if not job.answer_id:
+        raise RuntimeError(f"QAJob {job_id} has no answer to score")
+
+    expected_specs = rubric_specs or job.rubric_specs or []
+    missing_specs: list[str] = []
+    for spec in expected_specs:
+        score = AnswerScoreRepository.get_by_answer_judge_rubric(
+            db,
+            job.answer_id,
+            spec["judge_id"],
+            spec["rubric_id"],
+        )
+        if score is None:
+            missing_specs.append(
+                f"rubric {spec['rubric_id']} / judge {spec['judge_id']}"
+            )
+
+    if missing_specs:
+        raise RuntimeError(
+            "Missing persisted scores for scheduled rubric specs: "
+            + ", ".join(missing_specs)
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -327,7 +360,6 @@ async def run_qajobs_batch(
 def create_all_jobs(
     db: Session,
     snapshot_id: int,
-    judge_id: int,
     question_ids: List[int],
     rubric_specs: Optional[List[dict]] = None,
     job_ids: Optional[List[int]] = None,
@@ -338,18 +370,20 @@ def create_all_jobs(
     Returns:
         List of QAJob records (one per question)
     """
+    normalized_specs = _normalize_rubric_specs(rubric_specs)
+    primary_judge_id = _primary_judge_id(normalized_specs)
+
     if job_ids:
         jobs = []
         for job_id in job_ids:
             job = QAJobRepository.get_by_id(db, job_id)
             if job:
-                if job.judge_id != judge_id:
-                    job.judge_id = judge_id
+                if primary_judge_id is not None and job.judge_id != primary_judge_id:
+                    job.judge_id = primary_judge_id
                     db.commit()
                     db.refresh(job)
-                merged_specs = _merge_rubric_specs(job.rubric_specs, rubric_specs)
-                if rubric_specs is not None and job.rubric_specs != merged_specs:
-                    job.rubric_specs = merged_specs
+                if normalized_specs is not None and job.rubric_specs != normalized_specs:
+                    job.rubric_specs = normalized_specs
                     db.commit()
                     db.refresh(job)
                 next_stage = QAJobStageEnum.scoring_answers if job.answer_id else QAJobStageEnum.starting
@@ -370,19 +404,17 @@ def create_all_jobs(
         )
 
         if existing_job:
-            if existing_job.judge_id != judge_id:
-                existing_job.judge_id = judge_id
+            if primary_judge_id is not None and existing_job.judge_id != primary_judge_id:
+                existing_job.judge_id = primary_judge_id
                 db.commit()
                 db.refresh(existing_job)
-            # Update rubric_specs if provided (in case rubrics changed)
-            merged_specs = _merge_rubric_specs(existing_job.rubric_specs, rubric_specs)
-            if rubric_specs is not None and existing_job.rubric_specs != merged_specs:
-                existing_job.rubric_specs = merged_specs
+            if normalized_specs is not None and existing_job.rubric_specs != normalized_specs:
+                existing_job.rubric_specs = normalized_specs
                 db.commit()
                 db.refresh(existing_job)
             if existing_job.status in (JobStatusEnum.paused, JobStatusEnum.failed) or (
                 existing_job.status == JobStatusEnum.completed
-                and _job_needs_scoring(db, existing_job, merged_specs)
+                and _job_needs_scoring(db, existing_job, normalized_specs)
             ):
                 next_stage = QAJobStageEnum.scoring_answers if existing_job.answer_id else QAJobStageEnum.starting
                 QAJobRepository.update_status(
@@ -400,11 +432,11 @@ def create_all_jobs(
             job_data = {
                 "snapshot_id": snapshot_id,
                 "question_id": qn_id,
-                "judge_id": judge_id,
+                "judge_id": primary_judge_id,
                 "type": QAJobTypeEnum.claim_scoring_full,
                 "status": JobStatusEnum.running,
                 "stage": QAJobStageEnum.starting,
-                "rubric_specs": rubric_specs,
+                "rubric_specs": normalized_specs,
             }
             if answer:
                 job_data["answer_id"] = answer.id
@@ -475,66 +507,77 @@ async def _score_response_level(
         db.close()
 
 
-async def _score_claim_level(
+async def _score_rubric_spec(
     job_id: int,
+    judge_id: int,
+    rubric_id: int,
 ) -> dict:
-    """
-    Run accuracy scoring (claim processing + claim/response-level scoring)
-    in its own DB session.
-
-    Returns cost summary dict.
-    """
+    """Run one scheduled rubric spec, including claim extraction when required."""
     db = SessionLocal()
     try:
         job = QAJobRepository.get_by_id(db, job_id)
         if not job:
             raise RuntimeError(f"QAJob {job_id} not found")
+        if not job.answer_id:
+            raise RuntimeError(f"QAJob {job_id} has no answer after generation")
 
-        existing_score = (
-            AnswerScoreRepository.get_by_answer_judge_rubric(
-                db, job.answer_id, job.judge_id, judge.rubric_id if (judge := JudgeRepository.get_by_id(db, job.judge_id)) else None
-            )
-            if job.answer_id and job.judge_id
-            else None
+        existing_score = AnswerScoreRepository.get_by_answer_judge_rubric(
+            db,
+            job.answer_id,
+            judge_id,
+            rubric_id,
         )
         if existing_score is not None:
-            logger.info(f"QAJob {job_id}: accuracy score already exists, skipping")
+            logger.info(f"QAJob {job_id}: rubric {rubric_id} score already exists, skipping")
             return {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0}
 
-        judge = JudgeRepository.get_by_id(db, job.judge_id) if job.judge_id else None
-        if judge is None:
-            raise RuntimeError(f"QAJob {job_id} has no judge configured")
+        rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+        if rubric is None:
+            raise RuntimeError(f"Rubric {rubric_id} not found")
 
-        existing_claims = AnswerClaimRepository.get_by_answer(db, job.answer_id) if job.answer_id else []
-        judge_rubric = TargetRubricRepository.get_by_id(db, judge.rubric_id) if judge.rubric_id else None
-        if judge_rubric and judge_rubric.scoring_mode == "claim_based":
+        existing_claims = AnswerClaimRepository.get_by_answer(db, job.answer_id)
+        if rubric.scoring_mode == "claim_based":
             if _claims_ready(existing_claims):
-                logger.info(f"QAJob {job_id}: {len(existing_claims)} checked claims already exist, skipping extraction")
+                logger.info(f"QAJob {job_id}: checked claims already exist, skipping extraction")
             else:
-                if existing_claims and job.answer_id:
+                if existing_claims:
                     AnswerClaimRepository.delete_by_answer(db, job.answer_id)
                 await extract_and_check_claims(db, job_id, raise_on_error=True)
 
                 refreshed = QAJobRepository.get_by_id(db, job_id)
                 if refreshed and refreshed.status == JobStatusEnum.failed:
-                    raise RuntimeError(refreshed.error_message or "Claim processing failed")
+                    raise RuntimeError(refreshed.error_message or f"Claim processing failed for rubric {rubric_id}")
 
-        judge = AnswerJudge(db, job_id, skip_job_update=True)
+        judge = AnswerJudge(
+            db,
+            job_id,
+            override_judge_id=judge_id,
+            override_rubric_id=rubric_id,
+            skip_job_update=True,
+        )
         await judge.score(raise_on_error=True)
 
         refreshed = QAJobRepository.get_by_id(db, job_id)
         if refreshed and refreshed.status == JobStatusEnum.failed:
-            raise RuntimeError(refreshed.error_message or "Accuracy scoring failed")
+            raise RuntimeError(refreshed.error_message or f"Rubric scoring failed for rubric {rubric_id}")
+
+        persisted = AnswerScoreRepository.get_by_answer_judge_rubric(
+            db,
+            job.answer_id,
+            judge_id,
+            rubric_id,
+        )
+        if persisted is None:
+            raise RuntimeError(f"Rubric {rubric_id} score was not persisted")
+
         return judge.cost_tracker.get_summary()
     finally:
         db.close()
-
 
 async def _run_job_phased(
     job_id: int,
     snapshot_id: int,
     question_id: int,
-    judge_id: int,
     rubric_specs: Optional[List[dict]],
 ) -> None:
     """
@@ -607,10 +650,10 @@ async def _run_job_phased(
         if not fresh or fresh.status != JobStatusEnum.running:
             return
 
-        score_coros = [_score_claim_level(job_id)]
+        score_coros = []
         for spec in (rubric_specs or []):
             score_coros.append(
-                _score_response_level(job_id, spec["judge_id"], spec["rubric_id"])
+                _score_rubric_spec(job_id, spec["judge_id"], spec["rubric_id"])
             )
 
         cost_summaries = await gather_with_concurrency(
@@ -625,6 +668,7 @@ async def _run_job_phased(
             finished = QAJobRepository.get_by_id(db_verify, job_id)
             if finished and finished.status == JobStatusEnum.failed:
                 raise RuntimeError(finished.error_message or f"QAJob {job_id} failed during scoring")
+            _verify_expected_scores(db_verify, job_id, rubric_specs)
         finally:
             db_verify.close()
 
@@ -664,7 +708,6 @@ async def _run_job_phased(
 
 async def run_qajobs_phased(
     snapshot_id: int,
-    judge_id: int,
     question_ids: List[int],
     all_jobs: List[QAJob],
     rubric_specs: Optional[List[dict]] = None,
@@ -675,7 +718,6 @@ async def run_qajobs_phased(
     Args:
         snapshot_id: Snapshot ID
         judge_id: Accuracy judge ID
-        question_ids: List of question IDs to process
         all_jobs: Pre-created job records from create_all_jobs()
         rubric_specs: Optional list of {"rubric_id": int, "judge_id": int} dicts
     """
@@ -688,7 +730,7 @@ async def run_qajobs_phased(
             continue
         coros.append(
             _run_job_phased(
-                job.id, snapshot_id, job.question_id, judge_id,
+                job.id, snapshot_id, job.question_id,
                 job.rubric_specs or rubric_specs,
             )
         )

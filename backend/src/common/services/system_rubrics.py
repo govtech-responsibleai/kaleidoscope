@@ -38,6 +38,10 @@ ACCURACY_OPTIONS = [
 ]
 
 
+class FixedAccuracyRubricInvariantError(ValueError):
+    """Raised when runtime code expects the fixed accuracy rubric to exist but it does not."""
+
+
 def reserved_preset_names() -> set[str]:
     return {template["name"] for template in list_premade_templates()}
 
@@ -172,8 +176,8 @@ def build_preset_definition(name: str) -> dict | None:
     }
 
 
-def ensure_fixed_accuracy_rubric(db: Session, target_id: int) -> TargetRubric:
-    fixed_accuracy = (
+def get_fixed_accuracy_rubric(db: Session, target_id: int) -> TargetRubric | None:
+    return (
         db.query(TargetRubric)
         .filter(
             TargetRubric.target_id == target_id,
@@ -183,6 +187,19 @@ def ensure_fixed_accuracy_rubric(db: Session, target_id: int) -> TargetRubric:
         .order_by(TargetRubric.id.asc())
         .first()
     )
+
+
+def get_fixed_accuracy_rubric_or_raise(db: Session, target_id: int) -> TargetRubric:
+    rubric = get_fixed_accuracy_rubric(db, target_id)
+    if rubric is None:
+        raise FixedAccuracyRubricInvariantError(
+            f"Fixed Accuracy rubric not found for target {target_id}"
+        )
+    return rubric
+
+
+def ensure_fixed_accuracy_rubric(db: Session, target_id: int) -> TargetRubric:
+    fixed_accuracy = get_fixed_accuracy_rubric(db, target_id)
     definition = build_fixed_accuracy_definition()
     if fixed_accuracy:
         changed = False
@@ -205,16 +222,7 @@ def ensure_fixed_accuracy_rubric(db: Session, target_id: int) -> TargetRubric:
         db.commit()
     except IntegrityError:
         db.rollback()
-        existing = (
-            db.query(TargetRubric)
-            .filter(
-                TargetRubric.target_id == target_id,
-                TargetRubric.group == RUBRIC_GROUP_FIXED,
-                TargetRubric.name == FIXED_ACCURACY_NAME,
-            )
-            .order_by(TargetRubric.id.asc())
-            .first()
-        )
+        existing = get_fixed_accuracy_rubric(db, target_id)
         if existing:
             return existing
         raise
@@ -264,27 +272,6 @@ def ensure_system_rubrics(db: Session) -> None:
             .all()
         )
 
-        existing_preset_names = {
-            rubric.name.strip().lower()
-            for rubric in rubrics
-            if rubric.group == RUBRIC_GROUP_PRESET
-        }
-        for template in list_premade_templates():
-            if template["name"].strip().lower() in existing_preset_names:
-                continue
-            definition = build_preset_definition(template["name"])
-            if not definition:
-                continue
-            preset_rubric = TargetRubric(
-                target_id=target.id,
-                position=len(rubrics),
-                **definition,
-            )
-            db.add(preset_rubric)
-            rubrics.append(preset_rubric)
-            existing_preset_names.add(template["name"].strip().lower())
-        db.commit()
-
         # Reorder to keep the fixed rubric first.
         ordered = (
             db.query(TargetRubric)
@@ -298,10 +285,10 @@ def ensure_system_rubrics(db: Session) -> None:
             customs = [rubric for rubric in ordered if rubric.id != fixed.id and rubric.group != RUBRIC_GROUP_PRESET]
             ordered = [fixed, *presets, *customs]
 
-            from src.common.database.models import AnswerLabelOverride, AnswerScore, RubricAnnotation
+            from src.common.database.models import AnswerLabelOverride, AnswerScore, Annotation
 
             changed = False
-            for annotation in db.query(RubricAnnotation).filter(RubricAnnotation.rubric_id == fixed.id).all():
+            for annotation in db.query(Annotation).filter(Annotation.rubric_id == fixed.id).all():
                 canonical = canonicalize_rubric_option_value(fixed, annotation.option_value)
                 if canonical and annotation.option_value != canonical:
                     annotation.option_value = canonical

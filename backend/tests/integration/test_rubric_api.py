@@ -8,8 +8,9 @@ and annotation completeness gating.
 import pytest
 
 from src.common.database.models import (
-    AnswerScore, RubricAnnotation,
+    AnswerScore, Annotation,
 )
+from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
 
 
 @pytest.mark.integration
@@ -233,15 +234,17 @@ class TestRubric:
         sample_answer, sample_rubric,
     ):
         """Accuracy annotation done but no rubric annotation -> is_complete=False."""
-        from src.common.database.models import Annotation
-
         # Mark answer as selected for annotation
         sample_answer.is_selected_for_annotation = True
-        test_db.commit()
-
-        # Add accuracy annotation
-        ann = Annotation(answer_id=sample_answer.id, label=True, notes="ok")
-        test_db.add(ann)
+        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        test_db.add(
+            Annotation(
+                answer_id=sample_answer.id,
+                rubric_id=accuracy_rubric.id,
+                option_value="Accurate",
+                notes="ok",
+            )
+        )
         test_db.commit()
 
         resp = test_client.get(
@@ -256,16 +259,18 @@ class TestRubric:
         sample_answer, sample_rubric,
     ):
         """Accuracy + rubric annotations done -> is_complete=True."""
-        from src.common.database.models import Annotation
-
         sample_answer.is_selected_for_annotation = True
-        test_db.commit()
-
-        # Accuracy annotation
-        ann = Annotation(answer_id=sample_answer.id, label=True, notes="ok")
-        test_db.add(ann)
+        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        test_db.add(
+            Annotation(
+                answer_id=sample_answer.id,
+                rubric_id=accuracy_rubric.id,
+                option_value="Accurate",
+                notes="ok",
+            )
+        )
         # Rubric annotation
-        rubric_ann = RubricAnnotation(
+        rubric_ann = Annotation(
             answer_id=sample_answer.id,
             rubric_id=sample_rubric.id,
             option_value="Professional",
@@ -285,16 +290,18 @@ class TestRubric:
         sample_answer, sample_rubric, sample_rubric_second,
     ):
         """2 rubrics, only 1 annotated -> is_complete=False."""
-        from src.common.database.models import Annotation
-
         sample_answer.is_selected_for_annotation = True
-        test_db.commit()
-
-        # Accuracy annotation
-        ann = Annotation(answer_id=sample_answer.id, label=True, notes="ok")
-        test_db.add(ann)
+        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        test_db.add(
+            Annotation(
+                answer_id=sample_answer.id,
+                rubric_id=accuracy_rubric.id,
+                option_value="Accurate",
+                notes="ok",
+            )
+        )
         # Only annotate first rubric, skip second
-        rubric_ann = RubricAnnotation(
+        rubric_ann = Annotation(
             answer_id=sample_answer.id,
             rubric_id=sample_rubric.id,
             option_value="Professional",

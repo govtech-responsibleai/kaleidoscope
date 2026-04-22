@@ -159,7 +159,6 @@ class QuestionRepository:
         db: Session,
         target_id: int,
         snapshot_id: int,
-        judge_id: int,
         skip: int = 0,
         limit: int = 100
     ) -> List[Question]:
@@ -170,7 +169,6 @@ class QuestionRepository:
             db: Database session
             target_id: Target ID to filter questions
             snapshot_id: Snapshot ID to check for answers
-            judge_id: Legacy parameter kept for API compatibility
             skip: Number of records to skip for pagination
             limit: Maximum number of records to return
 

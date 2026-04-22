@@ -9,7 +9,18 @@ import pytest
 class TestMetricsAPI:
     """Integration tests for metrics API."""
 
-    def test_scoring_pending_counts_are_returned_in_one_response(
+    def test_results_route_returns_invariant_error_when_fixed_accuracy_rubric_is_missing(
+        self,
+        test_client,
+        sample_snapshot,
+    ):
+        """Runtime fixed-accuracy routes should fail as server invariants instead of auto-healing."""
+        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/results")
+
+        assert response.status_code == 500
+        assert "Fixed Accuracy rubric not found" in response.json()["detail"]
+
+    def test_scoring_pending_counts_are_returned_for_a_requested_rubric(
         self,
         test_client,
         test_db,
@@ -21,7 +32,7 @@ class TestMetricsAPI:
         sample_answer,
         sample_rubric,
     ):
-        """The scoring page should be able to load pending counts without per-judge fan-out."""
+        """The scoring page should be able to load one rubric section's pending counts."""
         from src.common.database.models import Judge, Question, QuestionTypeEnum, QuestionScopeEnum, StatusEnum
         from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
 
@@ -64,13 +75,16 @@ class TestMetricsAPI:
         test_db.refresh(accuracy_judge)
         test_db.refresh(rubric_judge)
 
-        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/scoring-pending-counts")
+        response = test_client.get(
+            f"/api/v1/snapshots/{sample_snapshot.id}/rubrics/{sample_rubric.id}/scoring-pending-counts"
+        )
 
         assert response.status_code == 200
         data = response.json()
         assert data["unanswered_question_count"] == 1
-        assert data["accuracy_pending_counts"][str(accuracy_judge.id)] == 1
-        assert data["rubric_pending_counts"][f"{rubric_judge.id}:{sample_rubric.id}"] == 1
+        assert data["rubric_id"] == sample_rubric.id
+        assert data["pending_counts"][str(rubric_judge.id)] == 1
+        assert str(accuracy_judge.id) not in data["pending_counts"]
 
     def test_scoring_contracts_return_backend_owned_accuracy_and_rubric_metrics(
         self,
@@ -191,7 +205,7 @@ class TestMetricsAPI:
         sample_rubric,
     ):
         """Saved manual label overrides should persist in rows and update metric aggregates."""
-        from src.common.database.models import AnswerScore, Judge, RubricAnnotation
+        from src.common.database.models import AnswerScore, Judge, Annotation
         from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
 
         rubric_judge = Judge(
@@ -218,7 +232,7 @@ class TestMetricsAPI:
                 overall_label="Casual" if annotation.answer_id in {overridden_answer_id, negative_control_answer_id} else "Professional",
                 explanation="Tone score",
             ))
-            test_db.add(RubricAnnotation(
+            test_db.add(Annotation(
                 answer_id=annotation.answer_id,
                 rubric_id=sample_rubric.id,
                 option_value="Casual" if annotation.answer_id == negative_control_answer_id else "Professional",
@@ -265,7 +279,125 @@ class TestMetricsAPI:
         assert rubric_metric["accurate_count"] == 9
         assert rubric_metric["inaccurate_count"] == 1
         assert rubric_metric["edited_count"] == 1
-        assert rubric_metric["aggregated_accuracy"] == 0.9
+        assert rubric_metric["aggregated_score"] == 0.9
+
+    def test_snapshot_metrics_return_rubric_oriented_series_for_fixed_and_custom_rubrics(
+        self,
+        test_client,
+        test_db,
+        sample_target,
+        sample_snapshot,
+        sample_annotations,
+        sample_answer_scores,
+        sample_rubric,
+    ):
+        """The unified snapshot-metrics route should return one entry per rubric identity."""
+        from src.common.database.models import AnswerScore, Judge, Annotation
+
+        rubric_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Tone prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(rubric_judge)
+        test_db.commit()
+        test_db.refresh(rubric_judge)
+
+        negative_answer_id = sample_annotations[1].answer_id
+        for annotation in sample_annotations:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_rubric.id,
+                judge_id=rubric_judge.id,
+                overall_label="Casual" if annotation.answer_id == negative_answer_id else "Professional",
+                explanation="Tone score",
+            ))
+            test_db.add(Annotation(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_rubric.id,
+                option_value="Casual" if annotation.answer_id == negative_answer_id else "Professional",
+            ))
+        test_db.commit()
+
+        response = test_client.get(f"/api/v1/targets/{sample_target.id}/snapshot-metrics")
+
+        assert response.status_code == 200
+        data = response.json()
+        returned_rubric_ids = {entry["rubric_id"] for entry in data}
+        assert sample_rubric.id in returned_rubric_ids
+        accuracy_entry = next(entry for entry in data if entry["rubric_name"] == "Accuracy")
+        rubric_entry = next(entry for entry in data if entry["rubric_id"] == sample_rubric.id)
+        assert accuracy_entry["snapshot_id"] == sample_snapshot.id
+        assert rubric_entry["aggregated_score"] == 0.9
+
+    def test_rubric_scoped_judge_accuracy_and_missing_score_lookup_use_rubric_identity(
+        self,
+        test_client,
+        test_db,
+        sample_target,
+        sample_snapshot,
+        sample_annotations,
+        sample_rubric,
+    ):
+        """Judge accuracy and missing-score queries should be scoped by the requested rubric_id."""
+        from src.common.database.models import AnswerScore, Judge, Question, QuestionScopeEnum, QuestionTypeEnum, StatusEnum
+
+        rubric_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Tone prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(rubric_judge)
+        test_db.commit()
+        test_db.refresh(rubric_judge)
+
+        for annotation in sample_annotations[:8]:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_rubric.id,
+                judge_id=rubric_judge.id,
+                overall_label="Professional",
+                explanation="Tone score",
+            ))
+
+        unanswered_question = Question(
+            job_id=sample_annotations[0].answer.question.job_id,
+            persona_id=sample_annotations[0].answer.question.persona_id,
+            target_id=sample_target.id,
+            text="Which responses still need rubric scoring?",
+            type=QuestionTypeEnum.typical,
+            scope=QuestionScopeEnum.in_kb,
+            status=StatusEnum.approved,
+        )
+        test_db.add(unanswered_question)
+        test_db.commit()
+
+        accuracy_response = test_client.get(
+            f"/api/v1/snapshots/{sample_snapshot.id}/judges/{rubric_judge.id}/rubrics/{sample_rubric.id}/accuracy"
+        )
+        assert accuracy_response.status_code == 200
+        assert accuracy_response.json()["accuracy"] == 1.0
+        assert accuracy_response.json()["total_answers"] == 8
+
+        missing_scores_response = test_client.get(
+            f"/api/v1/snapshots/{sample_snapshot.id}/questions/approved/without-scores",
+            params={"judge_id": rubric_judge.id, "rubric_id": sample_rubric.id},
+        )
+        assert missing_scores_response.status_code == 200
+        missing_question_ids = {question["id"] for question in missing_scores_response.json()}
+        assert unanswered_question.id not in missing_question_ids
+        expected_missing_ids = {annotation.answer.question_id for annotation in sample_annotations[8:]}
+        assert expected_missing_ids <= missing_question_ids
 
     def test_scoring_contracts_do_not_treat_rubric_annotations_as_scoring_overrides(
         self,
@@ -277,7 +409,7 @@ class TestMetricsAPI:
         sample_rubric,
     ):
         """Rubric annotations stay as judge-evaluation ground truth and do not replace the scoring aggregate."""
-        from src.common.database.models import AnswerScore, Judge, RubricAnnotation
+        from src.common.database.models import AnswerScore, Judge, Annotation
 
         rubric_judge = Judge(
             target_id=sample_target.id,
@@ -303,7 +435,7 @@ class TestMetricsAPI:
                 overall_label="Casual" if annotation.answer_id in {overridden_answer_id, negative_control_answer_id} else "Professional",
                 explanation="Tone score",
             ))
-            test_db.add(RubricAnnotation(
+            test_db.add(Annotation(
                 answer_id=annotation.answer_id,
                 rubric_id=sample_rubric.id,
                 option_value="Casual" if annotation.answer_id == negative_control_answer_id else "Professional",
@@ -325,7 +457,7 @@ class TestMetricsAPI:
         assert rubric_metric["accurate_count"] == 8
         assert rubric_metric["inaccurate_count"] == 2
         assert rubric_metric["edited_count"] == 0
-        assert rubric_metric["aggregated_accuracy"] == 0.8
+        assert rubric_metric["aggregated_score"] == 0.8
 
     def test_qa_job_metric_status_returns_no_judge_configured_for_rubric(
         self,

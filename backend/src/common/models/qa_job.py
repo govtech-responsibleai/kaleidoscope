@@ -95,17 +95,19 @@ class RubricQAJobStart(BaseModel):
 
 
 class RubricSpec(BaseModel):
-    """Specifies a rubric and its judge for the unified start endpoint."""
-    rubric_id: int = Field(..., description="Custom rubric ID")
+    """Specifies a rubric and its judge for a QA job run."""
+    rubric_id: int = Field(..., description="Target rubric ID")
     judge_id: int = Field(..., description="Judge ID for this rubric")
 
 
 class UnifiedQAJobStart(BaseModel):
-    """Request model for starting all QA jobs (accuracy + rubric) in one call."""
+    """Request model for starting unified rubric-scoped QA jobs."""
     snapshot_id: int = Field(..., description="Snapshot ID")
-    judge_id: int = Field(..., description="Accuracy judge ID")
     question_ids: list[int] = Field(..., description="List of question IDs to process")
-    rubric_specs: Optional[list[RubricSpec]] = Field(None, description="Custom rubrics with their judges")
+    rubric_specs: Optional[list[RubricSpec]] = Field(
+        None,
+        description="Optional explicit rubric specs. If omitted, backend resolves the target baseline spec set.",
+    )
     job_ids: Optional[list[int]] = Field(None, description="List of QA job IDs to resume")
 
 

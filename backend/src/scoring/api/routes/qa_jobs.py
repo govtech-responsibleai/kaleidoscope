@@ -1,20 +1,18 @@
 """API routes for QA Job management and execution."""
 
 import asyncio
-import logging
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
-from src.common.database.connection import get_db, SessionLocal
+from src.common.database.connection import get_db
 from src.common.database.models import JobStatusEnum
 from src.common.database.repositories import (
-    QAJobRepository, SnapshotRepository, JudgeRepository, TargetRubricRepository, AnswerRepository, QuestionRepository
+    QAJobRepository, SnapshotRepository, JudgeRepository, TargetRubricRepository, QuestionRepository
 )
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.models import (
-    QAJobStart,
     QAJobPauseRequest,
     QAJobResponse,
     QAJobDetailResponse,
@@ -24,10 +22,12 @@ from src.common.models import (
     UnifiedQAJobStart,
 )
 from src.common.models.answer_score import AnswerScoreResponse
-from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+from src.common.services.rubric_specs import (
+    RubricSpecResolutionError,
+    resolve_target_rubric_specs,
+    validate_target_rubric_spec,
+)
 from src.scoring.services.qa_job_processor import (
-    get_or_create_qajobs_batch,
-    run_qajobs_batch,
     pause_qajobs_batch,
     create_all_jobs,
     run_qajobs_phased,
@@ -50,7 +50,7 @@ def _build_verdict_status(
     score_to_explanation,
     no_judge_msg: str = "No judge configured for this metric.",
 ) -> QARubricStatus:
-    """Shared state machine for accuracy and rubric verdict resolution."""
+    """Shared state machine for all rubric verdict resolution."""
     if not judge:
         return QARubricStatus(
             rubric_id=rubric_id,
@@ -125,24 +125,6 @@ def _build_verdict_status(
     )
 
 
-def _build_accuracy_metric_status(db: Session, job) -> QARubricStatus:
-    snapshot = SnapshotRepository.get_by_id(db, job.snapshot_id)
-    if not snapshot:
-        raise ValueError(f"Snapshot {job.snapshot_id} not found")
-    accuracy_rubric = ensure_fixed_accuracy_rubric(db, snapshot.target_id)
-    judge = JudgeRepository.get_by_id(db, job.judge_id) if job.judge_id else None
-    return _build_verdict_status(
-        db, job, snapshot, judge,
-        rubric_id=accuracy_rubric.id,
-        rubric_name=accuracy_rubric.name,
-        group=accuracy_rubric.group,
-        score_lookup=lambda aid, jid: AnswerScoreRepository.get_by_answer_judge_rubric(db, aid, jid, accuracy_rubric.id),
-        score_to_value=lambda s: s.overall_label.lower(),
-        score_to_explanation=lambda s: s.explanation,
-        no_judge_msg="No accuracy judge configured for this QA job.",
-    )
-
-
 def _build_rubric_metric_status(
     db: Session,
     job,
@@ -172,77 +154,11 @@ def _build_rubric_metric_status(
 @router.post("/snapshots/{snapshot_id}/qa-jobs/start", response_model=List[QAJobResponse])
 async def start_qa_jobs(
     snapshot_id: int,
-    request: QAJobStart,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db)
-):
-    """
-    Start QA jobs in batch for multiple questions (legacy endpoint).
-    """
-    logging.info(f"Starting QA jobs for snapshot {snapshot_id}")
-
-    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
-    if not snapshot:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Snapshot {snapshot_id} not found"
-        )
-
-    if request.snapshot_id != snapshot_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Snapshot ID in request ({request.snapshot_id}) does not match path parameter ({snapshot_id})"
-        )
-
-    judge = JudgeRepository.get_by_id(db, request.judge_id)
-    if not judge:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Judge {request.judge_id} not found"
-        )
-
-    try:
-        jobs = get_or_create_qajobs_batch(
-            db=db,
-            snapshot_id=snapshot_id,
-            judge_id=request.judge_id,
-            question_ids=request.question_ids,
-            job_ids=request.job_ids
-        )
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create QA job records: {str(e)}"
-        )
-
-    async def runner():
-        def sync_work():
-            db = SessionLocal()
-            try:
-                asyncio.run(run_qajobs_batch(
-                    db=db,
-                    snapshot_id=snapshot_id,
-                    judge_id=request.judge_id,
-                    question_ids=request.question_ids,
-                    job_ids=request.job_ids)
-                )
-            finally:
-                db.close()
-        await run_in_threadpool(sync_work)
-
-    asyncio.create_task(runner())
-
-    return jobs
-
-
-@router.post("/snapshots/{snapshot_id}/qa-jobs/start-all", response_model=List[QAJobResponse])
-async def start_all_qa_jobs(
-    snapshot_id: int,
     request: UnifiedQAJobStart,
     db: Session = Depends(get_db)
 ):
     """
-    Start all QA jobs (accuracy + rubric) in one call.
+    Start all QA jobs for rubrics defined in rubric_specs or resolved from target configuration.
 
     Creates ONE job per question with rubric_specs embedded. Processes in background:
     Phase 1 generates answers, Phase 2+3 scores all rubrics in parallel.
@@ -254,38 +170,55 @@ async def start_all_qa_jobs(
     if request.snapshot_id != snapshot_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Snapshot ID mismatch between path and body")
 
-    judge = JudgeRepository.get_by_id(db, request.judge_id)
-    if not judge:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Judge {request.judge_id} not found")
+    try:
+        if request.rubric_specs is None:
+            rubric_specs_dicts = resolve_target_rubric_specs(db, snapshot.target_id)
+        else:
+            rubric_specs_dicts = []
+            for spec in request.rubric_specs:
+                validated = validate_target_rubric_spec(
+                    db,
+                    snapshot.target_id,
+                    spec.rubric_id,
+                    spec.judge_id,
+                )
+                if validated is None:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Judge {spec.judge_id} is not valid for rubric {spec.rubric_id} on target {snapshot.target_id}",
+                    )
 
-    # Validate each rubric spec
-    rubric_specs_dicts = []
-    for spec in (request.rubric_specs or []):
-        rubric = TargetRubricRepository.get_by_id(db, spec.rubric_id)
-        if not rubric:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {spec.rubric_id} not found")
-        rubric_options = rubric.options if rubric.options else []
-        if len(rubric_options) < 2:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Rubric {spec.rubric_id} must have at least 2 options")
-        if not rubric.best_option:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Rubric {spec.rubric_id} must have a best_option")
-        option_names = [o.option if hasattr(o, "option") else o["option"] for o in rubric_options]
-        if rubric.best_option not in option_names:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Rubric {spec.rubric_id} best_option does not match any option")
+                rubric = TargetRubricRepository.get_by_id(db, spec.rubric_id)
+                if not rubric:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        detail=f"Rubric {spec.rubric_id} not found",
+                    )
+                rubric_options = rubric.options if rubric.options else []
+                if len(rubric_options) < 2:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Rubric {spec.rubric_id} must have at least 2 options")
+                if not rubric.best_option:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Rubric {spec.rubric_id} must have a best_option")
+                option_names = [o.option if hasattr(o, "option") else o["option"] for o in rubric_options]
+                if rubric.best_option not in option_names:
+                    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Rubric {spec.rubric_id} best_option does not match any option")
 
-        rjudge = JudgeRepository.get_by_id(db, spec.judge_id)
-        if not rjudge:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Judge {spec.judge_id} not found")
-
-        rubric_specs_dicts.append({"rubric_id": spec.rubric_id, "judge_id": spec.judge_id})
+                rubric_specs_dicts.append(validated)
+    except RubricSpecResolutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": "Each target rubric must have exactly one baseline judge.",
+                "errors": exc.errors,
+            },
+        ) from exc
 
     try:
         jobs = create_all_jobs(
             db=db,
             snapshot_id=snapshot_id,
-            judge_id=request.judge_id,
             question_ids=request.question_ids,
-            rubric_specs=rubric_specs_dicts or None,
+            rubric_specs=rubric_specs_dicts,
             job_ids=request.job_ids,
         )
     except Exception as e:
@@ -295,10 +228,9 @@ async def start_all_qa_jobs(
         def sync_work():
             asyncio.run(run_qajobs_phased(
                 snapshot_id=snapshot_id,
-                judge_id=request.judge_id,
                 question_ids=request.question_ids,
                 all_jobs=jobs,
-                rubric_specs=rubric_specs_dicts or None,
+                rubric_specs=rubric_specs_dicts,
             ))
         await run_in_threadpool(sync_work)
 
@@ -394,7 +326,7 @@ def get_qa_job(
             detail=f"QA job {job_id} not found"
         )
 
-    rubric_statuses = [_build_accuracy_metric_status(db, job)]
+    rubric_statuses = []
     for spec in (job.rubric_specs or []):
         rubric_statuses.append(
             _build_rubric_metric_status(
