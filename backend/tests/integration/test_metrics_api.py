@@ -642,3 +642,141 @@ class TestMetricsAPI:
         assert metric["judge_name"] == "Scoped Judge A"
         assert metric["score"]["judge_id"] == correct_judge.id
         assert metric["score"]["value"] == sample_rubric_second.best_option
+
+    def test_qa_job_detail_keeps_existing_verdicts_visible_after_full_rubric_reconciliation(
+        self,
+        test_client,
+        test_db,
+        sample_target,
+        sample_qa_job,
+        sample_answer,
+        sample_rubric,
+        sample_rubric_second,
+    ):
+        from src.common.database.models import AnswerScore, Judge
+
+        empathy_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Empathy Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Empathy prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        custom_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric_second.id,
+            name="Custom Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Custom prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(empathy_judge)
+        test_db.add(custom_judge)
+        test_db.commit()
+        test_db.refresh(empathy_judge)
+        test_db.refresh(custom_judge)
+
+        test_db.add_all([
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_qa_job.judge.rubric_id,
+                judge_id=sample_qa_job.judge_id,
+                overall_label="Accurate",
+                explanation="Accuracy verdict",
+            ),
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_rubric.id,
+                judge_id=empathy_judge.id,
+                overall_label=sample_rubric.best_option,
+                explanation="Empathy verdict",
+            ),
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_rubric_second.id,
+                judge_id=custom_judge.id,
+                overall_label=sample_rubric_second.best_option,
+                explanation="Custom verdict",
+            ),
+        ])
+        sample_qa_job.rubric_specs = [
+            {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
+            {"rubric_id": sample_rubric.id, "judge_id": empathy_judge.id},
+            {"rubric_id": sample_rubric_second.id, "judge_id": custom_judge.id},
+        ]
+        test_db.commit()
+
+        response = test_client.get(f"/api/v1/qa-jobs/{sample_qa_job.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        rubric_statuses = {status["rubric_id"]: status for status in data["rubric_statuses"]}
+
+        assert set(rubric_statuses) == {
+            sample_qa_job.judge.rubric_id,
+            sample_rubric.id,
+            sample_rubric_second.id,
+        }
+        assert rubric_statuses[sample_qa_job.judge.rubric_id]["state"] == "success"
+        assert rubric_statuses[sample_rubric.id]["state"] == "success"
+        assert rubric_statuses[sample_rubric_second.id]["state"] == "success"
+
+    def test_qa_job_detail_drops_removed_rubric_from_reconciled_statuses(
+        self,
+        test_client,
+        test_db,
+        sample_target,
+        sample_qa_job,
+        sample_answer,
+        sample_rubric,
+    ):
+        from src.common.database.models import AnswerScore, Judge
+
+        removed_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Removed Rubric Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Removed prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(removed_judge)
+        test_db.commit()
+        test_db.refresh(removed_judge)
+
+        test_db.add_all([
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_qa_job.judge.rubric_id,
+                judge_id=sample_qa_job.judge_id,
+                overall_label="Accurate",
+                explanation="Accuracy verdict",
+            ),
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_rubric.id,
+                judge_id=removed_judge.id,
+                overall_label=sample_rubric.best_option,
+                explanation="Historical removed verdict",
+            ),
+        ])
+        sample_qa_job.rubric_specs = [
+            {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
+        ]
+        test_db.commit()
+
+        response = test_client.get(f"/api/v1/qa-jobs/{sample_qa_job.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        rubric_ids = [status["rubric_id"] for status in data["rubric_statuses"]]
+
+        assert rubric_ids == [sample_qa_job.judge.rubric_id]
+        assert sample_rubric.id not in rubric_ids

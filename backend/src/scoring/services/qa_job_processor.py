@@ -367,6 +367,11 @@ def create_all_jobs(
     """
     Create ONE QA job per question with rubric_specs embedded.
 
+    When explicit rubric_specs are provided, they are treated as the full
+    rubric plan for the affected jobs. Existing jobs are reconciled to that
+    normalized set, and missing-score detection decides whether they need to
+    resume scoring.
+
     Returns:
         List of QAJob records (one per question)
     """
