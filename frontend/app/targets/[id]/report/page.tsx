@@ -105,7 +105,7 @@ export default function TargetReport() {
       setTarget(targetRes.data);
       setStats(statsRes.data);
       setSnapshots(snapshotsRes.data);
-      setSnapshotMetrics(metricsRes.data ?? []);
+      setSnapshotMetrics((metricsRes.data.rubrics ?? []).flatMap((rubricGroup) => rubricGroup.snapshots));
       setRubrics(rubricsRes.data ?? []);
 
       const judgeResponses = await Promise.all(

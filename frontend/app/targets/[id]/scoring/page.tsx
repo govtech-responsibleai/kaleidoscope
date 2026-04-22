@@ -227,7 +227,7 @@ export default function ScoringPage() {
     try {
       const response = await metricsApi.getScoringContracts(snapshotId);
       if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      applyScoringContracts(response.data.metrics ?? []);
+      applyScoringContracts(response.data.rubrics ?? []);
     } catch (contractError) {
       if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
       setScoringContracts([]);
@@ -631,7 +631,7 @@ function buildMetricSections({
       metric: metricsByRubricId[rubric.id] ?? null,
       judges: sectionJudges,
       emptyMessage: "Run judges to see results",
-      gaugeLabel: `Share labeled ${contract?.target_label || rubric.best_option || rubric.options?.[0]?.option || rubric.name}`,
+      gaugeLabel: `Share labeled ${contract?.best_option || rubric.best_option || rubric.options?.[0]?.option || rubric.name}`,
       defaultPromptTemplate: baselineJudge?.prompt_template || sectionJudges[0]?.prompt_template || "",
     });
   }

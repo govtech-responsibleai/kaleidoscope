@@ -103,7 +103,7 @@ export default function ResultsTableExpandedRow({
 
   useEffect(() => {
     const fetchClaims = async () => {
-      if (!isClaimBasedRubric || claimBasedJudges.length === 0) {
+      if (!isClaimBasedRubric || claimBasedJudges.length === 0 || activeRubricId === null) {
         setClaimsData(null);
         setLoading(false);
         return;
@@ -113,7 +113,7 @@ export default function ResultsTableExpandedRow({
         const judgeScores = new Map<number, AnswerClaimScore[]>();
         let claims: AnswerClaim[] = [];
         const fetchPromises = claimBasedJudges.map(async (judge) => {
-          const response = await answerApi.getClaims(result.answer_id, judge.id, activeRubricId ?? undefined);
+          const response = await answerApi.getClaims(result.answer_id, judge.id, activeRubricId);
           const data = response.data;
           if (claims.length === 0 && data.claims.length > 0) {
             claims = data.claims.map((item) => {

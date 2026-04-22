@@ -565,6 +565,9 @@ export interface AnswerLabelOverrideCreate {
 }
 
 export interface ResultRow {
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
   question_id: number;
   question_text: string | null;
   question_type: string | null;
@@ -573,11 +576,13 @@ export interface ResultRow {
   answer_content: string;
   aggregated_score: AggregatedScore;
   human_label: string | null;
-  human_option?: string | null;
   human_notes: string | null;
 }
 
-export type SnapshotResultsResponse = ResultRow[];
+export interface SnapshotResultsResponse {
+  snapshot_id: number;
+  results: ResultRow[];
+}
 
 export interface AlignedJudge {
   judge_id: number;
@@ -632,7 +637,6 @@ export interface ScoringRowResult {
   answer_content: string;
   aggregated_result: AggregatedRowResult;
   human_label?: string | null;
-  human_option?: string | null;
   judge_results: JudgeRowResult[];
 }
 
@@ -640,14 +644,14 @@ export interface ScoringContract extends SnapshotMetric {
   rubric_id: number;
   rubric_name: string;
   group: "fixed" | "preset" | "custom";
-  target_label?: string | null;
+  best_option?: string | null;
   judge_summaries: JudgeScoreSummary[];
   rows: ScoringRowResult[];
 }
 
 export interface SnapshotScoringContractsResponse {
   snapshot_id: number;
-  metrics: ScoringContract[];
+  rubrics: ScoringContract[];
 }
 
 export interface ScoringPendingCounts {
@@ -656,7 +660,17 @@ export interface ScoringPendingCounts {
   pending_counts: Record<string, number>;
 }
 
-export type SnapshotMetricsResponse = SnapshotMetric[];
+export interface MetricsByRubric {
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
+  snapshots: SnapshotMetric[];
+}
+
+export interface SnapshotMetricsResponse {
+  target_id: number;
+  rubrics: MetricsByRubric[];
+}
 
 export interface ConfusionMatrix {
   matrix: {

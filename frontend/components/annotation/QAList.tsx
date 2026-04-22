@@ -77,7 +77,7 @@ export default function QAList({
     tab: 0,
   });
   const [criteriaOpen, setCriteriaOpen] = useState(false);
-  const [fullyAnnotatedIds, setFullyAnnotatedIds] = useState<Set<number>>(new Set());
+  const [localAnnotationCompletenessByAnswerId, setLocalAnnotationCompletenessByAnswerId] = useState<Record<number, boolean>>({});
   const orderedRubrics = useMemo(
     () => orderRubricsForDisplay(rubrics),
     [rubrics]
@@ -85,16 +85,29 @@ export default function QAList({
 
   const handleCompletenessChanged = useCallback(
     (answerId: number, isComplete: boolean) => {
-      setFullyAnnotatedIds((prev) => {
-        const had = prev.has(answerId);
-        if (isComplete === had) return prev;
-        const next = new Set(prev);
-        if (isComplete) next.add(answerId); else next.delete(answerId);
-        return next;
+      setLocalAnnotationCompletenessByAnswerId((prev) => {
+        if (prev[answerId] === isComplete) return prev;
+        return {
+          ...prev,
+          [answerId]: isComplete,
+        };
       });
     },
     []
   );
+  const annotationCompletenessByAnswerId = useMemo(() => {
+    const backendCompleteness = Object.values(qaMap).reduce<Record<number, boolean>>((acc, entry) => {
+      if (entry.answer) {
+        acc[entry.answer.id] = entry.answer.has_annotation ?? false;
+      }
+      return acc;
+    }, {});
+
+    return {
+      ...backendCompleteness,
+      ...localAnnotationCompletenessByAnswerId,
+    };
+  }, [localAnnotationCompletenessByAnswerId, qaMap]);
 
   // Load personas
   useEffect(() => {
@@ -343,23 +356,7 @@ export default function QAList({
     } 
   };
 
-  const handleAnnotationSaved = () => {
-    if (!activeAnswer) return;
-    setQaMap((prev) => {
-      const entry = prev[activeAnswer.question_id];
-      if (!entry?.answer) return prev;
-      return {
-        ...prev,
-        [activeAnswer.question_id]: {
-          ...entry,
-          answer: {
-            ...entry.answer,
-            has_annotation: true,
-          },
-        },
-      };
-    });
-  };
+  const handleAnnotationSaved = () => {};
 
   const activeQuestion = approvedQuestions.find((q) => q.id === resolvedActiveQuestionId) || null;
   const activePersona = activeQuestion?.persona_id ? personaMap[activeQuestion.persona_id] ?? null : null;
@@ -371,9 +368,9 @@ export default function QAList({
 
   const annotatedCount = useMemo(() => {
     return Object.values(qaMap).filter(
-      (entry) => entry.answer && fullyAnnotatedIds.has(entry.answer.id)
+      (entry) => entry.answer && annotationCompletenessByAnswerId[entry.answer.id]
     ).length;
-  }, [qaMap, fullyAnnotatedIds]);
+  }, [annotationCompletenessByAnswerId, qaMap]);
 
   const handleFilterChange = (
     _event: React.MouseEvent<HTMLElement>,
@@ -515,6 +512,7 @@ export default function QAList({
                     answer={answer}
                     job={jobByQuestion[question.id] ?? null}
                     pendingMetricNames={missingRubricCoverage.pendingRubricNamesByQuestion[question.id] ?? []}
+                    isFullyAnnotated={answer ? (annotationCompletenessByAnswerId[answer.id] ?? answer.has_annotation ?? false) : false}
                     isActive={question.id === resolvedActiveQuestionId}
                     isChecked={answer ? effectiveDraftSelections.has(answer.id) : false}
                     onToggleSelection={() =>

@@ -83,7 +83,7 @@ export default function RubricsPage() {
         const usageById: Record<number, boolean> = {};
         const runningById: Record<number, boolean> = {};
 
-        (metricsRes.data ?? []).forEach((metric) => {
+        (metricsRes.data.rubrics ?? []).flatMap((rubricGroup) => rubricGroup.snapshots).forEach((metric) => {
           if (metric.rubric_id == null) return;
           const hasMetricData = (
             metric.total_answers > 0

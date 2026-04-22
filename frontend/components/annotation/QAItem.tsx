@@ -24,6 +24,7 @@ interface QAItemProps {
   answer: Answer | null;
   job: QAJob | null;
   pendingMetricNames?: string[];
+  isFullyAnnotated: boolean;
   isActive: boolean;
   isChecked: boolean;
   onToggleSelection: () => void;
@@ -33,13 +34,14 @@ interface QAItemProps {
 const getStageLabel = (
   job: QAJob | null,
   answer: Answer | null,
+  isFullyAnnotated: boolean,
   pendingMetricNames: string[],
 ): string => {
   if (!job) {
     if (pendingMetricNames.length > 0) {
       return `Partial • ${pendingMetricNames.length} metric${pendingMetricNames.length === 1 ? "" : "s"} pending`;
     }
-    if (answer?.has_annotation) {
+    if (isFullyAnnotated) {
       return "Annotated";
     }
     if (answer) {
@@ -85,13 +87,14 @@ const getStageLabel = (
 const getStageColor = (
   job: QAJob | null,
   answer: Answer | null,
+  isFullyAnnotated: boolean,
   pendingMetricNames: string[],
 ): "default" | "warning" | "success" | "error" | "info" => {
   if (!job) {
     if (pendingMetricNames.length > 0) {
       return "warning";
     }
-    if (answer?.has_annotation) {
+    if (isFullyAnnotated) {
       return "success";
     }
     if (answer) {
@@ -122,6 +125,7 @@ export default function QAItem({
   answer,
   job,
   pendingMetricNames = [],
+  isFullyAnnotated,
   isActive,
   isChecked,
   onToggleSelection,
@@ -168,14 +172,14 @@ export default function QAItem({
               </Typography>
               {job?.error_message ? (
                 <Tooltip title={job.error_message}>
-                  <Typography variant="caption" color={`${getStageColor(job, answer, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
-                    {getStageLabel(job, answer, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
+                  <Typography variant="caption" color={`${getStageColor(job, answer, isFullyAnnotated, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
+                    {getStageLabel(job, answer, isFullyAnnotated, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
                   </Typography>
                 </Tooltip>
               ) : (
                 <Tooltip title={pendingMetricNames.length > 0 ? `Pending: ${pendingMetricNames.join(", ")}` : ""} disableHoverListener={pendingMetricNames.length === 0}>
-                  <Typography variant="caption" color={`${getStageColor(job, answer, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
-                    {getStageLabel(job, answer, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
+                  <Typography variant="caption" color={`${getStageColor(job, answer, isFullyAnnotated, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
+                    {getStageLabel(job, answer, isFullyAnnotated, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
                   </Typography>
                 </Tooltip>
               )}

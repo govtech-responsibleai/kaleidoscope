@@ -423,16 +423,16 @@ export const answerApi = {
   get: (answerId: number) =>
     api.get<Answer>(`/answers/${answerId}`),
 
-  getScores: (answerId: number, judgeId: number, rubricId?: number) =>
+  getScores: (answerId: number, judgeId: number, rubricId: number) =>
     api.get<AnswerScore>(`/answers/${answerId}/scores/${judgeId}`, {
-      ...(rubricId === undefined ? {} : { params: { rubric_id: rubricId } }),
+      params: { rubric_id: rubricId },
     }),
 
-  getClaims: (answerId: number, judgeId: number, rubricId?: number) =>
+  getClaims: (answerId: number, judgeId: number, rubricId: number) =>
     api.get<AnswerClaimsWithScoresResponse>(`/answers/${answerId}/claims`, {
       params: {
         judge_id: judgeId,
-        ...(rubricId === undefined ? {} : { rubric_id: rubricId }),
+        rubric_id: rubricId,
       },
     }),
 

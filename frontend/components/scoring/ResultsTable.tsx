@@ -127,7 +127,7 @@ const truncate = (value: string, length: number) => {
 };
 
 const getHumanSelectedOption = (row: ScoringRowResult | null): string | null =>
-  row?.human_option ?? row?.human_label ?? null;
+  row?.human_label ?? null;
 
 const summarizeRubricVotes = (
   optionCounts: Map<string, number>,
