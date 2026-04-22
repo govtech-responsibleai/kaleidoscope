@@ -19,7 +19,12 @@ from src.common.models import (
     TargetRubricUpdate,
 )
 from src.rubric.services.premade_rubrics import list_premade_templates
-from src.rubric.services.rubric_augmenter import build_fallback_judge_prompt, generate_judge_prompt
+from src.rubric.services.prompt_files import delete_custom_rubric_prompt
+from src.rubric.services.rubric_augmenter import (
+    build_fallback_judge_prompt,
+    generate_judge_prompt,
+    materialize_custom_judge_prompt,
+)
 from src.rubric.services.rubric_specs import (
     RubricSpecResolutionError,
     resolve_target_rubric_specs,
@@ -185,6 +190,8 @@ def create_rubric(
         )
 
     created = TargetRubricRepository.create(db, target_id, data)
+    if created.group == RUBRIC_GROUP_CUSTOM and created.judge_prompt:
+        materialize_custom_judge_prompt(int(created.id), created.judge_prompt)
     ensure_judges(db, int(created.id))  # type: ignore[arg-type]
     return created
 
@@ -235,7 +242,7 @@ def update_rubric(
             if deleted:
                 logger.info("Rubric %s options changed; purged %s stale scores", rubric_id, deleted)
 
-    content_changed = any(key in data for key in ("name", "criteria", "options"))
+    content_changed = any(key in data for key in ("name", "criteria", "options", "best_option"))
     if content_changed and existing_rubric.group == RUBRIC_GROUP_CUSTOM:
         name = data.get("name", existing_rubric.name)
         criteria = data.get("criteria", existing_rubric.criteria)
@@ -251,6 +258,8 @@ def update_rubric(
     rubric = TargetRubricRepository.update(db, rubric_id, data)
     if not rubric:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
+    if rubric.group == RUBRIC_GROUP_CUSTOM and rubric.judge_prompt:
+        materialize_custom_judge_prompt(int(rubric.id), rubric.judge_prompt)
     return rubric
 
 
@@ -265,6 +274,8 @@ def delete_rubric(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
     if existing_rubric.group == RUBRIC_GROUP_FIXED:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fixed rubrics cannot be deleted")
+    if existing_rubric.group == RUBRIC_GROUP_CUSTOM:
+        delete_custom_rubric_prompt(int(existing_rubric.id))
     success = TargetRubricRepository.delete(db, rubric_id)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")

@@ -12,7 +12,7 @@ FIXED_RUBRIC_TEMPLATES: dict[str, dict] = {
             {"option": "Inaccurate", "description": "One or more claims are unsupported or hallucinated."},
         ],
         "best_option": "Accurate",
-        "judge_prompt": None,
+        "judge_prompt_path": "accuracy_judge.md",
         "group": "fixed",
         "scoring_mode": "claim_based",
         "judge_models": [

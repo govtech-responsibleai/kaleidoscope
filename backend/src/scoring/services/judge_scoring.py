@@ -3,7 +3,6 @@ Service for scoring answers using LLM judges.
 """
 
 import logging
-import asyncio
 from typing import List
 from sqlalchemy.orm import Session
 
@@ -22,8 +21,9 @@ from src.common.database.repositories.target_rubric_repo import TargetRubricRepo
 from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
 from src.common.prompts.template_loader import get_loader
-from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult, RubricJudgmentResult
-from src.rubric.services.system_rubrics import accuracy_label_from_bool, negative_option_for_rubric
+from src.common.models import ClaimJudgmentResult, RubricJudgmentResult
+from src.rubric.services.prompt_files import resolve_rubric_prompt_text
+from src.rubric.services.system_rubrics import negative_option_for_rubric
 
 logger = logging.getLogger(__name__)
 
@@ -101,14 +101,14 @@ class AnswerJudge:
                 return
 
             # Route based on rubric.scoring_mode
-            if self.rubric and self.rubric.scoring_mode == "claim_based":
+            if self.rubric is None:
+                raise ValueError(f"Judge {self.judge.id} must be bound to a rubric before scoring")
+
+            if self.rubric.scoring_mode == "claim_based":
                 logger.info(f"QAJob {self.job_id}: Using claim-based scoring (rubric {self.rubric.id})")
                 answer_score = await self._score_claim_level()
             else:
-                if self.rubric:
-                    logger.info(f"QAJob {self.job_id}: Using response-level scoring (rubric {self.rubric.id})")
-                else:
-                    logger.info(f"QAJob {self.job_id}: Using generic response-level scoring (no rubric)")
+                logger.info(f"QAJob {self.job_id}: Using response-level scoring (rubric {self.rubric.id})")
                 answer_score = await self._score_response_level()
 
             # Update job costs
@@ -132,13 +132,14 @@ class AnswerJudge:
                 raise
 
     def _resolved_rubric_id(self) -> int | None:
-        return self.rubric.id if self.rubric else self.judge.rubric_id
-
-    def _positive_option(self) -> str:
-        return accuracy_label_from_bool(True, self.rubric)
+        if self.rubric is None:
+            raise ValueError("Rubric is required for scoring")
+        return self.rubric.id
 
     def _negative_option(self) -> str:
-        return negative_option_for_rubric(self.rubric) if self.rubric else accuracy_label_from_bool(False)
+        if self.rubric is None:
+            raise ValueError("Rubric is required for scoring")
+        return negative_option_for_rubric(self.rubric)
 
     async def _score_claim_level(self):
         """
@@ -184,18 +185,22 @@ class AnswerJudge:
                 "answer_id": self.answer.id,
                 "rubric_id": self._resolved_rubric_id(),
                 "judge_id": self.judge.id,
-                "overall_label": self._positive_option(),
+                "overall_label": self.rubric.best_option,
                 "explanation": "No checkworthy claims to evaluate"
             }
             answer_score = AnswerScoreRepository.replace_for_answer_judge_rubric(self.db, answer_score_data)
             return answer_score
 
+        rubric_prompt = resolve_rubric_prompt_text(self.rubric)
+        if not rubric_prompt:
+            raise ValueError(f"Claim-based rubric {self.rubric.id} is missing judge prompt content")
+
         # Score each claim asynchronously
         tasks = []
         for claim in checkworthy_claims:
             # Render prompt for this claim
-            prompt = render_template(
-                "claim_level_judge.md",
+            prompt = get_loader().render_from_string(
+                rubric_prompt,
                 question_text=self.answer.question.text,
                 answer_text=self.answer.answer_content,
                 claim_text=claim.claim_text,
@@ -282,13 +287,13 @@ class AnswerJudge:
             Tuple of (overall_label, explanation)
         """
         if not results:
-            return self._positive_option(), "No claims to evaluate"
+            return self.rubric.best_option, "No claims to evaluate"
 
         accurate_count = sum(1 for r in results if r.label)
         total_count = len(results)
         accuracy_ratio = accurate_count / total_count
 
-        overall_label = self._positive_option() if accurate_count == total_count else self._negative_option()
+        overall_label = self.rubric.best_option if accurate_count == total_count else self._negative_option()
 
         explanation = (
             f"Aggregated from {total_count} claims: "
@@ -309,29 +314,11 @@ class AnswerJudge:
         Returns:
             Created AnswerScore object
         """
-        # Get context for scoring - prefer RAG citations, fallback to KB documents
-        target_id = self.answer.question.target_id
-
-        if self.answer.rag_citations:
-            # Priority 1: Use RAG citations from answer
-            rag_chunks = [
-                f"=== RAG Chunk {i+1} (ID: {chunk['id']}) ===\n{chunk['chunk']}"
-                for i, chunk in enumerate(self.answer.rag_citations)
-            ]
-            kb_text = "\n\n".join(rag_chunks)
-        else:
-            # Priority 2: Fallback to uploaded KB documents
-            kb_documents = KBDocumentRepository.get_by_target(self.db, target_id)
-            if kb_documents:
-                kb_text = "\n\n".join([doc.processed_text for doc in kb_documents])
-            else:
-                # Priority 3: Empty fallback
-                kb_text = "[document is empty]"
-
-        if self.rubric and self.rubric.judge_prompt:
+        prompt_template = resolve_rubric_prompt_text(self.rubric)
+        if prompt_template:
             loader = get_loader()
             prompt = loader.render_from_string(
-                self.rubric.judge_prompt,
+                prompt_template,
                 Question=self.answer.question.text,
                 Answer=self.answer.answer_content,
                 question_text=self.answer.question.text,
@@ -340,7 +327,7 @@ class AnswerJudge:
                 rubric_criteria=self.rubric.criteria,
                 rubric_options=self.rubric.options,
             )
-        elif self.rubric:
+        else:
             prompt = render_template(
                 "default_rubric_judge.md",
                 question_text=self.answer.question.text,
@@ -349,21 +336,12 @@ class AnswerJudge:
                 rubric_criteria=self.rubric.criteria,
                 rubric_options=self.rubric.options,
             )
-        else:
-            prompt = render_template(
-                "response_level_judge.md",
-                answer_text=self.answer.answer_content,
-                question_text=self.answer.question.text,
-                kb_documents=kb_text,
-                **self.judge.params
-            )
 
         # Call LLM
         try:
-            response_model = RubricJudgmentResult if self.rubric else ResponseJudgmentResult
             result, metadata = await self.llm_client.generate_structured_async(
                 prompt=prompt,
-                response_model=response_model,
+                response_model=RubricJudgmentResult,
                 temperature=0.0
             )
 
@@ -375,8 +353,8 @@ class AnswerJudge:
                 "answer_id": self.answer.id,
                 "rubric_id": self._resolved_rubric_id(),
                 "judge_id": self.judge.id,
-                "overall_label": result.chosen_option if self.rubric else accuracy_label_from_bool(result.label),
-                "explanation": result.explanation if self.rubric else result.reasoning
+                "overall_label": result.chosen_option,
+                "explanation": result.explanation,
             }
             answer_score = AnswerScoreRepository.replace_for_answer_judge_rubric(self.db, answer_score_data)
 

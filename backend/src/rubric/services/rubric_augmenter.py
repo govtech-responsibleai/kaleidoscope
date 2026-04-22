@@ -7,6 +7,7 @@ to generate a complete, ready-to-use judge evaluation prompt.
 
 import logging
 from src.common.llm import LLMClient
+from src.rubric.services.prompt_files import write_custom_rubric_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -186,3 +187,8 @@ def generate_judge_prompt(name: str, criteria: str, options: list[dict], best_op
         return build_fallback_judge_prompt(name, criteria, options, best_option)
     logger.info(f"Generated judge prompt for rubric '{name}' ({len(judge_prompt)} chars)")
     return judge_prompt
+
+
+def materialize_custom_judge_prompt(rubric_id: int, prompt_text: str) -> str:
+    """Write one generated custom rubric prompt to the managed template-file location."""
+    return write_custom_rubric_prompt(rubric_id, prompt_text)

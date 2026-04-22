@@ -7,6 +7,7 @@ from src.rubric.services.system_rubrics import (
     ensure_system_rubrics,
     ensure_system_judges,
 )
+from src.rubric.services.prompt_files import load_prompt_template_text
 
 
 @pytest.mark.unit
@@ -34,6 +35,21 @@ def test_ensure_system_rubrics_is_idempotent_for_existing_fixed_accuracy(test_db
 
     assert len(rubrics) == 1
     assert rubrics[0].name == accuracy_name
+
+
+@pytest.mark.unit
+def test_ensure_system_rubrics_loads_accuracy_prompt_from_template_file(test_db, sample_target):
+    """Fixed Accuracy rubric should persist the canonical template file content."""
+    ensure_system_rubrics(test_db, sample_target.id)
+
+    rubric = TargetRubricRepository.get_by_target(
+        test_db,
+        sample_target.id,
+        group="fixed",
+        name=get_fixed_template("accuracy")["name"],
+    )[0]
+
+    assert rubric.judge_prompt == load_prompt_template_text("accuracy_judge.md")
 
 
 @pytest.mark.unit

@@ -6,11 +6,13 @@ and annotation completeness gating.
 """
 
 import pytest
+from unittest.mock import patch
 
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import (
     AnswerScore, Annotation, Judge, TargetRubric,
 )
+from src.rubric.services.prompt_files import custom_rubric_prompt_path
 from src.rubric.services.system_rubrics import ensure_system_rubrics
 
 
@@ -194,6 +196,31 @@ class TestRubric:
         assert len(judges) == 3
         assert all(judge.target_id == sample_target.id for judge in judges)
 
+    @patch("src.rubric.api.routes.rubrics.generate_judge_prompt")
+    def test_create_rubric_writes_generated_prompt_file(
+        self,
+        mock_generate_judge_prompt,
+        test_client,
+        sample_target,
+    ):
+        """Creating a custom rubric should materialize its generated prompt to the managed file location."""
+        mock_generate_judge_prompt.return_value = "Custom prompt for {{ Question }} / {{ Answer }}"
+        payload = {
+            "name": "Clarity",
+            "criteria": "Is the response clear?",
+            "options": [
+                {"option": "Clear", "description": "Easy to understand"},
+                {"option": "Unclear", "description": "Hard to understand"},
+            ],
+            "best_option": "Clear",
+        }
+
+        resp = test_client.post(f"/api/v1/targets/{sample_target.id}/rubrics", json=payload)
+
+        assert resp.status_code == 201
+        rubric_id = resp.json()["id"]
+        assert custom_rubric_prompt_path(rubric_id).read_text(encoding="utf-8") == mock_generate_judge_prompt.return_value
+
     def test_update_rubric_name(self, test_client, sample_target, sample_rubric):
         """PUT name change -> 200, name updated."""
         resp = test_client.put(
@@ -202,6 +229,29 @@ class TestRubric:
         )
         assert resp.status_code == 200
         assert resp.json()["name"] == "Updated Tone"
+
+    @patch("src.rubric.api.routes.rubrics.generate_judge_prompt")
+    def test_update_rubric_rewrites_generated_prompt_file(
+        self,
+        mock_generate_judge_prompt,
+        test_client,
+        sample_target,
+        sample_rubric,
+    ):
+        """Updating a custom rubric should refresh its managed prompt file."""
+        initial_prompt = "Initial prompt for {{ Question }}"
+        updated_prompt = "Updated prompt for {{ Question }}"
+        custom_rubric_prompt_path(sample_rubric.id).parent.mkdir(parents=True, exist_ok=True)
+        custom_rubric_prompt_path(sample_rubric.id).write_text(initial_prompt, encoding="utf-8")
+        mock_generate_judge_prompt.return_value = updated_prompt
+
+        resp = test_client.put(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
+            json={"criteria": "Updated criteria"},
+        )
+
+        assert resp.status_code == 200
+        assert custom_rubric_prompt_path(sample_rubric.id).read_text(encoding="utf-8") == updated_prompt
 
     def test_delete_rubric(self, test_client, sample_target, sample_rubric):
         """DELETE removes the custom rubric but preserves backend-owned fixed/preset rubrics."""

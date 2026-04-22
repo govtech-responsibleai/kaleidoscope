@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from pathlib import Path
 from typing import Dict, Iterable, List
 
 from sqlalchemy.exc import IntegrityError
@@ -15,6 +14,7 @@ from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.rubric.services.fixed_rubrics import get_fixed_template, list_fixed_templates
 from src.rubric.services.premade_rubrics import get_premade_template, list_premade_templates
+from src.rubric.services.prompt_files import load_prompt_template_text
 
 logger = logging.getLogger(__name__)
 
@@ -35,27 +35,6 @@ RUBRIC_GROUP_FIXED = RubricGroup.fixed.value
 RUBRIC_GROUP_PRESET = RubricGroup.preset.value
 RUBRIC_GROUP_CUSTOM = RubricGroup.custom.value
 
-
-def _load_baseline_prompt() -> str:
-    """Load the shared baseline prompt from the templates directory."""
-    template_path = Path(__file__).resolve().parents[2] / "common" / "prompts" / "templates" / "claim_level_judge.md"
-    try:
-        return template_path.read_text()
-    except OSError as exc:  # pragma: no cover - critical failure if missing template
-        raise RuntimeError(f"Baseline prompt template missing: {template_path}") from exc
-
-
-def _load_response_level_prompt() -> str:
-    """Load the response-level judge prompt template."""
-    template_path = Path(__file__).resolve().parents[2] / "common" / "prompts" / "templates" / "response_level_judge.md"
-    try:
-        return template_path.read_text()
-    except OSError as exc:  # pragma: no cover
-        raise RuntimeError(f"Response-level prompt template missing: {template_path}") from exc
-
-
-BASELINE_PROMPT_TEMPLATE = _load_baseline_prompt()
-RESPONSE_LEVEL_PROMPT_TEMPLATE = _load_response_level_prompt()
 
 AVAILABLE_MODELS = [
     {"value": "litellm_proxy/gemini-3.1-flash-lite-preview-global", "label": "Gemini 3.1 Flash Lite"},
@@ -209,12 +188,13 @@ def build_preset_definition(name: str) -> dict | None:
     full = get_premade_template(template["name"]) or get_premade_template(name.lower())
     if not full:
         return None
+    judge_prompt_path = full.get("judge_prompt_path")
     return {
         "name": full["name"],
         "criteria": full["criteria"],
         "options": full["options"],
         "best_option": full["best_option"],
-        "judge_prompt": full["judge_prompt"],
+        "judge_prompt": load_prompt_template_text(judge_prompt_path) if judge_prompt_path else full.get("judge_prompt"),
         "group": RubricGroup.preset.value,
         "scoring_mode": ScoringMode.response_level.value,
     }
@@ -224,12 +204,13 @@ def build_fixed_definition(name: str) -> dict | None:
     full = get_fixed_template(name.lower()) or get_fixed_template(name)
     if not full:
         return None
+    judge_prompt_path = full.get("judge_prompt_path")
     return {
         "name": full["name"],
         "criteria": full["criteria"],
         "options": full["options"],
         "best_option": full["best_option"],
-        "judge_prompt": full["judge_prompt"],
+        "judge_prompt": load_prompt_template_text(judge_prompt_path) if judge_prompt_path else full.get("judge_prompt"),
         "group": RubricGroup.fixed.value,
         "scoring_mode": full["scoring_mode"],
     }
@@ -319,8 +300,7 @@ def ensure_judges(db: Session, rubric_id: int) -> None:
     if not models:
         return
 
-    is_claim = str(rubric.scoring_mode) == "claim_based"
-    prompt_template = BASELINE_PROMPT_TEMPLATE if is_claim else RESPONSE_LEVEL_PROMPT_TEMPLATE
+    prompt_template = rubric.judge_prompt or ""
     configs = _model_pool_to_configs(models, prompt_template)
 
     existing_by_model = {

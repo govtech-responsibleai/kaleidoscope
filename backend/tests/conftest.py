@@ -3,6 +3,7 @@ Pytest fixtures for testing.
 """
 
 import pytest
+import shutil
 from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -18,6 +19,7 @@ from src.common.database.models import (
     QuestionTypeEnum, QuestionScopeEnum
 )
 from src.common.auth.utils import create_access_token
+from src.rubric.services.prompt_files import generated_custom_prompts_dir
 
 # Pre-computed bcrypt hashes for test passwords (avoids passlib/bcrypt compatibility issues)
 # These are bcrypt hashes computed with cost factor 12
@@ -52,6 +54,14 @@ def get_accuracy_rubric(db, target_id: int) -> TargetRubric:
     if len(rubrics) != 1:
         raise AssertionError(f"Expected exactly one fixed Accuracy rubric for target {target_id}")
     return rubrics[0]
+
+
+@pytest.fixture(autouse=True)
+def cleanup_generated_custom_prompt_files():
+    """Keep generated custom rubric prompt files isolated per test."""
+    shutil.rmtree(generated_custom_prompts_dir().parent, ignore_errors=True)
+    yield
+    shutil.rmtree(generated_custom_prompts_dir().parent, ignore_errors=True)
 
 
 @pytest.fixture(scope="function")
@@ -499,13 +509,14 @@ def sample_judge_claim_based(test_db, sample_target):
 
 
 @pytest.fixture
-def sample_judge_response_level(test_db):
-    """Create a response-level judge for testing."""
+def sample_judge_response_level(test_db, sample_rubric):
+    """Create a rubric-bound response-level judge for testing."""
     judge = Judge(
         name="Response-Level Judge",
         model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test prompt template",
         params={"temperature": 0.5},
+        rubric_id=sample_rubric.id,
         is_baseline=False,
         is_editable=True
     )
