@@ -10,11 +10,12 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.models import Target, Judge, User
+from src.common.database.models import Target, Judge, TargetRubric, User
 from src.common.auth import auth_router, get_scoped_db, get_current_user_id
 from src.common.auth.utils import create_access_token
 from src.common.config import get_settings
 from src.query_generation.api.routes import targets
+from src.rubric.api.routes import rubrics
 from src.scoring.api.routes import judges
 from tests.conftest import get_test_password_hash
 
@@ -34,6 +35,12 @@ def scoping_test_app(test_db_factory):
         targets.router,
         prefix="/api/v1/targets",
         tags=["Targets"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        rubrics.router,
+        prefix="/api/v1/targets",
+        tags=["Rubrics"],
         dependencies=[Depends(get_scoped_db)]
     )
     test_app.include_router(
@@ -120,14 +127,60 @@ def targets_for_users(test_db, user_a, user_b):
 
 
 @pytest.fixture
-def judges_for_users(test_db, user_a, user_b):
-    """Create judges owned by different users plus a baseline judge."""
+def judges_for_users(test_db, user_a, user_b, targets_for_users):
+    """Create rubric-scoped judges owned by different users plus a baseline judge."""
+    user_a_rubric = TargetRubric(
+        target_id=targets_for_users["user_a"].id,
+        name="Accuracy",
+        criteria="Assess accuracy",
+        options=[
+            {"option": "Accurate", "description": "Correct"},
+            {"option": "Inaccurate", "description": "Incorrect"},
+        ],
+        best_option="Accurate",
+        group="fixed",
+        scoring_mode="claim_based",
+        position=0,
+    )
+    user_b_rubric = TargetRubric(
+        target_id=targets_for_users["user_b"].id,
+        name="Accuracy",
+        criteria="Assess accuracy",
+        options=[
+            {"option": "Accurate", "description": "Correct"},
+            {"option": "Inaccurate", "description": "Incorrect"},
+        ],
+        best_option="Accurate",
+        group="fixed",
+        scoring_mode="claim_based",
+        position=0,
+    )
+    shared_rubric = TargetRubric(
+        target_id=targets_for_users["user_a"].id,
+        name="Shared Baseline Rubric",
+        criteria="Assess baseline behavior",
+        options=[
+            {"option": "Good", "description": "Good"},
+            {"option": "Bad", "description": "Bad"},
+        ],
+        best_option="Good",
+        group="custom",
+        scoring_mode="response_level",
+        position=1,
+    )
+    test_db.add_all([user_a_rubric, user_b_rubric, shared_rubric])
+    test_db.commit()
+    test_db.refresh(user_a_rubric)
+    test_db.refresh(user_b_rubric)
+    test_db.refresh(shared_rubric)
+
     judge_a = Judge(
         name="User A Judge",
         model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-
+        target_id=targets_for_users["user_a"].id,
+        rubric_id=user_a_rubric.id,
         is_baseline=False,
         is_editable=True,
         user_id=user_a.id
@@ -137,7 +190,8 @@ def judges_for_users(test_db, user_a, user_b):
         model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-
+        target_id=targets_for_users["user_b"].id,
+        rubric_id=user_b_rubric.id,
         is_baseline=False,
         is_editable=True,
         user_id=user_b.id
@@ -147,7 +201,8 @@ def judges_for_users(test_db, user_a, user_b):
         model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Baseline template",
         params={},
-
+        target_id=targets_for_users["user_a"].id,
+        rubric_id=shared_rubric.id,
         is_baseline=True,
         is_editable=False,
         user_id=None  # Baseline judges have no user_id

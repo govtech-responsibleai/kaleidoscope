@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import SnapshotRepository, TargetRepository, QuestionRepository, AnswerRepository
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.models import (
     AnswerBulkSelection,
     AnswerListResponse,
@@ -140,6 +141,9 @@ def list_answers_for_snapshot(
         )
 
     answers = AnswerRepository.get_by_snapshot(db, snapshot_id, skip, limit, eager_load=True)
+    target_rubric_ids = {
+        rubric.id for rubric in TargetRubricRepository.get_by_target(db, snapshot.target_id)
+    }
 
     enriched_answers = [
         AnswerListItemResponse(
@@ -155,7 +159,7 @@ def list_answers_for_snapshot(
             is_selected_for_annotation=a.is_selected_for_annotation,
             created_at=a.created_at,
             question_text=a.question.text if a.question else None,
-            has_annotation=bool(a.annotations),
+            has_annotation={annotation.rubric_id for annotation in a.annotations} == target_rubric_ids,
         )
         for a in answers
     ]
@@ -370,7 +374,7 @@ def get_approved_questions_without_answers(
 def get_approved_questions_without_scores(
     snapshot_id: int,
     judge_id: int,
-    rubric_id: Optional[int] = None,
+    rubric_id: int,
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_db)
@@ -381,7 +385,7 @@ def get_approved_questions_without_scores(
     Args:
         snapshot_id: Snapshot ID
         judge_id: Judge ID to check for scores
-        rubric_id: Optional rubric ID to scope the missing-score lookup
+        rubric_id: Rubric ID to scope the missing-score lookup
         skip: Pagination offset
         limit: Pagination limit
         db: Database session

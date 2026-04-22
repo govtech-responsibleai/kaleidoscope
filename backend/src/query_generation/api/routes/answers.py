@@ -64,7 +64,7 @@ def delete_answer(
 def get_answer_score(
     answer_id: int,
     judge_id: int,
-    rubric_id: int | None = Query(None, description="Optional rubric ID to scope the score lookup"),
+    rubric_id: int = Query(..., description="Rubric ID used to scope the score lookup"),
     db: Session = Depends(get_db)
 ):
     """
@@ -106,7 +106,7 @@ def get_answer_score(
 def get_answer_claims_with_scores(
     answer_id: int,
     judge_id: int = Query(..., description="Judge ID to get claim scores from"),
-    rubric_id: int | None = Query(None, description="Optional rubric ID to scope the answer score lookup"),
+    rubric_id: int = Query(..., description="Rubric ID used to scope the answer score lookup"),
     db: Session = Depends(get_db)
 ):
     """

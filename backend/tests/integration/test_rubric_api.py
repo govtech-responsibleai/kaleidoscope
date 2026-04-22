@@ -7,15 +7,22 @@ and annotation completeness gating.
 
 import pytest
 
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import (
-    AnswerScore, Annotation,
+    AnswerScore, Annotation, Judge, TargetRubric,
 )
-from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+from src.rubric.services.system_rubrics import ensure_system_rubrics
 
 
 @pytest.mark.integration
 class TestRubric:
     """CRUD and scoring lifecycle tests for rubrics."""
+
+    @staticmethod
+    def _accuracy_rubric(test_db, target_id: int):
+        return TargetRubricRepository.get_by_target(
+            test_db, target_id, group="fixed", name="Accuracy"
+        )[0]
 
     def test_create_rubric(self, test_client, sample_target):
         """POST rubric with valid options -> 201, verify response fields."""
@@ -41,7 +48,7 @@ class TestRubric:
         assert "id" in data
         assert data["group"] == "custom"
 
-    def test_create_preset_rubric_is_rejected(self, test_client, sample_target):
+    def test_create_preset_rubric(self, test_client, sample_target):
         payload = {
             "name": "Empathy",
             "criteria": "Does the response show empathy?",
@@ -56,34 +63,50 @@ class TestRubric:
             f"/api/v1/targets/{sample_target.id}/rubrics",
             json=payload,
         )
-        assert resp.status_code == 400
-        assert resp.json()["detail"] == "Only custom rubrics can be created through this endpoint"
+        assert resp.status_code == 201
+        assert resp.json()["group"] == "preset"
+        assert resp.json()["name"] == "Empathy"
 
     def test_list_rubrics(self, test_client, sample_target, sample_rubric, sample_rubric_second):
-        """GET list includes backend-owned fixed/preset rubrics plus existing custom rubrics."""
+        """GET list returns existing rubrics only; it does not bootstrap built-ins on read."""
         resp = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics")
         assert resp.status_code == 200
         rubrics = resp.json()
-        assert len(rubrics) == 5
+        assert len(rubrics) == 2
         names = {r["name"] for r in rubrics}
-        assert names == {"Accuracy", "Empathy", "Verbosity", "Tone of Voice", "Response Relevance"}
+        assert names == {"Tone of Voice", "Response Relevance"}
 
-    def test_fixed_accuracy_cannot_be_updated(self, test_client, sample_target):
+    def test_list_rubrics_does_not_create_fixed_accuracy_for_bare_target(self, test_client, test_db, sample_target):
+        before_count = test_db.query(TargetRubric).filter_by(target_id=sample_target.id).count()
+        assert before_count == 0
+
+        resp = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics")
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+        after_count = test_db.query(TargetRubric).filter_by(target_id=sample_target.id).count()
+        assert after_count == 0
+
+    def test_fixed_accuracy_cannot_be_updated(self, test_client, test_db, sample_target):
+        ensure_system_rubrics(test_db, sample_target.id)
+        fixed = self._accuracy_rubric(test_db, sample_target.id)
         rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
-        fixed = next(r for r in rubrics if r["group"] == "fixed")
+        listed_fixed = next(r for r in rubrics if r["id"] == fixed.id)
 
         resp = test_client.put(
-            f"/api/v1/targets/{sample_target.id}/rubrics/{fixed['id']}",
+            f"/api/v1/targets/{sample_target.id}/rubrics/{listed_fixed['id']}",
             json={"name": "Changed Accuracy"},
         )
         assert resp.status_code == 400
 
-    def test_fixed_accuracy_cannot_be_deleted(self, test_client, sample_target):
+    def test_fixed_accuracy_cannot_be_deleted(self, test_client, test_db, sample_target):
+        ensure_system_rubrics(test_db, sample_target.id)
+        fixed = self._accuracy_rubric(test_db, sample_target.id)
         rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
-        fixed = next(r for r in rubrics if r["group"] == "fixed")
+        listed_fixed = next(r for r in rubrics if r["id"] == fixed.id)
 
         resp = test_client.delete(
-            f"/api/v1/targets/{sample_target.id}/rubrics/{fixed['id']}",
+            f"/api/v1/targets/{sample_target.id}/rubrics/{listed_fixed['id']}",
         )
         assert resp.status_code == 400
 
@@ -110,8 +133,8 @@ class TestRubric:
         )
         assert resp.status_code == 400
 
-    def test_preset_rubric_cannot_be_deleted(self, test_client, test_db, sample_target):
-        """Preset (Empathy) rubric delete -> 400."""
+    def test_preset_rubric_can_be_deleted(self, test_client, test_db, sample_target):
+        """Preset (Empathy) rubric delete -> 204."""
         from src.common.database.models import TargetRubric
         rubric = TargetRubric(
             target_id=sample_target.id,
@@ -130,9 +153,10 @@ class TestRubric:
         resp = test_client.delete(
             f"/api/v1/targets/{sample_target.id}/rubrics/{rubric.id}",
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 204
 
-    def test_reserved_custom_name_is_auto_suffixed(self, test_client, sample_target):
+    def test_reserved_custom_name_is_auto_suffixed(self, test_client, test_db, sample_target):
+        ensure_system_rubrics(test_db, sample_target.id)
         payload = {
             "name": "Accuracy",
             "criteria": "Custom accuracy-like rubric",
@@ -148,6 +172,27 @@ class TestRubric:
         )
         assert resp.status_code == 201
         assert resp.json()["name"].startswith("Accuracy (")
+
+    def test_create_rubric_seeds_judges_for_created_rubric(self, test_client, test_db, sample_target):
+        payload = {
+            "name": "Clarity",
+            "criteria": "Is the response clear?",
+            "options": [
+                {"option": "Clear", "description": "Easy to understand"},
+                {"option": "Unclear", "description": "Hard to understand"},
+            ],
+            "best_option": "Clear",
+        }
+        resp = test_client.post(
+            f"/api/v1/targets/{sample_target.id}/rubrics",
+            json=payload,
+        )
+        assert resp.status_code == 201
+        rubric_id = resp.json()["id"]
+
+        judges = test_db.query(Judge).filter_by(rubric_id=rubric_id).all()
+        assert len(judges) == 3
+        assert all(judge.target_id == sample_target.id for judge in judges)
 
     def test_update_rubric_name(self, test_client, sample_target, sample_rubric):
         """PUT name change -> 200, name updated."""
@@ -167,7 +212,7 @@ class TestRubric:
 
         list_resp = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics")
         assert list_resp.status_code == 200
-        assert {rubric["name"] for rubric in list_resp.json()} == {"Accuracy", "Empathy", "Verbosity"}
+        assert list_resp.json() == []
 
     def test_update_options_deletes_stale_scores(
         self, test_client, test_db, sample_target, sample_rubric,
@@ -236,7 +281,8 @@ class TestRubric:
         """Accuracy annotation done but no rubric annotation -> is_complete=False."""
         # Mark answer as selected for annotation
         sample_answer.is_selected_for_annotation = True
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        ensure_system_rubrics(test_db, sample_target.id)
+        accuracy_rubric = self._accuracy_rubric(test_db, sample_target.id)
         test_db.add(
             Annotation(
                 answer_id=sample_answer.id,
@@ -260,7 +306,8 @@ class TestRubric:
     ):
         """Accuracy + rubric annotations done -> is_complete=True."""
         sample_answer.is_selected_for_annotation = True
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        ensure_system_rubrics(test_db, sample_target.id)
+        accuracy_rubric = self._accuracy_rubric(test_db, sample_target.id)
         test_db.add(
             Annotation(
                 answer_id=sample_answer.id,
@@ -291,7 +338,8 @@ class TestRubric:
     ):
         """2 rubrics, only 1 annotated -> is_complete=False."""
         sample_answer.is_selected_for_annotation = True
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        ensure_system_rubrics(test_db, sample_target.id)
+        accuracy_rubric = self._accuracy_rubric(test_db, sample_target.id)
         test_db.add(
             Annotation(
                 answer_id=sample_answer.id,

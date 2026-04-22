@@ -20,7 +20,6 @@ from src.common.database.repositories.target_repo import TargetRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
-from src.common.services.system_rubrics import get_fixed_accuracy_rubric
 from src.scoring.services.metrics_service import MetricsService
 
 logger = logging.getLogger(__name__)
@@ -184,7 +183,7 @@ class ExportService:
         snapshot_id: int,
         format: ExportFormat = ExportFormat.CSV,
         include_evaluators: bool = False,
-        rubric_id: Optional[int] = None,
+        rubric_id: int | None = None,
     ) -> Tuple[Union[str, List[Dict]], Optional[List[Dict]]]:
         """
         Export snapshot results including answers, annotations, and judge scores.
@@ -204,17 +203,11 @@ class ExportService:
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
 
-        rubric = (
-            TargetRubricRepository.get_by_id(self.db, rubric_id)
-            if rubric_id is not None
-            else get_fixed_accuracy_rubric(self.db, snapshot.target_id)
-        )
+        if rubric_id is None:
+            raise ValueError("rubric_id is required")
+        rubric = TargetRubricRepository.get_by_id(self.db, rubric_id)
         if rubric is None:
-            raise ValueError(
-                f"Rubric {rubric_id} not found"
-                if rubric_id is not None
-                else f"Fixed Accuracy rubric not found for target {snapshot.target_id}"
-            )
+            raise ValueError(f"Rubric {rubric_id} not found")
         if rubric.target_id != snapshot.target_id:
             raise ValueError(f"Rubric {rubric.id} does not belong to snapshot {snapshot_id}")
 
@@ -431,24 +424,24 @@ class ExportService:
             # Export each snapshot
             for snapshot in snapshots:
                 try:
-                    fixed_accuracy_rubric = get_fixed_accuracy_rubric(self.db, snapshot.target_id)
-                    if fixed_accuracy_rubric is None:
-                        raise ValueError(f"Fixed Accuracy rubric not found for target {snapshot.target_id}")
-                    snapshot_content, evaluator_payload = self.export_snapshot(
-                        snapshot.id,
-                        format=format,
-                        include_evaluators=True,
-                        rubric_id=fixed_accuracy_rubric.id,
-                    )
-                    content = json.dumps(snapshot_content, indent=2) if format == ExportFormat.JSON else snapshot_content
-                    zip_file.writestr(f"snapshot_{snapshot.id}_{snapshot.name}.{file_ext}", content)
-
-                    if evaluator_payload:
-                        evaluator_filename = f"snapshot_{snapshot.id}_{snapshot.name}_evaluators.json"
-                        zip_file.writestr(
-                            evaluator_filename,
-                            json.dumps(evaluator_payload, indent=2)
+                    rubrics = TargetRubricRepository.get_by_target(self.db, snapshot.target_id)
+                    for rubric in rubrics:
+                        snapshot_content, evaluator_payload = self.export_snapshot(
+                            snapshot.id,
+                            format=format,
+                            include_evaluators=True,
+                            rubric_id=rubric.id,
                         )
+                        content = json.dumps(snapshot_content, indent=2) if format == ExportFormat.JSON else snapshot_content
+                        base_name = f"snapshot_{snapshot.id}_{snapshot.name}_rubric_{rubric.id}_{rubric.name}"
+                        zip_file.writestr(f"{base_name}.{file_ext}", content)
+
+                        if evaluator_payload:
+                            evaluator_filename = f"{base_name}_evaluators.json"
+                            zip_file.writestr(
+                                evaluator_filename,
+                                json.dumps(evaluator_payload, indent=2)
+                            )
                 except ValueError as e:
                     logger.warning(f"Skipping snapshot {snapshot.id} export: {e}")
 

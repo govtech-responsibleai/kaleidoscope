@@ -225,14 +225,11 @@ class QuestionRepository:
         target_id: int,
         snapshot_id: int,
         judge_id: int,
-        rubric_id: Optional[int] = None,
+        rubric_id: int,
         skip: int = 0,
         limit: int = 100
     ) -> List[Question]:
-        """Get approved questions that have answers but no scores for a snapshot/judge pair.
-
-        When rubric_id is provided, checks a rubric-scoped AnswerScore row; otherwise checks any AnswerScore for the judge.
-        """
+        """Get approved questions that have answers but no scores for a snapshot/judge/rubric triple."""
         q = (
             db.query(Question)
             .options(joinedload(Question.persona))
@@ -244,9 +241,8 @@ class QuestionRepository:
         join_conditions = [
             AnswerScore.answer_id == Answer.id,
             AnswerScore.judge_id == judge_id,
+            AnswerScore.rubric_id == rubric_id,
         ]
-        if rubric_id is not None:
-            join_conditions.append(AnswerScore.rubric_id == rubric_id)
         q = q.outerjoin(AnswerScore, and_(*join_conditions)).filter(
             Question.target_id == target_id,
             Question.status == StatusEnum.approved,
@@ -260,12 +256,9 @@ class QuestionRepository:
         target_id: int,
         snapshot_id: int,
         judge_id: int,
-        rubric_id: Optional[int] = None,
+        rubric_id: int,
     ) -> int:
-        """Count approved questions that have answers but no score for a snapshot/judge pair.
-
-        When rubric_id is provided, counts missing rubric-scoped AnswerScore rows; otherwise any AnswerScore for the judge.
-        """
+        """Count approved questions that have answers but no score for a snapshot/judge/rubric triple."""
         q = (
             db.query(func.count(Question.id))
             .select_from(Question)
@@ -277,9 +270,8 @@ class QuestionRepository:
         join_conditions = [
             AnswerScore.answer_id == Answer.id,
             AnswerScore.judge_id == judge_id,
+            AnswerScore.rubric_id == rubric_id,
         ]
-        if rubric_id is not None:
-            join_conditions.append(AnswerScore.rubric_id == rubric_id)
         q = q.outerjoin(AnswerScore, and_(*join_conditions)).filter(
             Question.target_id == target_id,
             Question.status == StatusEnum.approved,
@@ -294,12 +286,9 @@ class QuestionRepository:
         target_id: int,
         snapshot_id: int,
         judge_id: int,
-        rubric_id: Optional[int] = None,
+        rubric_id: int,
     ) -> bool:
-        """Return True if the specific approved question still lacks a score for this judge.
-
-        When rubric_id is provided, checks a rubric-scoped AnswerScore row; otherwise checks any AnswerScore for the judge.
-        """
+        """Return True if the specific approved question still lacks a score for this judge and rubric."""
         q = (
             db.query(Question.id)
             .join(Answer, and_(
@@ -310,9 +299,8 @@ class QuestionRepository:
         join_conditions = [
             AnswerScore.answer_id == Answer.id,
             AnswerScore.judge_id == judge_id,
+            AnswerScore.rubric_id == rubric_id,
         ]
-        if rubric_id is not None:
-            join_conditions.append(AnswerScore.rubric_id == rubric_id)
         q = q.outerjoin(AnswerScore, and_(*join_conditions)).filter(
             Question.id == question_id,
             Question.target_id == target_id,

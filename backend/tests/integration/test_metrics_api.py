@@ -4,21 +4,28 @@ Integration tests for metrics API endpoints.
 
 import pytest
 
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
+
+
+def _accuracy_rubric(test_db, target_id: int):
+    return TargetRubricRepository.get_by_target(
+        test_db, target_id, group="fixed", name="Accuracy"
+    )[0]
 
 @pytest.mark.integration
 class TestMetricsAPI:
     """Integration tests for metrics API."""
 
-    def test_results_route_returns_invariant_error_when_fixed_accuracy_rubric_is_missing(
+    def test_results_route_returns_empty_results_when_snapshot_has_no_answers(
         self,
         test_client,
         sample_snapshot,
     ):
-        """Runtime fixed-accuracy routes should fail as server invariants instead of auto-healing."""
+        """Results route should return an empty QA-grouped payload when no answers exist."""
         response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/results")
 
-        assert response.status_code == 500
-        assert "Fixed Accuracy rubric not found" in response.json()["detail"]
+        assert response.status_code == 200
+        assert response.json() == {"snapshot_id": sample_snapshot.id, "results": []}
 
     def test_scoring_pending_counts_are_returned_for_a_requested_rubric(
         self,
@@ -34,7 +41,7 @@ class TestMetricsAPI:
     ):
         """The scoring page should be able to load one rubric section's pending counts."""
         from src.common.database.models import Judge, Question, QuestionTypeEnum, QuestionScopeEnum, StatusEnum
-        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+        from src.rubric.services.system_rubrics import ensure_system_rubrics
 
         unanswered_question = Question(
             job_id=sample_job.id,
@@ -45,7 +52,8 @@ class TestMetricsAPI:
             scope=QuestionScopeEnum.in_kb,
             status=StatusEnum.approved,
         )
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        ensure_system_rubrics(test_db, sample_target.id)
+        accuracy_rubric = _accuracy_rubric(test_db, sample_target.id)
         accuracy_judge = Judge(
             target_id=sample_target.id,
             rubric_id=accuracy_rubric.id,
@@ -98,9 +106,10 @@ class TestMetricsAPI:
     ):
         """The scoring page should be able to fetch one backend-owned contract for all metric sections."""
         from src.common.database.models import Judge
-        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+        from src.rubric.services.system_rubrics import ensure_system_rubrics
 
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        ensure_system_rubrics(test_db, sample_target.id)
+        accuracy_rubric = _accuracy_rubric(test_db, sample_target.id)
         accuracy_judge = Judge(
             target_id=sample_target.id,
             rubric_id=accuracy_rubric.id,
@@ -130,15 +139,15 @@ class TestMetricsAPI:
         assert response.status_code == 200
         data = response.json()
         assert data["snapshot_id"] == sample_snapshot.id
-        accuracy_metric = next(metric for metric in data["metrics"] if metric["group"] == "fixed")
-        rubric_metric = next(metric for metric in data["metrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
+        accuracy_metric = next(metric for metric in data["rubrics"] if metric["group"] == "fixed")
+        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
 
         assert accuracy_metric["rubric_name"] == "Accuracy"
         assert isinstance(accuracy_metric["judge_summaries"], list)
         assert len(accuracy_metric["rows"]) == len(sample_annotations)
 
         assert rubric_metric["rubric_name"] == sample_rubric.name
-        assert rubric_metric["target_label"] == sample_rubric.best_option
+        assert rubric_metric["best_option"] == sample_rubric.best_option
         assert len(rubric_metric["rows"]) == len(sample_annotations)
 
     def test_scoring_contracts_return_null_summaries_for_judges_that_have_not_run(
@@ -152,9 +161,10 @@ class TestMetricsAPI:
     ):
         """Created judges without metric results should return unavailable summaries."""
         from src.common.database.models import Judge
-        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+        from src.rubric.services.system_rubrics import ensure_system_rubrics
 
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        ensure_system_rubrics(test_db, sample_target.id)
+        accuracy_rubric = _accuracy_rubric(test_db, sample_target.id)
         accuracy_judge = Judge(
             target_id=sample_target.id,
             rubric_id=accuracy_rubric.id,
@@ -183,8 +193,8 @@ class TestMetricsAPI:
 
         assert response.status_code == 200
         data = response.json()
-        accuracy_metric = next(metric for metric in data["metrics"] if metric["group"] == "fixed")
-        rubric_metric = next(metric for metric in data["metrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
+        accuracy_metric = next(metric for metric in data["rubrics"] if metric["group"] == "fixed")
+        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
 
         accuracy_summary = next(summary for summary in accuracy_metric["judge_summaries"] if summary["judge_id"] == accuracy_judge.id)
         rubric_summary = next(summary for summary in rubric_metric["judge_summaries"] if summary["judge_id"] == rubric_judge.id)
@@ -206,7 +216,7 @@ class TestMetricsAPI:
     ):
         """Saved manual label overrides should persist in rows and update metric aggregates."""
         from src.common.database.models import AnswerScore, Judge, Annotation
-        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+        from src.rubric.services.system_rubrics import ensure_system_rubrics
 
         rubric_judge = Judge(
             target_id=sample_target.id,
@@ -239,7 +249,8 @@ class TestMetricsAPI:
             ))
         test_db.commit()
 
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+        ensure_system_rubrics(test_db, sample_target.id)
+        accuracy_rubric = _accuracy_rubric(test_db, sample_target.id)
 
         accuracy_override_response = test_client.put(
             f"/api/v1/answers/{sample_annotations[8].answer_id}/label-overrides/{accuracy_rubric.id}",
@@ -258,8 +269,8 @@ class TestMetricsAPI:
         assert response.status_code == 200
         data = response.json()
 
-        accuracy_metric = next(metric for metric in data["metrics"] if metric["group"] == "fixed")
-        rubric_metric = next(metric for metric in data["metrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
+        accuracy_metric = next(metric for metric in data["rubrics"] if metric["group"] == "fixed")
+        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
 
         accuracy_row = next(row for row in accuracy_metric["rows"] if row["answer_id"] == sample_annotations[8].answer_id)
         rubric_row = next(row for row in rubric_metric["rows"] if row["answer_id"] == overridden_answer_id)
@@ -275,7 +286,7 @@ class TestMetricsAPI:
         assert rubric_row["aggregated_result"]["value"] == "Professional"
         assert rubric_row["aggregated_result"]["baseline_value"] == "Casual"
         assert rubric_row["aggregated_result"]["is_edited"] is True
-        assert rubric_row["human_option"] == "Professional"
+        assert rubric_row["human_label"] == "Professional"
         assert rubric_metric["accurate_count"] == 9
         assert rubric_metric["inaccurate_count"] == 1
         assert rubric_metric["edited_count"] == 1
@@ -328,12 +339,12 @@ class TestMetricsAPI:
 
         assert response.status_code == 200
         data = response.json()
-        returned_rubric_ids = {entry["rubric_id"] for entry in data}
+        returned_rubric_ids = {entry["rubric_id"] for entry in data["rubrics"]}
         assert sample_rubric.id in returned_rubric_ids
-        accuracy_entry = next(entry for entry in data if entry["rubric_name"] == "Accuracy")
-        rubric_entry = next(entry for entry in data if entry["rubric_id"] == sample_rubric.id)
-        assert accuracy_entry["snapshot_id"] == sample_snapshot.id
-        assert rubric_entry["aggregated_score"] == 0.9
+        accuracy_entry = next(entry for entry in data["rubrics"] if entry["rubric_name"] == "Accuracy")
+        rubric_entry = next(entry for entry in data["rubrics"] if entry["rubric_id"] == sample_rubric.id)
+        assert accuracy_entry["snapshots"][0]["snapshot_id"] == sample_snapshot.id
+        assert rubric_entry["snapshots"][0]["aggregated_score"] == 0.9
 
     def test_rubric_scoped_judge_accuracy_and_missing_score_lookup_use_rubric_identity(
         self,
@@ -446,14 +457,14 @@ class TestMetricsAPI:
         assert response.status_code == 200
         data = response.json()
 
-        rubric_metric = next(metric for metric in data["metrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
+        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
         rubric_row = next(row for row in rubric_metric["rows"] if row["answer_id"] == overridden_answer_id)
 
         assert rubric_row["aggregated_result"]["method"] == "majority"
         assert rubric_row["aggregated_result"]["value"] == "Casual"
         assert rubric_row["aggregated_result"]["baseline_value"] == "Casual"
         assert rubric_row["aggregated_result"]["is_edited"] is False
-        assert rubric_row["human_option"] == "Professional"
+        assert rubric_row["human_label"] == "Professional"
         assert rubric_metric["accurate_count"] == 8
         assert rubric_metric["inaccurate_count"] == 2
         assert rubric_metric["edited_count"] == 0

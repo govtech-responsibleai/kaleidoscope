@@ -8,11 +8,18 @@ import math
 
 import pytest
 
-from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
+from src.rubric.services.system_rubrics import ensure_system_rubrics
 
 
 def _accuracy_override_path(test_db, sample_answer) -> str:
-    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_answer.snapshot.target_id)
+    ensure_system_rubrics(test_db, sample_answer.snapshot.target_id)
+    accuracy_rubric = TargetRubricRepository.get_by_target(
+        test_db,
+        sample_answer.snapshot.target_id,
+        group="fixed",
+        name="Accuracy",
+    )[0]
     return f"/api/v1/answers/{sample_answer.id}/label-overrides/{accuracy_rubric.id}"
 
 
@@ -133,7 +140,10 @@ class TestAnswerClaimsAPI:
 
         response = test_client.get(
             f"/api/v1/answers/{sample_answer.id}/claims",
-            params={"judge_id": sample_judge_claim_based.id}
+            params={
+                "judge_id": sample_judge_claim_based.id,
+                "rubric_id": sample_judge_claim_based.rubric_id,
+            }
         )
 
         assert response.status_code == 200
@@ -159,7 +169,10 @@ class TestAnswerClaimsAPI:
         """
         response = test_client.get(
             f"/api/v1/answers/{sample_answer.id}/claims",
-            params={"judge_id": sample_judge_claim_based.id}
+            params={
+                "judge_id": sample_judge_claim_based.id,
+                "rubric_id": sample_judge_claim_based.rubric_id,
+            }
         )
 
         assert response.status_code == 200
@@ -393,22 +406,28 @@ class TestLabelOverrideReliability:
 class TestLegacyAnnotationStorage:
     """Regression coverage for the rubric-native annotation bridge behind legacy endpoints."""
 
-    def test_create_annotation_persists_fixed_accuracy_as_rubric_annotation(self, test_client, test_db, sample_answer):
-        """Legacy POST /annotations should write the fixed rubric annotation."""
+    def test_create_annotation_persists_rubric_native_row(self, test_client, test_db, sample_answer):
+        """POST /annotations should write the requested rubric annotation row."""
         from src.common.database.models import Annotation
-        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
 
-        ensure_fixed_accuracy_rubric(test_db, sample_answer.snapshot.target_id)
+        path = _accuracy_override_path(test_db, sample_answer)
+        accuracy_rubric_id = int(path.rsplit("/", 1)[-1])
 
         response = test_client.post(
             "/api/v1/annotations",
-            json={"answer_id": sample_answer.id, "label": True, "notes": "Reviewed"},
+            json={
+                "answer_id": sample_answer.id,
+                "rubric_id": accuracy_rubric_id,
+                "option_value": "Accurate",
+                "notes": "Reviewed",
+            },
         )
 
         assert response.status_code == 201
         data = response.json()
         assert data["answer_id"] == sample_answer.id
-        assert data["label"] is True
+        assert data["rubric_id"] == accuracy_rubric_id
+        assert data["option_value"] == "Accurate"
 
         rubric_annotations = test_db.query(Annotation).filter(Annotation.answer_id == sample_answer.id).all()
         assert len(rubric_annotations) == 1
@@ -502,8 +521,8 @@ class TestLegacyAnnotationStorage:
         assert read_response.status_code == 404
         assert write_response.status_code == 404
 
-    def test_legacy_annotation_update_modifies_rubric_native_row(self, test_client, test_db, sample_answer):
-        """Legacy PUT /annotations/{id} should update the underlying fixed rubric annotation row."""
+    def test_annotation_update_modifies_rubric_native_row(self, test_client, test_db, sample_answer):
+        """PUT /annotations/{id} should update the scoped rubric annotation row."""
         from src.common.database.models import Annotation
 
         path = _accuracy_override_path(test_db, sample_answer)
@@ -525,7 +544,11 @@ class TestLegacyAnnotationStorage:
 
         response = test_client.put(
             f"/api/v1/annotations/{annotation_id}",
-            json={"label": True, "notes": "Updated notes"},
+            json={
+                "rubric_id": accuracy_rubric_id,
+                "option_value": "Accurate",
+                "notes": "Updated notes",
+            },
         )
 
         assert response.status_code == 200
@@ -533,8 +556,8 @@ class TestLegacyAnnotationStorage:
         assert updated.option_value == "Accurate"
         assert updated.notes == "Updated notes"
 
-    def test_legacy_annotation_delete_removes_rubric_native_row(self, test_client, test_db, sample_answer):
-        """Legacy DELETE /annotations/{id} should delete the underlying fixed rubric annotation row."""
+    def test_annotation_delete_removes_rubric_native_row(self, test_client, test_db, sample_answer):
+        """DELETE /annotations/{id} should delete the scoped rubric annotation row."""
         from src.common.database.models import Annotation
 
         path = _accuracy_override_path(test_db, sample_answer)
@@ -554,7 +577,10 @@ class TestLegacyAnnotationStorage:
             Annotation.rubric_id == accuracy_rubric_id,
         ).scalar()
 
-        response = test_client.delete(f"/api/v1/annotations/{annotation_id}")
+        response = test_client.delete(
+            f"/api/v1/annotations/{annotation_id}",
+            params={"rubric_id": accuracy_rubric_id},
+        )
 
         assert response.status_code == 204
         remaining = test_db.query(Annotation).filter(Annotation.id == annotation_id).count()

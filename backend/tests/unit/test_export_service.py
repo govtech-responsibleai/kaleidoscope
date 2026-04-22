@@ -7,7 +7,14 @@ import zipfile
 import io
 import pytest
 
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.services.export_service import ExportService, ExportFormat
+
+
+def _accuracy_rubric_id(test_db, target_id: int) -> int:
+    return TargetRubricRepository.get_by_target(
+        test_db, target_id, group="fixed", name="Accuracy"
+    )[0].id
 
 
 @pytest.mark.unit
@@ -71,7 +78,11 @@ class TestExportService:
     ):
         """Test exporting snapshot results in different formats."""
         service = ExportService(test_db)
-        result, evaluator_payload = service.export_snapshot(sample_snapshot.id, format)
+        result, evaluator_payload = service.export_snapshot(
+            sample_snapshot.id,
+            format,
+            rubric_id=_accuracy_rubric_id(test_db, sample_snapshot.target_id),
+        )
 
         if format == ExportFormat.CSV:
             assert isinstance(result, str)
@@ -98,7 +109,8 @@ class TestExportService:
         result, evaluator_payload = service.export_snapshot(
             sample_snapshot.id,
             ExportFormat.CSV,
-            include_evaluators=True
+            include_evaluators=True,
+            rubric_id=_accuracy_rubric_id(test_db, sample_snapshot.target_id),
         )
 
         assert isinstance(result, str)
@@ -121,7 +133,7 @@ class TestExportService:
         service = ExportService(test_db)
 
         with pytest.raises(ValueError, match="Snapshot 9999 not found"):
-            service.export_snapshot(9999, ExportFormat.CSV)
+            service.export_snapshot(9999, ExportFormat.CSV, rubric_id=1)
 
     def test_export_snapshot_scopes_evaluator_exports_to_requested_rubric(
         self,

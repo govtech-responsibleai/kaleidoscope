@@ -4,13 +4,13 @@ Unit tests for MetricsService.
 
 import pytest
 from unittest.mock import patch
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import (
     AnswerLabelOverride,
     AnswerScore,
     Judge,
     Annotation,
 )
-from src.common.services.system_rubrics import FixedAccuracyRubricInvariantError
 
 from src.scoring.services.metrics_service import MetricsService
 from src.common.models.metrics import (
@@ -26,12 +26,22 @@ from src.common.models.metrics import (
 class TestMetricsService:
     """Unit tests for MetricsService class."""
 
+    @staticmethod
+    def _accuracy_rubric_id(test_db, target_id: int) -> int:
+        return TargetRubricRepository.get_by_target(
+            test_db, target_id, group="fixed", name="Accuracy"
+        )[0].id
+
     def test_calculate_judge_alignment(
         self, test_db, sample_annotations, sample_answer_scores, sample_snapshot, sample_judge_claim_based
     ):
         """Test judge alignment calculation returns correct F1, precision, recall, accuracy."""
         service = MetricsService(test_db)
-        metrics = service.calculate_judge_alignment(sample_snapshot.id, sample_judge_claim_based.id)
+        metrics = service.calculate_judge_alignment(
+            sample_snapshot.id,
+            sample_judge_claim_based.id,
+            sample_judge_claim_based.rubric_id,
+        )
 
         # Verify metrics structure
         assert isinstance(metrics, JudgeAlignmentResponse)
@@ -50,7 +60,11 @@ class TestMetricsService:
     ):
         """Test accuracy calculation: 8 accurate out of 10 = 0.8."""
         service = MetricsService(test_db)
-        metrics = service.calculate_accuracy(sample_snapshot.id, sample_judge_claim_based.id)
+        metrics = service.calculate_accuracy(
+            sample_snapshot.id,
+            sample_judge_claim_based.id,
+            sample_judge_claim_based.rubric_id,
+        )
 
         assert isinstance(metrics, JudgeAccuracyResponse)
         assert metrics.accuracy == 0.8
@@ -62,21 +76,30 @@ class TestMetricsService:
         service = MetricsService(test_db)
 
         with pytest.raises(ValueError, match="No annotations found"):
-            service.calculate_judge_alignment(sample_snapshot.id, sample_judge_claim_based.id)
+            service.calculate_judge_alignment(
+                sample_snapshot.id,
+                sample_judge_claim_based.id,
+                sample_judge_claim_based.rubric_id,
+            )
 
     def test_accuracy_raises_if_no_scores(self, test_db, sample_snapshot, sample_judge_claim_based):
         """Test that calculate_accuracy raises ValueError when no scores found."""
         service = MetricsService(test_db)
 
         with pytest.raises(ValueError, match="No scores found"):
-            service.calculate_accuracy(sample_snapshot.id, sample_judge_claim_based.id)
+            service.calculate_accuracy(
+                sample_snapshot.id,
+                sample_judge_claim_based.id,
+                sample_judge_claim_based.rubric_id,
+            )
 
     def test_get_aggregated_results(
         self, test_db, sample_annotations, sample_answer_scores, sample_snapshot
     ):
         """Test get_aggregated_results returns (list of AggregatedResult, reliability_map) tuple."""
         service = MetricsService(test_db)
-        results, reliability_map = service.get_aggregated_results(sample_snapshot.id)
+        rubric_id = self._accuracy_rubric_id(test_db, sample_snapshot.target_id)
+        results, reliability_map = service.get_aggregated_results(sample_snapshot.id, rubric_id)
 
         # Verify we get results for all answers
         assert len(results) == 10
@@ -99,20 +122,22 @@ class TestMetricsService:
 
     def test_get_aggregated_results_raises_if_no_answers(self, test_db, sample_snapshot):
         """Test that get_aggregated_results raises ValueError when no answers found."""
-        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+        from src.rubric.services.system_rubrics import ensure_system_rubrics
 
-        ensure_fixed_accuracy_rubric(test_db, sample_snapshot.target_id)
+        ensure_system_rubrics(test_db, sample_snapshot.target_id)
         service = MetricsService(test_db)
+        rubric_id = self._accuracy_rubric_id(test_db, sample_snapshot.target_id)
 
         with pytest.raises(ValueError, match="No answers found"):
-            service.get_aggregated_results(sample_snapshot.id)
+            service.get_aggregated_results(sample_snapshot.id, rubric_id)
 
     def test_calculate_snapshot_summary(
         self, test_db, sample_annotations, sample_answer_scores, sample_snapshot
     ):
         """Test calculate_snapshot_summary returns correct summary metrics with aligned_judges."""
         service = MetricsService(test_db)
-        summary = service.calculate_snapshot_summary(sample_snapshot.id)
+        rubric_id = self._accuracy_rubric_id(test_db, sample_snapshot.target_id)
+        summary = service.calculate_snapshot_summary(sample_snapshot.id, rubric_id)
 
         # Verify structure
         assert isinstance(summary, SnapshotMetric)
@@ -174,7 +199,7 @@ class TestMetricsService:
 
         assert result.total_inaccurate >= 0
 
-    def test_fixed_accuracy_helpers_use_existing_rubric_without_request_time_ensure(
+    def test_rubric_metrics_use_existing_rubric_without_request_time_ensure(
         self,
         test_db,
         sample_annotations,
@@ -186,18 +211,19 @@ class TestMetricsService:
         service = MetricsService(test_db)
 
         with patch(
-            "src.common.services.system_rubrics.ensure_fixed_accuracy_rubric",
+            "src.rubric.services.system_rubrics.ensure_system_rubrics",
             side_effect=AssertionError("request-time ensure should not run"),
         ):
-            contract = service.get_accuracy_scoring_contract(sample_snapshot.id)
-            accuracy = service.calculate_accuracy(sample_snapshot.id, sample_judge_claim_based.id)
-            results, _ = service.get_aggregated_results(sample_snapshot.id)
+            rubric_id = self._accuracy_rubric_id(test_db, sample_snapshot.target_id)
+            contract = service.build_scoring_contract(sample_snapshot.id, rubric_id)
+            accuracy = service.calculate_accuracy(sample_snapshot.id, sample_judge_claim_based.id, rubric_id)
+            results, _ = service.get_aggregated_results(sample_snapshot.id, rubric_id)
 
         assert contract.rubric_name == "Accuracy"
         assert accuracy.accuracy == 0.8
         assert len(results) == 10
 
-    def test_accuracy_helpers_raise_invariant_when_fixed_rubric_missing(
+    def test_build_scoring_contract_raises_when_rubric_is_missing(
         self,
         test_db,
         sample_snapshot,
@@ -205,8 +231,8 @@ class TestMetricsService:
         """Runtime fixed-accuracy lookups should fail loudly instead of auto-creating a rubric."""
         service = MetricsService(test_db)
 
-        with pytest.raises(FixedAccuracyRubricInvariantError, match="Fixed Accuracy rubric not found"):
-            service.get_accuracy_scoring_contract(sample_snapshot.id)
+        with pytest.raises(ValueError, match="Rubric 9999 not found"):
+            service.build_scoring_contract(sample_snapshot.id, 9999)
 
     def test_alignment_uses_rubric_annotations_as_ground_truth(
         self,
@@ -237,7 +263,11 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        metrics = service.calculate_judge_alignment(sample_snapshot.id, sample_judge_claim_based.id)
+        metrics = service.calculate_judge_alignment(
+            sample_snapshot.id,
+            sample_judge_claim_based.id,
+            sample_judge_claim_based.rubric_id,
+        )
 
         assert metrics.accuracy == 1.0
 
@@ -263,7 +293,11 @@ class TestMetricsService:
 
         service = MetricsService(test_db)
         with pytest.raises(ValueError, match="No annotations found"):
-            service.calculate_judge_alignment(sample_snapshot.id, sample_judge_claim_based.id)
+            service.calculate_judge_alignment(
+                sample_snapshot.id,
+                sample_judge_claim_based.id,
+                sample_judge_claim_based.rubric_id,
+            )
 
     def test_accuracy_scoring_contract_marks_rows_pending_when_reliable_judge_missing_score(
         self,
@@ -300,7 +334,7 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = service.get_accuracy_scoring_contract(sample_snapshot.id)
+        contract = service.build_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
 
         target_row = next(row for row in contract.rows if row.answer_id == sample_annotations[0].answer_id)
         assert any(summary.judge_id == second_judge.id for summary in contract.judge_summaries)
@@ -332,7 +366,7 @@ class TestMetricsService:
         test_db.refresh(unused_judge)
 
         service = MetricsService(test_db)
-        contract = service.get_accuracy_scoring_contract(sample_snapshot.id)
+        contract = service.build_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
 
         summary = next(summary for summary in contract.judge_summaries if summary.judge_id == unused_judge.id)
         assert summary.accuracy is None
@@ -348,14 +382,15 @@ class TestMetricsService:
         sample_snapshot,
     ):
         """Persisted accuracy overrides should remain visible in the scoring contract after refresh."""
-        from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
-        accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_snapshot.target_id)
+        from src.rubric.services.system_rubrics import ensure_system_rubrics
+        ensure_system_rubrics(test_db, sample_snapshot.target_id)
+        accuracy_rubric_id = self._accuracy_rubric_id(test_db, sample_snapshot.target_id)
         target_answer_id = sample_annotations[8].answer_id
-        test_db.add(AnswerLabelOverride(answer_id=target_answer_id, rubric_id=accuracy_rubric.id, edited_value="Accurate"))
+        test_db.add(AnswerLabelOverride(answer_id=target_answer_id, rubric_id=accuracy_rubric_id, edited_value="Accurate"))
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = service.get_accuracy_scoring_contract(sample_snapshot.id)
+        contract = service.build_scoring_contract(sample_snapshot.id, accuracy_rubric_id)
 
         row = next(row for row in contract.rows if row.answer_id == target_answer_id)
         assert row.aggregated_result.method == "override"
@@ -408,17 +443,14 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = next(
-            contract for contract in service.get_rubric_scoring_contracts(sample_target.id, sample_snapshot.id)
-            if contract.rubric_id == sample_rubric.id
-        )
+        contract = service.build_scoring_contract(sample_snapshot.id, sample_rubric.id)
 
         row = next(row for row in contract.rows if row.answer_id == overridden_answer_id)
         assert row.aggregated_result.method == "majority"
         assert row.aggregated_result.value == "Casual"
         assert row.aggregated_result.baseline_value == "Casual"
         assert row.aggregated_result.is_edited is False
-        assert row.human_option == "Professional"
+        assert row.human_label == "Professional"
         assert contract.accurate_count == 8
         assert contract.inaccurate_count == 2
         assert contract.edited_count == 0
@@ -473,17 +505,14 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = next(
-            contract for contract in service.get_rubric_scoring_contracts(sample_target.id, sample_snapshot.id)
-            if contract.rubric_id == sample_rubric.id
-        )
+        contract = service.build_scoring_contract(sample_snapshot.id, sample_rubric.id)
 
         row = next(row for row in contract.rows if row.answer_id == overridden_answer_id)
         assert row.aggregated_result.method == "override"
         assert row.aggregated_result.value == "Professional"
         assert row.aggregated_result.baseline_value == "Casual"
         assert row.aggregated_result.is_edited is True
-        assert row.human_option == "Professional"
+        assert row.human_label == "Professional"
         assert contract.accurate_count == 9
         assert contract.inaccurate_count == 1
         assert contract.edited_count == 1

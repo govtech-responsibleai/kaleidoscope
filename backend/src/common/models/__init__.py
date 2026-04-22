@@ -91,9 +91,11 @@ from src.common.models.answer_score import (
     AnswerScoreListResponse
 )
 from src.common.models.annotation import (
+    AnnotationAnswerGroupResponse,
     AnnotationCreate,
     AnnotationUpdate,
     AnnotationResponse,
+    AnnotationBulkCreateItem,
     AnnotationBulkCreate,
     AnnotationListResponse
 )
@@ -136,10 +138,13 @@ from src.common.models.metrics import (
     AggregationMethod,
     AggregatedScore,
     AggregatedResult,
+    SnapshotResultsResponse,
     AlignedJudge,
     JudgeAlignmentResponse,
     JudgeAccuracyResponse,
     SnapshotMetric,
+    MetricsByRubric,
+    SnapshotMetricsResponse,
     ConfusionMatrixResponse,
     JudgeScoreSummary,
     JudgeRowResult,
@@ -232,6 +237,8 @@ __all__ = [
     "AnnotationCreate",
     "AnnotationUpdate",
     "AnnotationResponse",
+    "AnnotationAnswerGroupResponse",
+    "AnnotationBulkCreateItem",
     "AnnotationBulkCreate",
     "AnnotationListResponse",
     # QAJob
@@ -262,10 +269,13 @@ __all__ = [
     "AggregationMethod",
     "AggregatedScore",
     "AggregatedResult",
+    "SnapshotResultsResponse",
     "AlignedJudge",
     "JudgeAlignmentResponse",
     "JudgeAccuracyResponse",
     "SnapshotMetric",
+    "MetricsByRubric",
+    "SnapshotMetricsResponse",
     "ConfusionMatrixResponse",
     "JudgeScoreSummary",
     "JudgeRowResult",

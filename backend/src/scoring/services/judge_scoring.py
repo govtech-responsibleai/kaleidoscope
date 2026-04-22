@@ -23,7 +23,7 @@ from src.common.llm import LLMClient, CostTracker
 from src.common.prompts import render_template
 from src.common.prompts.template_loader import get_loader
 from src.common.models import ClaimJudgmentResult, ResponseJudgmentResult, RubricJudgmentResult
-from src.common.services.system_rubrics import accuracy_label_from_bool, negative_option_for_rubric
+from src.rubric.services.system_rubrics import accuracy_label_from_bool, negative_option_for_rubric
 
 logger = logging.getLogger(__name__)
 

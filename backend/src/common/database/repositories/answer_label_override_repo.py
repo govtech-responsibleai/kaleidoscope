@@ -6,7 +6,7 @@ from typing import List, Optional
 from sqlalchemy.orm import Session
 
 from src.common.database.models import Answer, AnswerLabelOverride, TargetRubric
-from src.common.services.system_rubrics import canonicalize_rubric_option_value, rubric_option_values
+from src.rubric.services.system_rubrics import canonicalize_rubric_option_value, rubric_option_values
 
 
 class AnswerLabelOverrideRepository:

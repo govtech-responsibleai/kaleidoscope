@@ -9,6 +9,7 @@ from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
 from src.common.database.connection import Base
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import (
     Target, Job, Persona, Question, Answer, AnswerClaim, AnswerScore, AnswerClaimScore,
     QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
@@ -43,6 +44,14 @@ def get_test_password_hash(password: str) -> str:
     # All test passwords use the same hash for simplicity in tests
     # The actual password verification is tested separately
     return TEST_PASSWORD_HASHES.get(password, TEST_PASSWORD_HASHES["testpassword"])
+
+
+def get_accuracy_rubric(db, target_id: int) -> TargetRubric:
+    """Return the built-in Accuracy rubric for a target."""
+    rubrics = TargetRubricRepository.get_by_target(db, target_id, group="fixed", name="Accuracy")
+    if len(rubrics) != 1:
+        raise AssertionError(f"Expected exactly one fixed Accuracy rubric for target {target_id}")
+    return rubrics[0]
 
 
 @pytest.fixture(scope="function")
@@ -104,6 +113,7 @@ def test_client(test_db_factory):
     from fastapi import FastAPI
     from src.common.config import get_settings
     from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
+    from src.rubric.api.routes import rubrics
     from src.scoring.api.routes import snapshots, metrics, annotations, qa_jobs
     from src.common.database.connection import get_db
 
@@ -117,6 +127,7 @@ def test_client(test_db_factory):
 
     # Include routers
     test_app.include_router(targets.router, prefix=f"{settings.api_prefix}/targets", tags=["Targets"])
+    test_app.include_router(rubrics.router, prefix=f"{settings.api_prefix}/targets", tags=["Rubrics"])
     test_app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", tags=["Personas"])
     test_app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"])
     # Jobs router has no prefix because routes define full paths (e.g., /targets/{id}/jobs/...)
@@ -360,10 +371,11 @@ def sample_answer(test_db, sample_question, sample_snapshot):
 @pytest.fixture
 def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
     """Create a sample QA job for testing."""
-    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
 
     # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
-    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_snapshot.target_id)
+    ensure_system_rubrics(test_db, sample_snapshot.target_id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_snapshot.target_id)
 
     # Create a judge bound to the accuracy rubric
     judge = Judge(
@@ -397,7 +409,7 @@ def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
 @pytest.fixture
 def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas):
     """Create a QA job without an existing answer for testing API errors."""
-    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
 
     # Create snapshot
     snapshot = Snapshot(
@@ -424,7 +436,8 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
     test_db.refresh(question)
 
     # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
-    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+    ensure_system_rubrics(test_db, sample_target.id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_target.id)
 
     # Create judge bound to the accuracy rubric
     judge = Judge(
@@ -465,9 +478,10 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
 @pytest.fixture
 def sample_judge_claim_based(test_db, sample_target):
     """Create a claim-based judge (with accuracy rubric) for testing."""
-    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
 
-    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+    ensure_system_rubrics(test_db, sample_target.id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_target.id)
 
     judge = Judge(
         name="Claim-Based Judge",
@@ -568,7 +582,7 @@ def sample_kb_documents(test_db, sample_target):
 @pytest.fixture
 def sample_annotations(test_db, sample_answer, sample_target, sample_job, sample_personas):
     """Create sample annotations for testing."""
-    from src.common.services.system_rubrics import ensure_fixed_accuracy_rubric
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
 
     # Create additional questions and snapshots to avoid UNIQUE constraint
     additional_answers = []
@@ -603,7 +617,8 @@ def sample_annotations(test_db, sample_answer, sample_target, sample_job, sample
     annotations: list[SampleAnnotationRecord] = []
     all_answers = [sample_answer] + additional_answers
     labels = [True, True, True, True, True, True, True, False, False, False]
-    accuracy_rubric = ensure_fixed_accuracy_rubric(test_db, sample_target.id)
+    ensure_system_rubrics(test_db, sample_target.id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_target.id)
 
     for answer, label in zip(all_answers, labels):
         answer.is_selected_for_annotation = True
@@ -727,6 +742,7 @@ def auth_client(test_db_factory, test_user):
     from src.common.database.connection import get_db
     from src.common.auth import auth_router, get_scoped_db
     from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents
+    from src.rubric.api.routes import rubrics
     from src.scoring.api.routes import judges, snapshots
 
     settings = get_settings()
@@ -744,6 +760,12 @@ def auth_client(test_db_factory, test_user):
         targets.router,
         prefix=f"{settings.api_prefix}/targets",
         tags=["Targets"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        rubrics.router,
+        prefix=f"{settings.api_prefix}/targets",
+        tags=["Rubrics"],
         dependencies=[Depends(get_scoped_db)]
     )
     test_app.include_router(

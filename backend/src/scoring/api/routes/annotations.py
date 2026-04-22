@@ -1,24 +1,25 @@
-"""
-API routes for Annotation management.
-"""
+"""API routes for Annotation management."""
 
-from typing import List
+from collections import defaultdict
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from typing import List
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
+from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
-from src.common.database.repositories import AnnotationRepository, AnswerRepository, SnapshotRepository
 from src.common.database.models import Annotation, TargetRubric
+from src.common.database.repositories import AnnotationRepository, AnswerRepository, SnapshotRepository
 from src.common.models import (
-    AnnotationCreate,
-    AnnotationUpdate,
-    AnnotationResponse,
+    AnnotationAnswerGroupResponse,
     AnnotationBulkCreate,
-    AnnotationListResponse
+    AnnotationCreate,
+    AnnotationListResponse,
+    AnnotationResponse,
+    AnnotationUpdate,
 )
-from src.common.services.system_rubrics import canonicalize_rubric_option_value
+from src.rubric.services.system_rubrics import canonicalize_rubric_option_value
 
 
 class AnswerAnnotationUpsert(BaseModel):
@@ -37,6 +38,7 @@ class AnswerAnnotationRecordResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
 
 router = APIRouter()
 
@@ -67,25 +69,12 @@ def create_annotation(
     annotation: AnnotationCreate,
     db: Session = Depends(get_db)
 ):
-    """
-    Create a single annotation.
-
-    Args:
-        annotation: Annotation creation data (answer_id, label, notes)
-        db: Database session
-
-    Returns:
-        Created annotation
-
-    Raises:
-        HTTPException: If answer not found
-    """
-    # Verify answer exists
+    """Create a single rubric-scoped annotation."""
     _get_answer_or_404(db, annotation.answer_id)
-
-    annotation_data = annotation.model_dump()
-    created_annotation = AnnotationRepository.create(db, annotation_data)
-    return created_annotation
+    try:
+        return AnnotationRepository.create(db, annotation.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/annotations/bulk", response_model=List[AnnotationResponse], status_code=status.HTTP_201_CREATED)
@@ -93,29 +82,18 @@ def bulk_create_annotations(
     request: AnnotationBulkCreate,
     db: Session = Depends(get_db)
 ):
-    """
-    Bulk create annotations for multiple answers.
-
-    Used when user submits all annotations at once.
-
-    Args:
-        request: List of annotations to create
-        db: Database session
-
-    Returns:
-        List of created annotations
-
-    Raises:
-        HTTPException: If any answer not found
-    """
-    # Verify all answers exist
+    """Bulk create annotations for multiple answers under one rubric."""
     for annotation in request.annotations:
         _get_answer_or_404(db, annotation.answer_id)
 
-    # Create all annotations
-    annotations_data = [ann.model_dump() for ann in request.annotations]
-    created_annotations = AnnotationRepository.create_many(db, annotations_data)
-    return created_annotations
+    try:
+        return AnnotationRepository.create_many(
+            db,
+            request.rubric_id,
+            [ann.model_dump() for ann in request.annotations],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.get("/snapshots/{snapshot_id}/annotations", response_model=AnnotationListResponse)
@@ -123,20 +101,7 @@ def list_annotations_for_snapshot(
     snapshot_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    List all annotations for a snapshot.
-
-    Args:
-        snapshot_id: Snapshot ID
-        db: Database session
-
-    Returns:
-        List of annotations
-
-    Raises:
-        HTTPException: If snapshot not found
-    """
-    # Verify snapshot exists
+    """List all annotations for a snapshot grouped by answer."""
     snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
     if not snapshot:
         raise HTTPException(
@@ -145,7 +110,18 @@ def list_annotations_for_snapshot(
         )
 
     annotations = AnnotationRepository.get_by_snapshot(db, snapshot_id)
-    return AnnotationListResponse(annotations=annotations, total=len(annotations))
+    grouped: dict[int, list[AnnotationResponse]] = defaultdict(list)
+    for annotation in annotations:
+        grouped[annotation.answer_id].append(AnnotationResponse.model_validate(annotation))
+
+    return AnnotationListResponse(
+        answers=[
+            AnnotationAnswerGroupResponse(answer_id=answer_id, annotations=rows)
+            for answer_id, rows in grouped.items()
+        ],
+        total_answers=len(grouped),
+        total_annotations=len(annotations),
+    )
 
 
 @router.get("/snapshots/{snapshot_id}/annotations/completion-status")
@@ -153,27 +129,7 @@ def check_annotation_completion_status(
     snapshot_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Check if all selected answers have been annotated.
-
-    Returns completion statistics for the snapshot's selected answers.
-    Useful for UI progress tracking and enabling/disabling submit buttons.
-
-    Args:
-        snapshot_id: Snapshot ID
-        db: Database session
-
-    Returns:
-        Dictionary with:
-        - total_selected: Count of answers where is_selected_for_annotation=True
-        - total_selected_and_annotated: Count of selected answers that have annotations
-        - is_complete: Boolean indicating if all selected answers are annotated
-        - completion_percentage: Percentage of selected answers that are annotated
-
-    Raises:
-        HTTPException: If snapshot not found
-    """
-    # Verify snapshot exists
+    """Check whether all selected answers are annotated across all target rubrics."""
     snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
     if not snapshot:
         raise HTTPException(
@@ -181,8 +137,7 @@ def check_annotation_completion_status(
             detail=f"Snapshot {snapshot_id} not found"
         )
 
-    completion_status = AnnotationRepository.check_annotation_completion(db, snapshot_id)
-    return completion_status
+    return AnnotationRepository.check_annotation_completion(db, snapshot_id)
 
 
 @router.get("/answers/{answer_id}/annotations", response_model=List[AnswerAnnotationRecordResponse])
@@ -201,20 +156,7 @@ def get_annotation_for_answer(
     rubric_id: int,
     db: Session = Depends(get_db)
 ):
-    """
-    Get a specific annotation row for an answer and rubric.
-
-    Args:
-        answer_id: Answer ID
-        rubric_id: Rubric ID
-        db: Database session
-
-    Returns:
-        Annotation row for the answer and rubric
-
-    Raises:
-        HTTPException: If answer or annotation not found
-    """
+    """Get a specific annotation row for an answer and rubric."""
     _get_answer_or_404(db, answer_id)
     annotation = _get_answer_annotation_row(db, answer_id, rubric_id)
     if not annotation:
@@ -229,22 +171,11 @@ def get_annotation_for_answer(
 @router.get("/annotations/{annotation_id}", response_model=AnnotationResponse)
 def get_annotation(
     annotation_id: int,
+    rubric_id: int = Query(..., description="Rubric ID used to scope the annotation lookup"),
     db: Session = Depends(get_db)
 ):
-    """
-    Get a specific annotation by ID.
-
-    Args:
-        annotation_id: Annotation ID
-        db: Database session
-
-    Returns:
-        Annotation details
-
-    Raises:
-        HTTPException: If annotation not found
-    """
-    annotation = AnnotationRepository.get_by_id(db, annotation_id)
+    """Get one annotation row by ID, scoped to a rubric."""
+    annotation = AnnotationRepository.get_by_id(db, annotation_id, rubric_id)
     if not annotation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -259,22 +190,16 @@ def update_annotation(
     annotation_update: AnnotationUpdate,
     db: Session = Depends(get_db)
 ):
-    """
-    Update an annotation.
-
-    Args:
-        annotation_id: Annotation ID
-        annotation_update: Fields to update
-        db: Database session
-
-    Returns:
-        Updated annotation
-
-    Raises:
-        HTTPException: If annotation not found
-    """
-    update_data = annotation_update.model_dump(exclude_unset=True)
-    annotation = AnnotationRepository.update(db, annotation_id, update_data)
+    """Update one rubric-scoped annotation row."""
+    try:
+        annotation = AnnotationRepository.update(
+            db,
+            annotation_id,
+            annotation_update.rubric_id,
+            annotation_update.model_dump(exclude_unset=True),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if not annotation:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -286,24 +211,17 @@ def update_annotation(
 @router.delete("/annotations/{annotation_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_annotation(
     annotation_id: int,
+    rubric_id: int = Query(..., description="Rubric ID used to scope the annotation delete"),
     db: Session = Depends(get_db)
 ):
-    """
-    Delete an annotation.
-
-    Args:
-        annotation_id: Annotation ID
-        db: Database session
-
-    Raises:
-        HTTPException: If annotation not found
-    """
-    success = AnnotationRepository.delete(db, annotation_id)
+    """Delete one annotation row, scoped to a rubric."""
+    success = AnnotationRepository.delete(db, annotation_id, rubric_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Annotation {annotation_id} not found"
         )
+
 
 @router.put("/answers/{answer_id}/annotations/{rubric_id}", response_model=AnswerAnnotationRecordResponse)
 def upsert_annotation(
@@ -327,14 +245,14 @@ def upsert_annotation(
         db.commit()
         db.refresh(existing)
         return existing
-    else:
-        label = Annotation(
-            answer_id=answer_id,
-            rubric_id=rubric_id,
-            option_value=option_value,
-            notes=data.notes,
-        )
-        db.add(label)
-        db.commit()
-        db.refresh(label)
-        return label
+
+    annotation = Annotation(
+        answer_id=answer_id,
+        rubric_id=rubric_id,
+        option_value=option_value,
+        notes=data.notes,
+    )
+    db.add(annotation)
+    db.commit()
+    db.refresh(annotation)
+    return annotation

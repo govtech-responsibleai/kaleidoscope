@@ -7,12 +7,16 @@ import pytest
 from src.common.database.models import Judge, TargetRubric
 from src.common.connectors.http_auth import decrypt_http_auth_secret
 from src.common.database.repositories import TargetHttpAuthSecretRepository, TargetRepository
-from src.common.services.system_rubrics import FIXED_ACCURACY_NAME
+from src.rubric.services.fixed_rubrics import get_fixed_template
 
 
 @pytest.mark.integration
 class TestTargetAPI:
     """Integration tests for target API."""
+
+    @staticmethod
+    def _fixed_accuracy_name() -> str:
+        return get_fixed_template("accuracy")["name"]
 
     def test_target_crud_flow(self, auth_client, auth_headers):
         """
@@ -50,9 +54,18 @@ class TestTargetAPI:
         assert rubrics_response.status_code == 200
         rubrics = rubrics_response.json()
         assert len(rubrics) == 1
-        accuracy_rubric = next((rubric for rubric in rubrics if rubric["name"] == FIXED_ACCURACY_NAME), None)
+        accuracy_rubric = next((rubric for rubric in rubrics if rubric["name"] == self._fixed_accuracy_name()), None)
         assert accuracy_rubric is not None
         assert accuracy_rubric["group"] == "fixed"
+
+        rubric_judges_response = auth_client.get(
+            f"/api/v1/judges/by-rubric/{accuracy_rubric['id']}?target_id={target_id}",
+            headers=auth_headers,
+        )
+        assert rubric_judges_response.status_code == 200
+        rubric_judges = rubric_judges_response.json()
+        assert len(rubric_judges) == 3
+        assert all(judge["rubric_id"] == accuracy_rubric["id"] for judge in rubric_judges)
 
         # 2. List targets
         list_response = auth_client.get(
@@ -252,7 +265,7 @@ class TestTargetAPI:
         )
         assert rubrics_response.status_code == 200
         accuracy_rubric = next(
-            rubric for rubric in rubrics_response.json() if rubric["name"] == FIXED_ACCURACY_NAME
+            rubric for rubric in rubrics_response.json() if rubric["name"] == self._fixed_accuracy_name()
         )
 
         db = test_db_factory()
@@ -262,8 +275,8 @@ class TestTargetAPI:
                 name="Empathy",
                 criteria="Evaluate empathy",
                 options=[
-                    {"option": "Empathetic"},
-                    {"option": "Not Empathetic"},
+                    {"option": "Empathetic", "description": "Shows empathy"},
+                    {"option": "Not Empathetic", "description": "Lacks empathy"},
                 ],
                 best_option="Empathetic",
                 group="preset",
@@ -399,6 +412,13 @@ class TestTargetAPI:
         assert created_preset["group"] == "preset"
         assert created_preset["name"] == template["name"]
 
+        preset_judges_response = auth_client.get(
+            f"/api/v1/judges/by-rubric/{created_preset['id']}?target_id={target_id}",
+            headers=auth_headers,
+        )
+        assert preset_judges_response.status_code == 200
+        assert len(preset_judges_response.json()) == 3
+
         updated_rubrics_response = auth_client.get(
             f"/api/v1/targets/{target_id}/rubrics",
             headers=auth_headers,
@@ -406,6 +426,7 @@ class TestTargetAPI:
         assert updated_rubrics_response.status_code == 200
         updated_rubrics = updated_rubrics_response.json()
         assert len(updated_rubrics) == 2
+        assert [rubric["group"] for rubric in updated_rubrics] == ["fixed", "preset"]
         assert any(rubric["id"] == created_preset["id"] for rubric in updated_rubrics)
 
         updated_premade_response = auth_client.get(

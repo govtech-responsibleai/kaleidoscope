@@ -18,6 +18,9 @@ class AggregatedScore(BaseModel):
 
 class AggregatedResult(BaseModel):
     """Full aggregated result for a single answer."""
+    rubric_id: int
+    rubric_name: str
+    group: str
     question_id: int
     question_text: Optional[str] = None
     question_type: Optional[str] = None
@@ -27,6 +30,12 @@ class AggregatedResult(BaseModel):
     aggregated_score: AggregatedScore
     human_label: Optional[str] = None
     human_notes: Optional[str] = None
+
+
+class SnapshotResultsResponse(BaseModel):
+    """QA-grouped aggregated results for one snapshot."""
+    snapshot_id: int
+    results: List[AggregatedResult] = Field(default_factory=list)
 
 
 class AlignedJudge(BaseModel):
@@ -117,7 +126,6 @@ class ScoringRowResult(BaseModel):
     answer_content: str
     aggregated_result: AggregatedRowResult
     human_label: Optional[str] = None
-    human_option: Optional[str] = None
     judge_results: List[JudgeRowResult] = Field(default_factory=list)
 
 
@@ -126,15 +134,29 @@ class ScoringContract(SnapshotMetric):
     rubric_id: int
     rubric_name: str
     group: str
-    target_label: Optional[str] = None
+    best_option: Optional[str] = None
     judge_summaries: List[JudgeScoreSummary] = Field(default_factory=list)
     rows: List[ScoringRowResult] = Field(default_factory=list)
 
 
 class SnapshotScoringContractsResponse(BaseModel):
-    """All metric-scoped scoring contracts for one snapshot."""
+    """All rubric-scoped scoring contracts for one snapshot."""
     snapshot_id: int
-    metrics: List[ScoringContract] = Field(default_factory=list)
+    rubrics: List[ScoringContract] = Field(default_factory=list)
+
+
+class MetricsByRubric(BaseModel):
+    """Grouped snapshot metrics for one rubric."""
+    rubric_id: int
+    rubric_name: str
+    group: str
+    snapshots: List[SnapshotMetric] = Field(default_factory=list)
+
+
+class SnapshotMetricsResponse(BaseModel):
+    """All-rubrics grouped snapshot metrics for one target."""
+    target_id: int
+    rubrics: List[MetricsByRubric] = Field(default_factory=list)
 
 
 # Legacy aliases kept temporarily while callers migrate to rubric-oriented names.

@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import JudgeRepository
-from src.common.database.seed import AVAILABLE_MODELS
 from src.common.models import (
     JudgeCreate,
     JudgeUpdate,
     JudgeResponse
 )
 from src.common.auth import get_current_user_id
+from src.rubric.services.system_rubrics import AVAILABLE_MODELS
 
 router = APIRouter()
 

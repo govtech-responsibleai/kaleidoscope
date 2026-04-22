@@ -110,7 +110,7 @@ class AnswerScoreRepository:
         db: Session,
         answer_id: int,
         judge_id: int,
-        rubric_id: Optional[int],
+        rubric_id: int,
     ) -> Optional[AnswerScore]:
         """Get the latest score for a specific (answer, rubric, judge) triple."""
         return (
@@ -129,16 +129,15 @@ class AnswerScoreRepository:
         db: Session,
         answer_id: int,
         judge_id: int,
-        rubric_id: Optional[int] = None,
+        rubric_id: int,
     ) -> Optional[AnswerScore]:
-        """Backward-compatible accessor for a specific answer/judge score."""
-        query = db.query(AnswerScore).filter(
-            AnswerScore.answer_id == answer_id,
-            AnswerScore.judge_id == judge_id,
+        """Get the latest rubric-scoped score for a specific answer/judge pair."""
+        return AnswerScoreRepository.get_by_answer_judge_rubric(
+            db,
+            answer_id=answer_id,
+            judge_id=judge_id,
+            rubric_id=rubric_id,
         )
-        if rubric_id is not None:
-            query = query.filter(AnswerScore.rubric_id == rubric_id)
-        return query.order_by(AnswerScore.created_at.desc(), AnswerScore.id.desc()).first()
 
     @staticmethod
     def get_by_answer(db: Session, answer_id: int, rubric_id: Optional[int] = None) -> List[AnswerScore]:

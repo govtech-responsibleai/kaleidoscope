@@ -1,30 +1,27 @@
 """API routes for Metrics calculation and export."""
 
-import logging
-from typing import List, Optional
+from typing import Optional
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
-
-logger = logging.getLogger(__name__)
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import SnapshotRepository, JudgeRepository, TargetRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.models.metrics import (
-    AggregatedResult,
     ConfusionMatrixResponse,
     JudgeAccuracyResponse,
     JudgeAlignmentResponse,
+    SnapshotMetricsResponse,
+    SnapshotResultsResponse,
     SnapshotScoringContractsResponse,
     ScoringPendingCountsResponse,
-    SnapshotMetric,
 )
-from src.common.services.system_rubrics import FixedAccuracyRubricInvariantError
 from src.scoring.services.metrics_service import MetricsService
 
 router = APIRouter()
 
-@router.get("/snapshots/{snapshot_id}/results", response_model=List[AggregatedResult])
+@router.get("/snapshots/{snapshot_id}/results", response_model=SnapshotResultsResponse)
 def get_aggregated_results(
     snapshot_id: int,
     db: Session = Depends(get_db)
@@ -53,16 +50,9 @@ def get_aggregated_results(
             detail=f"Snapshot {snapshot_id} not found"
         )
 
-    # Get aggregated results
     try:
         metrics_service = MetricsService(db)
-        results, _ = metrics_service.get_aggregated_results(snapshot_id)
-        return results
-    except FixedAccuracyRubricInvariantError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
+        return metrics_service.get_snapshot_results(snapshot_id)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -86,11 +76,6 @@ def get_snapshot_scoring_contracts(
     try:
         service = MetricsService(db)
         return service.get_snapshot_scoring_contracts(snapshot_id)
-    except FixedAccuracyRubricInvariantError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e),
-        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -124,19 +109,13 @@ def get_scoring_pending_counts(
     try:
         metrics_service = MetricsService(db)
         return metrics_service.get_scoring_pending_counts(snapshot_id, rubric_id)
-    except FixedAccuracyRubricInvariantError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
-
-@router.get("/targets/{target_id}/snapshot-metrics", response_model=List[SnapshotMetric])
+@router.get("/targets/{target_id}/snapshot-metrics", response_model=SnapshotMetricsResponse)
 def get_target_snapshot_metrics(
     target_id: int,
     snapshot_id: Optional[int] = Query(None),
@@ -166,14 +145,9 @@ def get_target_snapshot_metrics(
             detail=f"Target {target_id} not found"
         )
 
-    metrics_service = MetricsService(db)
     try:
+        metrics_service = MetricsService(db)
         return metrics_service.calculate_snapshot_metrics(target_id, snapshot_id)
-    except FixedAccuracyRubricInvariantError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -223,11 +197,6 @@ def get_confusion_matrix(
         metrics_service = MetricsService(db)
         confusion_matrix = metrics_service.calculate_confusion_matrix(target_id, rubric_id, snapshot_id)
         return confusion_matrix
-    except FixedAccuracyRubricInvariantError as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
-        )
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

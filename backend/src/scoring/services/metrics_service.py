@@ -18,16 +18,11 @@ from src.common.database.repositories.question_repo import QuestionRepository
 from src.common.database.repositories.snapshot_repo import SnapshotRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import AnswerScore, Answer, Annotation
-from src.common.services.system_rubrics import (
-    FIXED_ACCURACY_NAME,
-    RUBRIC_GROUP_FIXED,
-    best_option_for_rubric,
-    canonicalize_rubric_option_value,
-    get_fixed_accuracy_rubric_or_raise,
-)
+from src.rubric.services.system_rubrics import best_option_for_rubric, canonicalize_rubric_option_value
 from src.common.models.metrics import (
     AggregatedScore,
     AggregatedResult,
+    SnapshotResultsResponse,
     AggregatedRowResult,
     AggregationMethod,
     AlignedJudge,
@@ -38,6 +33,8 @@ from src.common.models.metrics import (
     ScoringContract,
     ScoringRowResult,
     SnapshotMetric,
+    MetricsByRubric,
+    SnapshotMetricsResponse,
     ConfusionMatrixResponse,
     ScoringPendingCountsResponse,
     SnapshotScoringContractsResponse,
@@ -113,9 +110,6 @@ class MetricsService:
 
     def _best_option_for_rubric(self, rubric) -> str:
         return best_option_for_rubric(rubric)
-
-    def _get_fixed_accuracy_rubric(self, target_id: int):
-        return get_fixed_accuracy_rubric_or_raise(self.db, target_id)
 
     def _build_alignment_range(self, aligned_judges: List[AlignedJudge]) -> Optional[Dict[str, float]]:
         if not aligned_judges:
@@ -301,7 +295,6 @@ class MetricsService:
             if score.rubric_id == rubric.id and score.judge_id in reliable_judge_ids
         }
 
-        is_fixed_accuracy = rubric.group == RUBRIC_GROUP_FIXED and rubric.name == FIXED_ACCURACY_NAME
         rows: List[ScoringRowResult] = []
         for answer in answers:
             override = override_map.get(answer.id)
@@ -331,10 +324,7 @@ class MetricsService:
                 judge_results=judge_results,
             )
             human_value = human_label_map.get(answer.id)
-            if is_fixed_accuracy:
-                row.human_label = human_value
-            else:
-                row.human_option = human_value
+            row.human_label = human_value
             rows.append(row)
 
         best_option = self._best_option_for_rubric(rubric)
@@ -348,7 +338,7 @@ class MetricsService:
             rubric_id=rubric.id,
             rubric_name=rubric.name,
             group=rubric.group,
-            target_label=best_option,
+            best_option=best_option,
             snapshot_id=snapshot_id,
             aggregated_score=aggregate_score,
             total_answers=len(rows),
@@ -362,35 +352,18 @@ class MetricsService:
             rows=rows,
         )
 
-    def get_accuracy_scoring_contract(self, snapshot_id: int) -> ScoringContract:
-        snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
-        if not snapshot:
-            raise ValueError(f"Snapshot {snapshot_id} not found")
-        accuracy_rubric = self._get_fixed_accuracy_rubric(snapshot.target_id)
-        return self.build_scoring_contract(snapshot_id, accuracy_rubric.id)
-
-    def get_rubric_scoring_contracts(self, target_id: int, snapshot_id: int) -> List[ScoringContract]:
-        snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
-        if not snapshot:
-            raise ValueError(f"Snapshot {snapshot_id} not found")
-        return [
-            self.build_scoring_contract(snapshot_id, rubric.id)
-            for rubric in TargetRubricRepository.get_by_target(self.db, target_id)
-            if not (rubric.group == RUBRIC_GROUP_FIXED and rubric.name == FIXED_ACCURACY_NAME)
-        ]
-
     def get_snapshot_scoring_contracts(self, snapshot_id: int) -> SnapshotScoringContractsResponse:
         snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
-        metrics = [
+        rubrics = [
             self.build_scoring_contract(snapshot_id, rubric.id)
             for rubric in TargetRubricRepository.get_by_target(self.db, snapshot.target_id)
         ]
-        return SnapshotScoringContractsResponse(snapshot_id=snapshot_id, metrics=metrics)
+        return SnapshotScoringContractsResponse(snapshot_id=snapshot_id, rubrics=rubrics)
 
     def calculate_judge_alignment(
-        self, snapshot_id: int, judge_id: int, rubric_id: Optional[int] = None
+        self, snapshot_id: int, judge_id: int, rubric_id: int
     ) -> JudgeAlignmentResponse:
         """
         Calculate judge alignment metrics by comparing judge scores with human annotations.
@@ -398,7 +371,7 @@ class MetricsService:
         Args:
             snapshot_id: Snapshot ID
             judge_id: Judge ID to evaluate
-            rubric_id: Rubric ID to evaluate against. Defaults to fixed Accuracy.
+            rubric_id: Rubric ID to evaluate against.
 
         Returns:
             Dict with metrics: {"f1": 0.85, "precision": 0.82, "recall": 0.88, "accuracy": 0.84}
@@ -410,11 +383,7 @@ class MetricsService:
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
 
-        rubric = (
-            TargetRubricRepository.get_by_id(self.db, rubric_id)
-            if rubric_id is not None
-            else self._get_fixed_accuracy_rubric(snapshot.target_id)
-        )
+        rubric = TargetRubricRepository.get_by_id(self.db, rubric_id)
         if not rubric:
             raise ValueError(f"Rubric {rubric_id} not found")
         if rubric.target_id != snapshot.target_id:
@@ -492,7 +461,7 @@ class MetricsService:
         self,
         snapshot_id: int,
         judge_id: int,
-        rubric_id: Optional[int] = None,
+        rubric_id: int,
     ) -> JudgeAccuracyResponse:
         """
         Calculate overall accuracy for a judge across all answers in a snapshot.
@@ -500,7 +469,7 @@ class MetricsService:
         Args:
             snapshot_id: Snapshot ID
             judge_id: Judge ID
-            rubric_id: Rubric ID to evaluate. Defaults to fixed Accuracy.
+            rubric_id: Rubric ID to evaluate.
 
         Returns:
             Dict with: {"accuracy": 0.73, "total_answers": 100, "accurate_count": 73}
@@ -512,11 +481,7 @@ class MetricsService:
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
 
-        rubric = (
-            TargetRubricRepository.get_by_id(self.db, rubric_id)
-            if rubric_id is not None
-            else self._get_fixed_accuracy_rubric(snapshot.target_id)
-        )
+        rubric = TargetRubricRepository.get_by_id(self.db, rubric_id)
         if not rubric:
             raise ValueError(f"Rubric {rubric_id} not found")
         if rubric.target_id != snapshot.target_id:
@@ -552,7 +517,7 @@ class MetricsService:
         )
 
     def get_aggregated_results(
-        self, snapshot_id: int, rubric_id: Optional[int] = None
+        self, snapshot_id: int, rubric_id: int
     ) -> Tuple[List[AggregatedResult], Dict[int, float]]:
         """
         Get aggregated evaluation results across all answers in a snapshot.
@@ -566,7 +531,7 @@ class MetricsService:
 
         Args:
             snapshot_id: Snapshot ID
-            rubric_id: Rubric ID to aggregate. Defaults to fixed Accuracy.
+            rubric_id: Rubric ID to aggregate.
 
         Returns:
             Tuple of (list of AggregatedResult, reliability_map dict)
@@ -574,12 +539,6 @@ class MetricsService:
         Raises:
             ValueError: If no answers found for snapshot
         """
-        if rubric_id is None:
-            snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
-            if not snapshot:
-                raise ValueError(f"Snapshot {snapshot_id} not found")
-            rubric_id = self._get_fixed_accuracy_rubric(snapshot.target_id).id
-
         contract = self.build_scoring_contract(snapshot_id, rubric_id)
         reliability_map = {judge.judge_id: judge.f1 for judge in contract.aligned_judges}
         results: List[AggregatedResult] = []
@@ -595,6 +554,9 @@ class MetricsService:
                     question_text=row.question_text,
                     question_type=row.question_type,
                     question_scope=row.question_scope,
+                    rubric_id=contract.rubric_id,
+                    rubric_name=contract.rubric_name,
+                    group=contract.group,
                     answer_id=row.answer_id,
                     answer_content=row.answer_content,
                     aggregated_score=AggregatedScore(
@@ -612,7 +574,18 @@ class MetricsService:
         logger.info("Generated aggregated results for %s answers in snapshot %s", len(results), snapshot_id)
         return results, reliability_map
 
-    def calculate_snapshot_summary(self, snapshot_id: int) -> SnapshotMetric:
+    def get_snapshot_results(self, snapshot_id: int) -> SnapshotResultsResponse:
+        snapshot = SnapshotRepository.get_by_id(self.db, snapshot_id)
+        if not snapshot:
+            raise ValueError(f"Snapshot {snapshot_id} not found")
+
+        results: List[AggregatedResult] = []
+        for rubric in TargetRubricRepository.get_by_target(self.db, snapshot.target_id):
+            rubric_results, _ = self.get_aggregated_results(snapshot_id, rubric.id)
+            results.extend(rubric_results)
+        return SnapshotResultsResponse(snapshot_id=snapshot_id, results=results)
+
+    def calculate_snapshot_summary(self, snapshot_id: int, rubric_id: int) -> SnapshotMetric:
         """
         Calculate summary metrics for a snapshot.
 
@@ -625,7 +598,7 @@ class MetricsService:
         Raises:
             ValueError: If no answers found for snapshot
         """
-        contract = self.get_accuracy_scoring_contract(snapshot_id)
+        contract = self.build_scoring_contract(snapshot_id, rubric_id)
         logger.info(
             "Snapshot %s summary: Accuracy=%.3f (%s/%s), Aligned judges: %s, Edited: %s",
             snapshot_id,
@@ -790,7 +763,7 @@ class MetricsService:
 
     def calculate_snapshot_metrics(
         self, target_id: int, snapshot_id: Optional[int] = None
-    ) -> List[SnapshotMetric]:
+    ) -> SnapshotMetricsResponse:
         snapshots = (
             [SnapshotRepository.get_by_id(self.db, snapshot_id)]
             if snapshot_id is not None
@@ -799,50 +772,58 @@ class MetricsService:
         if snapshot_id is not None and snapshots[0] is None:
             raise ValueError(f"Snapshot {snapshot_id} not found")
 
-        all_metrics: List[SnapshotMetric] = []
+        grouped_metrics: Dict[int, MetricsByRubric] = {}
         for snapshot in snapshots:
             if snapshot is None:
                 continue
             try:
-                contracts = self.get_snapshot_scoring_contracts(snapshot.id).metrics
+                contracts = self.get_snapshot_scoring_contracts(snapshot.id).rubrics
             except ValueError:
                 continue
 
             for contract in contracts:
-                all_metrics.append(
-                    SnapshotMetric(
-                        snapshot_id=snapshot.id,
-                        snapshot_name=snapshot.name,
-                        created_at=snapshot.created_at.isoformat(),
+                metric = SnapshotMetric(
+                    snapshot_id=snapshot.id,
+                    snapshot_name=snapshot.name,
+                    created_at=snapshot.created_at.isoformat(),
+                    rubric_id=contract.rubric_id,
+                    rubric_name=contract.rubric_name,
+                    aggregated_score=contract.aggregated_score,
+                    total_answers=contract.total_answers,
+                    accurate_count=contract.accurate_count,
+                    inaccurate_count=contract.inaccurate_count,
+                    pending_count=contract.pending_count,
+                    edited_count=contract.edited_count,
+                    aligned_judges=contract.aligned_judges,
+                    judge_alignment_range=contract.judge_alignment_range,
+                )
+                group = grouped_metrics.setdefault(
+                    contract.rubric_id,
+                    MetricsByRubric(
                         rubric_id=contract.rubric_id,
                         rubric_name=contract.rubric_name,
-                        aggregated_score=contract.aggregated_score,
-                        total_answers=contract.total_answers,
-                        accurate_count=contract.accurate_count,
-                        inaccurate_count=contract.inaccurate_count,
-                        pending_count=contract.pending_count,
-                        edited_count=contract.edited_count,
-                        aligned_judges=contract.aligned_judges,
-                        judge_alignment_range=contract.judge_alignment_range,
-                    )
+                        group=contract.group,
+                        snapshots=[],
+                    ),
                 )
-        return all_metrics
+                group.snapshots.append(metric)
+        return SnapshotMetricsResponse(target_id=target_id, rubrics=list(grouped_metrics.values()))
 
 
 def calculate_judge_alignment(
-    db: Session, snapshot_id: int, judge_id: int
+    db: Session, snapshot_id: int, judge_id: int, rubric_id: int
 ) -> JudgeAlignmentResponse:
     """Calculate judge alignment metrics (convenience function)."""
     service = MetricsService(db)
-    return service.calculate_judge_alignment(snapshot_id, judge_id)
+    return service.calculate_judge_alignment(snapshot_id, judge_id, rubric_id)
 
 
 def calculate_accuracy(
-    db: Session, snapshot_id: int, judge_id: int
+    db: Session, snapshot_id: int, judge_id: int, rubric_id: int
 ) -> JudgeAccuracyResponse:
     """Calculate overall accuracy for a judge (convenience function)."""
     service = MetricsService(db)
-    return service.calculate_accuracy(snapshot_id, judge_id)
+    return service.calculate_accuracy(snapshot_id, judge_id, rubric_id)
 
 
 def calculate_rubric_judge_alignment(

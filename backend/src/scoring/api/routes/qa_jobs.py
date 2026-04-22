@@ -22,7 +22,7 @@ from src.common.models import (
     UnifiedQAJobStart,
 )
 from src.common.models.answer_score import AnswerScoreResponse
-from src.common.services.rubric_specs import (
+from src.rubric.services.rubric_specs import (
     RubricSpecResolutionError,
     resolve_target_rubric_specs,
     validate_target_rubric_spec,
