@@ -208,7 +208,7 @@ export default function QAContent({
         px: 2,
         py: 2,
         bgcolor: isClaimBasedRubric
-          ? (answerScore ? (answerScore.overall_label ? "#f0faf0" : "#fef0f0") : undefined)
+          ? (answerScore ? (answerScore.overall_label === activeRubric?.best_option ? "#f0faf0" : "#fef0f0") : undefined)
           : (verdictScore
             ? ((verdictScore.value === (activeRubric?.best_option || activeRubric?.options?.[0]?.option || "")) ? "#f0faf0" : "#fef0f0")
             : undefined),
@@ -222,8 +222,8 @@ export default function QAContent({
                     <Box component="span" color="text.disabled" sx={{ cursor: "help", mr: 0.5 }}>ⓘ</Box>
                   </Tooltip>
                   Judge recommends{" "}
-                  <Box component="span" fontWeight={700} color={answerScore.overall_label ? "success.main" : "error.main"}>
-                    {answerScore.overall_label ? "Accurate" : "Inaccurate"}
+                  <Box component="span" fontWeight={700} color={answerScore.overall_label === activeRubric?.best_option ? "success.main" : "error.main"}>
+                    {answerScore.overall_label}
                   </Box>
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>

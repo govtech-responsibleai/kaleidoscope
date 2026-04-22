@@ -414,7 +414,7 @@ export interface AnswerScore {
   id: number;
   answer_id: number;
   judge_id: number;
-  overall_label: boolean;
+  overall_label: string;
   explanation?: string;
   claim_scores?: AnswerClaimScore[];
   created_at: string;

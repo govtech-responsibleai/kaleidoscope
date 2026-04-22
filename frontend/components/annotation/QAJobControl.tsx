@@ -65,6 +65,16 @@ const mergeJobs = (prev: QAJob[], updated: QAJob[]): QAJob[] => {
   return [...merged, ...appended];
 };
 
+export const getPendingRubricQuestionIds = (
+  missingQuestionIdsByRubric: MissingRubricCoverage["missingQuestionIdsByRubric"],
+): number[] => (
+  Array.from(
+    new Set(
+      Object.values(missingQuestionIdsByRubric).flat()
+    )
+  )
+);
+
 export default function QAJobControl({
   targetId,
   snapshotId,
@@ -734,21 +744,19 @@ export default function QAJobControl({
     setJobInAction(true);
     try {
       if (hasPendingRubricMetrics) {
-        const retries = await Promise.all(
-          Object.entries(missingRubricCoverage.missingQuestionIdsByRubric).map(async ([rubricId, questionIds]) => {
-            const spec = resolvedRubricSpecs.find((entry) => entry.rubric_id === Number(rubricId));
-            if (!spec || questionIds.length === 0) {
-              return [];
-            }
-            const response = await qaJobApi.start(snapshotId, {
-              question_ids: questionIds,
-              rubric_specs: [spec],
-            });
-            return response.data;
-          })
+        const questionIds = getPendingRubricQuestionIds(
+          missingRubricCoverage.missingQuestionIdsByRubric
         );
+        if (questionIds.length === 0 || resolvedRubricSpecs.length === 0) {
+          return;
+        }
 
-        const mergedJobs = retries.flat();
+        const response = await qaJobApi.start(snapshotId, {
+          question_ids: questionIds,
+          rubric_specs: resolvedRubricSpecs,
+        });
+
+        const mergedJobs = response.data;
         if (mergedJobs.length > 0) {
           setQaJobs((prev) => mergeJobs(prev, mergedJobs));
           startPolling();

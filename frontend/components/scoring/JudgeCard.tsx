@@ -55,7 +55,6 @@ export default function JudgeCard({
   onDelete,
   cardSx,
 }: JudgeCardProps) {
-  const hasSummaryValues = summary?.accuracy != null && summary?.reliability != null;
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
   const [pollingState, setPollingState] = useState<{
     snapshotId: number;
@@ -150,6 +149,7 @@ export default function JudgeCard({
     runTotalCount ??
     (summary ? summary.total_answers : pendingCount > 0 ? pendingCount : 0);
   const completedCount = Math.max(totalTracked - pendingCount, 0);
+  const hasSummaryValues = !isRunning && summary?.accuracy != null && summary?.reliability != null;
 
   const handleRun = async () => {
     const initialPending = pendingCount;
