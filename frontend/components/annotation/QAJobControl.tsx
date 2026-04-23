@@ -197,11 +197,11 @@ export default function QAJobControl({
   );
 
   const fetchClaims = useCallback(
-    async (job: QAJob): Promise<Partial<QARecord> | null> => {
+    async (job: QAJob, force = false): Promise<Partial<QARecord> | null> => {
       const judgeId = getClaimBasedJudgeIdForJob(job);
       if (!job.answer_id || !judgeId || !claimBasedRubricId) return null;
       const entry = qaMapRef.current[job.question_id];
-      if (entry?.claims && entry.claims.length > 0) {
+      if (!force && entry?.claims && entry.claims.length > 0) {
         return null;
       }
       try {
@@ -231,17 +231,13 @@ export default function QAJobControl({
     async (job: QAJob): Promise<Partial<QARecord> | null> => {
       const judgeId = getClaimBasedJudgeIdForJob(job);
       if (!job.answer_id || !judgeId || !claimBasedRubricId) return null;
-      const entry = qaMapRef.current[job.question_id];
-      if (entry?.answerScore) {
-        return null;
-      }
       try {
         const response = await answerApi.getScores(
           job.answer_id,
           judgeId,
           claimBasedRubricId,
         );
-        return { answerScore: response.data, claimScores: response.data.claim_scores };
+        return { answerScore: response.data };
       } catch (err) {
         console.error("Failed to fetch score:", err);
         return null;
@@ -409,7 +405,7 @@ export default function QAJobControl({
           updates.push({ questionId: job.question_id, promise: fetchClaims(job) });
         } else if (job.stage === QAJobStageEnum.COMPLETED) {
           updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
-          updates.push({ questionId: job.question_id, promise: fetchClaims(job) });
+          updates.push({ questionId: job.question_id, promise: fetchClaims(job, true) });
           updates.push({ questionId: job.question_id, promise: fetchScore(job) });
         }
       }
