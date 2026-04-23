@@ -30,7 +30,6 @@ import {
 } from "@tabler/icons-react";
 import {
   ScoringContract,
-  AggregatedRowResult,
   ScoringRowResult,
   JudgeConfig,
   QuestionResponse,
@@ -86,40 +85,6 @@ const getRubricOptionColor = (
   return isBinaryRubric(rubric) ? "error" : "primary";
 };
 
-const getAggregatePresentation = (
-  aggregate: AggregatedRowResult | undefined,
-  rubric: TargetRubricResponse | null,
-): Pick<JudgeVerdictSummary, "aggregateLabel" | "aggregateColor" | "helperText"> => {
-  if (!aggregate) {
-    return { aggregateLabel: "No data", aggregateColor: "default", helperText: null };
-  }
-
-  if (aggregate.method === "pending") {
-    return { aggregateLabel: "Pending", aggregateColor: "default", helperText: null };
-  }
-
-  if (aggregate.method === "majority_tied") {
-    return { aggregateLabel: "Tie", aggregateColor: "warning", helperText: "Equal votes." };
-  }
-
-  if (aggregate.method === "no_aligned_judge") {
-    return {
-      aggregateLabel: "No reliable judges",
-      aggregateColor: "warning",
-      helperText: "Add or run reliable judges to score this row.",
-    };
-  }
-
-  if (aggregate.value) {
-    return {
-      aggregateLabel: truncate(aggregate.value, 18),
-      aggregateColor: getRubricOptionColor(aggregate.value, rubric),
-      helperText: null,
-    };
-  }
-
-  return { aggregateLabel: "No data", aggregateColor: "default", helperText: null };
-};
 
 const truncate = (value: string, length: number) => {
   if (!value) return "";
@@ -480,7 +445,6 @@ export default function ResultsTable({
                 selectedTableJudges.length,
                 activeRubric,
               );
-              const aggregatePresentation = getAggregatePresentation(row?.aggregated_result, activeRubric);
               const summary = rubricSummary;
               const totalColSpan = 6;
 
@@ -524,10 +488,10 @@ export default function ResultsTable({
                           rubricId={contract?.rubric_id ?? 0}
                           value={row?.aggregated_result.value}
                           baselineValue={row?.aggregated_result.baseline_value}
-                          displayLabel={aggregatePresentation.aggregateLabel}
-                          chipColor={aggregatePresentation.aggregateColor}
+                          displayLabel={rubricSummary.aggregateLabel}
+                          chipColor={rubricSummary.aggregateColor}
                           helperText={
-                            aggregatePresentation.helperText ??
+                            rubricSummary.helperText ??
                               (row?.aggregated_result.is_edited && row?.aggregated_result.baseline_value
                               ? `Baseline: ${row.aggregated_result.baseline_value}`
                               : null)
