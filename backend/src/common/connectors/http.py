@@ -2,6 +2,7 @@
 Generic HTTP connector — sends a prompt to any REST endpoint.
 """
 
+import json
 import logging
 from typing import Any, Dict
 
@@ -49,6 +50,10 @@ class HttpConnector(TargetConnector):
                        {"prompt": "<text>"}.
         timeout: Request timeout in seconds (default: 60).
         response_model_path: Dot-notation path to extract the model name.
+        retrieved_context_path: Dot-notation path to extract retrieved
+                                grounding context from the JSON response.
+                                The extracted value is normalized into
+                                `metadata["rag_citations"]`.
         metadata_fields: Dict of {label: dot_path} pairs. Each named field
                          is extracted from the response and stored in
                          ConnectorResponse.metadata. Missing paths are
@@ -165,9 +170,37 @@ class HttpConnector(TargetConnector):
             except (KeyError, IndexError, TypeError):
                 pass
 
+        retrieved_context_path = self.config.get("retrieved_context_path")
+        if retrieved_context_path:
+            try:
+                retrieved_context = _extract_by_path(raw, retrieved_context_path)
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"retrieved_context_path '{retrieved_context_path}' was not found in the response."
+                ) from exc
+            metadata["rag_citations"] = self._normalize_rag_citations(
+                retrieved_context,
+                retrieved_context_path,
+            )
+
         return ConnectorResponse(
             content=content,
             raw_response=raw,
             model=model,
             metadata=metadata,
         )
+
+    def _normalize_rag_citations(self, value: Any, path: str) -> list[Dict[str, str]]:
+        """Wrap arbitrary retrieved context in the scorer's chunk contract."""
+        if isinstance(value, str):
+            chunk_text = value
+        elif isinstance(value, (dict, list)):
+            chunk_text = json.dumps(value, indent=2, ensure_ascii=False)
+        else:
+            chunk_text = str(value)
+
+        return [{
+            "id": path,
+            "source": f"Retrieved context path: ({path})",
+            "chunk": chunk_text,
+        }]

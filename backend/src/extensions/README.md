@@ -29,6 +29,7 @@ The `http` connector is always available (no extension needed). It sends a singl
 | `body_template` | `{"prompt": "<text>"}` | Request body. The string `{{prompt}}` anywhere in a value is replaced with the actual prompt at runtime |
 | `timeout` | `60` | Request timeout in seconds |
 | `response_model_path` | — | Dot-notation path to extract model name from response |
+| `retrieved_context_path` | — | Dot-notation path to extract retrieved grounding context from the response. Kaleidoscope normalizes this value into `answer.rag_citations` for claim-level accuracy scoring |
 | `response_tokens_path` | — | Dot-notation path to extract token usage from response |
 
 ### Example: OpenAI-compatible endpoint
@@ -44,6 +45,7 @@ The `http` connector is always available (no extension needed). It sends a singl
       "messages": [{ "role": "user", "content": "{{prompt}}" }]
     },
     "response_content_path": "choices.0.message.content",
+    "retrieved_context_path": "rag.chunks",
     "response_model_path": "model",
     "response_tokens_path": "usage"
   }

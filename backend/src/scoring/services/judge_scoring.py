@@ -160,9 +160,14 @@ class AnswerJudge:
 
         if self.answer.rag_citations:
             # Priority 1: Use RAG citations from answer
+            include_chunk_ids = len(self.answer.rag_citations) > 1
             rag_chunks = [
-                f"=== Source Document: {chunk['source']} (Chunk {chunk['id']}) ===\n{chunk['chunk']}"
-                for i, chunk in enumerate(self.answer.rag_citations)
+                (
+                    f"=== Source Document: {chunk['source']}"
+                    f"{f' (Chunk {chunk['id']})' if include_chunk_ids and chunk.get('id') else ''}"
+                    f" ===\n{chunk['chunk']}"
+                )
+                for chunk in self.answer.rag_citations
             ]
             kb_text = "\n\n".join(rag_chunks)
         else:
