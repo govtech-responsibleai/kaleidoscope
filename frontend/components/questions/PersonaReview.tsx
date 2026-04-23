@@ -12,12 +12,13 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import {
-  Edit as EditIcon,
-  Save as SaveIcon,
-  Close as CloseIcon,
-} from "@mui/icons-material";
+  IconDeviceFloppy,
+  IconPencil,
+  IconX,
+} from "@tabler/icons-react";
 import { PersonaResponse } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
+import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
 
 interface PersonaReviewProps {
   personas: PersonaResponse[];
@@ -113,7 +114,7 @@ export default function PersonaReview({
                   </Box>
                   <Box display="flex" gap={1} justifyContent="flex-end">
                     <IconButton size="small" onClick={onCancelEdit} disabled={isSaving}>
-                      <CloseIcon fontSize="small" />
+                      <IconX {...compactActionIconProps} />
                     </IconButton>
                     <IconButton
                       size="small"
@@ -121,7 +122,7 @@ export default function PersonaReview({
                       onClick={() => onSaveEdit(persona.id)}
                       disabled={isSaving || !editedTitle.trim()}
                     >
-                      {isSaving ? <CircularProgress size={18} /> : <SaveIcon fontSize="small" />}
+                      {isSaving ? <CircularProgress size={18} /> : <IconDeviceFloppy {...actionIconProps} />}
                     </IconButton>
                   </Box>
                 </Box>
@@ -145,7 +146,7 @@ export default function PersonaReview({
                       disabled={disabled || savingPersonaId !== null}
                       sx={{ opacity: 0.4, "&:hover": { opacity: 1 } }}
                     >
-                      <EditIcon sx={{ fontSize: 16 }} />
+                      <IconPencil {...compactActionIconProps} />
                     </IconButton>
                   </Box>
                   {persona.info && (

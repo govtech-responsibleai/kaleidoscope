@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  IconArrowLeft,
+  IconArrowRight,
+  IconChevronDown,
+  IconChevronUp,
+} from "@tabler/icons-react";
 import {
   Alert,
   Box,
@@ -17,19 +23,16 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import {
-  ArrowBack as ArrowBackIcon,
-  ArrowForward as ArrowForwardIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
-} from "@mui/icons-material";
-import { Answer, QAJob, QuestionResponse, QAMap, JobStatus, PersonaResponse, TargetRubricResponse } from "@/lib/types";
+import { Answer, QAJob, QuestionResponse, QAMap, PersonaResponse, TargetRubricResponse } from "@/lib/types";
 
 import { answerApi, personaApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
+import { orderRubricsForDisplay } from "@/lib/rubrics";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
 import AnnotationForm from "./AnnotationForm";
+import { compactActionIconProps } from "@/lib/iconStyles";
+import { emptyMissingRubricCoverage, type MissingRubricCoverage } from "@/lib/evaluationCoverage";
 
 type FilterMode = "all" | "selected";
 
@@ -43,7 +46,10 @@ interface QAListProps {
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
   rubrics: TargetRubricResponse[];
+  missingRubricCoverage?: MissingRubricCoverage;
   initialQuestionId?: number | null;
+  initialRubricId?: number | null;
+  onActiveRubricChange?: (rubricId: number | null) => void;
 }
 
 export default function QAList({
@@ -56,45 +62,52 @@ export default function QAList({
   qaMap,
   setQaMap,
   rubrics,
+  missingRubricCoverage = emptyMissingRubricCoverage,
   initialQuestionId,
+  initialRubricId,
+  onActiveRubricChange,
 }: QAListProps) {
   const [personaMap, setPersonaMap] = useState<Record<number, PersonaResponse>>({});
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
-  const [activeQuestionId, setActiveQuestionId] = useState<number | null>(null);
-
-  const [savedSelections, setSavedSelections] = useState<Set<number>>(new Set()); // Saved set of selections
-  const [draftSelections, setDraftSelections] = useState<Set<number>>(new Set()); // Draft set of selections
+  const [activeQuestionId, setActiveQuestionId] = useState<number | null>(initialQuestionId ?? null);
+  const [draftSelections, setDraftSelections] = useState<Set<number> | null>(null);
   const [selectionDirty, setSelectionDirty] = useState(false); // Whether there is mismatch between Saved and Draft selections
-  const [activeTab, setActiveTabRaw] = useState(0);
+  const [activeTabState, setActiveTabState] = useState<{ questionId: number | null; tab: number }>({
+    questionId: initialQuestionId ?? null,
+    tab: 0,
+  });
   const [criteriaOpen, setCriteriaOpen] = useState(false);
-  const setActiveTab = useCallback((tab: number) => {
-    setActiveTabRaw(tab);
-  }, []);
-  const [fullyAnnotatedIds, setFullyAnnotatedIds] = useState<Set<number>>(new Set());
-
-  const activeRubricId = useMemo(() => {
-    if (activeTab === 0) return null;
-    const rubric = rubrics[activeTab - 1];
-    return rubric?.id ?? null;
-  }, [activeTab, rubrics]);
-
-  const activeRubricLabel = useMemo(() => {
-    if (activeTab === 0) return "Accuracy";
-    return rubrics[activeTab - 1]?.name ?? "Accuracy";
-  }, [activeTab, rubrics]);
+  const [localAnnotationCompletenessByAnswerId, setLocalAnnotationCompletenessByAnswerId] = useState<Record<number, boolean>>({});
+  const orderedRubrics = useMemo(
+    () => orderRubricsForDisplay(rubrics),
+    [rubrics]
+  );
 
   const handleCompletenessChanged = useCallback(
     (answerId: number, isComplete: boolean) => {
-      setFullyAnnotatedIds((prev) => {
-        const had = prev.has(answerId);
-        if (isComplete === had) return prev;
-        const next = new Set(prev);
-        if (isComplete) next.add(answerId); else next.delete(answerId);
-        return next;
+      setLocalAnnotationCompletenessByAnswerId((prev) => {
+        if (prev[answerId] === isComplete) return prev;
+        return {
+          ...prev,
+          [answerId]: isComplete,
+        };
       });
     },
     []
   );
+  const annotationCompletenessByAnswerId = useMemo(() => {
+    const backendCompleteness = Object.values(qaMap).reduce<Record<number, boolean>>((acc, entry) => {
+      if (entry.answer) {
+        acc[entry.answer.id] = entry.answer.has_annotation ?? false;
+      }
+      return acc;
+    }, {});
+
+    return {
+      ...backendCompleteness,
+      ...localAnnotationCompletenessByAnswerId,
+    };
+  }, [localAnnotationCompletenessByAnswerId, qaMap]);
 
   // Load personas
   useEffect(() => {
@@ -124,37 +137,15 @@ export default function QAList({
     };
   }, [targetId]);
 
-  useEffect(() => {
-    setActiveQuestionId((current) => {
-      if (approvedQuestions.length === 0) return null;
-      if (current && approvedQuestions.some((question) => question.id === current)) {
-        return current;
-      }
-      return approvedQuestions[0]?.id ?? null;
-    });
-  }, [approvedQuestions]);
-
-  useEffect(() => {
-    setActiveTab(0);
-  }, [activeQuestionId]);
-
-  // Get saved selections from qaMap
-  useEffect(() => {
-    const set = new Set<number>();
+  const savedSelections = useMemo(() => {
+    const next = new Set<number>();
     Object.values(qaMap).forEach((entry) => {
       if (entry.answer?.is_selected_for_annotation) {
-        set.add(entry.answer.id);
+        next.add(entry.answer.id);
       }
     });
-    setSavedSelections(set);
+    return next;
   }, [qaMap]);
-
-  // When savedSelections are updated, update draftSelections too
-  useEffect(() => {
-    if (!selectionDirty) {
-      setDraftSelections(new Set(savedSelections));
-    }
-  }, [savedSelections, selectionDirty]);
 
   // Extract just the question and answer from qaMap 
   const questionAnswerMap = useMemo(() => {
@@ -174,8 +165,6 @@ export default function QAList({
     });
     return index;
   }, [qaMap]);
-
-  const initialQuestionHandled = useRef(false);
 
   const jobByQuestion = useMemo(() => {
     const map: Record<number, QAJob | null> = {};
@@ -202,7 +191,7 @@ export default function QAList({
         return a.order - b.order;
       })
       .map((item) => item.question);
-  }, [approvedQuestions, questionAnswerMap, savedSelections]);
+  }, [approvedQuestions, questionAnswerMap]);
 
   // Change displayedQuestions based on filterMode
   const displayedQuestions = useMemo(() => {
@@ -215,38 +204,53 @@ export default function QAList({
     return orderedQuestions;
   }, [filterMode, orderedQuestions, questionAnswerMap, savedSelections]);
 
-  // Set initial active question from URL param once questions are loaded
-  useEffect(() => {
-    if (initialQuestionId && !initialQuestionHandled.current && displayedQuestions.length > 0) {
-      if (displayedQuestions.some((q) => q.id === initialQuestionId)) {
-        setActiveQuestionId(initialQuestionId);
-        initialQuestionHandled.current = true;
-      }
-    }
-  }, [initialQuestionId, displayedQuestions]);
-
-  useEffect(() => {
+  const defaultActiveQuestionId = useMemo(() => {
     if (displayedQuestions.length === 0) {
-      setActiveQuestionId(null);
-      return;
+      return null;
     }
-
-    // Don't override if we're still waiting to apply initialQuestionId
-    if (initialQuestionId && !initialQuestionHandled.current) {
-      return;
-    }
-
     if (
-      !activeQuestionId ||
-      !displayedQuestions.some((question) => question.id === activeQuestionId)
+      initialQuestionId &&
+      displayedQuestions.some((question) => question.id === initialQuestionId)
     ) {
-      setActiveQuestionId(displayedQuestions[0].id);
+      return initialQuestionId;
     }
-  }, [displayedQuestions, activeQuestionId]);
+    return displayedQuestions[0].id;
+  }, [displayedQuestions, initialQuestionId]);
+
+  const resolvedActiveQuestionId =
+    activeQuestionId && displayedQuestions.some((question) => question.id === activeQuestionId)
+      ? activeQuestionId
+      : defaultActiveQuestionId;
+
+  const defaultActiveTab = useMemo(() => {
+    if (initialRubricId == null) {
+      return 0;
+    }
+    const initialRubricTab = orderedRubrics.findIndex((rubric) => rubric.id === initialRubricId);
+    return initialRubricTab >= 0 ? initialRubricTab : 0;
+  }, [initialRubricId, orderedRubrics]);
+
+  const activeTab =
+    activeTabState.questionId === resolvedActiveQuestionId ? activeTabState.tab : defaultActiveTab;
+  const effectiveDraftSelections = selectionDirty
+    ? draftSelections ?? savedSelections
+    : savedSelections;
+  const setActiveTab = useCallback((tab: number) => {
+    setActiveTabState({
+      questionId: resolvedActiveQuestionId,
+      tab,
+    });
+  }, [resolvedActiveQuestionId]);
+  const activeRubric = orderedRubrics[activeTab] ?? null;
+  const activeRubricId = activeRubric?.id ?? null;
+
+  useEffect(() => {
+    onActiveRubricChange?.(activeRubricId);
+  }, [activeRubricId, onActiveRubricChange]);
 
   // Functions for annotation form navigation
   const currentIndex = displayedQuestions.findIndex(
-    (question) => question.id === activeQuestionId
+    (question) => question.id === resolvedActiveQuestionId
   );
   const prevDisabled = currentIndex <= 0;
   const nextDisabled =
@@ -265,7 +269,7 @@ export default function QAList({
   // Functions for selection
   const handleToggleSelection = (answerId: number) => {
     setDraftSelections((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev ?? effectiveDraftSelections);
       if (next.has(answerId)) {
         next.delete(answerId);
       } else {
@@ -280,11 +284,11 @@ export default function QAList({
     if (!snapshotId) {
       return;
     }
-    const toSelect = Array.from(draftSelections).filter(
+    const toSelect = Array.from(effectiveDraftSelections).filter(
       (id) => !savedSelections.has(id)
     );
     const toUnselect = Array.from(savedSelections).filter(
-      (id) => !draftSelections.has(id)
+      (id) => !effectiveDraftSelections.has(id)
     );
     const selections = [
       ...toSelect.map((answerId) => ({
@@ -346,30 +350,15 @@ export default function QAList({
       });
 
       setSelectionDirty(false);
+      setDraftSelections(null);
     } catch (err) {
       console.error("Failed to save selection:", err);
     } 
   };
 
-  const handleAnnotationSaved = () => {
-    if (!activeAnswer) return;
-    setQaMap((prev) => {
-      const entry = prev[activeAnswer.question_id];
-      if (!entry?.answer) return prev;
-      return {
-        ...prev,
-        [activeAnswer.question_id]: {
-          ...entry,
-          answer: {
-            ...entry.answer,
-            has_annotation: true,
-          },
-        },
-      };
-    });
-  };
+  const handleAnnotationSaved = () => {};
 
-  const activeQuestion = approvedQuestions.find((q) => q.id === activeQuestionId) || null;
+  const activeQuestion = approvedQuestions.find((q) => q.id === resolvedActiveQuestionId) || null;
   const activePersona = activeQuestion?.persona_id ? personaMap[activeQuestion.persona_id] ?? null : null;
   const activeAnswer = activeQuestion
     ? questionAnswerMap[activeQuestion.id] ?? null
@@ -379,16 +368,10 @@ export default function QAList({
 
   const annotatedCount = useMemo(() => {
     return Object.values(qaMap).filter(
-      (entry) => entry.answer && fullyAnnotatedIds.has(entry.answer.id)
+      (entry) => entry.answer && annotationCompletenessByAnswerId[entry.answer.id]
     ).length;
-  }, [qaMap, fullyAnnotatedIds]);
-
-  // Check if all jobs are completed
-  const allJobsCompleted = useMemo(() => {
-    if (qaJobs.length === 0) return false;
-    return qaJobs.every((job) => job.status === JobStatus.COMPLETED);
-  }, [qaJobs]);
-
+  }, [annotationCompletenessByAnswerId, qaMap]);
+  const hasMissingSelectedAnnotations = savedSelections.size > 0 && annotatedCount < savedSelections.size;
 
   const handleFilterChange = (
     _event: React.MouseEvent<HTMLElement>,
@@ -472,7 +455,16 @@ export default function QAList({
           </Tooltip>
         </Stack>
 
-        <Paper variant="outlined" sx={{ mt: 2, mb: 2, p: 1.5, flexShrink: 0 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            mt: 2,
+            mb: 2,
+            p: 1.5,
+            flexShrink: 0,
+            borderColor: hasMissingSelectedAnnotations ? "error.main" : "divider",
+          }}
+        >
           <Stack spacing={1}>
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Typography variant="caption" fontWeight={600}>
@@ -485,11 +477,26 @@ export default function QAList({
             <LinearProgress
               variant="determinate"
               value={savedSelections.size > 0 ? (annotatedCount / savedSelections.size) * 100 : 0}
-              sx={{ height: 6, borderRadius: 1 }}
+              sx={{
+                height: 6,
+                borderRadius: 1,
+                ...(hasMissingSelectedAnnotations
+                  ? {
+                      "& .MuiLinearProgress-bar": {
+                        backgroundColor: "error.main",
+                      },
+                    }
+                  : {}),
+              }}
             />
+            {hasMissingSelectedAnnotations ? (
+              <Typography variant="caption" color="error.main" fontWeight={600}>
+                Some annotations are missing.
+              </Typography>
+            ) : null}
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Typography variant="caption" color="text.secondary">
-                {draftSelections.size} question{draftSelections.size === 1 ? "" : "s"} in annotation set
+                {effectiveDraftSelections.size} question{effectiveDraftSelections.size === 1 ? "" : "s"} in annotation set
               </Typography>
               <Button
                 variant="outlined"
@@ -529,8 +536,10 @@ export default function QAList({
                     question={question}
                     answer={answer}
                     job={jobByQuestion[question.id] ?? null}
-                    isActive={question.id === activeQuestionId}
-                    isChecked={answer ? draftSelections.has(answer.id) : false}
+                    pendingMetricNames={missingRubricCoverage.pendingRubricNamesByQuestion[question.id] ?? []}
+                    isFullyAnnotated={answer ? (annotationCompletenessByAnswerId[answer.id] ?? answer.has_annotation ?? false) : false}
+                    isActive={question.id === resolvedActiveQuestionId}
+                    isChecked={answer ? effectiveDraftSelections.has(answer.id) : false}
                     onToggleSelection={() =>
                       answer ? handleToggleSelection(answer.id) : undefined
                     }
@@ -576,7 +585,7 @@ export default function QAList({
           </Typography>
           <Stack direction="row" spacing={0.5}>
             <Button
-              startIcon={<ArrowBackIcon fontSize="small" />}
+              startIcon={<IconArrowLeft {...compactActionIconProps} />}
               onClick={handlePrev}
               disabled={prevDisabled}
               variant="outlined"
@@ -584,7 +593,7 @@ export default function QAList({
               sx={{ "& .MuiButton-startIcon": { margin: 0, padding: "3px 0" }, minWidth: 0 }}
             />
             <Button
-              endIcon={<ArrowForwardIcon fontSize="small" />}
+              endIcon={<IconArrowRight {...compactActionIconProps} />}
               onClick={handleNext}
               disabled={nextDisabled}
               variant="outlined"
@@ -596,30 +605,20 @@ export default function QAList({
 
         {/* Rubric tabs — shared across both panels */}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center" sx={{ px: 2, py: 1, borderBottom: 1, borderColor: criteriaOpen ? "transparent" : "divider", transition: "border-color 0.3s" }}>
-          <Chip
-            label="Accuracy"
-            onClick={() => setActiveTab(0)}
-            variant={activeTab === 0 ? "filled" : "outlined"}
-            sx={{
-              fontWeight: 600, fontSize: "0.8rem", height: 32,
-              ...(activeTab === 0
-                ? { bgcolor: groupColors.fixed.border, color: "#fff", borderColor: "transparent", "&:hover": { bgcolor: groupColors.fixed.border, opacity: 0.9 } }
-                : { borderColor: "divider", "&:hover": { bgcolor: groupColors.fixed.bg } }),
-            }}
-          />
-          {rubrics.map((r, i) => {
-            const accent = r.template_key ? groupColors.preset.border : groupColors.custom.border;
+          {orderedRubrics.map((rubric, index) => {
+            const accent = groupColors[rubric.group].border;
+            const hoverBg = groupColors[rubric.group].bg;
             return (
               <Chip
-                key={r.id}
-                label={r.name}
-                onClick={() => setActiveTab(i + 1)}
-                variant={activeTab === i + 1 ? "filled" : "outlined"}
+                key={rubric.id}
+                label={rubric.name}
+                onClick={() => setActiveTab(index)}
+                variant={activeTab === index ? "filled" : "outlined"}
                 sx={{
                   fontWeight: 600, fontSize: "0.8rem", height: 32,
-                  ...(activeTab === i + 1
+                  ...(activeTab === index
                     ? { bgcolor: accent, color: "#fff", borderColor: "transparent", "&:hover": { bgcolor: accent, opacity: 0.9 } }
-                    : { borderColor: "divider", "&:hover": { bgcolor: r.template_key ? groupColors.preset.bg : groupColors.custom.bg } }),
+                    : { borderColor: "divider", "&:hover": { bgcolor: hoverBg } }),
                 }}
               />
             );
@@ -629,7 +628,7 @@ export default function QAList({
             variant="text"
             size="small"
             color="primary"
-            endIcon={criteriaOpen ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+            endIcon={criteriaOpen ? <IconChevronUp {...compactActionIconProps} /> : <IconChevronDown {...compactActionIconProps} />}
             onClick={() => setCriteriaOpen((prev) => !prev)}
             sx={{ textTransform: "none", fontSize: "0.75rem", whiteSpace: "nowrap" }}
           >
@@ -639,28 +638,14 @@ export default function QAList({
         <Collapse in={criteriaOpen}>
           <Box sx={{ px: 2, py: 1.5, borderBottom: 1, borderColor: "divider" }}>
             <Box sx={{ pl: 1, borderLeft: "2px solid", borderColor: "divider" }}>
-              {activeTab === 0 ? (
+              {activeRubric ? (
                 <>
                   <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                    Is the response factually accurate based on the knowledge base?
+                    {activeRubric.criteria || <em>No criteria defined.</em>}
                   </Typography>
-                  <Stack spacing={0.25}>
-                    <Typography variant="caption" color="text.secondary">
-                      <Box component="span" fontWeight={700}>Accurate</Box> — reflects the source information
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      <Box component="span" fontWeight={700}>Inaccurate</Box> — contains factual errors or omissions
-                    </Typography>
-                  </Stack>
-                </>
-              ) : rubrics[activeTab - 1] ? (
-                <>
-                  <Typography variant="caption" color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                    {rubrics[activeTab - 1].criteria || <em>No criteria defined.</em>}
-                  </Typography>
-                  {rubrics[activeTab - 1].options.length > 0 && (
+                  {activeRubric.options.length > 0 && (
                     <Stack spacing={0.25}>
-                      {rubrics[activeTab - 1].options.map((opt) => (
+                      {activeRubric.options.map((opt) => (
                         <Typography key={opt.option} variant="caption" color="text.secondary">
                           <Box component="span" fontWeight={700}>{opt.option}</Box> — {opt.description}
                         </Typography>
@@ -690,9 +675,8 @@ export default function QAList({
               persona={activePersona}
               qaEntry={activeEntry}
               job={activeJob}
-              rubrics={rubrics}
-              activeTab={activeTab}
-              onActiveTabChange={setActiveTab}
+              activeRubric={activeRubric}
+              pendingRubricIds={activeQuestion ? (missingRubricCoverage.pendingRubricIdsByQuestion[activeQuestion.id] ?? []) : []}
             />
           </Box>
 

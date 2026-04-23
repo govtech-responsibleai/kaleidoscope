@@ -27,18 +27,19 @@ import {
   Tooltip,
 } from "@mui/material";
 import {
-  PersonAddAlt1 as PersonAddIcon,
-  DeleteOutline as DeleteIcon,
-  Visibility as VisibilityIcon,
-  VisibilityOff as VisibilityOffIcon,
-  Casino as GenerateIcon,
-  ContentCopy as CopyIcon,
-  CheckCircleOutline as CheckIcon,
-} from "@mui/icons-material";
+  IconCheck,
+  IconCopy,
+  IconDice5,
+  IconEye,
+  IconEyeOff,
+  IconTrash,
+  IconUserPlus,
+} from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
-import { adminApi, authApi } from "@/lib/api";
+import { adminApi, authApi, getApiErrorMessage } from "@/lib/api";
 import { UserResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/iconStyles";
 
 export default function AdminPage() {
   const router = useRouter();
@@ -84,8 +85,8 @@ export default function AdminPage() {
       const response = await adminApi.listUsers();
       setUsers(response.data);
       setError(null);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to load users");
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, "Failed to load users"));
     } finally {
       setLoading(false);
     }
@@ -102,8 +103,8 @@ export default function AdminPage() {
       });
       setCreatedCreds({ username: newUsername, password: newPassword });
       await fetchUsers();
-    } catch (err: any) {
-      setCreateError(err?.response?.data?.detail || "Failed to create user");
+    } catch (err: unknown) {
+      setCreateError(getApiErrorMessage(err, "Failed to create user"));
     } finally {
       setCreating(false);
     }
@@ -116,8 +117,8 @@ export default function AdminPage() {
       setDeleteOpen(false);
       setUserToDelete(null);
       await fetchUsers();
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || "Failed to delete user");
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, "Failed to delete user"));
     }
   };
 
@@ -161,7 +162,7 @@ export default function AdminPage() {
         </Box>
         <Button
           variant="contained"
-          startIcon={<PersonAddIcon />}
+          startIcon={<IconUserPlus {...actionIconProps} />}
           onClick={() => setCreateOpen(true)}
         >
           Create User
@@ -238,7 +239,7 @@ export default function AdminPage() {
                             size="small"
                             color="inherit"
                             disabled
-                            startIcon={<DeleteIcon fontSize="small" />}
+                            startIcon={<IconTrash {...compactActionIconProps} />}
                             sx={{ textTransform: "none", color: "text.disabled" }}
                           >
                             Delete
@@ -249,7 +250,7 @@ export default function AdminPage() {
                       <Button
                         size="small"
                         color="error"
-                        startIcon={<DeleteIcon fontSize="small" />}
+                        startIcon={<IconTrash {...compactActionIconProps} />}
                         onClick={() => {
                           setUserToDelete(user);
                           setDeleteOpen(true);
@@ -300,7 +301,7 @@ export default function AdminPage() {
                 <Box>Password: {createdCreds.password}</Box>
               </Paper>
               <Button
-                startIcon={copied ? <CheckIcon /> : <CopyIcon />}
+                startIcon={copied ? <IconCheck {...statusIconProps} /> : <IconCopy {...actionIconProps} />}
                 onClick={handleCopyCreds}
                 sx={{ mt: 1.5 }}
                 color={copied ? "success" : "primary"}
@@ -341,7 +342,7 @@ export default function AdminPage() {
                             size="small"
                             tabIndex={-1}
                           >
-                            <GenerateIcon fontSize="small" />
+                            <IconDice5 {...compactActionIconProps} />
                           </IconButton>
                         </Tooltip>
                         <IconButton
@@ -350,7 +351,11 @@ export default function AdminPage() {
                           size="small"
                           tabIndex={-1}
                         >
-                          {showPassword ? <VisibilityOffIcon fontSize="small" /> : <VisibilityIcon fontSize="small" />}
+                          {showPassword ? (
+                            <IconEyeOff {...compactActionIconProps} />
+                          ) : (
+                            <IconEye {...compactActionIconProps} />
+                          )}
                         </IconButton>
                       </InputAdornment>
                     ),

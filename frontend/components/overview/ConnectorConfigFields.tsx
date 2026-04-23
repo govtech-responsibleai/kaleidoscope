@@ -2,6 +2,14 @@
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  IconChevronDown,
+  IconChevronUp,
+  IconFlask2,
+  IconPlayerPlay,
+  IconPlus,
+  IconX,
+} from "@tabler/icons-react";
+import {
   Alert,
   Box,
   Button,
@@ -13,18 +21,11 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-import {
-  Add as AddIcon,
-  Close as CloseIcon,
-  ExpandMore as ExpandMoreIcon,
-  ExpandLess as ExpandLessIcon,
-  PlayArrow as PlayArrowIcon,
-  Science as ScienceIcon,
-} from "@mui/icons-material";
 import { alpha } from "@mui/material/styles";
 import { EndpointConfig, HttpAuthPreset, ManagedHttpAuthConfig, ProbeResponse } from "@/lib/types";
 import { targetApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
+import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
 
 /**
  * Walk a parsed JSON body and emit a flat list of leaf paths matching the
@@ -489,7 +490,7 @@ export default function ConnectorConfigFields({
         disabled={disabled}
         sx={{ color: "secondary.main" }}
       >
-        <CloseIcon fontSize="small" />
+        <IconX {...compactActionIconProps} />
       </IconButton>
     </Box>
   );
@@ -538,7 +539,7 @@ export default function ConnectorConfigFields({
         disabled={disabled}
         sx={{ color: "info.main" }}
       >
-        <CloseIcon fontSize="small" />
+        <IconX {...compactActionIconProps} />
       </IconButton>
     </Box>
   );
@@ -570,10 +571,10 @@ export default function ConnectorConfigFields({
             {showManagedAuthEditor && renderAuthRow()}
             {headerRows.map(renderHeaderRow)}
             <Box sx={{ display: "flex", gap: 1 }}>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={() => updateHeaderRows((rows) => [...rows, createRow()])}
+                <Button
+                  size="small"
+                  startIcon={<IconPlus {...actionIconProps} />}
+                  onClick={() => updateHeaderRows((rows) => [...rows, createRow()])}
                 disabled={disabled}
                 variant="outlined"
                 sx={{
@@ -583,10 +584,10 @@ export default function ConnectorConfigFields({
               >
                 Add Header
               </Button>
-              <Button
-                size="small"
-                startIcon={<AddIcon />}
-                onClick={handleAddAuth}
+                <Button
+                  size="small"
+                  startIcon={<IconPlus {...actionIconProps} />}
+                  onClick={handleAddAuth}
                 disabled={disabled || showManagedAuthEditor}
                 variant="outlined"
                 sx={{
@@ -606,7 +607,7 @@ export default function ConnectorConfigFields({
           <Box sx={{ display: "flex", gap: 1 }}>
             <Button
               size="small"
-              startIcon={<AddIcon />}
+              startIcon={<IconPlus {...actionIconProps} />}
               onClick={() => updateHeaderRows((rows) => [...rows, createRow()])}
               disabled={disabled}
               variant="outlined"
@@ -619,7 +620,7 @@ export default function ConnectorConfigFields({
             </Button>
             <Button
               size="small"
-              startIcon={<AddIcon />}
+              startIcon={<IconPlus {...actionIconProps} />}
               onClick={handleAddAuth}
               disabled={disabled || showManagedAuthEditor}
               variant="outlined"
@@ -709,7 +710,7 @@ export default function ConnectorConfigFields({
       )}
       {renderProbePanel()}
       {wrapField("Response Path",
-        <TextField
+          <TextField
           {...(!isForm && { label: "Response Content Path", required: true })}
           fullWidth
           value={config.response_content_path || ""}
@@ -779,14 +780,14 @@ export default function ConnectorConfigFields({
                       onClick={() => updateMetadataRows((rows) => rows.filter((item) => item.id !== row.id))}
                       disabled={disabled}
                     >
-                      <CloseIcon fontSize="small" />
+                      <IconX {...compactActionIconProps} />
                     </IconButton>
                   </Box>
                 ))}
                 <Box>
                   <Button
                     size="small"
-                    startIcon={<AddIcon />}
+                    startIcon={<IconPlus {...actionIconProps} />}
                     onClick={() => updateMetadataRows((rows) => [
                       ...rows,
                       createRow(`field${rows.length + 1}`, ""),
@@ -814,7 +815,7 @@ export default function ConnectorConfigFields({
         <Box>
           <Button
             variant="contained"
-            startIcon={!probing ? <ScienceIcon /> : undefined}
+            startIcon={!probing ? <IconFlask2 {...actionIconProps} /> : undefined}
             size="small"
             onClick={handleProbe}
             disabled={disabled || probing || !apiEndpoint || Boolean(apiEndpointError) || Boolean(bodyTemplateError)}
@@ -962,7 +963,7 @@ export default function ConnectorConfigFields({
         <Box>
           <Button
             variant="contained"
-            startIcon={!testing ? <PlayArrowIcon /> : undefined}
+            startIcon={!testing ? <IconPlayerPlay {...actionIconProps} /> : undefined}
             size="small"
             onClick={handleTestConnection}
             disabled={disabled || testing || !apiEndpoint || Boolean(apiEndpointError) || Boolean(bodyTemplateError)}
@@ -1020,7 +1021,7 @@ function AdvancedToggle({
         sx={{ display: "flex", alignItems: "center", gap: 0.5 }}
       >
         {showAdvanced ? "Advanced Configuration" : "Optional: timeout and metadata fields"}
-        {showAdvanced ? <ExpandLessIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
+        {showAdvanced ? <IconChevronUp {...compactActionIconProps} /> : <IconChevronDown {...compactActionIconProps} />}
       </Link>
     </Box>
   );

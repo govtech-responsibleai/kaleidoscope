@@ -336,12 +336,14 @@ export interface RubricSpec {
   judge_id: number;
 }
 
+export type RubricSpecMap = Record<number, RubricSpec>;
+
 export interface QAJob {
   id: number;
   snapshot_id: number;
   question_id: number;
   answer_id: number | null;
-  judge_id: number;
+  judge_id: number | null;
   rubric_specs: RubricSpec[] | null;
   type: string;
   status: JobStatus;
@@ -350,6 +352,7 @@ export interface QAJob {
   prompt_tokens: number;
   completion_tokens: number;
   total_cost: number;
+  rubric_statuses?: QARubricStatus[];
   created_at: string;
   updated_at: string;
 }
@@ -361,7 +364,6 @@ export interface QAJobStartRequest {
 }
 
 export interface UnifiedQAJobStartRequest {
-  judge_id: number;
   question_ids: number[];
   rubric_specs?: RubricSpec[];
   job_ids?: number[];
@@ -412,7 +414,7 @@ export interface AnswerScore {
   id: number;
   answer_id: number;
   judge_id: number;
-  overall_label: boolean;
+  overall_label: string;
   explanation?: string;
   claim_scores?: AnswerClaimScore[];
   created_at: string;
@@ -431,26 +433,6 @@ export interface BulkSelectionRequest {
   selections: { answer_id: number; is_selected: boolean }[];
 }
 
-// Annotation types
-export interface AnnotationCreate {
-  answer_id: number;
-  label: boolean;
-  notes?: string;
-}
-
-export interface AnnotationBulkCreate {
-  annotations: AnnotationCreate[];
-}
-
-export interface Annotation {
-  id: number;
-  answer_id: number;
-  label: boolean;
-  notes?: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export interface AnnotationCompletionStatus {
   selected_ids: number[];
   selected_and_annotated_ids: number[];
@@ -459,8 +441,6 @@ export interface AnnotationCompletionStatus {
 }
 
 // Judge types
-export type JudgeType = "claim_based" | "response_level";
-
 export interface JudgeModelOption {
   value: string;
   label: string;
@@ -469,16 +449,15 @@ export interface JudgeModelOption {
 export interface JudgeConfig {
   id: number;
   target_id?: number | null;
+  rubric_id?: number | null;
   name: string;
   model_name: string;
   model_label?: string;
   temperature?: number;
-  judge_type: JudgeType;
   is_baseline: boolean;
   is_editable: boolean;
   params: Record<string, unknown>;
   prompt_template?: string;
-  category: string;
   created_at: string;
   updated_at: string;
 }
@@ -488,18 +467,42 @@ export interface RubricAnswerScore {
   answer_id: number;
   rubric_id: number;
   judge_id: number;
-  option_chosen: string;
+  overall_label: string;
   explanation: string;
   created_at: string;
 }
 
+export type RubricVerdictState =
+  | "no_judge_configured"
+  | "awaiting_answer"
+  | "pending_evaluation"
+  | "job_failed"
+  | "success";
+
+export interface QARubricScore {
+  judge_id: number;
+  value: string;
+  explanation: string;
+  created_at: string;
+}
+
+export interface QARubricStatus {
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
+  state: RubricVerdictState;
+  message: string;
+  judge_id: number | null;
+  judge_name: string | null;
+  score: QARubricScore | null;
+}
+
 export interface JudgeCreate {
   target_id: number;
+  rubric_id?: number | null;
   name: string;
   model_name: string;
   model_label?: string;
-  judge_type: JudgeType;
-  category?: string;
   params?: Record<string, unknown>;
   prompt_template?: string;
 }
@@ -508,7 +511,7 @@ export interface JudgeUpdate {
   name?: string;
   model_name?: string;
   model_label?: string;
-  judge_type?: JudgeType;
+  rubric_id?: number | null;
   params?: Record<string, unknown>;
   prompt_template?: string;
 }
@@ -536,43 +539,50 @@ export type AggregationMethod =
   | "majority"
   | "majority_tied"
   | "no_aligned_judge"
-  | "override";
+  | "override"
+  | "pending";
 
-export interface AggregatedAccuracy {
+export interface AggregatedScore {
   answer_id: number;
   method: AggregationMethod;
-  label: boolean | null;
+  label: string | null;
   is_edited: boolean;
   metadata: string[];
-  aligned_judge_count: number;
+  aligned_judge_count?: number;
 }
 
 // Answer Label Override types
 export interface AnswerLabelOverride {
   id: number;
   answer_id: number;
-  metric_name: string;
-  edited_label: boolean;
+  rubric_id: number;
+  edited_value: string;
   edited_at: string;
 }
 
 export interface AnswerLabelOverrideCreate {
-  edited_label: boolean;
+  edited_value: string;
 }
 
 export interface ResultRow {
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
   question_id: number;
   question_text: string | null;
   question_type: string | null;
   question_scope: string | null;
   answer_id: number;
   answer_content: string;
-  aggregated_accuracy: AggregatedAccuracy;
-  human_label: boolean | null;
+  aggregated_score: AggregatedScore;
+  human_label: string | null;
   human_notes: string | null;
 }
 
-export type SnapshotResultsResponse = ResultRow[];
+export interface SnapshotResultsResponse {
+  snapshot_id: number;
+  results: ResultRow[];
+}
 
 export interface AlignedJudge {
   judge_id: number;
@@ -586,7 +596,7 @@ export interface SnapshotMetric {
   created_at: string;
   rubric_id?: number | null;
   rubric_name?: string | null;
-  aggregated_accuracy: number;
+  aggregated_score: number;
   total_answers: number;
   accurate_count: number;
   inaccurate_count: number;
@@ -596,7 +606,71 @@ export interface SnapshotMetric {
   aligned_judges: AlignedJudge[];
 }
 
-export type SnapshotMetricsResponse = SnapshotMetric[];
+export interface JudgeScoreSummary {
+  judge_id: number;
+  name: string;
+  reliability: number | null;
+  accuracy: number | null;
+  accurate_count: number;
+  total_answers: number;
+}
+
+export interface JudgeRowResult {
+  judge_id: number;
+  name: string;
+  value?: string | null;
+}
+
+export interface AggregatedRowResult {
+  method: AggregationMethod;
+  value?: string | null;
+  baseline_value?: string | null;
+  is_edited: boolean;
+}
+
+export interface ScoringRowResult {
+  question_id: number;
+  question_text: string | null;
+  question_type: string | null;
+  question_scope: string | null;
+  answer_id: number;
+  answer_content: string;
+  aggregated_result: AggregatedRowResult;
+  human_label?: string | null;
+  judge_results: JudgeRowResult[];
+}
+
+export interface ScoringContract extends SnapshotMetric {
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
+  best_option?: string | null;
+  judge_summaries: JudgeScoreSummary[];
+  rows: ScoringRowResult[];
+}
+
+export interface SnapshotScoringContractsResponse {
+  snapshot_id: number;
+  rubrics: ScoringContract[];
+}
+
+export interface ScoringPendingCounts {
+  unanswered_question_count: number;
+  rubric_id: number;
+  pending_counts: Record<string, number>;
+}
+
+export interface MetricsByRubric {
+  rubric_id: number;
+  rubric_name: string;
+  group: "fixed" | "preset" | "custom";
+  snapshots: SnapshotMetric[];
+}
+
+export interface SnapshotMetricsResponse {
+  target_id: number;
+  rubrics: MetricsByRubric[];
+}
 
 export interface ConfusionMatrix {
   matrix: {
@@ -624,13 +698,13 @@ export interface QARecord {
 
 export type QAMap = Record<number, QARecord>;
 
-// Rubric annotation types
-export interface RubricAnnotationUpsert {
+// Answer annotation types
+export interface AnswerAnnotationUpsert {
   option_value: string;
   notes?: string;
 }
 
-export interface RubricAnnotation {
+export interface AnswerAnnotation {
   id: number;
   answer_id: number;
   rubric_id: number;
@@ -651,7 +725,7 @@ export interface TargetRubricCreate {
   criteria: string;
   options: RubricOption[];
   best_option?: string | null;
-  template_key?: string | null;
+  group?: "fixed" | "preset" | "custom";
 }
 
 export interface TargetRubricUpdate {
@@ -669,20 +743,20 @@ export interface TargetRubricResponse {
   options: RubricOption[];
   best_option: string | null;
   position: number;
-  category: string;
   judge_prompt: string | null;
-  template_key: string | null;
+  group: "fixed" | "preset" | "custom";
+  scoring_mode: "claim_based" | "response_level";
   created_at: string;
   updated_at: string;
 }
 
 export interface PremadeRubricTemplate {
-  key: string;
   name: string;
   criteria: string;
   options: RubricOption[];
   best_option: string;
   recommended_model: string;
+  group: "preset";
 }
 
 // Admin / User Management types

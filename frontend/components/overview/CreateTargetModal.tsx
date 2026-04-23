@@ -2,6 +2,11 @@
 
 import React, { useEffect, useState, useRef } from "react";
 import {
+  IconBook2,
+  IconSettings2,
+  IconX,
+} from "@tabler/icons-react";
+import {
   Dialog,
   Button,
   TextField,
@@ -13,15 +18,11 @@ import {
   MenuItem,
   IconButton,
 } from "@mui/material";
-import {
-  AutoStoriesOutlined as AutoStoriesOutlinedIcon,
-  Close as CloseIcon,
-  SettingsSuggestOutlined as SettingsSuggestOutlinedIcon,
-} from "@mui/icons-material";
 import { targetApi, kbDocumentApi, webSearchApi } from "@/lib/api";
 import { TargetCreate } from "@/lib/types";
 import ConnectorConfigFields, { getHttpUrlError, validateEndpointConfig } from "./ConnectorConfigFields";
 import PendingDocumentsPanel from "./PendingDocumentsPanel";
+import { compactActionIconProps, sectionIconProps } from "@/lib/iconStyles";
 
 interface CreateTargetModalProps {
   open: boolean;
@@ -44,13 +45,13 @@ const CREATE_TARGET_STEPS = [
     eyebrow: "Step 1",
     title: "Target setup",
     description: "Add product context and confirm the endpoint configuration.",
-    icon: SettingsSuggestOutlinedIcon,
+    icon: IconSettings2,
   },
   {
     eyebrow: "Step 2",
     title: "Knowledge Base",
     description: "Upload grounding documents before you finish creating the target.",
-    icon: AutoStoriesOutlinedIcon,
+    icon: IconBook2,
   },
 ];
 
@@ -458,7 +459,7 @@ export default function CreateTargetModal({
             },
           }}
         >
-          <CloseIcon />
+          <IconX {...compactActionIconProps} />
         </IconButton>
       </Box>
 
@@ -482,7 +483,7 @@ export default function CreateTargetModal({
             Create new target application
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Configure your Target Application. Provide as much information as possible to enhance evaluation quality.
+            Configure your Target. Provide as much information as possible to enhance evaluation quality.
           </Typography>
         </Box>
 
@@ -522,7 +523,7 @@ export default function CreateTargetModal({
                     flexShrink: 0,
                   }}
                 >
-                  <StepIcon fontSize="small" />
+                  <StepIcon {...sectionIconProps} />
                 </Box>
                 <Box sx={{ minWidth: 0 }}>
                   <Typography

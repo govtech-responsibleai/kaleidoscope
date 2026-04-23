@@ -1,220 +1,240 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   Box,
+  Button,
   Card,
   CardContent,
-  Divider,
-  Typography,
+  Checkbox,
   CircularProgress,
-  IconButton,
-  Tooltip,
-  Stack,
-  Select,
+  ListItemText,
+  Menu,
   MenuItem,
+  Stack,
+  Tooltip,
+  Typography,
+  useTheme,
 } from "@mui/material";
 import {
-  Person as PersonIcon,
-  QuestionMark as QuestionMarkIcon,
-  ScreenshotMonitor as ScreenshotMonitorIcon,
-  SmartToy as SmartToyIcon,
-  Download as DownloadIcon
-} from "@mui/icons-material";
-import { useParams, useRouter, useSearchParams } from "next/navigation";
+  IconChevronDown,
+  IconFileTypePdf,
+  IconMessageQuestion,
+  IconRobotFace,
+  IconScreenshot,
+  IconUser,
+} from "@tabler/icons-react";
+import { useParams } from "next/navigation";
 import { targetApi, snapshotApi, judgeApi, metricsApi, targetRubricApi } from "@/lib/api";
-import { TargetResponse, TargetStats, SnapshotMetric, ConfusionMatrix, Snapshot, TargetRubricResponse } from "@/lib/types";
-import SnapshotAccuracyChart from "@/components/overview/SnapshotAccuracyChart";
-import SnapshotAccuracyCard from "@/components/shared/SnapshotAccuracyCard";
-import ConfusionMatrixCard from "@/components/overview/ConfusionMatrixCard";
-import SnapshotHeader from "@/components/shared/SnapshotHeader";
+import { TargetResponse, TargetStats, SnapshotMetric, Snapshot, TargetRubricResponse } from "@/lib/types";
+import SnapshotScoreChart, {
+  type SnapshotScoreSeriesPoint,
+} from "@/components/overview/SnapshotAccuracyChart";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
+import { actionIconProps, statIconProps } from "@/lib/iconStyles";
+import { orderRubricsForDisplay } from "@/lib/rubrics";
+
+type RubricSeriesDefinition = {
+  key: string;
+  label: string;
+  color: string;
+  rubricId: number;
+};
+
+const detailCardSx = {
+  borderColor: "grey.200",
+  bgcolor: "background.paper",
+} as const;
 
 export default function TargetReport() {
   const params = useParams();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const targetId = parseInt(params.id as string);
-  const [metric, setMetric] = useState<string>("accuracy");
-
-  // Initialize from URL if available
-  const snapshotIdFromUrl = searchParams.get("snapshot");
+  const theme = useTheme();
+  const targetId = parseInt(params.id as string, 10);
   const [target, setTarget] = useState<TargetResponse | null>(null);
   const [stats, setStats] = useState<TargetStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
-    snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null
-  );
   const [judgeCount, setJudgeCount] = useState(0);
   const [snapshotMetrics, setSnapshotMetrics] = useState<SnapshotMetric[]>([]);
   const [metricsLoading, setMetricsLoading] = useState(true);
   const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
-  const [allRubricMetrics, setAllRubricMetrics] = useState<SnapshotMetric[]>([]);
   const [downloading, setDownloading] = useState(false);
-  const [confusionMatrix, setConfusionMatrix] = useState<ConfusionMatrix | null>(null);
-  const [confusionMatrixLoading, setConfusionMatrixLoading] = useState(true);
+  const [selectedSeriesKeys, setSelectedSeriesKeys] = useState<string[]>([]);
+  const [seriesMenuAnchor, setSeriesMenuAnchor] = useState<null | HTMLElement>(null);
+  const previousSeriesKeysRef = useRef<string[]>([]);
 
-  const updateSnapshotSelection = (snapshotId: number | null) => {
-    setSelectedSnapshotId(snapshotId);
-    const newSearchParams = new URLSearchParams(searchParams.toString());
-    if (snapshotId === null) {
-      newSearchParams.delete("snapshot");
-    } else {
-      newSearchParams.set("snapshot", snapshotId.toString());
-    }
-    const query = newSearchParams.toString();
-    router.push(`/targets/${targetId}/report${query ? `?${query}` : ""}`, { scroll: false });
-  };
+  const metricColors = useMemo(
+    () => [
+      theme.palette.primary.main,
+      theme.palette.secondary.main,
+      theme.palette.success.main,
+      theme.palette.warning.main,
+      theme.palette.info.main,
+      theme.palette.error.main,
+    ],
+    [theme]
+  );
 
-  const fetchData = async () => {
+  const rubricSeriesDefinitions = useMemo<RubricSeriesDefinition[]>(() => {
+    return orderRubricsForDisplay(rubrics).map((rubric, index) => ({
+      key: `rubric-${rubric.id}`,
+      label: rubric.name,
+      color: metricColors[index % metricColors.length],
+      rubricId: rubric.id,
+    }));
+  }, [metricColors, rubrics]);
+
+  const selectedSeries = useMemo(
+    () =>
+      selectedSeriesKeys
+        .map((key) => rubricSeriesDefinitions.find((definition) => definition.key === key))
+        .filter((definition): definition is RubricSeriesDefinition => Boolean(definition)),
+    [rubricSeriesDefinitions, selectedSeriesKeys]
+  );
+
+  const fetchData = useCallback(async () => {
     try {
-      const [targetRes, statsRes, snapshotsRes, judgesRes, metricsRes, rubricsRes] = await Promise.all([
+      const [targetRes, statsRes, snapshotsRes, metricsRes, rubricsRes] = await Promise.all([
         targetApi.get(targetId),
         targetApi.getStats(targetId),
         snapshotApi.list(targetId),
-        judgeApi.list(targetId),
         metricsApi.getSnapshotMetrics(targetId),
         targetRubricApi.list(targetId),
       ]);
       setTarget(targetRes.data);
       setStats(statsRes.data);
       setSnapshots(snapshotsRes.data);
-      setJudgeCount(judgesRes.data.length);
-      setSnapshotMetrics(metricsRes.data ?? []);
+      setSnapshotMetrics((metricsRes.data.rubrics ?? []).flatMap((rubricGroup) => rubricGroup.snapshots));
       setRubrics(rubricsRes.data ?? []);
 
-      try {
-        const rubricMetricsRes = await metricsApi.getAllRubricSnapshotMetrics(targetId);
-        setAllRubricMetrics(rubricMetricsRes.data ?? []);
-      } catch {
-        setAllRubricMetrics([]);
-      }
-
-      const hasSelectedSnapshot = selectedSnapshotId !== null && snapshotsRes.data.some(
-        (snapshot) => snapshot.id === selectedSnapshotId
+      const judgeResponses = await Promise.all(
+        (rubricsRes.data ?? []).map((rubric) => judgeApi.getForRubric(rubric.id, targetId))
       );
-      if (!hasSelectedSnapshot) {
-        if (snapshotsRes.data.length > 0) {
-          const mostRecent = [...snapshotsRes.data].sort((a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-          )[0];
-          updateSnapshotSelection(mostRecent.id);
-        } else if (selectedSnapshotId !== null) {
-          updateSnapshotSelection(null);
-        }
-      }
+      const uniqueJudgeIds = new Set<number>();
+      judgeResponses.forEach((response) => {
+        response.data.forEach((judge) => uniqueJudgeIds.add(judge.id));
+      });
+      setJudgeCount(uniqueJudgeIds.size);
+
     } catch (error) {
       console.error("Failed to fetch target data:", error);
     } finally {
       setLoading(false);
       setMetricsLoading(false);
     }
-  };
-
-  const fetchConfusionMatrix = async (snapshotId?: number) => {
-    setConfusionMatrixLoading(true);
-    try {
-      const res = await metricsApi.getConfusionMatrix(targetId, snapshotId);
-      setConfusionMatrix(res.data);
-    } catch (error) {
-      console.error("Failed to fetch confusion matrix:", error);
-      setConfusionMatrix(null);
-    } finally {
-      setConfusionMatrixLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchData();
   }, [targetId]);
 
   useEffect(() => {
-    if (selectedSnapshotId) {
-      fetchConfusionMatrix(selectedSnapshotId);
-    } else {
-      setConfusionMatrix(null);
-      setConfusionMatrixLoading(false);
-    }
-  }, [selectedSnapshotId]);
+    void fetchData();
+  }, [fetchData]);
 
-  const handleSelectSnapshot = (snapshotId: number | null) => {
-    updateSnapshotSelection(snapshotId);
-  };
-
-  const handleSnapshotCreated = async () => {
-    await fetchData();
-  };
-
-  // Reset to accuracy if the selected rubric was deleted
   useEffect(() => {
-    if (metric.startsWith("rubric-")) {
-      const rubricId = Number(metric.split("-")[1]);
-      if (!rubrics.find((r) => r.id === rubricId)) {
-        setMetric("accuracy");
+    const seriesKeys = rubricSeriesDefinitions.map((definition) => definition.key);
+
+    setSelectedSeriesKeys((current) => {
+      const previousSeriesKeys = previousSeriesKeysRef.current;
+      const validKeys = current.filter((key) => seriesKeys.includes(key));
+      const hadFullPreviousSelection =
+        previousSeriesKeys.length > 0 &&
+        previousSeriesKeys.every((key) => current.includes(key));
+      const hasNewSeriesKeys = seriesKeys.some((key) => !previousSeriesKeys.includes(key));
+
+      let next: string[];
+      if (validKeys.length === 0 && seriesKeys.length > 0) {
+        next = seriesKeys;
+      } else if (hadFullPreviousSelection && hasNewSeriesKeys) {
+        next = seriesKeys;
+      } else {
+        next = validKeys;
       }
-    }
-  }, [rubrics, metric]);
 
-  // Derive chart data and selected-snapshot metric from the chosen metric/rubric
-  const selectedRubricId = metric.startsWith("rubric-") ? Number(metric.split("-")[1]) : null;
-  const selectedRubric = selectedRubricId ? rubrics.find((r) => r.id === selectedRubricId) : null;
+      previousSeriesKeysRef.current = seriesKeys;
 
-  const chartData: SnapshotMetric[] = selectedRubricId
-    ? allRubricMetrics.filter((m) => m.rubric_id === selectedRubricId)
-    : snapshotMetrics;
+      if (next.length === current.length && next.every((k, i) => k === current[i])) {
+        return current;
+      }
+      return next;
+    });
+  }, [rubricSeriesDefinitions]);
 
-  const selectedSnapshotMetric: SnapshotMetric | null = selectedRubricId
-    ? allRubricMetrics.find((m) => m.rubric_id === selectedRubricId && m.snapshot_id === selectedSnapshotId) ?? null
-    : snapshotMetrics.find((m) => m.snapshot_id === selectedSnapshotId) ?? null;
+  const sortedSnapshots = useMemo(
+    () => [...snapshots].sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()),
+    [snapshots]
+  );
+
+  const chartData = useMemo<SnapshotScoreSeriesPoint[]>(() => {
+    return sortedSnapshots.map((snapshot) => ({
+      snapshotId: snapshot.id,
+      snapshotName: snapshot.name,
+      series: selectedSeries.map((definition) => {
+        const metric = snapshotMetrics.find(
+          (entry) => entry.snapshot_id === snapshot.id && entry.rubric_id === definition.rubricId
+        ) ?? null;
+
+        return {
+          key: definition.key,
+          label: definition.label,
+          color: definition.color,
+          value: metric?.aggregated_score ?? null,
+          totalAnswers: metric?.total_answers ?? null,
+        };
+      }),
+    }));
+  }, [selectedSeries, snapshotMetrics, sortedSnapshots]);
+
+  const toggleSeries = (key: string) => {
+    setSelectedSeriesKeys((current) => {
+      if (current.includes(key)) {
+        if (current.length === 1) return current;
+        return current.filter((value) => value !== key);
+      }
+      return [...current, key];
+    });
+  };
 
   const handleDownloadReport = async () => {
     setDownloading(true);
     try {
-      const element = document.getElementById('report-content');
-      if (!element) throw new Error('Report content not found');
+      const element = document.getElementById("report-content");
+      if (!element) throw new Error("Report content not found");
 
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
         logging: false,
-        backgroundColor: '#ffffff',
+        backgroundColor: "#ffffff",
       });
 
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-
-      // Define margins (in mm)
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF("p", "mm", "a4");
       const margin = 10;
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const contentWidth = pageWidth - (margin * 2);
+      const contentWidth = pageWidth - margin * 2;
       const contentHeight = (canvas.height * contentWidth) / canvas.width;
 
-      // Handle multi-page if needed
       let heightLeft = contentHeight;
       let position = margin;
 
-      pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
-      heightLeft -= (pageHeight - margin * 2);
+      pdf.addImage(imgData, "PNG", margin, position, contentWidth, contentHeight);
+      heightLeft -= pageHeight - margin * 2;
 
       while (heightLeft > 0) {
         position = -(contentHeight - heightLeft) + margin;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', margin, position, contentWidth, contentHeight);
-        heightLeft -= (pageHeight - margin * 2);
+        pdf.addImage(imgData, "PNG", margin, position, contentWidth, contentHeight);
+        heightLeft -= pageHeight - margin * 2;
       }
 
-      pdf.save(`${target?.name || 'target'}_report_${new Date().toISOString().split('T')[0]}.pdf`);
+      pdf.save(`${target?.name || "target"}_report_${new Date().toISOString().split("T")[0]}.pdf`);
     } catch (error) {
-      console.error('Failed to generate report:', error);
-      alert('Failed to generate report. Please try again.');
+      console.error("Failed to generate report:", error);
+      alert("Failed to generate report. Please try again.");
     } finally {
       setDownloading(false);
     }
   };
-
 
   if (loading) {
     return (
@@ -231,247 +251,229 @@ export default function TargetReport() {
   const approvedPersonas = stats.personas.approved || 0;
   const approvedQuestions = stats.questions.approved || 0;
 
-  const cardBorderColor = "rgba(0, 0, 0, 0.23)";
-
   return (
     <Box>
-      {/* Header with Download Report Button */}
-      <Box sx={{ display: "flex", justifyContent: "flex-end", alignItems: "center", mb: 3 }}>
-        <Tooltip title={downloading ? "Generating PDF..." : "Download Report PDF"}>
+      <Stack
+        direction={{ xs: "column", lg: "row" }}
+        spacing={2}
+        justifyContent="space-between"
+        alignItems={{ xs: "flex-start", lg: "center" }}
+        sx={{ mb: 3 }}
+      >
+        <Box>
+          <Typography variant="overline" sx={{ color: "primary.main", fontWeight: 800, letterSpacing: 1.2 }}>
+            Report Dashboard
+          </Typography>
+          <Typography variant="h4" fontWeight={700} sx={{ mt: 0.5 }}>
+            {target.name}
+          </Typography>
+          <Typography variant="body1" color="text.secondary" sx={{ mt: 1, maxWidth: 780 }}>
+            Executive overview of evaluation coverage, snapshot performance, and judge-backed reliability signals.
+          </Typography>
+        </Box>
+
+        <Tooltip title={downloading ? "Generating PDF..." : "Export PDF report"}>
           <span>
-            <IconButton
+            <Button
+              variant="contained"
+              startIcon={
+                downloading ? <CircularProgress size={20} color="inherit" /> : <IconFileTypePdf {...actionIconProps} />
+              }
               onClick={handleDownloadReport}
               disabled={downloading || loading}
-              sx={{
+              sx={{ 
                 bgcolor: "secondary.main",
-                color: "white",
-                borderRadius: 1,
-                "&:hover": { bgcolor: "secondary.dark" },
-                "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
+                minWidth: 120 
               }}
             >
-              {downloading ? <CircularProgress size={24} color="inherit" /> : <DownloadIcon />}
-            </IconButton>
+              {downloading ? "Generating..." : "Export PDF"}
+            </Button>
           </span>
         </Tooltip>
-      </Box>
+      </Stack>
 
-      {/* Report Content */}
       <Box id="report-content">
-        {/* Stats Cards (2x2) and Target Details Side by Side */}
-        <Box sx={{ display: "flex", gap: 3, mb: 3, flexDirection: { xs: "column", md: "row" } }}>
-          {/* Target Details */}
-          <Card variant="outlined" sx={{ flex: { md: "0 0 calc(45% - 24px)" }, minHeight: "fit-content", borderColor: cardBorderColor }}>
-            <CardContent>
-              <Box sx={{ mb: 2 }}>
-                <Typography variant="h5" fontWeight={600}>
-                  Target Details
-                </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                  Last updated: {new Date(target.updated_at).toLocaleDateString()}
-                </Typography>
-              </Box>
-              <Box sx={{ display: "flex", flexDirection: "column", gap: 1.5 }}>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ minWidth: "100px" }}>
-                    Agency:
+
+        <Card variant="outlined" sx={{
+            borderColor: "grey.200",
+            mb: 3
+          }}
+        >
+          <CardContent sx={{ p: 3 }}>
+            <Stack spacing={3}>
+              <Box
+                sx={{
+                  display: "grid",
+                  gap: 2,
+                }}
+              >
+                <Box>
+                  <Typography variant="h6" fontWeight={700}>
+                    Target Summary
                   </Typography>
+                  <Typography variant="body2" color="text.secondary" sx={{ mt: 0.75 }}>
+                    Last updated {new Date(target.updated_at).toLocaleDateString()}
+                  </Typography>
+                </Box>
+                <Box
+                  sx={{
+                    display: "grid",
+                    gap: 1,
+                    gridTemplateColumns: "auto 1fr",
+                    alignItems: "start",
+                  }}
+                >
+                  <Typography variant="body2" color="text.secondary">Agency</Typography>
                   <Typography variant="body2">{target.agency || "N/A"}</Typography>
-                </Box>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ minWidth: "100px" }}>
-                    Purpose:
-                  </Typography>
+                  <Typography variant="body2" color="text.secondary">Purpose</Typography>
                   <Typography variant="body2">{target.purpose || "N/A"}</Typography>
-                </Box>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ minWidth: "100px" }}>
-                    Target Users:
-                  </Typography>
+                  <Typography variant="body2" color="text.secondary">Target Users</Typography>
                   <Typography variant="body2">{target.target_users || "N/A"}</Typography>
-                </Box>
-                <Box sx={{ display: "flex", gap: 1 }}>
-                  <Typography variant="subtitle2" color="text.secondary" sx={{ minWidth: "100px" }}>
-                    API Endpoint:
-                  </Typography>
+                  <Typography variant="body2" color="text.secondary">API Endpoint</Typography>
                   <Typography variant="body2" sx={{ wordBreak: "break-all" }}>
                     {target.api_endpoint || "N/A"}
                   </Typography>
                 </Box>
               </Box>
+            </Stack>
+          </CardContent>
+        </Card>
+        <Box
+          sx={{
+            display: "grid",
+            gap: 2,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(4, minmax(0, 1fr))" },
+            mb: 3,
+          }}
+        >
+          <SummaryCard
+            icon={<IconUser {...statIconProps} />}
+            label="Approved Personas"
+            value={approvedPersonas}
+            helper="Personas available for evaluation design"
+          />
+          <SummaryCard
+            icon={<IconMessageQuestion {...statIconProps} />}
+            label="Approved Questions"
+            value={approvedQuestions}
+            helper="Approved evaluation prompts in rotation"
+          />
+          <SummaryCard
+            icon={<IconScreenshot {...statIconProps} />}
+            label="Snapshots"
+            value={snapshots.length}
+            helper="Snapshots included in cross-run comparison"
+          />
+          <SummaryCard
+            icon={<IconRobotFace {...statIconProps} />}
+            label="Judges"
+            value={judgeCount}
+            helper="Configured evaluators across this target"
+          />
+        </Box>
+
+          <Card variant="outlined" sx={detailCardSx}>
+            <CardContent sx={{ p: 3 }}>
+              <Stack spacing={3}>
+                <Stack direction={{ xs: "column", sm: "row" }} spacing={2} alignItems={{ xs: "flex-start", sm: "center" }} justifyContent="space-between">
+                  <Box>
+                    <Typography variant="h6" fontWeight={700}>
+                      Rubric Scores Across Snapshots
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      Compare rubric-level aggregate scores across every available snapshot in one grouped chart.
+                    </Typography>
+                  </Box>
+
+                  <Button
+                    variant="outlined"
+                    endIcon={<IconChevronDown {...actionIconProps} />}
+                    onClick={(event) => setSeriesMenuAnchor(event.currentTarget)}
+                    sx={{ minWidth: { xs: "100%", sm: 220 }, justifyContent: "space-between", flexShrink: 0 }}
+                  >
+                    {selectedSeries.length === rubricSeriesDefinitions.length
+                      ? `All rubrics (${selectedSeries.length})`
+                      : selectedSeries.map((series) => series.label).join(" • ")}
+                  </Button>
+
+                  <Menu
+                    anchorEl={seriesMenuAnchor}
+                    open={Boolean(seriesMenuAnchor)}
+                    onClose={() => setSeriesMenuAnchor(null)}
+                  >
+                    {rubricSeriesDefinitions.map((series) => (
+                      <MenuItem key={series.key} onClick={() => toggleSeries(series.key)}>
+                        <Checkbox checked={selectedSeriesKeys.includes(series.key)} />
+                        <ListItemText
+                          primary={series.label}
+                          secondary={
+                            selectedSeriesKeys.includes(series.key)
+                              ? `Order ${selectedSeriesKeys.indexOf(series.key) + 1}`
+                              : undefined
+                          }
+                        />
+                      </MenuItem>
+                    ))}
+                  </Menu>
+                </Stack>
+
+                <SnapshotScoreChart
+                  data={chartData}
+                  loading={metricsLoading}
+                />
+              </Stack>
             </CardContent>
           </Card>
 
-          {/* Statistics Cards - 2x2 Grid */}
-          <Box
-            sx={{
-              display: "grid",
-              gap: 2,
-              gridTemplateColumns: "repeat(2, 1fr)",
-              flex: { md: "0 0 55%" },
-            }}
-          >
-            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
-              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <PersonIcon sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle1" color="text.secondary">
-                    Approved Personas
-                  </Typography>
-                </Stack>
-                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
-                  <Typography variant="h4" fontWeight={600}>
-                    {approvedPersonas}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
-              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <QuestionMarkIcon sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle1" color="text.secondary">
-                    Approved Questions
-                  </Typography>
-                </Stack>
-                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
-                  <Typography variant="h4" fontWeight={600}>
-                    {approvedQuestions}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
-              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <ScreenshotMonitorIcon sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle1" color="text.secondary">
-                    Snapshots
-                  </Typography>
-                </Stack>
-                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
-                  <Typography variant="h4" fontWeight={600}>
-                    {snapshots.length}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-
-            <Card variant="outlined" sx={{ display: "flex", borderColor: cardBorderColor }}>
-              <CardContent sx={{ display: "flex", flexDirection: "column", width: "100%", height: "100%" }}>
-                <Stack direction="row" spacing={1} sx={{ alignItems: "center" }}>
-                  <SmartToyIcon sx={{ opacity: 0.5 }}/>
-                  <Typography variant="subtitle1" color="text.secondary">
-                    Judges
-                  </Typography>
-                </Stack>
-                <Box sx={{ display: "flex", alignItems: "center", flexGrow: 1 }}>
-                  <Typography variant="h4" fontWeight={600}>
-                    {judgeCount}
-                  </Typography>
-                </Box>
-              </CardContent>
-            </Card>
-          </Box>
-
-        </Box>
-
-        <Select
-          value={metric}
-          onChange={(e) => setMetric(e.target.value)}
-          size="small"
-          sx={{ mb: 1, minWidth: 200 }}
-        >
-          <MenuItem value="accuracy">Accuracy</MenuItem>
-          {rubrics.map((r) => (
-            <MenuItem key={r.id} value={`rubric-${r.id}`}>{r.name}</MenuItem>
-          ))}
-        </Select>
-
-        {/* Snapshot Accuracy Chart and Snapshot Details */}
-        <Box sx={{ mb: 3 }}>
-          <Stack direction="row" spacing={3} alignItems="stretch">
-            <SnapshotAccuracyChart
-              data={chartData}
-              loading={metricsLoading}
-              yAxisLabel={selectedRubric ? `${selectedRubric.name} (%)` : "Accuracy (%)"}
-            />
-
-            {/* Snapshot Details Section */}
-            <Card variant="outlined" sx={{ width: "35%", borderColor: cardBorderColor }}>
-              <CardContent>
-                {/* Snapshot Selection Header */}
-                <Stack direction={"row"} gap={2}>
-                  <Typography variant="h6" fontWeight={600} sx={{ mb: 2 }}>
-                    Snapshot:
-                  </Typography>
-                  <Box sx={{ flexGrow: 1 }}>
-                    <SnapshotHeader
-                      targetId={targetId}
-                      snapshots={snapshots}
-                      selectedSnapshotId={selectedSnapshotId}
-                      onSelectSnapshot={handleSelectSnapshot}
-                      onSnapshotCreated={handleSnapshotCreated}
-                      onSnapshotDeleted={handleSnapshotCreated}
-                      loading={loading}
-                    />
-                  </Box>
-                </Stack>
-
-                {/* Snapshot Metrics Card */}
-                {metricsLoading ? (
-                  <Card variant="outlined" sx={{ flex: 1 }}>
-                    <CardContent>
-                      <Box
-                        display="flex"
-                        justifyContent="center"
-                        alignItems="center"
-                        minHeight="150px"
-                      >
-                        <CircularProgress />
-                      </Box>
-                    </CardContent>
-                  </Card>
-                ) : !selectedSnapshotMetric ? (
-                  <Card variant="outlined" sx={{ flex: 1 }}>
-                    <CardContent>
-                      <Box
-                        display="flex"
-                        justifyContent="center"
-                        alignItems="center"
-                        minHeight="150px"
-                      >
-                        <Typography variant="body2" color="text.secondary">
-                          No snapshot data available
-                        </Typography>
-                      </Box>
-                    </CardContent>
-                  </Card>
-                ) : (
-                  <SnapshotAccuracyCard
-                    snapshotMetric={selectedSnapshotMetric}
-                    loading={false}
-                    emptyMessage="No snapshots yet"
-                    showWarningBox
-                    title={selectedRubric ? `Overall ${selectedRubric.name}` : "Overall Accuracy"}
-                  />
-                )}
-
-                <Divider sx={{ my: 3 }} />
-
-                {/* Confusion Matrix Card */}
-                <ConfusionMatrixCard
-                  data={confusionMatrix}
-                  loading={confusionMatrixLoading}
-                />
-                
-              </CardContent>
-            </Card>
-          </Stack>
-        </Box>
       </Box>
     </Box>
+  );
+}
+
+function SummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: number;
+  helper: string;
+}) {
+  return (
+    <Card variant="outlined" sx={detailCardSx}>
+      <CardContent sx={{ p: 2.5 }}>
+        <Stack spacing={1.5}>
+          <Stack direction="row" spacing={1.25} alignItems="center">
+            <Box
+              sx={{
+                width: 40,
+                height: 40,
+                borderRadius: 2,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                bgcolor: "grey.100",
+                color: "primary.main",
+              }}
+            >
+              {icon}
+            </Box>
+            <Typography variant="subtitle2" color="text.secondary" fontWeight={700}>
+              {label}
+            </Typography>
+          </Stack>
+
+          <Typography variant="h3" fontWeight={700}>
+            {value}
+          </Typography>
+
+          <Typography variant="body2" color="text.secondary">
+            {helper}
+          </Typography>
+        </Stack>
+      </CardContent>
+    </Card>
   );
 }

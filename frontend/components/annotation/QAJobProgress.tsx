@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
+import { IconAlertCircle, IconPlayerPause } from "@tabler/icons-react";
 import {
   Alert,
   Box,
@@ -11,12 +12,8 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import {
-  CheckCircle as CheckCircleIcon,
-  Error as ErrorIcon,
-  Pause as PauseIcon,
-} from "@mui/icons-material";
 import { QAJob, QAJobStageEnum, JobStatus } from "@/lib/types";
+import { compactActionIconProps } from "@/lib/iconStyles";
 
 interface QAJobProgressProps {
   job: QAJob | null;
@@ -98,7 +95,7 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
     if (job.status === JobStatus.FAILED) {
       return (
         <Chip
-          icon={<ErrorIcon />}
+          icon={<IconAlertCircle {...compactActionIconProps} />}
           label="Failed"
           color="error"
           size="small"
@@ -109,7 +106,7 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
     if (job.status === JobStatus.PAUSED) {
       return (
         <Chip
-          icon={<PauseIcon />}
+          icon={<IconPlayerPause {...compactActionIconProps} />}
           label="Paused"
           color="default"
           size="small"

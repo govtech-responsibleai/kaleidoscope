@@ -32,16 +32,16 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import {
-  CheckCircle as CheckCircleIcon,
-  Cancel as CancelIcon,
-  Delete as DeleteIcon,
-  Download as DownloadIcon,
-  Edit as EditIcon,
-  Save as SaveIcon,
-  Add as AddIcon,
-  QuizOutlined,
-  PeopleOutlined,
-} from "@mui/icons-material";
+  IconCode,
+  IconCircleCheck,
+  IconCircleX,
+  IconDeviceFloppy,
+  IconMessageQuestion,
+  IconPencil,
+  IconPlus,
+  IconTrash,
+  IconUsers,
+} from "@tabler/icons-react";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
@@ -51,6 +51,14 @@ import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 import PersonaTable from "@/components/questions/PersonaTable";
 import AddPersonasDialog from "@/components/questions/AddPersonasDialog";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import {
+  compactChipSx,
+  getTableBodyRowSx,
+  tableContainerSx,
+  tableHeaderCellSx,
+  tableHeaderRowSx,
+} from "@/lib/uiStyles";
 
 const cardSx = {
   p: 2.5,
@@ -60,21 +68,6 @@ const cardSx = {
   bgcolor: "background.paper",
   display: "flex",
   flexDirection: "column",
-} as const;
-
-const chipSx = {
-  height: 22,
-  fontSize: 11,
-  fontWeight: 600,
-} as const;
-
-const headerCellSx = {
-  fontWeight: 700,
-  fontSize: 11,
-  letterSpacing: 0.5,
-  textTransform: "uppercase" as const,
-  color: "text.secondary",
-  py: 1.5,
 } as const;
 
 export default function QuestionsPage() {
@@ -604,7 +597,7 @@ export default function QuestionsPage() {
           <Box display="flex" gap={1} alignItems="center">
             <Button
               size="small"
-              startIcon={<AddIcon />}
+              startIcon={<IconPlus {...actionIconProps} />}
               onClick={() => setGenerateModalOpen(true)}
               sx={{
                 border: "1px solid",
@@ -621,7 +614,7 @@ export default function QuestionsPage() {
                 onClick={handleExportQuestions}
                 sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
               >
-                <DownloadIcon fontSize="small" />
+                <IconCode {...actionIconProps} />
               </IconButton>
             </Tooltip>
           </Box>
@@ -630,7 +623,7 @@ export default function QuestionsPage() {
           <Box display="flex" gap={1} alignItems="center">
             <Button
               size="small"
-              startIcon={<AddIcon />}
+              startIcon={<IconPlus {...actionIconProps} />}
               onClick={() => setAddPersonasOpen(true)}
               sx={{
                 border: "1px solid",
@@ -647,7 +640,7 @@ export default function QuestionsPage() {
                 onClick={handleExportPersonas}
                 sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
               >
-                <DownloadIcon fontSize="small" />
+                <IconCode {...actionIconProps} />
               </IconButton>
             </Tooltip>
           </Box>
@@ -676,7 +669,7 @@ export default function QuestionsPage() {
               bgcolor: "grey.50",
             }}
           >
-            <PeopleOutlined sx={{ fontSize: 48, color: "grey.400" }} />
+            <IconUsers size={48} stroke={1.75} color={theme.palette.grey[400]} />
             <Typography variant="h6" fontWeight={700}>
               No personas yet
             </Typography>
@@ -686,7 +679,7 @@ export default function QuestionsPage() {
             </Typography>
             <Button
               variant="contained"
-              startIcon={<AddIcon />}
+              startIcon={<IconPlus {...actionIconProps} />}
               onClick={() => setAddPersonasOpen(true)}
             >
               Add Personas
@@ -760,7 +753,7 @@ export default function QuestionsPage() {
                         <Button
                           variant="contained"
                           color="success"
-                          startIcon={bulkApproving ? <CircularProgress size={20} color="inherit" /> : <CheckCircleIcon />}
+                          startIcon={bulkApproving ? <CircularProgress size={20} color="inherit" /> : <IconCircleCheck {...actionIconProps} />}
                           onClick={handleBulkApprove}
                           disabled={bulkApproving || processingQuestionId !== null}
                         >
@@ -858,7 +851,7 @@ export default function QuestionsPage() {
                                         label={newQ.status === Status.EDITED ? "Edited" : "Pending"}
                                         size="small"
                                         sx={{
-                                          ...chipSx,
+                                          ...compactChipSx,
                                           ...(newQ.status === Status.EDITED
                                             ? { bgcolor: alpha(theme.palette.info.main, 0.08), color: "info.main" }
                                             : { bgcolor: alpha(theme.palette.warning.main, 0.08), color: "warning.dark" }),
@@ -867,14 +860,14 @@ export default function QuestionsPage() {
                                       <Chip
                                         label={getPersonaTitle(newQ.persona_id)}
                                         size="small"
-                                        sx={{ ...chipSx, fontWeight: 500, bgcolor: "grey.100", color: "text.secondary" }}
+                                        sx={{ ...compactChipSx, fontWeight: 500, bgcolor: "grey.100", color: "text.secondary" }}
                                       />
                                       <Chip
                                         label={newQ.type || "NA"}
                                         size="small"
                                         variant="outlined"
                                         sx={{
-                                          ...chipSx,
+                                          ...compactChipSx,
                                           ...(newQ.type === "edge"
                                             ? { bgcolor: alpha(theme.palette.warning.main, 0.1), color: "warning.dark", borderColor: alpha(theme.palette.warning.main, 0.3) }
                                             : newQ.type === "typical"
@@ -887,7 +880,7 @@ export default function QuestionsPage() {
                                         size="small"
                                         variant="outlined"
                                         sx={{
-                                          ...chipSx,
+                                          ...compactChipSx,
                                           ...(newQ.scope === "in_kb"
                                             ? { bgcolor: alpha(theme.palette.info.main, 0.1), color: "info.dark", borderColor: alpha(theme.palette.info.main, 0.3) }
                                             : newQ.scope === "out_kb"
@@ -905,7 +898,7 @@ export default function QuestionsPage() {
                                     <Button
                                       variant="contained"
                                       size="small"
-                                      startIcon={<SaveIcon />}
+                                      startIcon={<IconDeviceFloppy {...actionIconProps} />}
                                       onClick={() => handleSaveEdit(newQ.id)}
                                       disabled={processingQuestionId === newQ.id || !editedText.trim()}
                                     >
@@ -925,7 +918,7 @@ export default function QuestionsPage() {
                                     <Button
                                       variant="outlined"
                                       size="small"
-                                      startIcon={<EditIcon />}
+                                      startIcon={<IconPencil {...actionIconProps} />}
                                       onClick={() => handleStartEdit(newQ)}
                                       disabled={processingQuestionId !== null}
                                     >
@@ -935,7 +928,7 @@ export default function QuestionsPage() {
                                       variant="contained"
                                       color="success"
                                       size="small"
-                                      startIcon={<CheckCircleIcon />}
+                                      startIcon={<IconCircleCheck {...actionIconProps} />}
                                       onClick={() => handleReviewQuestion(newQ.id, "approve")}
                                       disabled={processingQuestionId !== null}
                                     >
@@ -945,7 +938,7 @@ export default function QuestionsPage() {
                                       variant="outlined"
                                       color="error"
                                       size="small"
-                                      startIcon={<CancelIcon />}
+                                      startIcon={<IconCircleX {...actionIconProps} />}
                                       onClick={() => handleReviewQuestion(newQ.id, "reject")}
                                       disabled={processingQuestionId !== null}
                                     >
@@ -1016,7 +1009,7 @@ export default function QuestionsPage() {
                 bgcolor: "grey.50",
               }}
             >
-              <QuizOutlined sx={{ fontSize: 48, color: "grey.400" }} />
+              <IconMessageQuestion size={48} stroke={1.75} color={theme.palette.grey[400]} />
               <Typography variant="h6" fontWeight={700}>
                 Start by generating evaluation questions
               </Typography>
@@ -1032,13 +1025,13 @@ export default function QuestionsPage() {
               </Button>
             </Box>
           ) : (<>
-            <TableContainer component={Paper} variant="outlined">
+            <TableContainer component={Paper} variant="outlined" sx={tableContainerSx}>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ bgcolor: "grey.50" }}>
-                    <TableCell sx={{ width: 70, ...headerCellSx }}>ID</TableCell>
-                    <TableCell sx={headerCellSx}>Question</TableCell>
-                    <TableCell align="center" sx={{ width: 160, ...headerCellSx }}>
+                  <TableRow sx={tableHeaderRowSx}>
+                    <TableCell sx={{ width: 70, ...tableHeaderCellSx }}>ID</TableCell>
+                    <TableCell sx={tableHeaderCellSx}>Question</TableCell>
+                    <TableCell align="center" sx={{ width: 160, ...tableHeaderCellSx }}>
                       <TableHeaderFilter
                         label="Persona"
                         options={personaFilterOptions}
@@ -1047,7 +1040,7 @@ export default function QuestionsPage() {
                         allSelectedLabel="All Personas"
                       />
                     </TableCell>
-                    <TableCell align="center" sx={{ width: 120, ...headerCellSx }}>
+                    <TableCell align="center" sx={{ width: 120, ...tableHeaderCellSx }}>
                       <TableHeaderFilter
                         label="Type"
                         options={typeFilterOptions}
@@ -1056,7 +1049,7 @@ export default function QuestionsPage() {
                         allSelectedLabel="All Types"
                       />
                     </TableCell>
-                    <TableCell align="center" sx={{ width: 120, ...headerCellSx }}>
+                    <TableCell align="center" sx={{ width: 120, ...tableHeaderCellSx }}>
                       <TableHeaderFilter
                         label="Scope"
                         options={scopeFilterOptions}
@@ -1072,10 +1065,7 @@ export default function QuestionsPage() {
                   {filteredQuestions.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((question) => (
                     <TableRow
                       key={question.id}
-                      sx={{
-                        "&:hover": { bgcolor: alpha(theme.palette.primary.main, 0.03) },
-                        "& td": { py: 1.75, borderColor: "grey.100" },
-                      }}
+                      sx={getTableBodyRowSx(theme)}
                     >
                       <TableCell>
                         <Typography sx={{ fontFamily: "monospace", fontSize: 12, color: "text.secondary", fontWeight: 500 }}>
@@ -1094,7 +1084,7 @@ export default function QuestionsPage() {
                           size="small"
                           variant="outlined"
                           sx={{
-                            ...chipSx,
+                            ...compactChipSx,
                             ...(question.type === "edge"
                               ? { bgcolor: alpha(theme.palette.warning.main, 0.1), color: "warning.dark", borderColor: alpha(theme.palette.warning.main, 0.3) }
                               : question.type === "typical"
@@ -1109,7 +1099,7 @@ export default function QuestionsPage() {
                           size="small"
                           variant="outlined"
                           sx={{
-                            ...chipSx,
+                            ...compactChipSx,
                             ...(question.scope === "in_kb"
                               ? { bgcolor: alpha(theme.palette.info.main, 0.1), color: "info.dark", borderColor: alpha(theme.palette.info.main, 0.3) }
                               : question.scope === "out_kb"
@@ -1124,7 +1114,7 @@ export default function QuestionsPage() {
                           onClick={() => setQuestionToDelete(question)}
                           sx={{ opacity: 0.35, "&:hover": { opacity: 1, color: "error.main" } }}
                         >
-                          <DeleteIcon fontSize="small" />
+                          <IconTrash {...compactActionIconProps} />
                         </IconButton>
                       </TableCell>
                     </TableRow>

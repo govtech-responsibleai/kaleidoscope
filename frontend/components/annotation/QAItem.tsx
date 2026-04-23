@@ -23,6 +23,8 @@ interface QAItemProps {
   question: QuestionResponse;
   answer: Answer | null;
   job: QAJob | null;
+  pendingMetricNames?: string[];
+  isFullyAnnotated: boolean;
   isActive: boolean;
   isChecked: boolean;
   onToggleSelection: () => void;
@@ -32,15 +34,24 @@ interface QAItemProps {
 const getStageLabel = (
   job: QAJob | null,
   answer: Answer | null,
+  isFullyAnnotated: boolean,
+  pendingMetricNames: string[],
 ): string => {
   if (!job) {
-    if (answer?.has_annotation) {
+    if (pendingMetricNames.length > 0) {
+      return `Partial • ${pendingMetricNames.length} metric${pendingMetricNames.length === 1 ? "" : "s"} pending`;
+    }
+    if (isFullyAnnotated) {
       return "Annotated";
     }
     if (answer) {
       return "Answer Only";
     }
     return "Not Started";
+  }
+
+  if (job.status === JobStatus.COMPLETED && pendingMetricNames.length > 0) {
+    return `Partial • ${pendingMetricNames.length} metric${pendingMetricNames.length === 1 ? "" : "s"} pending`;
   }
 
   if (job.status === JobStatus.RUNNING) {
@@ -76,9 +87,14 @@ const getStageLabel = (
 const getStageColor = (
   job: QAJob | null,
   answer: Answer | null,
+  isFullyAnnotated: boolean,
+  pendingMetricNames: string[],
 ): "default" | "warning" | "success" | "error" | "info" => {
   if (!job) {
-    if (answer?.has_annotation) {
+    if (pendingMetricNames.length > 0) {
+      return "warning";
+    }
+    if (isFullyAnnotated) {
       return "success";
     }
     if (answer) {
@@ -91,7 +107,7 @@ const getStageColor = (
     case JobStatus.RUNNING:
       return "warning";
     case JobStatus.COMPLETED:
-      return "success";
+      return pendingMetricNames.length > 0 ? "warning" : "success";
     case JobStatus.FAILED:
       return "error";
     case JobStatus.PAUSED:
@@ -104,20 +120,20 @@ const getStageColor = (
 const isActiveStage = (job: QAJob | null): boolean =>
   job?.status === JobStatus.RUNNING;
 
-const truncate = (text: string, length = 100) => {
-  if (text.length <= length) return text;
-  return `${text.slice(0, length)}…`;
-};
-
 export default function QAItem({
   question,
   answer,
   job,
+  pendingMetricNames = [],
+  isFullyAnnotated,
   isActive,
   isChecked,
   onToggleSelection,
   onSelect,
 }: QAItemProps) {
+  const isSelectedAndIncomplete = isChecked && !isFullyAnnotated;
+  const selectedBorderColor = isSelectedAndIncomplete ? "error.main" : "primary.main";
+
   const checkbox = (
     <Checkbox
       checked={isChecked}
@@ -143,7 +159,7 @@ export default function QAItem({
           border: (theme) =>
             isActive ? `1px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}`,
           borderLeft: isChecked ? "3px solid" : undefined,
-          borderLeftColor: isChecked ? "primary.main" : undefined,
+          borderLeftColor: isChecked ? selectedBorderColor : undefined,
         }}
       >
         <Stack spacing={2} sx={{ width: "100%" }}>
@@ -159,14 +175,16 @@ export default function QAItem({
               </Typography>
               {job?.error_message ? (
                 <Tooltip title={job.error_message}>
-                  <Typography variant="caption" color={`${getStageColor(job, answer)}.main`} sx={{ mt: 0.25 }}>
-                    {getStageLabel(job, answer)}{isActiveStage(job) && <LoadingDots />}
+                  <Typography variant="caption" color={`${getStageColor(job, answer, isFullyAnnotated, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
+                    {getStageLabel(job, answer, isFullyAnnotated, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
                   </Typography>
                 </Tooltip>
               ) : (
-                <Typography variant="caption" color={`${getStageColor(job, answer)}.main`} sx={{ mt: 0.25 }}>
-                  {getStageLabel(job, answer)}{isActiveStage(job) && <LoadingDots />}
-                </Typography>
+                <Tooltip title={pendingMetricNames.length > 0 ? `Pending: ${pendingMetricNames.join(", ")}` : ""} disableHoverListener={pendingMetricNames.length === 0}>
+                  <Typography variant="caption" color={`${getStageColor(job, answer, isFullyAnnotated, pendingMetricNames)}.main`} sx={{ mt: 0.25 }}>
+                    {getStageLabel(job, answer, isFullyAnnotated, pendingMetricNames)}{isActiveStage(job) && <LoadingDots />}
+                  </Typography>
+                </Tooltip>
               )}
             </Box>
 

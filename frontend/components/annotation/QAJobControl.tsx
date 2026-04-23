@@ -8,16 +8,16 @@ import React, {
   useState,
 } from "react";
 import {
+  IconPlayerPause,
+  IconPlayerPlay,
+} from "@tabler/icons-react";
+import {
   Box,
   Button,
   Chip,
   CircularProgress,
   Stack,
 } from "@mui/material";
-import {
-  PlayArrow as PlayArrowIcon,
-  Pause as PauseIcon,
-} from "@mui/icons-material";
 import {
   Answer,
   QAJob,
@@ -28,18 +28,25 @@ import {
   TargetRubricResponse,
   RubricSpec,
 } from "@/lib/types";
-import { answerApi, getApiErrorMessage, judgeApi, qaJobApi, questionApi } from "@/lib/api";
+import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
+import { actionIconProps } from "@/lib/iconStyles";
+import {
+  buildMissingRubricCoverage,
+  emptyMissingRubricCoverage,
+  hasMissingRubricCoverage,
+  type MissingRubricCoverage,
+} from "@/lib/evaluationCoverage";
 
 interface QAJobControlProps {
   targetId: number;
   snapshotId: number | null;
-  baselineJudgeId: number | null;
   approvedQuestionIds: number[];
   qaJobs: QAJob[];
   setQaJobs: React.Dispatch<React.SetStateAction<QAJob[]>>;
   qaMap: QAMap;
   setQaMap: React.Dispatch<React.SetStateAction<QAMap>>;
   rubrics?: TargetRubricResponse[];
+  onRubricCoverageChange?: (coverage: MissingRubricCoverage) => void;
   onError?: (message: string) => void;
 }
 
@@ -58,16 +65,26 @@ const mergeJobs = (prev: QAJob[], updated: QAJob[]): QAJob[] => {
   return [...merged, ...appended];
 };
 
+export const getPendingRubricQuestionIds = (
+  missingQuestionIdsByRubric: MissingRubricCoverage["missingQuestionIdsByRubric"],
+): number[] => (
+  Array.from(
+    new Set(
+      Object.values(missingQuestionIdsByRubric).flat()
+    )
+  )
+);
+
 export default function QAJobControl({
   targetId,
   snapshotId,
-  baselineJudgeId,
   approvedQuestionIds,
   qaJobs,
   setQaJobs,
   qaMap,
   setQaMap,
   rubrics,
+  onRubricCoverageChange,
   onError,
 }: QAJobControlProps) {
   const [jobInAction, setJobInAction] = useState(false);
@@ -78,14 +95,42 @@ export default function QAJobControl({
   const onErrorRef = useRef(onError);
   const defaultSelectionAttemptedRef = useRef<Set<number>>(new Set());
   const defaultSelectionInFlightRef = useRef<Set<number>>(new Set());
+  const [missingRubricCoverage, setMissingRubricCoverage] = useState<MissingRubricCoverage>(emptyMissingRubricCoverage);
+  const [resolvedRubricSpecs, setResolvedRubricSpecs] = useState<RubricSpec[]>([]);
 
   useEffect(() => {
     onErrorRef.current = onError;
   }, [onError]);
 
+  useEffect(() => {
+    onRubricCoverageChange?.(missingRubricCoverage);
+  }, [missingRubricCoverage, onRubricCoverageChange]);
+
   const notifyError = useCallback((message: string) => {
     onErrorRef.current?.(message);
   }, []);
+
+  const claimBasedRubricId = useMemo(
+    () => rubrics?.find((rubric) => rubric.scoring_mode === "claim_based")?.id ?? null,
+    [rubrics]
+  );
+
+  const claimBasedJudgeId = useMemo(() => {
+    if (!claimBasedRubricId) return null;
+    const spec = resolvedRubricSpecs.find((entry) => entry.rubric_id === claimBasedRubricId);
+    return spec?.judge_id ?? null;
+  }, [claimBasedRubricId, resolvedRubricSpecs]);
+
+  const getClaimBasedJudgeIdForJob = useCallback((job: QAJob): number | null => {
+    if (!claimBasedRubricId) {
+      return job.judge_id ?? null;
+    }
+    const jobSpec = job.rubric_specs?.find((entry) => entry.rubric_id === claimBasedRubricId);
+    if (jobSpec) {
+      return jobSpec.judge_id;
+    }
+    return job.judge_id ?? claimBasedJudgeId ?? null;
+  }, [claimBasedJudgeId, claimBasedRubricId]);
 
   // refs don't trigger re-renders
   useEffect(() => {
@@ -152,48 +197,78 @@ export default function QAJobControl({
   );
 
   const fetchClaims = useCallback(
-    async (job: QAJob): Promise<Partial<QARecord> | null> => {
-      const judgeId = job.judge_id ?? baselineJudgeId;
-      if (!job.answer_id || !judgeId) return null;
+    async (job: QAJob, force = false): Promise<Partial<QARecord> | null> => {
+      const judgeId = getClaimBasedJudgeIdForJob(job);
+      if (!job.answer_id || !judgeId || !claimBasedRubricId) return null;
       const entry = qaMapRef.current[job.question_id];
-      if (entry?.claims && entry.claims.length > 0) {
+      if (!force && entry?.claims && entry.claims.length > 0) {
         return null;
       }
       try {
-        const response = await answerApi.getClaims(job.answer_id, judgeId);
-        const claims = response.data.claims.map(({ score, ...claim }) => claim);
+        const response = await answerApi.getClaims(
+          job.answer_id,
+          judgeId,
+          claimBasedRubricId,
+        );
+        const claims = response.data.claims.map((item) => {
+          const claim = { ...item };
+          delete claim.score;
+          return claim;
+        });
         const claimScores = response.data.claims
           .map((item) => item.score)
           .filter((score): score is NonNullable<typeof score> => Boolean(score));
         return { claims, claimScores };
       } catch (err) {
         console.error("Failed to fetch claims:", err);
-        notifyError("Unable to load claim data.");
         return null;
       }
     },
-    [baselineJudgeId, notifyError]
+    [claimBasedRubricId, getClaimBasedJudgeIdForJob]
   );
 
   const fetchScore = useCallback(
     async (job: QAJob): Promise<Partial<QARecord> | null> => {
-      const judgeId = job.judge_id ?? baselineJudgeId;
-      if (!job.answer_id || !judgeId) return null;
-      const entry = qaMapRef.current[job.question_id];
-      if (entry?.answerScore) {
-        return null;
-      }
+      const judgeId = getClaimBasedJudgeIdForJob(job);
+      if (!job.answer_id || !judgeId || !claimBasedRubricId) return null;
       try {
-        const response = await answerApi.getScores(job.answer_id, judgeId);
-        return { answerScore: response.data, claimScores: response.data.claim_scores };
+        const response = await answerApi.getScores(
+          job.answer_id,
+          judgeId,
+          claimBasedRubricId,
+        );
+        return { answerScore: response.data };
       } catch (err) {
         console.error("Failed to fetch score:", err);
-        notifyError("Unable to load judge scores.");
         return null;
       }
     },
-    [baselineJudgeId, notifyError]
+    [claimBasedRubricId, getClaimBasedJudgeIdForJob]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadRubricSpecs = async () => {
+      try {
+        const response = await targetApi.getRubricSpecs(targetId);
+        if (cancelled) return;
+        setResolvedRubricSpecs(Object.values(response.data));
+      } catch (err) {
+        console.error("Failed to load rubric specs:", err);
+        if (!cancelled) {
+          setResolvedRubricSpecs([]);
+          notifyError(getApiErrorMessage(err, "Failed to load rubric judge configuration."));
+        }
+      }
+    };
+
+    void loadRubricSpecs();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [targetId, notifyError]);
 
   // Load existing answers and jobs when snapshot changes
   useEffect(() => {
@@ -275,11 +350,11 @@ export default function QAJobControl({
     return () => {
       cancelled = true;
     };
-  }, [snapshotId, baselineJudgeId, approvedQuestionIdSet, setQaJobs, setQaMap, notifyError]);
+  }, [snapshotId, approvedQuestionIdSet, setQaJobs, setQaMap, notifyError]);
 
   // Fetch questions without answers when snapshot or judge changes
   useEffect(() => {
-    if (!snapshotId || !baselineJudgeId) {
+    if (!snapshotId) {
       setQuestionsWithoutAnswers([]);
       return;
     }
@@ -288,7 +363,7 @@ export default function QAJobControl({
 
     const fetchQuestionsWithoutAnswers = async () => {
       try {
-        const response = await questionApi.listApprovedWithoutAnswers(snapshotId, baselineJudgeId);
+        const response = await questionApi.listApprovedWithoutAnswers(snapshotId);
         if (!cancelled) {
           const questionIds = response.data.map((q) => q.id);
           setQuestionsWithoutAnswers(questionIds);
@@ -306,10 +381,10 @@ export default function QAJobControl({
     return () => {
       cancelled = true;
     };
-  }, [snapshotId, baselineJudgeId, qaJobs]);
+  }, [snapshotId, qaJobs]);
 
   // Update QA data as jobs progress depending on their STAGE.
-  // Only hydrates from accuracy jobs (rubric_id === null) to avoid duplicate fetches.
+  // Only hydrates from claim-based jobs to avoid duplicate fetches.
   useEffect(() => {
     if (!snapshotId) {
       return;
@@ -330,7 +405,7 @@ export default function QAJobControl({
           updates.push({ questionId: job.question_id, promise: fetchClaims(job) });
         } else if (job.stage === QAJobStageEnum.COMPLETED) {
           updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
-          updates.push({ questionId: job.question_id, promise: fetchClaims(job) });
+          updates.push({ questionId: job.question_id, promise: fetchClaims(job, true) });
           updates.push({ questionId: job.question_id, promise: fetchScore(job) });
         }
       }
@@ -381,8 +456,8 @@ export default function QAJobControl({
     }
   }, []);
 
-  const checkData = async () => {
-    if (!snapshotId || !baselineJudgeId) return;
+  const checkData = useCallback(async () => {
+    if (!snapshotId) return;
     try {
       const response = await qaJobApi.list(snapshotId);
       const allJobs = response.data.filter((job) => approvedQuestionIdSet.has(job.question_id));
@@ -398,7 +473,7 @@ export default function QAJobControl({
     } catch (err) {
       console.error("Failed to poll job status:", err);
     }
-  };
+  }, [approvedQuestionIdSet, snapshotId, setQaJobs, stopPolling]);
 
   const startPolling = useCallback(() => {
     if (pollingIntervalRef.current !== null) return;
@@ -469,34 +544,61 @@ export default function QAJobControl({
     return () => {
       stopPolling();
     };
-  }, [snapshotId, baselineJudgeId, stopPolling]);
+  }, [snapshotId, stopPolling]);
 
-  // Resolve rubric specs: for each non-accuracy rubric, fetch its specialist judge
-  const resolveRubricSpecs = useCallback(async (): Promise<RubricSpec[]> => {
-    if (!rubrics) return [];
-    const nonAccuracyRubrics = rubrics.filter((r) => r.category !== "accuracy");
-    if (nonAccuracyRubrics.length === 0) return [];
-
-    const specs: RubricSpec[] = [];
-    for (const rubric of nonAccuracyRubrics) {
-      try {
-        const resp = await judgeApi.getByCategory(rubric.category, targetId);
-        const judges = resp.data;
-        if (judges.length > 0) {
-          specs.push({ rubric_id: rubric.id, judge_id: judges[0].id });
-        }
-      } catch (err) {
-        console.error(`Failed to fetch judges for rubric category ${rubric.category}:`, err);
-      }
+  const fetchMissingRubricCoverage = useCallback(async () => {
+    if (!snapshotId || !rubrics || rubrics.length === 0) {
+      setMissingRubricCoverage(emptyMissingRubricCoverage);
+      return;
     }
-    return specs;
-  }, [rubrics, targetId]);
+
+    const rubricSpecs = resolvedRubricSpecs;
+    if (rubricSpecs.length === 0) {
+      setMissingRubricCoverage(emptyMissingRubricCoverage);
+      return;
+    }
+
+    const answeredQuestionIds = new Set(
+      Object.values(qaMapRef.current)
+        .filter((entry) => entry.answer)
+        .map((entry) => entry.questionId)
+    );
+
+    const entries = await Promise.all(
+      rubricSpecs.map(async (spec) => {
+        try {
+          const response = await questionApi.listApprovedWithoutScores(
+            snapshotId,
+            spec.judge_id,
+            spec.rubric_id,
+          );
+          return {
+            rubricId: spec.rubric_id,
+            questionIds: response.data
+              .map((question) => question.id)
+              .filter((questionId) => answeredQuestionIds.has(questionId)),
+          };
+        } catch {
+          return { rubricId: spec.rubric_id, questionIds: [] };
+        }
+      })
+    );
+
+    setMissingRubricCoverage(buildMissingRubricCoverage(entries, rubrics));
+  }, [snapshotId, rubrics, resolvedRubricSpecs]);
+
+  useEffect(() => {
+    fetchMissingRubricCoverage().catch(() => {
+      setMissingRubricCoverage(emptyMissingRubricCoverage);
+    });
+  }, [fetchMissingRubricCoverage, qaJobs, snapshotId, qaMap]);
 
   const totalJobs = qaJobs.length;
+  const hasPendingRubricMetrics = hasMissingRubricCoverage(missingRubricCoverage);
 
   // UI chip to display progress
   const getStatusChip = () => {
-    if (!snapshotId || !baselineJudgeId) {
+    if (!snapshotId) {
       return <Chip label="Select a snapshot" size="small" />;
     }
 
@@ -519,6 +621,16 @@ export default function QAJobControl({
         <Chip
           icon={<CircularProgress size={14} />}
           label={`Evaluating \u2022 ${questionsFullyComplete}/${totalQuestions}`}
+          color="warning"
+          size="small"
+        />
+      );
+    }
+
+    if (hasPendingRubricMetrics) {
+      return (
+        <Chip
+          label={`Metrics pending • ${missingRubricCoverage.pendingQuestionCount} question${missingRubricCoverage.pendingQuestionCount === 1 ? "" : "s"}`}
           color="warning"
           size="small"
         />
@@ -565,15 +677,8 @@ export default function QAJobControl({
   };
 
   const controlState: ControlState = (() => {
-    if (!snapshotId || !baselineJudgeId) {
+    if (!snapshotId) {
       return "disabled";
-    }
-
-    if (
-      totalJobs === 0 ||
-      (questionsFullyComplete === totalQuestions && totalQuestions > 0)
-    ) {
-      return "start";
     }
 
     if (runningCount > 0) {
@@ -584,16 +689,31 @@ export default function QAJobControl({
       return "resume";
     }
 
+    if (hasPendingRubricMetrics) {
+      return "start";
+    }
+
+    if (
+      totalJobs === 0 ||
+      (questionsFullyComplete === totalQuestions && totalQuestions > 0)
+    ) {
+      return "start";
+    }
+
     return "start";
   })();
 
   const isScoringComplete = totalQuestions > 0
     && questionsFullyComplete === totalQuestions
-    && questionsWithoutAnswers.length === 0;
+    && questionsWithoutAnswers.length === 0
+    && !hasPendingRubricMetrics;
 
   const controlButtonText = (() => {
     switch (controlState) {
       case "start":
+        if (hasPendingRubricMetrics) {
+          return "Retry Missing Metrics";
+        }
         if (failedCount > 0) {
           return "Retry Failed Evaluations";
         }
@@ -615,11 +735,31 @@ export default function QAJobControl({
 
   // Functions to start, pause, and resume the QA jobs
   const handleStart = async () => {
-    if (!snapshotId || !baselineJudgeId) return;
+    if (!snapshotId) return;
 
     setJobInAction(true);
     try {
-      const rubricSpecs = await resolveRubricSpecs();
+      if (hasPendingRubricMetrics) {
+        const questionIds = getPendingRubricQuestionIds(
+          missingRubricCoverage.missingQuestionIdsByRubric
+        );
+        if (questionIds.length === 0 || resolvedRubricSpecs.length === 0) {
+          return;
+        }
+
+        const response = await qaJobApi.start(snapshotId, {
+          question_ids: questionIds,
+          rubric_specs: resolvedRubricSpecs,
+        });
+
+        const mergedJobs = response.data;
+        if (mergedJobs.length > 0) {
+          setQaJobs((prev) => mergeJobs(prev, mergedJobs));
+          startPolling();
+          checkData();
+        }
+        return;
+      }
 
       // Determine which questions to evaluate
       const failedJobs = qaJobs.filter((job) => job.status === JobStatus.FAILED);
@@ -632,10 +772,8 @@ export default function QAJobControl({
 
       if (questionIds.length === 0 && !jobIds) return;
 
-      const response = await qaJobApi.startAll(snapshotId, {
-        judge_id: baselineJudgeId,
+      const response = await qaJobApi.start(snapshotId, {
         question_ids: questionIds,
-        rubric_specs: rubricSpecs.length > 0 ? rubricSpecs : undefined,
         job_ids: jobIds,
       });
 
@@ -676,14 +814,13 @@ export default function QAJobControl({
   };
 
   const handleResume = async () => {
-    if (!snapshotId || !baselineJudgeId) return;
+    if (!snapshotId) return;
     const pausedJobs = qaJobs.filter((job) => job.status === JobStatus.PAUSED);
     if (pausedJobs.length === 0) return;
 
     setJobInAction(true);
     try {
-      const response = await qaJobApi.startAll(snapshotId, {
-        judge_id: baselineJudgeId,
+      const response = await qaJobApi.start(snapshotId, {
         question_ids: pausedJobs.map((job) => job.question_id),
         job_ids: pausedJobs.map((job) => job.id),
       });
@@ -729,9 +866,9 @@ export default function QAJobControl({
             jobInAction ? (
               <CircularProgress size={16} />
             ) : controlState === "pause" ? (
-              <PauseIcon />
+              <IconPlayerPause {...actionIconProps} />
             ) : (
-              <PlayArrowIcon />
+              <IconPlayerPlay {...actionIconProps} />
             )
           }
         >

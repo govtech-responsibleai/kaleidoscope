@@ -14,7 +14,8 @@ import {
   Select,
   Typography,
 } from "@mui/material";
-import { FilterList as FilterListIcon } from "@mui/icons-material";
+import { IconFilter } from "@tabler/icons-react";
+import { actionIconProps } from "@/lib/iconStyles";
 import { PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
 
 interface QAFilterProps {
@@ -47,7 +48,7 @@ export default function QAFilter({
     <>
       <Button
         variant="outlined"
-        endIcon={<FilterListIcon />}
+        endIcon={<IconFilter {...actionIconProps} />}
         onClick={(e) => setAnchorEl(e.currentTarget)}
         color={isFilterActive ? "primary" : "inherit"}
         disableRipple

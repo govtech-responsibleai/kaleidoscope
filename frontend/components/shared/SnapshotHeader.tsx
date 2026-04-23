@@ -10,12 +10,12 @@ import {
   Stack,
   IconButton,
 } from "@mui/material";
-import AddCircleOutlineIcon from "@mui/icons-material/AddCircleOutline";
-import DeleteIcon from "@mui/icons-material/Delete";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { Snapshot } from "@/lib/types";
 import CreateSnapshotDialog from "./CreateSnapshotDialog";
 import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
 import { snapshotApi } from "@/lib/api";
+import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
 
 interface SnapshotHeaderProps {
   targetId: number;
@@ -114,7 +114,7 @@ export default function SnapshotHeader({
                       onClick={(e) => handleDeleteClick(snapshot, e)}
                       sx={{ ml: 2, opacity: 0.6, "&:hover": { opacity: 1, color: "error.main" } }}
                     >
-                      <DeleteIcon fontSize="small" />
+                      <IconTrash {...compactActionIconProps} />
                     </IconButton>
                   </MenuItem>
                 ))
@@ -124,7 +124,7 @@ export default function SnapshotHeader({
                 </MenuItem>
               )}
               <MenuItem value="create">
-                <AddCircleOutlineIcon fontSize="small" sx={{ mr: 1 }} />
+                <IconPlus {...actionIconProps} style={{ marginRight: 8 }} />
                 Create snapshot
               </MenuItem>
             </Select>

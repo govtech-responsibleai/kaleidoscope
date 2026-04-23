@@ -30,16 +30,12 @@ import {
   AnswerScore,
   AnswerClaimsWithScoresResponse,
   BulkSelectionRequest,
-  Annotation,
-  AnnotationCreate,
-  AnnotationBulkCreate,
   AnnotationCompletionStatus,
   JudgeConfig,
   JudgeCreate,
   JudgeUpdate,
   JudgeModelOption,
   QAJob,
-  QAJobStartRequest,
   UnifiedQAJobStartRequest,
   JudgeAlignment,
   JudgeAccuracy,
@@ -53,15 +49,18 @@ import {
   TargetRubricCreate,
   TargetRubricUpdate,
   TargetRubricResponse,
-  RubricAnnotation,
-  RubricAnnotationUpsert,
+  AnswerAnnotation,
+  AnswerAnnotationUpsert,
   RubricAnswerScore,
-  SnapshotMetric,
+  SnapshotScoringContractsResponse,
+  ScoringPendingCounts,
   Status,
   TestConnectionRequest,
   TestConnectionResponse,
   ProbeRequest,
   ProbeResponse,
+  RubricSpec,
+  RubricSpecMap,
 } from "./types";
 import { sortJudges } from "./judgeOrdering";
 
@@ -204,6 +203,12 @@ export const targetApi = {
 
   probe: (data: ProbeRequest) =>
     api.post<ProbeResponse>("/targets/probe", data),
+
+  getRubricSpecs: (id: number) =>
+    api.get<RubricSpecMap>(`/targets/${id}/rubric-specs`),
+
+  getRubricSpec: (id: number, rubricId: number, judgeId: number) =>
+    api.get<RubricSpec>(`/targets/${id}/rubric-specs/${rubricId}/judges/${judgeId}`),
 };
 
 // Web search endpoints
@@ -348,19 +353,12 @@ export const questionApi = {
     );
   },
 
-  listApprovedWithoutAnswers: (snapshotId: number, judgeId: number) =>
-    api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-answers`, {
-      params: { judge_id: judgeId },
-    }),
+  listApprovedWithoutAnswers: (snapshotId: number) =>
+    api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-answers`),
 
-  listApprovedWithoutScores: (snapshotId: number, judgeId: number) =>
+  listApprovedWithoutScores: (snapshotId: number, judgeId: number, rubricId?: number) =>
     api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-scores`, {
-      params: { judge_id: judgeId },
-    }),
-
-  listApprovedWithoutRubricScores: (snapshotId: number, judgeId: number, rubricId: number) =>
-    api.get<QuestionResponse[]>(`/snapshots/${snapshotId}/questions/approved/without-rubric-scores`, {
-      params: { judge_id: judgeId, rubric_id: rubricId },
+      params: rubricId === undefined ? { judge_id: judgeId } : { judge_id: judgeId, rubric_id: rubricId },
     }),
 };
 
@@ -425,12 +423,17 @@ export const answerApi = {
   get: (answerId: number) =>
     api.get<Answer>(`/answers/${answerId}`),
 
-  getScores: (answerId: number, judgeId: number) =>
-    api.get<AnswerScore>(`/answers/${answerId}/scores/${judgeId}`),
+  getScores: (answerId: number, judgeId: number, rubricId: number) =>
+    api.get<AnswerScore>(`/answers/${answerId}/scores/${judgeId}`, {
+      params: { rubric_id: rubricId },
+    }),
 
-  getClaims: (answerId: number, judgeId: number) =>
+  getClaims: (answerId: number, judgeId: number, rubricId: number) =>
     api.get<AnswerClaimsWithScoresResponse>(`/answers/${answerId}/claims`, {
-      params: { judge_id: judgeId },
+      params: {
+        judge_id: judgeId,
+        rubric_id: rubricId,
+      },
     }),
 
   bulkSelection: (snapshotId: number, data: BulkSelectionRequest) =>
@@ -439,48 +442,29 @@ export const answerApi = {
   selectDefault: (snapshotId: number) =>
     api.post(`/snapshots/${snapshotId}/answers/select-default`),
 
-  // Label override methods
-  getLabelOverride: (answerId: number) =>
-    api.get<AnswerLabelOverride>(`/answers/${answerId}/label-override`),
+  getLabelOverride: (answerId: number, rubricId: number) =>
+    api.get<AnswerLabelOverride>(`/answers/${answerId}/label-overrides/${rubricId}`),
 
-  updateLabelOverride: (answerId: number, data: AnswerLabelOverrideCreate) =>
-    api.put<AnswerLabelOverride>(`/answers/${answerId}/label-override`, data),
+  updateLabelOverride: (answerId: number, rubricId: number, data: AnswerLabelOverrideCreate) =>
+    api.put<AnswerLabelOverride>(`/answers/${answerId}/label-overrides/${rubricId}`, data),
 
-  deleteLabelOverride: (answerId: number) =>
-    api.delete(`/answers/${answerId}/label-override`),
+  deleteLabelOverride: (answerId: number, rubricId: number) =>
+    api.delete(`/answers/${answerId}/label-overrides/${rubricId}`),
 };
 
 // Annotation endpoints
 export const annotationApi = {
-  create: (data: AnnotationCreate) =>
-    api.post<Annotation>("/annotations", data),
+  listByAnswer: (answerId: number) =>
+    api.get<AnswerAnnotation[]>(`/answers/${answerId}/annotations`),
 
-  bulkCreate: (data: AnnotationBulkCreate) =>
-    api.post<Annotation[]>("/annotations/bulk", data),
-
-  listBySnapshot: (snapshotId: number) =>
-    api.get<{ annotations: Annotation[]; total: number }>(`/snapshots/${snapshotId}/annotations`),
-
-  getByAnswer: (answerId: number) =>
-    api.get<Annotation>(`/answers/${answerId}/annotations`),
-
-  get: (annotationId: number) =>
-    api.get<Annotation>(`/annotations/${annotationId}`),
-
-  update: (annotationId: number, data: Partial<AnnotationCreate>) =>
-    api.put<Annotation>(`/annotations/${annotationId}`, data),
-
-  delete: (annotationId: number) =>
-    api.delete(`/annotations/${annotationId}`),
+  getByAnswerAndRubric: (answerId: number, rubricId: number) =>
+    api.get<AnswerAnnotation>(`/answers/${answerId}/annotations/${rubricId}`),
 
   getCompletionStatus: (snapshotId: number) =>
     api.get<AnnotationCompletionStatus>(`/snapshots/${snapshotId}/annotations/completion-status`),
 
-  getRubricAnnotations: (answerId: number) =>
-    api.get<RubricAnnotation[]>(`/answers/${answerId}/rubric-annotations`),
-
-  upsertRubricAnnotation: (answerId: number, rubricId: number, data: RubricAnnotationUpsert) =>
-    api.put<RubricAnnotation>(`/answers/${answerId}/rubric-annotations/${rubricId}`, data),
+  upsertByAnswerAndRubric: (answerId: number, rubricId: number, data: AnswerAnnotationUpsert) =>
+    api.put<AnswerAnnotation>(`/answers/${answerId}/annotations/${rubricId}`, data),
 };
 
 // Judge endpoints
@@ -505,8 +489,8 @@ export const judgeApi = {
   delete: (judgeId: number) =>
     api.delete(`/judges/${judgeId}`),
 
-  getBaseline: () =>
-    api.get<JudgeConfig>("/judges/baseline"),
+  getBaseline: (rubricId: number) =>
+    api.get<JudgeConfig>(`/judges/by-rubric/${rubricId}/baseline`),
 
   seedDefaults: () =>
     api.post<JudgeConfig[]>("/judges/seed"),
@@ -514,9 +498,11 @@ export const judgeApi = {
   listAvailableModels: () =>
     api.get<JudgeModelOption[]>("/judges/available-models"),
 
-  getByCategory: (category: string, targetId?: number) =>
-    api.get<JudgeConfig[]>(`/judges/by-category/${category}`, {
-      params: targetId ? { target_id: targetId } : undefined,
+  getForRubric: (rubricId: number, targetId?: number) =>
+    api.get<JudgeConfig[]>(`/judges/by-rubric/${rubricId}`, {
+      params: {
+        ...(targetId ? { target_id: targetId } : {}),
+      },
     }).then((response) => ({
       ...response,
       data: sortJudges(response.data),
@@ -525,14 +511,8 @@ export const judgeApi = {
 
 // QA Job endpoints
 export const qaJobApi = {
-  start: (snapshotId: number, data: QAJobStartRequest) =>
+  start: (snapshotId: number, data: UnifiedQAJobStartRequest) =>
     api.post<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs/start`, {
-      snapshot_id: snapshotId,
-      ...data,
-    }),
-
-  startAll: (snapshotId: number, data: UnifiedQAJobStartRequest) =>
-    api.post<QAJob[]>(`/snapshots/${snapshotId}/qa-jobs/start-all`, {
       snapshot_id: snapshotId,
       ...data,
     }),
@@ -552,47 +532,40 @@ export const qaJobApi = {
 
 // Metrics endpoints
 export const metricsApi = {
-  getAlignment: (snapshotId: number, judgeId: number) =>
-    api.get<JudgeAlignment>(`/snapshots/${snapshotId}/judges/${judgeId}/alignment`),
-
-  getAccuracy: (snapshotId: number, judgeId: number) =>
-    api.get<JudgeAccuracy>(`/snapshots/${snapshotId}/judges/${judgeId}/accuracy`),
-
   getResults: (snapshotId: number) =>
     api.get<SnapshotResultsResponse>(`/snapshots/${snapshotId}/results`),
 
-  exportCSV: (snapshotId: number, format: "csv" | "json" = "csv") =>
+  getScoringContracts: (snapshotId: number) =>
+    api.get<SnapshotScoringContractsResponse>(`/snapshots/${snapshotId}/scoring-contracts`),
+
+  getScoringPendingCounts: (snapshotId: number, rubricId: number) =>
+    api.get<ScoringPendingCounts>(`/snapshots/${snapshotId}/rubrics/${rubricId}/scoring-pending-counts`),
+
+  exportCSV: (snapshotId: number, rubricId: number, format: "csv" | "json" = "csv") =>
     api.get(`/targets/snapshots/${snapshotId}/export`, {
-      params: { format },
+      params: { format, rubric_id: rubricId },
       responseType: "blob",
     }),
 
-  exportJSON: (snapshotId: number) =>
+  exportJSON: (snapshotId: number, rubricId: number) =>
     api.get(`/targets/snapshots/${snapshotId}/export`, {
-      params: { format: "json", include_evaluators: true },
+      params: { format: "json", include_evaluators: true, rubric_id: rubricId },
     }),
 
   getSnapshotMetrics: (targetId: number) =>
     api.get<SnapshotMetricsResponse>(`/targets/${targetId}/snapshot-metrics`),
 
-  getConfusionMatrix: (targetId: number, snapshotId?: number) =>
+  getConfusionMatrix: (targetId: number, rubricId: number, snapshotId?: number) =>
     api.get<ConfusionMatrix>(`/targets/${targetId}/confusion-matrix`, {
-      params: snapshotId ? { snapshot_id: snapshotId } : undefined,
+      params: snapshotId ? { rubric_id: rubricId, snapshot_id: snapshotId } : { rubric_id: rubricId },
     }),
 
-  getRubricAlignment: (snapshotId: number, judgeId: number, rubricId: number) =>
+  getJudgeAlignment: (snapshotId: number, judgeId: number, rubricId: number) =>
     api.get<JudgeAlignment>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/alignment`),
 
-  getRubricAccuracy: (snapshotId: number, judgeId: number, rubricId: number) =>
+  getJudgeAccuracy: (snapshotId: number, judgeId: number, rubricId: number) =>
     api.get<JudgeAccuracy>(`/snapshots/${snapshotId}/judges/${judgeId}/rubrics/${rubricId}/accuracy`),
 
-  getRubricSnapshotMetrics: (targetId: number, snapshotId: number) =>
-    api.get<SnapshotMetric[]>(`/targets/${targetId}/rubric-snapshot-metrics`, {
-      params: { snapshot_id: snapshotId },
-    }),
-
-  getAllRubricSnapshotMetrics: (targetId: number) =>
-    api.get<SnapshotMetric[]>(`/targets/${targetId}/rubric-snapshot-metrics`),
 };
 
 // Admin endpoints

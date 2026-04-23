@@ -6,9 +6,10 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { Warning as WarningIcon } from "@mui/icons-material";
+import { IconAlertTriangle } from "@tabler/icons-react";
 import { SnapshotMetric } from "@/lib/types";
-import AccuracyGauge from "@/components/shared/AccuracyGauge";
+import ScoreGauge from "@/components/shared/AccuracyGauge";
+import { statusIconProps } from "@/lib/iconStyles";
 
 interface SnapshotAccuracyCardProps {
   snapshotMetric: SnapshotMetric | null;
@@ -17,15 +18,17 @@ interface SnapshotAccuracyCardProps {
   showExplanatoryText?: boolean;
   showWarningBox?: boolean;
   title?: string;
+  gaugeLabel?: string;
 }
 
-export default function SnapshotAccuracyCard({
+export default function SnapshotScoreCard({
   snapshotMetric,
   loading,
   emptyMessage = "No data available",
   showExplanatoryText = false,
   showWarningBox = false,
-  title = "Overall Accuracy",
+  title = "Overall Score",
+  gaugeLabel = "Aggregated Score",
 }: SnapshotAccuracyCardProps) {
   if (loading) {
     return (
@@ -68,10 +71,10 @@ export default function SnapshotAccuracyCard({
         {title}
       </Typography>
 
-      <AccuracyGauge
-        value={hasReliableJudges ? snapshotMetric.aggregated_accuracy : null}
+      <ScoreGauge
+        value={hasReliableJudges ? snapshotMetric.aggregated_score : null}
         size={300}
-        label="Aggregated Accuracy Score"
+        label={gaugeLabel}
       />
 
       <Stack spacing={0.5} alignItems="center" sx={{ mt: 1 }}>
@@ -98,7 +101,7 @@ export default function SnapshotAccuracyCard({
               borderRadius: 2,
             }}
           >
-            <WarningIcon color="warning" fontSize="small" />
+            <IconAlertTriangle {...statusIconProps} color="currentColor" />
             <Box>
               <Typography variant="body2" fontWeight={500}>
                 Evaluation to be improved
@@ -128,7 +131,7 @@ export default function SnapshotAccuracyCard({
           textAlign="center"
           sx={{ mt: 2, maxWidth: 350 }}
         >
-          Accuracy is calculated from the labels in the results table below. Labels are aggregated across reliable judges but can be manually edited.
+          Scores are aggregated across reliable judges and can still be manually edited when review calls for it.
         </Typography>
       )}
     </Box>

@@ -14,16 +14,17 @@ import {
   Alert,
 } from "@mui/material";
 import {
-  Close as CloseIcon,
-  AutoAwesome as AutoAwesomeIcon,
-  Groups as GroupsIcon,
-} from "@mui/icons-material";
+  IconSparkles,
+  IconUsersGroup,
+  IconX,
+} from "@tabler/icons-react";
 import { personaApi } from "@/lib/api";
 import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaSelect from "@/components/questions/PersonaSelect";
 import PersonaReview from "@/components/questions/PersonaReview";
 import PersonaManualAdd from "@/components/questions/PersonaManualAdd";
+import { actionIconProps } from "@/lib/iconStyles";
 
 type AddMode = "manual" | null;
 
@@ -99,7 +100,7 @@ export default function AddPersonasDialog({
         <Box display="flex" justifyContent="space-between" alignItems="center">
           <Typography variant="h6">Add Personas</Typography>
           <IconButton onClick={handleClose} size="small">
-            <CloseIcon />
+            <IconX {...actionIconProps} />
           </IconButton>
         </Box>
       </DialogTitle>
@@ -163,7 +164,7 @@ export default function AddPersonasDialog({
               </Box>
               <Box display="flex" gap={1}>
                 <Button
-                  startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+                  startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <IconSparkles {...actionIconProps} />}
                   onClick={() => personaGen.generateWithAI()}
                   disabled={personaGen.loading}
                   size="small"
@@ -172,7 +173,7 @@ export default function AddPersonasDialog({
                   {personaGen.loading && personaGen.source === "ai" ? "Generating..." : "More (AI)"}
                 </Button>
                 <Button
-                  startIcon={personaGen.loading && personaGen.source === "general" ? <CircularProgress size={16} /> : <GroupsIcon />}
+                  startIcon={personaGen.loading && personaGen.source === "general" ? <CircularProgress size={16} /> : <IconUsersGroup {...actionIconProps} />}
                   onClick={() => personaGen.sampleNemotron()}
                   disabled={personaGen.loading}
                   size="small"

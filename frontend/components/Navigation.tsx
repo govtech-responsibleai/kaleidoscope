@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React from "react";
 import {
   Drawer,
   List,
@@ -15,22 +15,22 @@ import {
   Divider,
 } from "@mui/material";
 import {
-  ChevronLeft as ChevronLeftIcon,
-  Logout as LogoutIcon,
-  DashboardCustomizeOutlined as DashboardIcon,
-  HomeOutlined as HomeOutlinedIcon,
-  QuestionMark as QuestionMarkIcon,
-  PostAdd as PostAddIcon,
-  SmartToyOutlined as SmartToyIcon,
-  SsidChart as SsidChartIcon,
-  AssessmentOutlined as AssessmentOutlinedIcon,
-  AdminPanelSettingsOutlined as AdminPanelSettingsIcon,
-  TuneOutlined as TuneIcon,
-} from "@mui/icons-material";
+  IconChartLine,
+  IconChevronLeft,
+  IconHome2,
+  IconLayoutDashboard,
+  IconLogout,
+  IconMessageQuestion,
+  IconMessageChatbot,
+  IconRobotFace,
+  IconShieldCog,
+  IconTool,
+} from "@tabler/icons-react";
 import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { APP_NAME } from "@/lib/constants";
 import { authApi } from "@/lib/api";
+import { navIconProps } from "@/lib/iconStyles";
 
 const DRAWER_WIDTH_OPEN = 240;
 const DRAWER_WIDTH_CLOSED = 64;
@@ -42,18 +42,12 @@ interface NavigationProps {
 export default function Navigation({ children }: NavigationProps) {
   const router = useRouter();
   const pathname = usePathname();
-  const [open, setOpen] = useState(true);
-  const [username, setUsername] = useState<string | null>(null);
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    setUsername(authApi.getUsername());
-    setIsAdmin(authApi.isAdmin());
-  }, [pathname]);
+  const [open, setOpen] = React.useState(true);
+  const username = authApi.getUsername();
+  const isAdmin = authApi.isAdmin();
 
   const handleSignOut = () => {
     authApi.logout();
-    setUsername(null);
     router.push("/login");
   };
 
@@ -75,11 +69,11 @@ export default function Navigation({ children }: NavigationProps) {
   const activeTab = getActiveTab();
 
   const targetNavItems = [
-    { label: "Overview", icon: <HomeOutlinedIcon />, tab: "overview", path: `/targets/${targetId}` },
-    { label: "Evaluation Set", icon: <QuestionMarkIcon />, tab: "questions", path: `/targets/${targetId}/questions` },
-    { label: "Annotations", icon: <PostAddIcon />, tab: "annotation", path: `/targets/${targetId}/annotation` },
-    { label: "Scoring", icon: <SmartToyIcon />, tab: "scoring", path: `/targets/${targetId}/scoring` },
-    { label: "Report", icon: <SsidChartIcon />, tab: "report", path: `/targets/${targetId}/report` },
+    { label: "Overview", icon: <IconHome2 {...navIconProps} />, tab: "overview", path: `/targets/${targetId}` },
+    { label: "Evaluation Set", icon: <IconMessageQuestion {...navIconProps} />, tab: "questions", path: `/targets/${targetId}/questions` },
+    { label: "Annotations", icon: <IconMessageChatbot {...navIconProps} />, tab: "annotation", path: `/targets/${targetId}/annotation` },
+    { label: "Scoring", icon: <IconRobotFace {...navIconProps} />, tab: "scoring", path: `/targets/${targetId}/scoring` },
+    { label: "Report", icon: <IconChartLine {...navIconProps} />, tab: "report", path: `/targets/${targetId}/report` },
   ];
 
   // Don't show navigation on login page
@@ -134,7 +128,7 @@ export default function Navigation({ children }: NavigationProps) {
                 </Typography>
               </Box>
               <IconButton disableRipple onClick={() => setOpen(!open)}>
-                <ChevronLeftIcon />
+                <IconChevronLeft {...navIconProps} />
               </IconButton>
             </>
           ) : (
@@ -160,7 +154,7 @@ export default function Navigation({ children }: NavigationProps) {
                   <ListItemIcon
                     sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
                   >
-                    <ChevronLeftIcon />
+                    <IconChevronLeft {...navIconProps} />
                   </ListItemIcon>
                   <ListItemText primary="All Targets" sx={{ opacity: open ? 1 : 0 }} />
                 </ListItemButton>
@@ -189,7 +183,7 @@ export default function Navigation({ children }: NavigationProps) {
                   <ListItemIcon
                     sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
                   >
-                    <HomeOutlinedIcon />
+                    <IconHome2 {...navIconProps} />
                   </ListItemIcon>
                   <ListItemText primary="Overview" sx={{ opacity: open ? 1 : 0 }} />
                 </ListItemButton>
@@ -209,7 +203,7 @@ export default function Navigation({ children }: NavigationProps) {
                   <ListItemIcon
                     sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
                   >
-                    <TuneIcon />
+                    <IconTool {...navIconProps} />
                   </ListItemIcon>
                   <ListItemText primary="Rubrics" sx={{ opacity: open ? 1 : 0 }} />
                 </ListItemButton>
@@ -261,7 +255,7 @@ export default function Navigation({ children }: NavigationProps) {
                   <ListItemIcon
                     sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
                   >
-                    <DashboardIcon />
+                    <IconLayoutDashboard {...navIconProps} />
                   </ListItemIcon>
                   <ListItemText primary="Targets" sx={{ opacity: open ? 1 : 0 }} />
                 </ListItemButton>
@@ -289,7 +283,7 @@ export default function Navigation({ children }: NavigationProps) {
                       <ListItemIcon
                         sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
                       >
-                        <AdminPanelSettingsIcon />
+                        <IconShieldCog {...navIconProps} />
                       </ListItemIcon>
                       <ListItemText primary="Users" sx={{ opacity: open ? 1 : 0 }} />
                     </ListItemButton>
@@ -321,7 +315,7 @@ export default function Navigation({ children }: NavigationProps) {
               </Typography>
             )}
             <IconButton onClick={handleSignOut} size="small" title="Sign out">
-              <LogoutIcon />
+              <IconLogout {...navIconProps} />
             </IconButton>
           </Box>
         </Box>

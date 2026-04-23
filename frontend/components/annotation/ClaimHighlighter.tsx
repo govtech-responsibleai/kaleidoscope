@@ -2,7 +2,7 @@
 
 import React, { useMemo } from "react";
 import { Box, Stack, Tooltip, Typography } from "@mui/material";
-import { Warning as WarningIcon } from "@mui/icons-material";
+import { IconAlertTriangle } from "@tabler/icons-react";
 import { AnswerClaim, AnswerClaimScore, JudgeConfig } from "@/lib/types";
 
 type ClaimStatus = "accurate" | "inaccurate" | "disagree" | "no-data";
@@ -45,6 +45,9 @@ interface ClaimHighlighterProps {
   multiJudgeScores?: Map<number, AnswerClaimScore[]>; // judgeId -> scores
   judges?: JudgeConfig[];
   selectedJudgeIds?: number[]; // which judges to consider
+  isProcessingClaimScores?: boolean;
+  missingScoreMessage?: string;
+  instrumentationContext?: Record<string, unknown>;
 }
 
 // Helper function to determine agreement status for a claim across multiple judges
@@ -93,11 +96,19 @@ function getClaimStatus(label: boolean | null): ClaimStatus {
 // Enhanced tooltip content for multi-judge mode
 function MultiJudgeTooltipContent({
   agreement,
+  isProcessingClaimScores,
+  missingScoreMessage,
 }: {
   agreement: ClaimAgreement;
+  isProcessingClaimScores: boolean;
+  missingScoreMessage: string;
 }) {
   if (agreement.scores.length === 0) {
-    return <Typography variant="body2">No judge scores available</Typography>;
+    return (
+      <Typography variant="body2">
+        {isProcessingClaimScores ? "Judge scores still processing" : missingScoreMessage}
+      </Typography>
+    );
   }
 
   // Sort: baseline (recommended) first, then secondary
@@ -106,7 +117,7 @@ function MultiJudgeTooltipContent({
     <Stack spacing={1}>
       {agreement.status === "disagree" && (
         <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 0.5 }}>
-          <WarningIcon fontSize="small" sx={{ color: "rgb(255, 194, 133)" }} />
+          <IconAlertTriangle size={16} stroke={2} color="rgb(255, 194, 133)" />
           <Typography variant="body2" fontWeight={600} sx={{ color: "rgb(255, 194, 133)" }}>
             Disagreement found
           </Typography>
@@ -153,6 +164,9 @@ export default function ClaimHighlighter({
   multiJudgeScores,
   judges = [],
   selectedJudgeIds,
+  isProcessingClaimScores = false,
+  missingScoreMessage = "Claim score missing unexpectedly after evaluation completed.",
+  instrumentationContext,
 }: ClaimHighlighterProps) {
   // Determine if we're in multi-judge mode
   const isMultiJudgeMode = multiJudgeScores !== undefined && judges.length > 0;
@@ -176,6 +190,42 @@ export default function ClaimHighlighter({
       .sort((a, b) => (a.claim_index ?? 0) - (b.claim_index ?? 0));
   }, [claims]);
 
+  const missingClaimIds = useMemo(() => {
+    return sortedClaims
+      .filter((claim) => {
+        if (isMultiJudgeMode && multiJudgeScores) {
+          const agreement = determineClaimAgreement(
+            claim.id,
+            multiJudgeScores,
+            judges,
+            effectiveSelectedJudgeIds
+          );
+          return agreement.scores.length === 0;
+        }
+
+        return !claimScoreMap.has(claim.id);
+      })
+      .map((claim) => claim.id);
+  }, [
+    sortedClaims,
+    isMultiJudgeMode,
+    multiJudgeScores,
+    judges,
+    effectiveSelectedJudgeIds,
+    claimScoreMap,
+  ]);
+
+  React.useEffect(() => {
+    if (isProcessingClaimScores || missingClaimIds.length === 0) {
+      return;
+    }
+
+    console.warn("Missing terminal claim scores detected", {
+      missingClaimIds,
+      ...instrumentationContext,
+    });
+  }, [isProcessingClaimScores, missingClaimIds, instrumentationContext]);
+
   // Build segments highlighting claims in the answer
   const segments = useMemo(() => {
     const result: React.ReactNode[] = [];
@@ -194,7 +244,13 @@ export default function ClaimHighlighter({
           effectiveSelectedJudgeIds
         );
         status = agreement.status;
-        tooltipContent = <MultiJudgeTooltipContent agreement={agreement} />;
+        tooltipContent = (
+          <MultiJudgeTooltipContent
+            agreement={agreement}
+            isProcessingClaimScores={isProcessingClaimScores}
+            missingScoreMessage={missingScoreMessage}
+          />
+        );
       } else {
         // Single judge mode
         const claimScore = claimScoreMap.get(claim.id);
@@ -207,7 +263,9 @@ export default function ClaimHighlighter({
             ? label
               ? "Marked accurate by judge"
               : "Marked inaccurate by judge"
-            : "No judge score yet");
+            : isProcessingClaimScores
+              ? "Judge score still processing"
+              : missingScoreMessage);
       }
 
       const { baseBg, hoverBg, textColor } = CLAIM_COLORS[status];
@@ -277,7 +335,17 @@ export default function ClaimHighlighter({
     }
 
     return result;
-  }, [answerContent, sortedClaims, claimScoreMap, isMultiJudgeMode, multiJudgeScores, judges, effectiveSelectedJudgeIds]);
+  }, [
+    answerContent,
+    sortedClaims,
+    claimScoreMap,
+    isMultiJudgeMode,
+    multiJudgeScores,
+    judges,
+    effectiveSelectedJudgeIds,
+    isProcessingClaimScores,
+    missingScoreMessage,
+  ]);
 
   // If no claims or no matches, show raw text
   if (segments.length === 0) {

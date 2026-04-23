@@ -24,17 +24,25 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  Save as SaveIcon,
-  Close as CloseIcon,
-  MoreHoriz as MoreHorizIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-} from "@mui/icons-material";
+  IconDeviceFloppy,
+  IconDots,
+  IconPencil,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react";
 import { personaApi } from "@/lib/api";
 import { PersonaResponse } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import {
+  compactChipSx,
+  subtleActionButtonSx,
+  tableContainerSx,
+  tableHeaderCellSx,
+  tableHeaderRowSx,
+} from "@/lib/uiStyles";
 
 interface PersonaTableProps {
   personas: PersonaResponse[];
@@ -117,16 +125,16 @@ export default function PersonaTable({
   return (
     <>
       <>
-      <TableContainer component={Paper} variant="outlined">
+      <TableContainer component={Paper} variant="outlined" sx={tableContainerSx}>
         <Table>
           <TableHead>
-            <TableRow sx={{ bgcolor: "grey.50" }}>
-              <TableCell sx={{ fontWeight: 700, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "text.secondary", py: 1.5 }}>Title</TableCell>
-              <TableCell sx={{ fontWeight: 700, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "text.secondary", py: 1.5 }}>Background</TableCell>
-              <TableCell sx={{ fontWeight: 700, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "text.secondary", py: 1.5 }}>Style</TableCell>
-              <TableCell sx={{ fontWeight: 700, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "text.secondary", py: 1.5 }}>Use Case</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "text.secondary", py: 1.5, width: 80 }}>Source</TableCell>
-              <TableCell align="center" sx={{ fontWeight: 700, fontSize: 11, letterSpacing: 0.5, textTransform: "uppercase", color: "text.secondary", py: 1.5, width: 90 }}>Status</TableCell>
+            <TableRow sx={tableHeaderRowSx}>
+              <TableCell sx={tableHeaderCellSx}>Title</TableCell>
+              <TableCell sx={tableHeaderCellSx}>Background</TableCell>
+              <TableCell sx={tableHeaderCellSx}>Style</TableCell>
+              <TableCell sx={tableHeaderCellSx}>Use Case</TableCell>
+              <TableCell align="center" sx={{ ...tableHeaderCellSx, width: 80 }}>Source</TableCell>
+              <TableCell align="center" sx={{ ...tableHeaderCellSx, width: 90 }}>Status</TableCell>
               <TableCell align="center" sx={{ width: 50, py: 1.5 }} />
             </TableRow>
           </TableHead>
@@ -226,7 +234,7 @@ export default function PersonaTable({
                       label={getSourceChip(persona.source).label}
                       size="small"
                       variant="outlined"
-                      sx={getSourceChip(persona.source)}
+                      sx={{ ...compactChipSx, ...getSourceChip(persona.source) }}
                     />
                   </TableCell>
                   <TableCell align="center">
@@ -262,7 +270,7 @@ export default function PersonaTable({
                           {personaEdit.savingPersonaId === persona.id ? (
                             <CircularProgress size={18} />
                           ) : (
-                            <SaveIcon fontSize="small" />
+                            <IconDeviceFloppy {...actionIconProps} />
                           )}
                         </IconButton>
                         <IconButton
@@ -270,7 +278,7 @@ export default function PersonaTable({
                           onClick={personaEdit.cancelEdit}
                           disabled={personaEdit.savingPersonaId !== null}
                         >
-                          <CloseIcon fontSize="small" />
+                          <IconX {...actionIconProps} />
                         </IconButton>
                       </Box>
                     ) : (
@@ -278,9 +286,9 @@ export default function PersonaTable({
                         size="small"
                         onClick={(e) => handleMenuOpen(e, persona)}
                         disabled={personaEdit.savingPersonaId !== null}
-                        sx={{ opacity: 0.5, "&:hover": { opacity: 1 } }}
+                        sx={subtleActionButtonSx}
                       >
-                        <MoreHorizIcon fontSize="small" />
+                        <IconDots {...compactActionIconProps} />
                       </IconButton>
                     )}
                   </TableCell>
@@ -308,7 +316,7 @@ export default function PersonaTable({
         anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
       >
         <MenuItem onClick={() => menuPersona && handleEditFromMenu(menuPersona)}>
-          <ListItemIcon><EditIcon fontSize="small" /></ListItemIcon>
+          <ListItemIcon><IconPencil {...actionIconProps} /></ListItemIcon>
           <ListItemText>Edit</ListItemText>
         </MenuItem>
         <Divider />
@@ -319,7 +327,7 @@ export default function PersonaTable({
           }}
           sx={{ color: "error.main" }}
         >
-          <ListItemIcon><DeleteIcon fontSize="small" color="error" /></ListItemIcon>
+          <ListItemIcon><IconTrash {...actionIconProps} /></ListItemIcon>
           <ListItemText>Delete</ListItemText>
         </MenuItem>
       </Menu>

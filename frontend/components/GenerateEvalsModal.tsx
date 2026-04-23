@@ -22,12 +22,12 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import {
-  Close as CloseIcon,
-  Upload as UploadIcon,
-  AutoAwesome as AutoAwesomeIcon,
-  Groups as GroupsIcon,
-  TextFields as TextFieldsIcon,
-} from "@mui/icons-material";
+  IconSparkles,
+  IconUpload,
+  IconTypography,
+  IconUsersGroup,
+  IconX,
+} from "@tabler/icons-react";
 import { jobApi, personaApi, questionApi } from "@/lib/api";
 import { PersonaResponse, InputStyle } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
@@ -36,6 +36,7 @@ import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaSelect from "@/components/questions/PersonaSelect";
 import PersonaReview from "@/components/questions/PersonaReview";
 import PersonaManualAdd from "@/components/questions/PersonaManualAdd";
+import { actionIconProps } from "@/lib/iconStyles";
 
 type ModalStep =
   | "choose_mode"
@@ -260,7 +261,7 @@ export default function GenerateEvalsModal({
             {step === "generating" && "Generating Questions..."}
           </Typography>
           <IconButton onClick={handleClose} size="small">
-            <CloseIcon />
+            <IconX {...actionIconProps} />
           </IconButton>
         </Box>
       </DialogTitle>
@@ -309,7 +310,7 @@ export default function GenerateEvalsModal({
                 onClick={() => setSelectedMode("generate")}
               >
                 <CardContent sx={{ textAlign: "center", py: 4, height: "200px" }}>
-                  <AutoAwesomeIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
+                  <Box sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconSparkles size={48} stroke={1.8} /></Box>
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Generate from Personas
                   </Typography>
@@ -321,7 +322,7 @@ export default function GenerateEvalsModal({
                   <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                     <Button
                       variant="outlined"
-                      startIcon={<AutoAwesomeIcon />}
+                      startIcon={<IconSparkles {...actionIconProps} />}
                       onClick={(e) => { e.stopPropagation(); setStep("generate_personas"); }}
                       fullWidth
                     >
@@ -329,7 +330,7 @@ export default function GenerateEvalsModal({
                     </Button>
                     <Button
                       variant="outlined"
-                      startIcon={<GroupsIcon />}
+                      startIcon={<IconUsersGroup {...actionIconProps} />}
                       onClick={(e) => { e.stopPropagation(); setStep("select_personas"); }}
                       fullWidth
                     >
@@ -356,7 +357,7 @@ export default function GenerateEvalsModal({
                 onClick={() => setSelectedMode("upload")}
               >
                 <CardContent sx={{ textAlign: "center", py: 4, height: "200px" }}>
-                  <UploadIcon sx={{ fontSize: 48, color: "primary.main", mb: 2 }} />
+                  <Box sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconUpload size={48} stroke={1.8} /></Box>
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Upload
                   </Typography>
@@ -368,7 +369,7 @@ export default function GenerateEvalsModal({
                   <Box sx={{ px: 2, pb: 2, display: "flex", flexDirection: "column", gap: 1 }}>
                     <Button
                       variant="outlined"
-                      startIcon={<UploadIcon />}
+                      startIcon={<IconUpload {...actionIconProps} />}
                       onClick={(e) => { e.stopPropagation(); setStep("upload_file"); }}
                       fullWidth
                     >
@@ -376,7 +377,7 @@ export default function GenerateEvalsModal({
                     </Button>
                     <Button
                       variant="outlined"
-                      startIcon={<TextFieldsIcon />}
+                      startIcon={<IconTypography {...actionIconProps} />}
                       onClick={(e) => { e.stopPropagation(); setStep("upload_manual"); }}
                       fullWidth
                     >
@@ -427,7 +428,7 @@ export default function GenerateEvalsModal({
                   }
                 }}
               />
-              <UploadIcon sx={{ fontSize: 48, color: uploadFile ? "primary.main" : "grey.400", mb: 1 }} />
+              <Box sx={{ color: uploadFile ? "primary.main" : "grey.400", mb: 1, display: "flex", justifyContent: "center" }}><IconUpload size={48} stroke={1.8} /></Box>
               <Typography variant="body1" fontWeight={600} gutterBottom>
                 {uploadFile ? uploadFile.name : "Click to select a file"}
               </Typography>
@@ -534,7 +535,7 @@ export default function GenerateEvalsModal({
                 </Box>
                 <Box display="flex" gap={1} mb={2}>
                   <Button
-                    startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <AutoAwesomeIcon />}
+                    startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <IconSparkles {...actionIconProps} />}
                     onClick={() => personaGen.generateWithAI()}
                     disabled={personaGen.loading}
                     size="small"
@@ -543,7 +544,7 @@ export default function GenerateEvalsModal({
                     {personaGen.loading && personaGen.source === "ai" ? "Generating..." : "More (AI)"}
                   </Button>
                   <Button
-                    startIcon={personaGen.loading && personaGen.source === "general" ? <CircularProgress size={16} /> : <GroupsIcon />}
+                    startIcon={personaGen.loading && personaGen.source === "general" ? <CircularProgress size={16} /> : <IconUsersGroup {...actionIconProps} />}
                     onClick={() => personaGen.sampleNemotron()}
                     disabled={personaGen.loading}
                     size="small"
@@ -775,7 +776,7 @@ export default function GenerateEvalsModal({
             onClick={handleFileUpload}
             variant="contained"
             disabled={!uploadFile || uploading}
-            startIcon={uploading ? <CircularProgress size={20} /> : <UploadIcon />}
+            startIcon={uploading ? <CircularProgress size={20} /> : <IconUpload {...actionIconProps} />}
           >
             {uploading ? "Uploading..." : "Upload"}
           </Button>

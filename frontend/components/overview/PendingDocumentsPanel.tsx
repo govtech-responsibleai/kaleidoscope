@@ -2,6 +2,11 @@
 
 import React from "react";
 import {
+  IconFile,
+  IconTrash,
+  IconUpload,
+} from "@tabler/icons-react";
+import {
   Box,
   Button,
   IconButton,
@@ -13,11 +18,7 @@ import {
   Paper,
   Typography,
 } from "@mui/material";
-import {
-  CloudUpload as UploadIcon,
-  Delete as DeleteIcon,
-  InsertDriveFile as FileIcon,
-} from "@mui/icons-material";
+import { actionIconProps } from "@/lib/iconStyles";
 
 interface PendingDocumentsPanelProps {
   selectedFiles: File[];
@@ -61,7 +62,7 @@ export default function PendingDocumentsPanel({
         <Button
           component="label"
           variant="outlined"
-          startIcon={<UploadIcon />}
+          startIcon={<IconUpload {...actionIconProps} />}
           disabled={disabled}
           sx={{ whiteSpace: "nowrap", flexShrink: 0 }}
         >
@@ -79,7 +80,9 @@ export default function PendingDocumentsPanel({
       <Box sx={{ flexGrow: 1, overflow: "auto", minHeight: 0 }}>
         {selectedFiles.length === 0 ? (
           <Paper variant="outlined" sx={{ p: 4, textAlign: "center" }}>
-            <FileIcon sx={{ fontSize: 48, color: "text.secondary", mb: 2 }} />
+            <Box sx={{ color: "text.secondary", mb: 2 }}>
+              <IconFile size={48} stroke={1.75} />
+            </Box>
             <Typography variant="body1" color="text.secondary" sx={{ mb: 1 }}>
               No documents selected yet
             </Typography>
@@ -93,7 +96,7 @@ export default function PendingDocumentsPanel({
               {selectedFiles.map((file, index) => (
                 <ListItem key={`${file.name}-${index}`} divider={index < selectedFiles.length - 1}>
                   <Box sx={{ mr: 2 }}>
-                    <FileIcon sx={{ color: "text.secondary" }} />
+                    <IconFile {...actionIconProps} color="currentColor" />
                   </Box>
                   <ListItemText
                     primary={file.name}
@@ -106,7 +109,7 @@ export default function PendingDocumentsPanel({
                       disabled={disabled}
                       size="small"
                     >
-                      <DeleteIcon />
+                      <IconTrash {...actionIconProps} />
                     </IconButton>
                   </ListItemSecondaryAction>
                 </ListItem>
