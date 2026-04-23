@@ -45,6 +45,7 @@ export interface JobProgress {
 export interface EndpointConfig {
   api_key?: string;
   response_content_path?: string;
+  retrieved_context_path?: string;
   headers?: Record<string, string>;
   auth?: ManagedHttpAuthConfig;
   body_template?: Record<string, unknown>;

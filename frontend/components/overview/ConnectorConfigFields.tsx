@@ -721,6 +721,18 @@ export default function ConnectorConfigFields({
           size="small"
         />
       )}
+      {wrapField("Retrieved Context Path",
+        <TextField
+          {...(!isForm && { label: "Retrieved Context Path" })}
+          fullWidth
+          value={String(config.retrieved_context_path || "")}
+          onChange={(e) => handleConfigField("retrieved_context_path", e.target.value)}
+          disabled={disabled}
+          placeholder="rag.chunks"
+          helperText="Dot-notation path to the retrieved context chunks used for Accuracy evaluation. Point this to the relevant JSON subtree in the response."
+          size="small"
+        />
+      )}
       {isForm ? (
         <Box>
           <AdvancedToggle showAdvanced={showAdvanced} onToggle={onToggleAdvanced} />
