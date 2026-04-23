@@ -114,7 +114,11 @@ class PersonaGenerator:
                 prompt=prompt,
                 response_model=PersonaListOutput,
                 temperature=0.8,  # Higher temperature for diversity
-                max_tokens=4000
+                max_tokens=4000,
+                metadata={
+                    "generation_name": "persona-generation",
+                    "tags": ["persona-generation"],
+                }
             )
 
             # Track costs

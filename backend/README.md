@@ -16,7 +16,7 @@ src/
 │   ├── llm/                    # LLM client and tracking
 │   │   ├── client.py           # LiteLLM wrapper
 │   │   ├── cost_tracker.py     # Cost tracking
-│   │   └── instrumentation.py  # Phoenix instrumentation
+│   │   └── instrumentation.py  # Langfuse instrumentation
 │   ├── models/                 # Pydantic models
 │   ├── prompts/                # Prompt templates (Jinja2)
 │   └── services/               # Common services (document processing, rubric classification)
@@ -886,17 +886,18 @@ Returns:
 - `judge_alignment_range`: F1 score range of aligned judges (F1 ≥ 0.5)
 - `aligned_judges`: List of judges that met the alignment threshold
 
-## Observability with Phoenix
+## Observability with Langfuse
 
-If `PHOENIX_COLLECTOR_ENDPOINT` is configured, all LLM calls are automatically tracked. 
-Note: when running in Docker, use `host.docker.internal` instead of `localhost` to reach Phoenix on your host machine.
+If `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` are configured, all LLM calls are automatically tracked via LiteLLM's OTEL callback.
 
 - Token counts (prompt, completion)
 - Costs per call
 - Request/response traces
 - Performance metrics
 
-View traces at your Phoenix dashboard (local or cloud).
+Set `LANGFUSE_BASE_URL` to your self-hosted instance URL, or leave it unset to use Langfuse cloud (`https://cloud.langfuse.com`).
+
+View traces at your Langfuse dashboard.
 
 ## Development
 

@@ -42,9 +42,10 @@ class Settings(BaseSettings):
     batch_max_concurrent_claims: int = 5  # Max claims checked/scored in parallel per job
     batch_max_concurrent_scorers_per_job: int = 2  # Accuracy + rubric scorers within one QA job
 
-    # Phoenix Observability (optional)
-    phoenix_api_key: Optional[str] = None
-    phoenix_collector_endpoint: Optional[str] = None
+    # Langfuse Observability (optional)
+    langfuse_public_key: Optional[str] = None
+    langfuse_secret_key: Optional[str] = None
+    langfuse_base_url: Optional[str] = None  # Defaults to Langfuse cloud if not set
 
     # Auth Settings
     jwt_secret_key: str  # Required - set in .env

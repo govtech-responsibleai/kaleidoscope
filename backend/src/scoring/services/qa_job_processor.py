@@ -578,10 +578,19 @@ async def _run_job_phased(
         if not fresh or fresh.status != JobStatusEnum.running:
             return
 
-        score_coros = [_score_accuracy(job_id)]
+        async def _safe_score(coro, label: str) -> dict:
+            """Wrap a scorer so its failure is logged but doesn't abort siblings."""
+            try:
+                return await coro
+            except Exception as exc:
+                logger.error(f"QAJob {job_id}: scorer '{label}' failed: {exc}", exc_info=True)
+                return {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0}
+
+        score_coros = [_safe_score(_score_accuracy(job_id), "accuracy")]
         for spec in (rubric_specs or []):
+            label = f"rubric-{spec['rubric_id']}"
             score_coros.append(
-                _score_single_rubric(job_id, spec["judge_id"], spec["rubric_id"])
+                _safe_score(_score_single_rubric(job_id, spec["judge_id"], spec["rubric_id"]), label)
             )
 
         cost_summaries = await gather_with_concurrency(
@@ -591,6 +600,8 @@ async def _run_job_phased(
         if _check_paused():
             return
 
+        # Check whether accuracy scoring actually persisted a result.
+        # Rubric failures are non-fatal — they log and return zero-cost dicts.
         db_verify = SessionLocal()
         try:
             finished = QAJobRepository.get_by_id(db_verify, job_id)

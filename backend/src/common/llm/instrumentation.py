@@ -1,8 +1,10 @@
 """
-Phoenix instrumentation for automatic LLM tracking.
+Langfuse instrumentation for automatic LLM tracking.
 
-Sets up Arize Phoenix to automatically track all LiteLLM calls
-with token counts, costs, and traces.
+Sets up Langfuse via LiteLLM's OTEL callback to automatically track all
+LiteLLM calls with token counts, costs, and traces.
+
+Requires langfuse>=3.0.0 and litellm>=1.83.8.
 """
 
 import logging
@@ -12,9 +14,10 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def setup_phoenix_instrumentation(project_name: str = "kaleidoscope-api") -> Optional[str]:
+def setup_langfuse_instrumentation(project_name: str = "kaleidoscope-api") -> Optional[str]:
     """
-    Setup Arize Phoenix instrumentation for automatic LLM tracking.
+    Setup Langfuse instrumentation for automatic LLM tracking via LiteLLM's
+    OTEL callback.
 
     This should be called once at API startup. It will automatically track:
     - All LiteLLM API calls
@@ -23,65 +26,81 @@ def setup_phoenix_instrumentation(project_name: str = "kaleidoscope-api") -> Opt
     - Request/response traces
 
     Args:
-        project_name: Name for the Phoenix project
+        project_name: Ignored (kept for call-site compatibility). Langfuse uses
+                      projects configured via the dashboard.
 
     Returns:
-        Phoenix dashboard URL if successful, None otherwise
+        Langfuse host URL if enabled, None otherwise.
 
     Environment Variables Required:
-        - PHOENIX_COLLECTOR_ENDPOINT: Phoenix collector endpoint
-        - PHOENIX_API_KEY: Phoenix API key (optional for local)
+        LANGFUSE_PUBLIC_KEY  - Langfuse public key
+        LANGFUSE_SECRET_KEY  - Langfuse secret key
+        LANGFUSE_BASE_URL    - (optional) self-hosted URL, defaults to Langfuse cloud
     """
+    from src.common.config import get_settings
+    settings = get_settings()
+
+    public_key = settings.langfuse_public_key
+    secret_key = settings.langfuse_secret_key
+
+    if not public_key or not secret_key:
+        logger.warning(
+            "LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY not set. "
+            "Skipping Langfuse instrumentation. "
+            "LLM calls will still work but won't be tracked."
+        )
+        return None
+
     try:
-        from phoenix.otel import register as register_phoenix
-        from openinference.instrumentation.litellm import LiteLLMInstrumentor
+        # Verify langfuse is installed before enabling the callback.
+        # If we set litellm.callbacks = ["langfuse_otel"] when the package
+        # is missing, LiteLLM's async callback queue crashes on the first LLM
+        # call, producing confusing "Queue bound to different event loop" errors.
+        import langfuse  # noqa: F401 — import check only
 
-        endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT")
-        if not endpoint:
-            logger.warning(
-                "PHOENIX_COLLECTOR_ENDPOINT not set. Skipping Phoenix instrumentation. "
-                "LLM calls will still work but won't be tracked."
-            )
-            return None
+        import litellm
 
-        # Configure Phoenix tracer
-        tracer_provider = register_phoenix(
-            project_name=project_name,
-            endpoint=f"{endpoint}/v1/traces" if not endpoint.endswith("/v1/traces") else endpoint,
-            auto_instrument=True,
-        )
+        # Expose keys as env vars so LiteLLM's langfuse_otel callback can read them
+        os.environ["LANGFUSE_PUBLIC_KEY"] = public_key
+        os.environ["LANGFUSE_SECRET_KEY"] = secret_key
+        if settings.langfuse_base_url:
+            os.environ["LANGFUSE_HOST"] = settings.langfuse_base_url
 
-        # Instrument LiteLLM for automatic tracking
-        LiteLLMInstrumentor().instrument(tracer_provider=tracer_provider)
+        # The OTEL HTTP exporter defaults to certifi's CA bundle, which doesn't
+        # include the Cloudflare inspection CA that self-hosted instances sit behind.
+        # Point it to the system bundle (populated by the Dockerfile's update-ca-certificates).
+        system_ca_bundle = "/etc/ssl/certs/ca-certificates.crt"
+        if os.path.exists(system_ca_bundle):
+            os.environ.setdefault("OTEL_EXPORTER_OTLP_CERTIFICATE", system_ca_bundle)
+            os.environ.setdefault("REQUESTS_CA_BUNDLE", system_ca_bundle)
 
-        logger.info(
-            f"🔍 Phoenix instrumentation enabled for project '{project_name}'"
-        )
-        logger.info(f"📊 View traces at: {endpoint}")
+        # Register Langfuse OTEL as a LiteLLM callback.
+        # "langfuse_otel" is the correct callback name for langfuse 3.x+.
+        # The legacy "langfuse" callback only works with langfuse 2.x.
+        litellm.callbacks = ["langfuse_otel"]
 
-        return endpoint
+        host = settings.langfuse_base_url or "https://cloud.langfuse.com"
+        logger.info("Langfuse instrumentation enabled (OTEL)")
+        logger.info(f"View traces at: {host}")
+        return host
 
     except ImportError as e:
         logger.warning(
-            f"Phoenix dependencies not installed: {e}. "
-            "Install with: pip install arize-phoenix openinference-instrumentation-litellm"
+            f"Langfuse package not installed ({e}). "
+            "Skipping Langfuse instrumentation. "
+            "Rebuild the container with: docker-compose up --build"
         )
         return None
     except Exception as e:
-        logger.error(f"Failed to setup Phoenix instrumentation: {e}")
+        logger.error(f"Failed to setup Langfuse instrumentation: {e}")
         return None
 
 
-def disable_phoenix_instrumentation():
-    """
-    Disable Phoenix instrumentation.
-
-    Useful for testing or when you want to temporarily disable tracking.
-    """
+def disable_langfuse_instrumentation() -> None:
+    """Disable Langfuse instrumentation by clearing LiteLLM callbacks."""
     try:
-        from openinference.instrumentation.litellm import LiteLLMInstrumentor
-
-        LiteLLMInstrumentor().uninstrument()
-        logger.info("Phoenix instrumentation disabled")
+        import litellm
+        litellm.callbacks = [c for c in (litellm.callbacks or []) if c != "langfuse_otel"]
+        logger.info("Langfuse instrumentation disabled")
     except Exception as e:
-        logger.warning(f"Failed to disable Phoenix instrumentation: {e}")
+        logger.warning(f"Failed to disable Langfuse instrumentation: {e}")

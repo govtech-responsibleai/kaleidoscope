@@ -11,14 +11,15 @@ from src.common.config import get_settings
 settings = get_settings()
 
 # Create SQLAlchemy engine.
-# Keep the default pool conservative because the unified QA pipeline opens
-# short-lived worker sessions while background tasks are running.
+# pool_size must be large enough to cover concurrent background jobs + their
+# per-phase sub-sessions + incoming API request handlers simultaneously.
+# Rule of thumb: batch_max_concurrent_jobs(3) * sessions_per_job(~5) + api_buffer(10) = ~25
 engine = create_engine(
     settings.database_url,
     echo=settings.database_echo,
     pool_pre_ping=True,  # Verify connections before using
-    pool_size=3,         # Base connections to keep open
-    max_overflow=4,      # Additional connections when needed (total max: 7)
+    pool_size=20,        # Base connections to keep open
+    max_overflow=10,     # Additional burst connections (total max: 30)
     pool_timeout=30,     # Wait up to 30s for a connection before failing
     pool_recycle=1800,   # Recycle connections after 30 minutes
 )

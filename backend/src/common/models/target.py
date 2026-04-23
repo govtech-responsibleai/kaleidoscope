@@ -59,6 +59,12 @@ class TargetResponse(TargetBase):
     created_at: datetime
     updated_at: datetime
 
+    @model_validator(mode='after')
+    def validate_endpoint_config(self):
+        # Skip connector validation for response models — endpoint_type was
+        # already validated on create/update and may include extension types.
+        return self
+
     class Config:
         from_attributes = True
 

@@ -47,9 +47,14 @@ services:
       # Web Search
       SERPER_API_KEY: ${SERPER_API_KEY:-}
 
-      # Phoenix (optional - set in .env for cloud, defaults to local)
-      PHOENIX_COLLECTOR_ENDPOINT: ${PHOENIX_COLLECTOR_ENDPOINT:-http://host.docker.internal:6006}
-      PHOENIX_API_KEY: ${PHOENIX_API_KEY:-}
+      # Langfuse (optional - set in .env)
+      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
+      # Point the OTEL exporter to the system CA bundle (includes Cloudflare CA)
+      # so traces reach self-hosted Langfuse instances behind Cloudflare inspection
+      OTEL_EXPORTER_OTLP_CERTIFICATE: /etc/ssl/certs/ca-certificates.crt
+      REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
 
       # API Settings
       API_TITLE: Kaleidoscope API

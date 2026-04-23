@@ -239,7 +239,11 @@ class ClaimProcessor:
             result, metadata = await client.generate_structured_async(
                 prompt=prompt,
                 response_model=CheckworthyResult,
-                temperature=0.0
+                temperature=0.0,
+                metadata={
+                    "generation_name": "checkworthy",
+                    "tags": ["checkworthy"],
+                }
             )
 
             # Track costs

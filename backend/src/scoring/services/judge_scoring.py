@@ -127,14 +127,18 @@ class AnswerJudge:
         except Exception as e:
             logger.error(f"Answer scoring failed for job {self.job_id}: {e}", exc_info=True)
 
-            # Update job with failure status and error message
-            QAJobRepository.update_status(
-                self.db,
-                self.job_id,
-                JobStatusEnum.failed,
-                self.job.stage,
-                error_message=str(e)
-            )
+            # Only update job status when this scorer owns the job lifecycle.
+            # When skip_job_update=True the caller (e.g. _score_single_rubric)
+            # manages job status, so writing "failed" here would corrupt a job
+            # that may still complete successfully via other parallel scorers.
+            if not self.skip_job_update:
+                QAJobRepository.update_status(
+                    self.db,
+                    self.job_id,
+                    JobStatusEnum.failed,
+                    self.job.stage,
+                    error_message=str(e)
+                )
             if raise_on_error:
                 raise
 
@@ -250,7 +254,15 @@ class AnswerJudge:
             result, metadata = await self.llm_client.generate_structured_async(
                 prompt=prompt,
                 response_model=ClaimJudgmentResult,
-                temperature=0.0
+                temperature=0.0,
+                metadata={
+                    "generation_name": "llm-judge",
+                    "tags": ["llm-judge", "claim-level"],
+                    "trace_metadata": {
+                        "judge_name": self.judge.name,
+                        "judge_level": "claim-level",
+                    },
+                }
             )
 
             # Track costs
@@ -338,7 +350,15 @@ class AnswerJudge:
             result, metadata = await self.llm_client.generate_structured_async(
                 prompt=prompt,
                 response_model=ResponseJudgmentResult,
-                temperature=0.0
+                temperature=0.0,
+                metadata={
+                    "generation_name": "llm-judge",
+                    "tags": ["llm-judge", "response-level"],
+                    "trace_metadata": {
+                        "judge_name": self.judge.name,
+                        "judge_level": "response-level",
+                    },
+                }
             )
 
             # Track costs
@@ -396,6 +416,14 @@ class AnswerJudge:
                 prompt=prompt,
                 response_model=RubricJudgmentResult,
                 temperature=0.0,
+                metadata={
+                    "generation_name": "llm-judge",
+                    "tags": ["llm-judge", "rubric"],
+                    "trace_metadata": {
+                        "judge_name": self.judge.name,
+                        "judge_level": "rubric",
+                    },
+                }
             )
 
             self.cost_tracker.add_call(metadata)

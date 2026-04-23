@@ -108,7 +108,6 @@ from src.common.models.qa_job import (
     QAJobResponse,
     QAJobDetailResponse,
     QAJobListResponse,
-    RubricQAJobStart,
     RubricSpec,
     UnifiedQAJobStart,
 )
@@ -238,7 +237,6 @@ __all__ = [
     "QAJobResponse",
     "QAJobDetailResponse",
     "QAJobListResponse",
-    "RubricQAJobStart",
     "RubricSpec",
     "UnifiedQAJobStart",
     # RubricAnswerScore
