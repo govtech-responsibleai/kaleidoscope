@@ -13,12 +13,12 @@ class RubricOption(BaseModel):
 
 
 class PremadeRubricTemplateResponse(BaseModel):
-    key: str
     name: str
     criteria: str
     options: List[RubricOption]
     best_option: str
     recommended_model: str
+    group: str = "preset"
 
 
 class TargetRubricCreate(BaseModel):
@@ -26,7 +26,7 @@ class TargetRubricCreate(BaseModel):
     criteria: str = ""
     options: List[RubricOption] = []
     best_option: str | None = None
-    template_key: str | None = None
+    group: str = "custom"
 
 
 class TargetRubricUpdate(BaseModel):
@@ -35,7 +35,6 @@ class TargetRubricUpdate(BaseModel):
     options: List[RubricOption] | None = None
     best_option: str | None = None
     judge_prompt: str | None = None
-    template_key: str | None = None
 
 
 class TargetRubricResponse(BaseModel):
@@ -46,9 +45,9 @@ class TargetRubricResponse(BaseModel):
     options: List[RubricOption]
     best_option: str | None = None
     position: int
-    category: str = "default"
+    group: str = "custom"
+    scoring_mode: str = "response_level"
     judge_prompt: str | None = None
-    template_key: str | None = None
     created_at: datetime
     updated_at: datetime
 

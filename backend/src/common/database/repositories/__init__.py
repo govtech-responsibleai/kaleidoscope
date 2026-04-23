@@ -17,7 +17,6 @@ from src.common.database.repositories.answer_claim_score_repo import AnswerClaim
 from src.common.database.repositories.annotation_repo import AnnotationRepository
 from src.common.database.repositories.answer_label_override_repo import AnswerLabelOverrideRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
-from src.common.database.repositories.rubric_answer_score_repo import RubricAnswerScoreRepository
 from src.common.database.repositories.web_document_repo import WebDocumentRepository
 from src.common.database.repositories.target_http_auth_secret_repo import TargetHttpAuthSecretRepository
 
@@ -37,7 +36,6 @@ __all__ = [
     "AnnotationRepository",
     "AnswerLabelOverrideRepository",
     "TargetRubricRepository",
-    "RubricAnswerScoreRepository",
     "WebDocumentRepository",
     "TargetHttpAuthSecretRepository",
 ]

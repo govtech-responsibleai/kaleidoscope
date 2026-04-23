@@ -17,6 +17,7 @@ from src.common.database.repositories.persona_repo import PersonaRepository
 from src.common.database.repositories.question_repo import QuestionRepository
 from src.common.database.repositories.snapshot_repo import SnapshotRepository
 from src.common.database.repositories.target_repo import TargetRepository
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.scoring.services.metrics_service import MetricsService
@@ -30,11 +31,12 @@ class ExportFormat(str, Enum):
     JSON = "json"
 
 
-def _format_label(label: bool | None) -> str:
-    """Format boolean label as human-readable string."""
+def _format_label(label: bool | str | None) -> str:
     if label is None:
         return "Pending"
-    return "Accurate" if label else "Inaccurate"
+    if isinstance(label, bool):
+        return "Accurate" if label else "Inaccurate"
+    return label.title()
 
 
 class ExportService:
@@ -180,7 +182,8 @@ class ExportService:
         self,
         snapshot_id: int,
         format: ExportFormat = ExportFormat.CSV,
-        include_evaluators: bool = False
+        include_evaluators: bool = False,
+        rubric_id: int | None = None,
     ) -> Tuple[Union[str, List[Dict]], Optional[List[Dict]]]:
         """
         Export snapshot results including answers, annotations, and judge scores.
@@ -200,8 +203,16 @@ class ExportService:
         if not snapshot:
             raise ValueError(f"Snapshot {snapshot_id} not found")
 
+        if rubric_id is None:
+            raise ValueError("rubric_id is required")
+        rubric = TargetRubricRepository.get_by_id(self.db, rubric_id)
+        if rubric is None:
+            raise ValueError(f"Rubric {rubric_id} not found")
+        if rubric.target_id != snapshot.target_id:
+            raise ValueError(f"Rubric {rubric.id} does not belong to snapshot {snapshot_id}")
+
         # Get aggregated results from metrics service (includes annotations)
-        results, _ = self.metrics_service.get_aggregated_results(snapshot_id)
+        results, _ = self.metrics_service.get_aggregated_results(snapshot_id, rubric.id)
         evaluator_payload: Optional[List[Dict]] = None
 
         if format == ExportFormat.JSON:
@@ -211,11 +222,11 @@ class ExportService:
             writer = csv.writer(output)
             writer.writerow([
                 "Question_ID", "Question", "Answer_ID", "Answer",
-                "Human_Label", "Human_Notes", "Aggregated_Accuracy", "Judge_Metadata"
+                "Human_Label", "Human_Notes", "Aggregated_Score", "Judge_Metadata"
             ])
 
             for row in results:
-                agg = row.aggregated_accuracy
+                agg = row.aggregated_score
                 writer.writerow([
                     row.question_id,
                     row.question_text or "",
@@ -232,7 +243,7 @@ class ExportService:
             main_export = csv_content
 
         if include_evaluators:
-            evaluator_payload = self._build_evaluator_exports(snapshot_id, results)
+            evaluator_payload = self._build_evaluator_exports(snapshot_id, rubric.id, results)
 
         if isinstance(main_export, list):
             logger.info(f"Exported {len(results)} results for snapshot {snapshot_id} as JSON")
@@ -294,11 +305,20 @@ class ExportService:
         logger.info(f"Exported {len(export_rows)} raw responses for snapshot {snapshot_id}")
         return export_rows
 
-    def _build_evaluator_exports(self, snapshot_id: int, aggregated_results: Optional[List] = None) -> List[Dict]:
+    def _build_evaluator_exports(
+        self,
+        snapshot_id: int,
+        rubric_id: int,
+        aggregated_results: Optional[List] = None,
+    ) -> List[Dict]:
         """
         Build judge-level export payload including metrics and raw scores.
         """
-        scores = AnswerScoreRepository.get_by_snapshot(self.db, snapshot_id)
+        scores = [
+            score
+            for score in AnswerScoreRepository.get_by_snapshot(self.db, snapshot_id)
+            if score.rubric_id == rubric_id
+        ]
         if not scores:
             return []
 
@@ -330,12 +350,12 @@ class ExportService:
             judge = judge_map.get(judge_id)
 
             try:
-                accuracy = self.metrics_service.calculate_accuracy(snapshot_id, judge_id)
+                accuracy = self.metrics_service.calculate_accuracy(snapshot_id, judge_id, rubric_id)
             except ValueError:
                 accuracy = None
 
             try:
-                alignment = self.metrics_service.calculate_judge_alignment(snapshot_id, judge_id)
+                alignment = self.metrics_service.calculate_judge_alignment(snapshot_id, judge_id, rubric_id)
             except ValueError:
                 alignment = None
 
@@ -404,20 +424,24 @@ class ExportService:
             # Export each snapshot
             for snapshot in snapshots:
                 try:
-                    snapshot_content, evaluator_payload = self.export_snapshot(
-                        snapshot.id,
-                        format,
-                        include_evaluators=True
-                    )
-                    content = json.dumps(snapshot_content, indent=2) if format == ExportFormat.JSON else snapshot_content
-                    zip_file.writestr(f"snapshot_{snapshot.id}_{snapshot.name}.{file_ext}", content)
-
-                    if evaluator_payload:
-                        evaluator_filename = f"snapshot_{snapshot.id}_{snapshot.name}_evaluators.json"
-                        zip_file.writestr(
-                            evaluator_filename,
-                            json.dumps(evaluator_payload, indent=2)
+                    rubrics = TargetRubricRepository.get_by_target(self.db, snapshot.target_id)
+                    for rubric in rubrics:
+                        snapshot_content, evaluator_payload = self.export_snapshot(
+                            snapshot.id,
+                            format=format,
+                            include_evaluators=True,
+                            rubric_id=rubric.id,
                         )
+                        content = json.dumps(snapshot_content, indent=2) if format == ExportFormat.JSON else snapshot_content
+                        base_name = f"snapshot_{snapshot.id}_{snapshot.name}_rubric_{rubric.id}_{rubric.name}"
+                        zip_file.writestr(f"{base_name}.{file_ext}", content)
+
+                        if evaluator_payload:
+                            evaluator_filename = f"{base_name}_evaluators.json"
+                            zip_file.writestr(
+                                evaluator_filename,
+                                json.dumps(evaluator_payload, indent=2)
+                            )
                 except ValueError as e:
                     logger.warning(f"Skipping snapshot {snapshot.id} export: {e}")
 

@@ -24,8 +24,9 @@ class AnswerScoreResponse(BaseModel):
     """Response model for AnswerScore."""
     id: int
     answer_id: int
+    rubric_id: int | None = None
     judge_id: int
-    overall_label: bool
+    overall_label: str
     explanation: Optional[str] = None
     created_at: datetime
     claim_scores: Optional[List[AnswerClaimScoreResponse]] = None

@@ -3,19 +3,23 @@ Pytest fixtures for testing.
 """
 
 import pytest
+import shutil
+from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
 from src.common.database.connection import Base
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import (
     Target, Job, Persona, Question, Answer, AnswerClaim, AnswerScore, AnswerClaimScore,
-    Annotation, QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
-    TargetRubric, RubricAnnotation,
-    StatusEnum, JobTypeEnum, JobStatusEnum, QAJobTypeEnum, QAJobStageEnum, JudgeTypeEnum,
+    QAJob, Snapshot, Judge, KnowledgeBaseDocument, User,
+    TargetRubric, Annotation,
+    StatusEnum, JobTypeEnum, JobStatusEnum, QAJobTypeEnum, QAJobStageEnum,
     QuestionTypeEnum, QuestionScopeEnum
 )
 from src.common.auth.utils import create_access_token
+from src.rubric.services.prompt_files import generated_custom_prompts_dir
 
 # Pre-computed bcrypt hashes for test passwords (avoids passlib/bcrypt compatibility issues)
 # These are bcrypt hashes computed with cost factor 12
@@ -29,11 +33,35 @@ TEST_PASSWORD_HASHES = {
 }
 
 
+@dataclass
+class SampleAnnotationRecord:
+    answer: Answer
+    answer_id: int
+    label: bool
+    notes: str | None
+
+
 def get_test_password_hash(password: str) -> str:
     """Get a pre-computed hash for test passwords."""
     # All test passwords use the same hash for simplicity in tests
     # The actual password verification is tested separately
     return TEST_PASSWORD_HASHES.get(password, TEST_PASSWORD_HASHES["testpassword"])
+
+
+def get_accuracy_rubric(db, target_id: int) -> TargetRubric:
+    """Return the built-in Accuracy rubric for a target."""
+    rubrics = TargetRubricRepository.get_by_target(db, target_id, group="fixed", name="Accuracy")
+    if len(rubrics) != 1:
+        raise AssertionError(f"Expected exactly one fixed Accuracy rubric for target {target_id}")
+    return rubrics[0]
+
+
+@pytest.fixture(autouse=True)
+def cleanup_generated_custom_prompt_files():
+    """Keep generated custom rubric prompt files isolated per test."""
+    shutil.rmtree(generated_custom_prompts_dir().parent, ignore_errors=True)
+    yield
+    shutil.rmtree(generated_custom_prompts_dir().parent, ignore_errors=True)
 
 
 @pytest.fixture(scope="function")
@@ -95,6 +123,7 @@ def test_client(test_db_factory):
     from fastapi import FastAPI
     from src.common.config import get_settings
     from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
+    from src.rubric.api.routes import rubrics
     from src.scoring.api.routes import snapshots, metrics, annotations, qa_jobs
     from src.common.database.connection import get_db
 
@@ -108,6 +137,7 @@ def test_client(test_db_factory):
 
     # Include routers
     test_app.include_router(targets.router, prefix=f"{settings.api_prefix}/targets", tags=["Targets"])
+    test_app.include_router(rubrics.router, prefix=f"{settings.api_prefix}/targets", tags=["Rubrics"])
     test_app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", tags=["Personas"])
     test_app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"])
     # Jobs router has no prefix because routes define full paths (e.g., /targets/{id}/jobs/...)
@@ -351,13 +381,19 @@ def sample_answer(test_db, sample_question, sample_snapshot):
 @pytest.fixture
 def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
     """Create a sample QA job for testing."""
-    # Create a judge first
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
+
+    # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
+    ensure_system_rubrics(test_db, sample_snapshot.target_id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_snapshot.target_id)
+
+    # Create a judge bound to the accuracy rubric
     judge = Judge(
         name="Test Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-        judge_type=JudgeTypeEnum.claim_based,
+        rubric_id=accuracy_rubric.id,
         is_baseline=True,
         is_editable=False
     )
@@ -383,6 +419,8 @@ def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
 @pytest.fixture
 def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas):
     """Create a QA job without an existing answer for testing API errors."""
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
+
     # Create snapshot
     snapshot = Snapshot(
         target_id=sample_target.id,
@@ -407,13 +445,17 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
     test_db.commit()
     test_db.refresh(question)
 
-    # Create judge
+    # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
+    ensure_system_rubrics(test_db, sample_target.id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_target.id)
+
+    # Create judge bound to the accuracy rubric
     judge = Judge(
         name="Error Test Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test template",
         params={},
-        judge_type=JudgeTypeEnum.claim_based,
+        rubric_id=accuracy_rubric.id,
         is_baseline=True,
         is_editable=False
     )
@@ -444,14 +486,19 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
 
 
 @pytest.fixture
-def sample_judge_claim_based(test_db):
-    """Create a claim-based judge for testing."""
+def sample_judge_claim_based(test_db, sample_target):
+    """Create a claim-based judge (with accuracy rubric) for testing."""
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
+
+    ensure_system_rubrics(test_db, sample_target.id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_target.id)
+
     judge = Judge(
         name="Claim-Based Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test prompt template",
         params={"temperature": 0.7},
-        judge_type=JudgeTypeEnum.claim_based,
+        rubric_id=accuracy_rubric.id,
         is_baseline=False,
         is_editable=True
     )
@@ -462,14 +509,14 @@ def sample_judge_claim_based(test_db):
 
 
 @pytest.fixture
-def sample_judge_response_level(test_db):
-    """Create a response-level judge for testing."""
+def sample_judge_response_level(test_db, sample_rubric):
+    """Create a rubric-bound response-level judge for testing."""
     judge = Judge(
         name="Response-Level Judge",
-        model_name="gemini/gemini-2.5-flash-lite",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
         prompt_template="Test prompt template",
         params={"temperature": 0.5},
-        judge_type=JudgeTypeEnum.response_level,
+        rubric_id=sample_rubric.id,
         is_baseline=False,
         is_editable=True
     )
@@ -546,6 +593,8 @@ def sample_kb_documents(test_db, sample_target):
 @pytest.fixture
 def sample_annotations(test_db, sample_answer, sample_target, sample_job, sample_personas):
     """Create sample annotations for testing."""
+    from src.rubric.services.system_rubrics import ensure_system_rubrics
+
     # Create additional questions and snapshots to avoid UNIQUE constraint
     additional_answers = []
     for i in range(9):
@@ -576,23 +625,32 @@ def sample_annotations(test_db, sample_answer, sample_target, sample_job, sample
     test_db.commit()
 
     # Create annotations (7 accurate, 3 inaccurate)
-    annotations = []
+    annotations: list[SampleAnnotationRecord] = []
     all_answers = [sample_answer] + additional_answers
     labels = [True, True, True, True, True, True, True, False, False, False]
+    ensure_system_rubrics(test_db, sample_target.id)
+    accuracy_rubric = get_accuracy_rubric(test_db, sample_target.id)
 
     for answer, label in zip(all_answers, labels):
         answer.is_selected_for_annotation = True
-        annotation = Annotation(
-            answer_id=answer.id,
-            label=label,
-            notes="Test notes"
+        test_db.add(
+            Annotation(
+                answer_id=answer.id,
+                rubric_id=accuracy_rubric.id,
+                option_value="Accurate" if label else "Inaccurate",
+                notes="Test notes",
+            )
         )
-        test_db.add(annotation)
-        annotations.append(annotation)
+        annotations.append(
+            SampleAnnotationRecord(
+                answer=answer,
+                answer_id=answer.id,
+                label=label,
+                notes="Test notes",
+            )
+        )
 
     test_db.commit()
-    for annotation in annotations:
-        test_db.refresh(annotation)
     return annotations
 
 
@@ -606,8 +664,9 @@ def sample_answer_scores(test_db, sample_annotations, sample_judge_claim_based):
     for annotation, label in zip(sample_annotations, labels):
         score = AnswerScore(
             answer_id=annotation.answer_id,
+            rubric_id=sample_judge_claim_based.rubric_id,
             judge_id=sample_judge_claim_based.id,
-            overall_label=label,
+            overall_label="Accurate" if label else "Inaccurate",
             explanation="Test explanation"
         )
         test_db.add(score)
@@ -694,6 +753,7 @@ def auth_client(test_db_factory, test_user):
     from src.common.database.connection import get_db
     from src.common.auth import auth_router, get_scoped_db
     from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents
+    from src.rubric.api.routes import rubrics
     from src.scoring.api.routes import judges, snapshots
 
     settings = get_settings()
@@ -711,6 +771,12 @@ def auth_client(test_db_factory, test_user):
         targets.router,
         prefix=f"{settings.api_prefix}/targets",
         tags=["Targets"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        rubrics.router,
+        prefix=f"{settings.api_prefix}/targets",
+        tags=["Rubrics"],
         dependencies=[Depends(get_scoped_db)]
     )
     test_app.include_router(
@@ -763,7 +829,6 @@ def sample_rubric(test_db, sample_target):
             {"option": "Casual", "description": "Informal and casual tone"},
         ],
         best_option="Professional",
-        category="voice",
         position=0,
     )
     test_db.add(rubric)
@@ -784,7 +849,6 @@ def sample_rubric_second(test_db, sample_target):
             {"option": "Irrelevant", "description": "Does not address the question"},
         ],
         best_option="Relevant",
-        category="default",
         position=1,
     )
     test_db.add(rubric)

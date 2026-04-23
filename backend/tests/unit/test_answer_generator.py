@@ -62,6 +62,44 @@ class TestAnswerGenerator:
         mock_connector.send_message.assert_called_once_with(sample_question.text)
 
     @patch('src.query_generation.services.answer_generator.get_connector')
+    def test_generate_persists_rag_citations_from_connector(
+        self, mock_get_connector, test_db, sample_question, sample_snapshot, sample_target
+    ):
+        """Answer generation persists connector-provided rag_citations as-is."""
+        sample_target.endpoint_type = "http"
+        sample_target.api_endpoint = "https://api.test.com"
+        sample_target.endpoint_config = {
+            "response_content_path": "output",
+            "retrieved_context_path": "rag.chunks",
+        }
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.return_value = _make_connector_response(
+            metadata={
+                "chat_id": "chat_123",
+                "message_id": "msg_456",
+                "system_prompt": "You are a helpful assistant",
+                "guardrails": None,
+                "rag_citations": [{
+                    "id": "rag.chunks",
+                    "source": "HTTP retrieved context (rag.chunks)",
+                    "chunk": '{"source":"guide.pdf"}',
+                }],
+            }
+        )
+        mock_get_connector.return_value = mock_connector
+
+        generator = AnswerGenerator(test_db)
+        answer = generator.generate(sample_question.id, sample_snapshot.id)
+
+        assert answer.rag_citations == [{
+            "id": "rag.chunks",
+            "source": "HTTP retrieved context (rag.chunks)",
+            "chunk": '{"source":"guide.pdf"}',
+        }]
+
+    @patch('src.query_generation.services.answer_generator.get_connector')
     def test_generate_different_snapshots_creates_different_answers(
         self, mock_get_connector, test_db, sample_question, sample_snapshot, sample_target
     ):

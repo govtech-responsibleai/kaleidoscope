@@ -36,7 +36,7 @@ You MUST follow all rules below:
 - If the claim can be inferred, you MUST explicitly name the source document(s) where the relevant information appears.
 - If the information is missing, incomplete, or more specific than what the knowledge base provides, explain what is absent or underspecified.
 - A valid source citation MUST exactly match one of the document filenames shown in the delimiter: === Source Document: <filename> ===
-- Filenames are VERY important and are the ONLY valid citation targets, as they refer the user to visit the correct document. Section titles, chapter names, or document descriptions alone are NOT sufficient.
+- Filenames are VERY important and are the DEFAULT citation targets, as they refer the user to visit the correct document. Section titles, chapter names, or document descriptions alone are useful, but insufficient.
 - Always enclose the filename in backticks (e.g. `guardrails.md`).
 
 

@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import JudgeRepository
-from src.common.database.seed import AVAILABLE_MODELS
 from src.common.models import (
     JudgeCreate,
     JudgeUpdate,
     JudgeResponse
 )
 from src.common.auth import get_current_user_id
+from src.rubric.services.system_rubrics import AVAILABLE_MODELS
 
 router = APIRouter()
 
@@ -37,9 +37,13 @@ def create_judge(
         Created judge
     """
     judge_data = judge.model_dump()
+    if judge_data.get("rubric_id") is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="rubric_id is required for user-created judges",
+        )
     judge_data["user_id"] = user_id
     created_judge = JudgeRepository.create(db, judge_data)
-    print(f"[DEBUG] Created judge: id={created_judge.id}, category={created_judge.category}, target_id={created_judge.target_id}, user_id={created_judge.user_id}", flush=True)
     return created_judge
 
 
@@ -51,8 +55,7 @@ def list_judges(
     """
     List all judges, optionally filtered by target.
 
-    When target_id is provided, returns judges scoped to that target
-    plus global default judges (target_id=NULL).
+    Only rubric-scoped, user-facing judges are returned.
 
     Args:
         target_id: Optional target ID to filter by
@@ -61,34 +64,7 @@ def list_judges(
     Returns:
         List of judges
     """
-    judges = JudgeRepository.get_all(db, target_id=target_id)
-    print(f"[DEBUG] list_judges(target_id={target_id}): {len(judges)} judges, ids={[j.id for j in judges]}, categories={[j.category for j in judges]}", flush=True)
-    return judges
-
-
-@router.get("/judges/baseline", response_model=JudgeResponse)
-def get_baseline_judge(
-    db: Session = Depends(get_db)
-):
-    """
-    Get the baseline judge configuration.
-
-    Args:
-        db: Database session
-
-    Returns:
-        Baseline judge
-
-    Raises:
-        HTTPException: If baseline judge not found
-    """
-    judge = JudgeRepository.get_baseline(db)
-    if not judge:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Baseline judge not found"
-        )
-    return judge
+    return JudgeRepository.get_all(db, target_id=target_id)
 
 
 @router.get("/judges/available-models")
@@ -99,20 +75,30 @@ def list_available_models():
     return AVAILABLE_MODELS
 
 
-@router.get("/judges/by-category/{category}", response_model=List[JudgeResponse])
-def list_judges_by_category(
-    category: str,
+@router.get("/judges/by-rubric/{rubric_id}", response_model=List[JudgeResponse])
+def list_judges_by_rubric(
+    rubric_id: int,
     target_id: Optional[int] = None,
     db: Session = Depends(get_db)
 ):
-    """
-    Get judges for a specific rubric category, optionally filtered by target.
+    """Get judges for a specific rubric, optionally filtered by target."""
+    return JudgeRepository.get_for_rubric(db, rubric_id, target_id=target_id)
 
-    Returns judges whose category exactly matches the given value.
-    When target_id is provided, includes target-scoped and global judges.
-    """
-    judges = JudgeRepository.get_by_category(db, category, target_id=target_id)
-    return judges
+
+@router.get("/judges/by-rubric/{rubric_id}/baseline", response_model=JudgeResponse)
+def get_baseline_judge_by_rubric(
+    rubric_id: int,
+    target_id: Optional[int] = None,
+    db: Session = Depends(get_db)
+):
+    """Get the baseline judge explicitly bound to a rubric."""
+    judge = JudgeRepository.get_baseline(db, rubric_id=rubric_id, target_id=target_id)
+    if not judge:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Baseline judge not found for rubric {rubric_id}"
+        )
+    return judge
 
 
 @router.get("/judges/{judge_id}", response_model=JudgeResponse)

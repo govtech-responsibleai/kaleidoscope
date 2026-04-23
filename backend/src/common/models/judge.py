@@ -4,28 +4,20 @@ Pydantic models for Judge API requests and responses.
 
 from datetime import datetime
 from typing import Optional, Dict, Any
-from enum import Enum
 from pydantic import BaseModel, Field
-
-
-class JudgeType(str, Enum):
-    """Type of judge evaluation."""
-    claim_based = "claim_based"
-    response_level = "response_level"
 
 
 class JudgeCreate(BaseModel):
     """Request model for creating a judge."""
     target_id: Optional[int] = Field(None, description="Target to scope this judge to (NULL = global)")
     name: str = Field(..., description="Name of the judge (e.g., 'Baseline Judge', 'GPT-4 Judge')")
-    model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-2.5-flash-lite')")
+    model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-3.1-flash-lite-preview-global')")
     model_label: Optional[str] = Field(None, description="Display label for the model")
     prompt_template: str = Field(..., description="Jinja2 prompt template for the judge")
     params: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters (temperature, etc.)")
-    judge_type: JudgeType = Field(..., description="Type of judging (claim_based or response_level)")
     is_baseline: bool = Field(default=False, description="Whether this is the baseline judge")
     is_editable: bool = Field(default=True, description="Whether this judge can be edited/deleted")
-    category: str = Field(default="default", description="Judge category: accuracy, relevance, voice, or default")
+    rubric_id: Optional[int] = Field(None, description="Optional rubric to scope this judge to")
 
 
 class JudgeUpdate(BaseModel):
@@ -35,8 +27,7 @@ class JudgeUpdate(BaseModel):
     model_label: Optional[str] = None
     prompt_template: Optional[str] = None
     params: Optional[Dict[str, Any]] = None
-    judge_type: Optional[JudgeType] = None
-    category: Optional[str] = None
+    rubric_id: Optional[int] = None
 
 
 class JudgeResponse(BaseModel):
@@ -48,10 +39,9 @@ class JudgeResponse(BaseModel):
     model_label: Optional[str] = None
     prompt_template: str
     params: Dict[str, Any]
-    judge_type: JudgeType
     is_baseline: bool
     is_editable: bool
-    category: str = "default"
+    rubric_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
 

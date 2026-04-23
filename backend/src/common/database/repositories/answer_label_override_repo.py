@@ -1,68 +1,91 @@
-"""
-Repository for AnswerLabelOverride database operations.
-"""
+"""Repository for rubric-keyed AnswerLabelOverride database operations."""
 
 from datetime import datetime
 from typing import List, Optional
+
 from sqlalchemy.orm import Session
 
-from src.common.database.models import AnswerLabelOverride, Answer
+from src.common.database.models import Answer, AnswerLabelOverride, TargetRubric
+from src.rubric.services.system_rubrics import canonicalize_rubric_option_value, rubric_option_values
 
 
 class AnswerLabelOverrideRepository:
-    """Repository for AnswerLabelOverride CRUD operations."""
+    """Repository for rubric-keyed answer label overrides."""
 
     @staticmethod
     def create_or_update(
-        db: Session, answer_id: int, edited_label: bool, metric_name: str = "accuracy"
+        db: Session,
+        answer_id: int,
+        rubric_id: int,
+        edited_value: str,
     ) -> AnswerLabelOverride:
-        """
-        Create or update a label override for an answer.
+        rubric = db.query(TargetRubric).filter(TargetRubric.id == rubric_id).first()
+        if rubric is None:
+            raise ValueError(f"Rubric {rubric_id} not found")
 
-        Args:
-            db: Database session
-            answer_id: Answer ID to override
-            edited_label: The new label (True=Accurate, False=Inaccurate)
-            metric_name: Name of the metric being overridden (default: "accuracy")
+        canonical_value = canonicalize_rubric_option_value(rubric, edited_value)
+        if canonical_value is None:
+            raise ValueError("edited_value must be a non-empty rubric option")
 
-        Returns:
-            The created or updated AnswerLabelOverride
-        """
+        if canonical_value not in rubric_option_values(rubric):
+            raise ValueError(
+                f"edited_value must match one of the rubric options for rubric {rubric_id}"
+            )
+
         override = (
             db.query(AnswerLabelOverride)
-            .filter(AnswerLabelOverride.answer_id == answer_id)
+            .filter(
+                AnswerLabelOverride.answer_id == answer_id,
+                AnswerLabelOverride.rubric_id == rubric_id,
+            )
             .first()
         )
 
         if override:
-            override.edited_label = edited_label
+            override.edited_value = canonical_value
             override.edited_at = datetime.utcnow()
-            override.metric_name = metric_name
         else:
             override = AnswerLabelOverride(
                 answer_id=answer_id,
-                edited_label=edited_label,
-                metric_name=metric_name,
-                edited_at=datetime.utcnow()
+                rubric_id=rubric_id,
+                edited_value=canonical_value,
+                edited_at=datetime.utcnow(),
             )
             db.add(override)
 
-        db.commit()
-        db.refresh(override)
+        try:
+            db.commit()
+            db.refresh(override)
+        except Exception:
+            db.rollback()
+            raise
         return override
 
     @staticmethod
-    def get_by_answer(db: Session, answer_id: int) -> Optional[AnswerLabelOverride]:
-        """Get label override for a specific answer."""
+    def get_by_answer_and_rubric(
+        db: Session,
+        answer_id: int,
+        rubric_id: int,
+    ) -> Optional[AnswerLabelOverride]:
         return (
             db.query(AnswerLabelOverride)
-            .filter(AnswerLabelOverride.answer_id == answer_id)
+            .filter(
+                AnswerLabelOverride.answer_id == answer_id,
+                AnswerLabelOverride.rubric_id == rubric_id,
+            )
             .first()
         )
 
     @staticmethod
+    def get_by_answer(db: Session, answer_id: int) -> List[AnswerLabelOverride]:
+        return (
+            db.query(AnswerLabelOverride)
+            .filter(AnswerLabelOverride.answer_id == answer_id)
+            .all()
+        )
+
+    @staticmethod
     def get_by_snapshot(db: Session, snapshot_id: int) -> List[AnswerLabelOverride]:
-        """Get all label overrides for a snapshot (join with answers)."""
         return (
             db.query(AnswerLabelOverride)
             .join(Answer)
@@ -72,7 +95,6 @@ class AnswerLabelOverrideRepository:
 
     @staticmethod
     def count_by_snapshot(db: Session, snapshot_id: int) -> int:
-        """Count total label overrides for a snapshot."""
         return (
             db.query(AnswerLabelOverride)
             .join(Answer)
@@ -81,20 +103,13 @@ class AnswerLabelOverrideRepository:
         )
 
     @staticmethod
-    def delete(db: Session, answer_id: int) -> bool:
-        """
-        Delete a label override by answer ID (reset to original).
-
-        Args:
-            db: Database session
-            answer_id: Answer ID whose override should be deleted
-
-        Returns:
-            True if deleted, False if not found
-        """
+    def delete(db: Session, answer_id: int, rubric_id: int) -> bool:
         override = (
             db.query(AnswerLabelOverride)
-            .filter(AnswerLabelOverride.answer_id == answer_id)
+            .filter(
+                AnswerLabelOverride.answer_id == answer_id,
+                AnswerLabelOverride.rubric_id == rubric_id,
+            )
             .first()
         )
         if not override:

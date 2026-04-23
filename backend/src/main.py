@@ -17,12 +17,12 @@ from sqlalchemy.exc import OperationalError
 
 from src.common.config import get_settings
 from src.common.auth import auth_router, get_scoped_db
-from src.common.database.connection import init_db, SessionLocal, engine
-from src.common.database.seed import seed_default_judges, run_manual_migrations
+from src.common.database.connection import init_db, engine
 from src.common.llm.instrumentation import setup_langfuse_instrumentation
 
 # Import routers from query generation
 from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, web_documents, answers
+from src.rubric.api.routes import rubrics
 
 # Import routers from scoring
 from src.scoring.api.routes import snapshots, judges, qa_jobs, annotations, metrics
@@ -48,18 +48,6 @@ async def lifespan(app: FastAPI):
     # Initialize database
     init_db()
     logger.info("✓ Database initialized")
-
-    # Run manual migrations (e.g. adding columns to existing tables)
-    run_manual_migrations(engine)
-
-    # Seed default data
-    db = SessionLocal()
-    try:
-        seed_default_judges(db)
-    except Exception as e:
-        logger.error(f"Failed to seed default judges: {e}")
-    finally:
-        db.close()
 
     # Load connector extensions (e.g. KALEIDOSCOPE_EXTENSIONS=aibots)
     from src.extensions import load_extensions
@@ -94,6 +82,7 @@ app.add_middleware(
     allow_origins=[
         "https://kaleidoscope.app.tc1.airbase.sg",
         "http://localhost:3000",
+        "http://127.0.2.2:3000"
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -120,6 +109,7 @@ app.include_router(auth_router, prefix=f"{settings.api_prefix}/auth", tags=["Aut
 
 # Include routers from query generation service (all require auth + user scoping)
 app.include_router(targets.router, prefix=f"{settings.api_prefix}/targets", tags=["Targets"], dependencies=[Depends(get_scoped_db)])
+app.include_router(rubrics.router, prefix=f"{settings.api_prefix}/targets", tags=["Rubrics"], dependencies=[Depends(get_scoped_db)])
 app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", tags=["Personas"], dependencies=[Depends(get_scoped_db)])
 app.include_router(questions.router, prefix=f"{settings.api_prefix}/questions", tags=["Questions"], dependencies=[Depends(get_scoped_db)])
 app.include_router(jobs.router, prefix=f"{settings.api_prefix}", tags=["Jobs"], dependencies=[Depends(get_scoped_db)])

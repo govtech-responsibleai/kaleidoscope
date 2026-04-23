@@ -203,6 +203,58 @@ class TestHttpConnector:
         assert result.metadata["present"] == "hello"
         assert "missing" not in result.metadata
 
+    @pytest.mark.asyncio
+    async def test_send_message_extracts_retrieved_context_into_rag_citations(self):
+        """retrieved_context_path is normalized into answer-compatible rag_citations."""
+        conn = self._make_connector(retrieved_context_path="rag.chunks")
+
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "output": "hello",
+            "rag": {
+                "chunks": [
+                    {"source": "guide.pdf", "text": "chunk one"},
+                    {"source": "faq.md", "text": "chunk two"},
+                ]
+            },
+        }
+
+        mock_client = MagicMock()
+        mock_client.request = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        original = httpx.AsyncClient
+        try:
+            httpx.AsyncClient = lambda **kw: mock_client
+            result = await conn.send_message("test")
+        finally:
+            httpx.AsyncClient = original
+
+        assert result.metadata["rag_citations"] == [{
+            "id": "rag.chunks",
+            "source": "HTTP retrieved context (rag.chunks)",
+            "chunk": (
+                '[\n'
+                '  {\n'
+                '    "source": "guide.pdf",\n'
+                '    "text": "chunk one"\n'
+                '  },\n'
+                '  {\n'
+                '    "source": "faq.md",\n'
+                '    "text": "chunk two"\n'
+                '  }\n'
+                ']'
+            ),
+        }]
+
+    def test_missing_retrieved_context_path_value_raises_clearly(self):
+        """Missing retrieved-context extraction path should return a readable error."""
+        conn = self._make_connector(retrieved_context_path="rag.chunks")
+        with pytest.raises(ValueError, match="retrieved_context_path 'rag.chunks' was not found"):
+            conn._parse_response({"output": "test"})
+
     def test_missing_response_content_path_raises(self):
         """Parsing raises if response_content_path is not configured."""
         conn = HttpConnector("https://api.test.com", {})

@@ -346,19 +346,14 @@ Judges are LLM-based evaluators that assess answer quality. Two evaluation types
 - **Claim-based**: Extracts claims from answers, evaluates each claim, then aggregates to overall label
 - **Response-level**: Evaluates the entire answer holistically in a single LLM call
 
-Judges have a **category** that determines which evaluation dimension they serve:
-
-- `accuracy` — evaluates factual accuracy against knowledge base (default)
-- `relevance` — evaluates how relevant the response is to the question
-- `voice` — evaluates tone, style, and communication quality
-- `common` — general-purpose judges that participate in all rubric evaluations
+Judges are scoped either to a rubric (`rubric_id=<target_rubric.id>`) or to the global default pool (`rubric_id=NULL`) used for custom rubric evaluation. Each rubric-scoped or global pool has one recommended baseline judge plus additional comparison judges.
 
 ```
 GET    /api/v1/judges                                 - List all judges
 POST   /api/v1/judges                                 - Create custom judge
-GET    /api/v1/judges/baseline                        - Get baseline judge
+GET    /api/v1/judges/baseline?rubric_id={rubric_id} - Get baseline judge for a rubric
 GET    /api/v1/judges/available-models                - List available LLM models
-GET    /api/v1/judges/by-category/{category}          - Get judges for a rubric category (includes common judges)
+GET    /api/v1/judges/by-rubric/{rubric_id}           - Get judges for a rubric
 GET    /api/v1/judges/{judge_id}                      - Get judge details
 PUT    /api/v1/judges/{judge_id}                      - Update judge (if editable)
 DELETE /api/v1/judges/{judge_id}                      - Delete judge (if editable)
@@ -370,12 +365,12 @@ Define custom evaluation criteria per target beyond accuracy (e.g., relevance, t
 
 ```
 GET    /api/v1/targets/{target_id}/rubrics             - List all rubrics for target
-POST   /api/v1/targets/{target_id}/rubrics             - Create a rubric (auto-classified into category)
+POST   /api/v1/targets/{target_id}/rubrics             - Create a rubric
 PUT    /api/v1/targets/{target_id}/rubrics/{rubric_id} - Update a rubric
 DELETE /api/v1/targets/{target_id}/rubrics/{rubric_id} - Delete a rubric
 ```
 
-When a rubric is created, it is automatically classified into a category (`relevance`, `voice`, or `default`) using an LLM. This determines which judges are assigned to evaluate it.
+Fixed and preset rubrics get seeded rubric-scoped judges automatically. Custom rubrics use the global default judge pool unless users add rubric-specific custom judges.
 
 ### QA Jobs
 
@@ -395,22 +390,22 @@ GET    /api/v1/qa-jobs/{job_id}                              - Get job details w
 
 ### Annotations
 
-Manual annotations allow humans to label answers for judge validation. Accuracy annotations use a boolean label (accurate/inaccurate), while rubric annotations select from the rubric's defined options.
+Manual annotations are now rubric-backed for both fixed Accuracy and ordinary rubrics. The legacy `/annotations` endpoints remain as compatibility wrappers over the fixed Accuracy rubric row, while answer-level `/answers/{answer_id}/annotations` routes expose the canonical per-rubric records. The underlying database table is still named `rubric_annotations` in this slice.
 
 ```
-# Accuracy annotations
+# Fixed Accuracy annotation compatibility endpoints
 POST   /api/v1/annotations                                       - Create single annotation
 POST   /api/v1/annotations/bulk                                  - Bulk create annotations
 GET    /api/v1/snapshots/{snapshot_id}/annotations               - List annotations for snapshot
 GET    /api/v1/snapshots/{snapshot_id}/annotations/completion-status  - Check completion progress
-GET    /api/v1/answers/{answer_id}/annotations                   - Get annotation for answer
 GET    /api/v1/annotations/{annotation_id}                       - Get annotation by ID
 PUT    /api/v1/annotations/{annotation_id}                       - Update annotation
 DELETE /api/v1/annotations/{annotation_id}                       - Delete annotation
 
-# Rubric annotations
-GET    /api/v1/answers/{answer_id}/rubric-annotations            - Get all rubric annotations for an answer
-PUT    /api/v1/answers/{answer_id}/rubric-annotations/{rubric_id} - Upsert a rubric annotation
+# Canonical answer annotation records
+GET    /api/v1/answers/{answer_id}/annotations                   - List all annotation rows for an answer
+GET    /api/v1/answers/{answer_id}/annotations/{rubric_id}       - Get one annotation row for an answer and rubric
+PUT    /api/v1/answers/{answer_id}/annotations/{rubric_id}       - Upsert an annotation row for a rubric
 
 # Rubric scores (LLM judge results)
 GET    /api/v1/answers/{answer_id}/rubric-scores?rubric_id={id}  - Get judge scores for an answer+rubric

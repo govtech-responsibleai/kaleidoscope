@@ -61,7 +61,7 @@ class TestClaimProcessor:
             "prompt_tokens": 50,
             "completion_tokens": 20,
             "total_tokens": 70,
-            "model": "gemini/gemini-2.5-flash-lite",
+            "model": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
             "cost": 0.0001
         }
         mock_llm_instance.generate_structured_async = AsyncMock(
@@ -100,7 +100,7 @@ class TestClaimProcessor:
                     "prompt_tokens": 100,
                     "completion_tokens": 50,
                     "total_tokens": 150,
-                    "model": "gemini/gemini-2.5-flash-lite",
+                    "model": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
                     "cost": 0.0002
                 }
             )
@@ -159,7 +159,7 @@ class TestClaimProcessor:
             return_value=(
                 CheckworthyResult(checkworthy=True, reasoning="factual"),
                 {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
-                 "model": "gemini/gemini-2.5-flash-lite", "cost": 0.0001}
+                 "model": "litellm_proxy/gemini-3.1-flash-lite-preview-global", "cost": 0.0001}
             )
         )
         mock_llm_class.return_value = mock_llm_instance
@@ -193,7 +193,7 @@ class TestClaimProcessor:
             return_value=(
                 CheckworthyResult(checkworthy=True, reasoning="factual"),
                 {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15,
-                 "model": "gemini/gemini-2.5-flash-lite", "cost": 0.0001}
+                 "model": "litellm_proxy/gemini-3.1-flash-lite-preview-global", "cost": 0.0001}
             )
         )
         mock_llm_class.return_value = mock_llm_instance

@@ -7,7 +7,14 @@ import zipfile
 import io
 import pytest
 
+from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.services.export_service import ExportService, ExportFormat
+
+
+def _accuracy_rubric_id(test_db, target_id: int) -> int:
+    return TargetRubricRepository.get_by_target(
+        test_db, target_id, group="fixed", name="Accuracy"
+    )[0].id
 
 
 @pytest.mark.unit
@@ -71,7 +78,11 @@ class TestExportService:
     ):
         """Test exporting snapshot results in different formats."""
         service = ExportService(test_db)
-        result, evaluator_payload = service.export_snapshot(sample_snapshot.id, format)
+        result, evaluator_payload = service.export_snapshot(
+            sample_snapshot.id,
+            format,
+            rubric_id=_accuracy_rubric_id(test_db, sample_snapshot.target_id),
+        )
 
         if format == ExportFormat.CSV:
             assert isinstance(result, str)
@@ -80,13 +91,13 @@ class TestExportService:
             header = lines[0]
             assert "Human_Label" in header
             assert "Human_Notes" in header
-            assert "Aggregated_Accuracy" in header
+            assert "Aggregated_Score" in header
         else:
             assert isinstance(result, list)
             assert len(result) > 0
             assert "human_label" in result[0]
             assert "human_notes" in result[0]
-            assert "aggregated_accuracy" in result[0]
+            assert "aggregated_score" in result[0]
 
         assert evaluator_payload is None
 
@@ -98,7 +109,8 @@ class TestExportService:
         result, evaluator_payload = service.export_snapshot(
             sample_snapshot.id,
             ExportFormat.CSV,
-            include_evaluators=True
+            include_evaluators=True,
+            rubric_id=_accuracy_rubric_id(test_db, sample_snapshot.target_id),
         )
 
         assert isinstance(result, str)
@@ -121,7 +133,63 @@ class TestExportService:
         service = ExportService(test_db)
 
         with pytest.raises(ValueError, match="Snapshot 9999 not found"):
-            service.export_snapshot(9999, ExportFormat.CSV)
+            service.export_snapshot(9999, ExportFormat.CSV, rubric_id=1)
+
+    def test_export_snapshot_scopes_evaluator_exports_to_requested_rubric(
+        self,
+        test_db,
+        sample_target,
+        sample_snapshot,
+        sample_annotations,
+        sample_answer_scores,
+        sample_rubric,
+    ):
+        """Rubric-scoped export should only include rows and evaluator stats for that rubric."""
+        from src.common.database.models import AnswerScore, Judge, Annotation
+
+        rubric_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Judge",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Tone prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(rubric_judge)
+        test_db.commit()
+        test_db.refresh(rubric_judge)
+
+        negative_answer_id = sample_annotations[1].answer_id
+        for annotation in sample_annotations:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_rubric.id,
+                judge_id=rubric_judge.id,
+                overall_label="Casual" if annotation.answer_id == negative_answer_id else "Professional",
+                explanation="Tone score",
+            ))
+            test_db.add(Annotation(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_rubric.id,
+                option_value="Casual" if annotation.answer_id == negative_answer_id else "Professional",
+            ))
+        test_db.commit()
+
+        service = ExportService(test_db)
+        result, evaluator_payload = service.export_snapshot(
+            sample_snapshot.id,
+            ExportFormat.CSV,
+            include_evaluators=True,
+            rubric_id=sample_rubric.id,
+        )
+
+        assert isinstance(result, str)
+        assert "Aggregated_Score" in result.splitlines()[0]
+        assert evaluator_payload is not None
+        assert [entry["judge_id"] for entry in evaluator_payload] == [rubric_judge.id]
+        assert evaluator_payload[0]["judge_accuracy"]["accuracy"] == 0.9
 
     @pytest.mark.parametrize("format", [ExportFormat.CSV, ExportFormat.JSON])
     def test_export_all(
