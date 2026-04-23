@@ -20,7 +20,7 @@ import {
   JudgeModelOption,
   JudgeUpdate,
 } from "@/lib/types";
-import { judgeApi } from "@/lib/api";
+import { getApiErrorMessage, judgeApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 
 const resolveTemperatureValue = (value: unknown): number | null => {
@@ -84,7 +84,7 @@ export default function CreateJudgeDialog({
       } catch (err) {
         console.error("Failed to load available models:", err);
         if (isMounted) {
-          setModelsError("Unable to load available models.");
+          setModelsError(getApiErrorMessage(err, "Unable to load available models."));
         }
       } finally {
         if (isMounted) {
@@ -297,7 +297,7 @@ export default function CreateJudgeDialog({
                 renderValue: (value) => {
                   const strValue = value as string;
                   const model = availableModels.find((m) => m.value === strValue);
-                  const icon = getModelIcon(strValue);
+                  const icon = getModelIcon(strValue, model?.logo_path);
                   return (
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
                       {icon && (
@@ -324,10 +324,10 @@ export default function CreateJudgeDialog({
             ) : (
               availableModels.map((model) => (
                 <MenuItem key={model.value} value={model.value} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  {getModelIcon(model.value) && (
+                  {getModelIcon(model.value, model.logo_path) && (
                     <Box
                       component="img"
-                      src={getModelIcon(model.value)!}
+                      src={getModelIcon(model.value, model.logo_path)!}
                       alt=""
                       sx={{ width: 16, height: 16 }}
                     />

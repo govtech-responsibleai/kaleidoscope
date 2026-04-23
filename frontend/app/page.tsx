@@ -8,11 +8,12 @@ import {
   Card,
   CircularProgress,
   IconButton,
+  Tooltip,
 } from "@mui/material";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { useRouter } from "next/navigation";
-import { targetApi } from "@/lib/api";
-import { TargetResponse } from "@/lib/types";
+import { providerApi, targetApi } from "@/lib/api";
+import { ProviderSetupResponse, TargetResponse } from "@/lib/types";
 import CreateTargetModal from "@/components/overview/CreateTargetModal";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import { getTargetTheme } from "@/lib/targetTheme";
@@ -25,6 +26,7 @@ export default function Home() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [targetToDelete, setTargetToDelete] = useState<TargetResponse | null>(null);
+  const [providerSetup, setProviderSetup] = useState<ProviderSetupResponse | null>(null);
 
   const fetchTargets = useCallback(async () => {
     try {
@@ -53,6 +55,22 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [fetchTargets]);
 
+  useEffect(() => {
+    let isMounted = true;
+    providerApi.getSetup()
+      .then((response) => {
+        if (isMounted) {
+          setProviderSetup(response.data);
+        }
+      })
+      .catch((error) => {
+        console.error("Failed to load provider setup:", error);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleTargetClick = (targetId: number) => {
     router.push(`/targets/${targetId}`);
   };
@@ -62,6 +80,10 @@ export default function Home() {
     setTargetToDelete(target);
     setDeleteDialogOpen(true);
   };
+
+  const hasValidModels = (providerSetup?.valid_models.length || 0) > 0;
+  const shouldDisableNewTarget = providerSetup !== null && !hasValidModels;
+  const newTargetTooltip = "Add an API key on the Providers page first.";
 
 
   if (loading) {
@@ -88,13 +110,18 @@ export default function Home() {
         <Typography variant="h4" component="h1" fontWeight={600}>
           Target Applications
         </Typography>
-        <Button
-          variant="contained"
-          startIcon={<IconPlus {...actionIconProps} />}
-          onClick={() => setCreateModalOpen(true)}
-        >
-          New Target
-        </Button>
+        <Tooltip disableHoverListener={!shouldDisableNewTarget} title={newTargetTooltip}>
+          <span tabIndex={shouldDisableNewTarget ? 0 : -1}>
+            <Button
+              disabled={shouldDisableNewTarget}
+              variant="contained"
+              startIcon={<IconPlus {...actionIconProps} />}
+              onClick={() => setCreateModalOpen(true)}
+            >
+              New Target
+            </Button>
+          </span>
+        </Tooltip>
       </Box>
 
       {targets.length === 0 ? (
@@ -109,13 +136,18 @@ export default function Home() {
           <Typography variant="h6" color="text.secondary">
             No target applications found
           </Typography>
-          <Button
-            variant="contained"
-            size="large"
-            onClick={() => setCreateModalOpen(true)}
-          >
-            Get Started
-          </Button>
+          <Tooltip disableHoverListener={!shouldDisableNewTarget} title={newTargetTooltip}>
+            <span tabIndex={shouldDisableNewTarget ? 0 : -1}>
+              <Button
+                disabled={shouldDisableNewTarget}
+                variant="contained"
+                size="large"
+                onClick={() => setCreateModalOpen(true)}
+              >
+                Get Started
+              </Button>
+            </span>
+          </Tooltip>
         </Box>
       ) : (
         <Box

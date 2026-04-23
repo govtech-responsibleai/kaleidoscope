@@ -22,6 +22,7 @@ import {
   IconLogout,
   IconMessageQuestion,
   IconMessageChatbot,
+  IconPlugConnected,
   IconRobotFace,
   IconShieldCog,
   IconTool,
@@ -258,6 +259,24 @@ export default function Navigation({ children }: NavigationProps) {
                     <IconLayoutDashboard {...navIconProps} />
                   </ListItemIcon>
                   <ListItemText primary="Targets" sx={{ opacity: open ? 1 : 0 }} />
+                </ListItemButton>
+              </ListItem>
+              <ListItem disablePadding sx={{ display: "block" }}>
+                <ListItemButton
+                  selected={pathname === "/providers"}
+                  onClick={() => router.push("/providers")}
+                  sx={{
+                    minHeight: 48,
+                    justifyContent: open ? "initial" : "center",
+                    px: 2.5,
+                  }}
+                >
+                  <ListItemIcon
+                    sx={{ minWidth: 0, mr: open ? 1 : "auto", justifyContent: "center" }}
+                  >
+                    <IconPlugConnected {...navIconProps} />
+                  </ListItemIcon>
+                  <ListItemText primary="Providers" sx={{ opacity: open ? 1 : 0 }} />
                 </ListItemButton>
               </ListItem>
               {isAdmin && (

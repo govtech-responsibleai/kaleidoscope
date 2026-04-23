@@ -61,6 +61,7 @@ import {
   ProbeResponse,
   RubricSpec,
   RubricSpecMap,
+  ProviderSetupResponse,
 } from "./types";
 import { sortJudges } from "./judgeOrdering";
 
@@ -76,6 +77,9 @@ const api = axios.create({
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {
   if (axios.isAxiosError(error)) {
+    if (error.code === "ERR_NETWORK") {
+      return "Network error. Check that the backend is running and that CORS allows this frontend origin.";
+    }
     const detail = error.response?.data?.detail;
     if (typeof detail === "string" && detail.trim()) {
       return detail;
@@ -218,6 +222,23 @@ export const webSearchApi = {
 
   listDocuments: (targetId: number) =>
     api.get(`/targets/${targetId}/web-documents`),
+};
+
+export const providerApi = {
+  getSetup: () =>
+    api.get<ProviderSetupResponse>("/providers/setup"),
+
+  upsertProvider: (providerKey: string, credentials: Record<string, string>) =>
+    api.put(`/providers/${providerKey}`, { credentials }),
+
+  deleteProvider: (providerKey: string) =>
+    api.delete(`/providers/${providerKey}`),
+
+  upsertService: (serviceKey: string, credentials: Record<string, string>) =>
+    api.put(`/providers/services/${serviceKey}`, { credentials }),
+
+  deleteService: (serviceKey: string) =>
+    api.delete(`/providers/services/${serviceKey}`),
 };
 
 // Job endpoints

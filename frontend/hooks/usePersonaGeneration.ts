@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
-import { jobApi, personaApi } from "@/lib/api";
+import { getApiErrorMessage, jobApi, personaApi } from "@/lib/api";
 import { PersonaResponse, JobStatus } from "@/lib/types";
 import { DEFAULT_PERSONA_COUNT } from "@/lib/constants";
 
@@ -14,7 +14,7 @@ export function usePersonaGeneration(targetId: number) {
   const [source, setSource] = useState<PersonaSource>(null);
   const cancelledRef = useRef(false);
 
-  const generateWithAI = useCallback(async (count = DEFAULT_PERSONA_COUNT) => {
+  const generateWithAI = useCallback(async (count = DEFAULT_PERSONA_COUNT, modelUsed?: string) => {
     setSource("ai");
     setLoading(true);
     setError(null);
@@ -22,6 +22,7 @@ export function usePersonaGeneration(targetId: number) {
     try {
       const jobResponse = await jobApi.createPersonaJob(targetId, {
         count_requested: count,
+        model_used: modelUsed,
       });
       const jobId = jobResponse.data.id;
       let completed = false;
@@ -43,7 +44,7 @@ export function usePersonaGeneration(targetId: number) {
     } catch (err) {
       if (!cancelledRef.current) {
         console.error("Failed to generate personas:", err);
-        setError("Failed to generate personas. Please try again.");
+        setError(getApiErrorMessage(err, "Failed to generate personas. Please try again."));
       }
     } finally {
       if (!cancelledRef.current) {

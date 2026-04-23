@@ -28,8 +28,8 @@ import {
   IconUsersGroup,
   IconX,
 } from "@tabler/icons-react";
-import { jobApi, personaApi, questionApi } from "@/lib/api";
-import { PersonaResponse, InputStyle } from "@/lib/types";
+import { getApiErrorMessage, jobApi, personaApi, providerApi, questionApi } from "@/lib/api";
+import { PersonaResponse, InputStyle, ProviderModelOption } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
 import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
@@ -87,6 +87,8 @@ export default function GenerateEvalsModal({
   // Generation config
   const [numQuestions, setNumQuestions] = useState(30);
   const [inputStyle, setInputStyle] = useState<InputStyle>(InputStyle.BRIEF);
+  const [availableModels, setAvailableModels] = useState<ProviderModelOption[]>([]);
+  const [selectedModel, setSelectedModel] = useState("");
   const [generatingQuestions, setGeneratingQuestions] = useState(false);
 
   // Upload state
@@ -95,6 +97,29 @@ export default function GenerateEvalsModal({
 
   // Manual type state
   const [manualQuestions, setManualQuestions] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    let isMounted = true;
+    providerApi.getSetup()
+      .then((response) => {
+        if (!isMounted) {
+          return;
+        }
+        setAvailableModels(response.data.valid_models);
+        setSelectedModel((prev) => prev || response.data.valid_models[0]?.value || "");
+      })
+      .catch((err) => {
+        if (isMounted) {
+          setError(getApiErrorMessage(err, "Failed to load valid models."));
+        }
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, [open]);
 
   const manualQuestionCount = useMemo(
     () => manualQuestions.split("\n").filter((l) => l.trim()).length,
@@ -157,6 +182,7 @@ export default function GenerateEvalsModal({
         count_requested: numQuestions,
         persona_ids: allSelectedIds,
         input_style: inputStyle,
+        model_used: selectedModel || undefined,
       });
 
       if (onJobLaunched) {
@@ -233,6 +259,8 @@ export default function GenerateEvalsModal({
       setSelectedExistingIds([]);
       setNumQuestions(30);
       setInputStyle(InputStyle.BRIEF);
+      setAvailableModels([]);
+      setSelectedModel("");
       setGeneratingQuestions(false);
       setUploadFile(null);
       setUploading(false);
@@ -478,7 +506,7 @@ export default function GenerateEvalsModal({
                   Add New Personas (optional)
                 </Typography>
                 <PersonaSelect
-                  onGenerateAI={() => personaGen.generateWithAI()}
+                  onGenerateAI={() => personaGen.generateWithAI(undefined, selectedModel || undefined)}
                   onSampleRandom={() => personaGen.sampleNemotron()}
                   onAddManual={() => setShowPersonaManualAdd(true)}
                 />
@@ -536,7 +564,7 @@ export default function GenerateEvalsModal({
                 <Box display="flex" gap={1} mb={2}>
                   <Button
                     startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <IconSparkles {...actionIconProps} />}
-                    onClick={() => personaGen.generateWithAI()}
+                    onClick={() => personaGen.generateWithAI(undefined, selectedModel || undefined)}
                     disabled={personaGen.loading}
                     size="small"
                     variant="outlined"
@@ -592,6 +620,25 @@ export default function GenerateEvalsModal({
                   sx={{ width: 180 }}
                   slotProps={{ htmlInput: { min: 1, max: 200 } }}
                 />
+                <TextField
+                  select
+                  label="Generation Model"
+                  size="small"
+                  sx={{ minWidth: 280 }}
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  helperText={availableModels.length === 0 ? "No valid providers configured yet." : undefined}
+                >
+                  {availableModels.length === 0 ? (
+                    <MenuItem value="" disabled>No valid models available</MenuItem>
+                  ) : (
+                    availableModels.map((model) => (
+                      <MenuItem key={model.value} value={model.value}>
+                        {model.provider_name}: {model.label}
+                      </MenuItem>
+                    ))
+                  )}
+                </TextField>
                 <TextField
                   select
                   label="Input Style"
@@ -712,6 +759,25 @@ export default function GenerateEvalsModal({
                 />
                 <TextField
                   select
+                  label="Generation Model"
+                  size="small"
+                  sx={{ minWidth: 280 }}
+                  value={selectedModel}
+                  onChange={(e) => setSelectedModel(e.target.value)}
+                  helperText={availableModels.length === 0 ? "No valid models available" : undefined}
+                >
+                  {availableModels.length === 0 ? (
+                    <MenuItem value="" disabled>No valid models available</MenuItem>
+                  ) : (
+                    availableModels.map((model) => (
+                      <MenuItem key={model.value} value={model.value}>
+                        {model.provider_name}: {model.label}
+                      </MenuItem>
+                    ))
+                  )}
+                </TextField>
+                <TextField
+                  select
                   label="Input Style"
                   size="small"
                   sx={{ width: 160 }}
@@ -737,7 +803,7 @@ export default function GenerateEvalsModal({
           <Button
             onClick={handleGenerateQuestions}
             variant="contained"
-            disabled={personaGen.loading || generatingQuestions || newSelectedCount === 0 || hasInsufficientQuestions}
+            disabled={personaGen.loading || generatingQuestions || newSelectedCount === 0 || hasInsufficientQuestions || availableModels.length === 0}
             startIcon={generatingQuestions ? <CircularProgress size={20} /> : undefined}
           >
             {generatingQuestions
@@ -756,7 +822,7 @@ export default function GenerateEvalsModal({
           <Button
             onClick={handleGenerateQuestions}
             variant="contained"
-            disabled={generatingQuestions || selectedExistingIds.length === 0 || hasInsufficientQuestions}
+            disabled={generatingQuestions || selectedExistingIds.length === 0 || hasInsufficientQuestions || availableModels.length === 0}
             startIcon={generatingQuestions ? <CircularProgress size={20} /> : undefined}
           >
             {generatingQuestions

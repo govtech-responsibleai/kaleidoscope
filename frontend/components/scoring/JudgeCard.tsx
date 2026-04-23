@@ -21,6 +21,7 @@ import { JudgeConfig, JudgeScoreSummary, QAJob } from "@/lib/types";
 import { questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 import { compactActionIconProps } from "@/lib/iconStyles";
+import { deriveJudgePendingState } from "@/components/scoring/judgePendingState.mjs";
 
 interface JudgeCardProps {
   judge: JudgeConfig;
@@ -140,19 +141,21 @@ export default function JudgeCard({
   const activePollingState =
     pollingState?.snapshotId === snapshotId && pollingState.rubricId === rubricId ? pollingState : null;
   const isRunning = activePollingState !== null;
-  const pendingCount = isRunning ? activePollingState.pendingCount : (pendingCountProp ?? 0);
-  const runTotalCount = isRunning
-    ? activePollingState.runTotalCount
-    : (pendingCount === 0 ? summary?.total_answers ?? null : null);
-  const hasAllScores = pendingCount === 0;
-  const totalTracked =
-    runTotalCount ??
-    (summary ? summary.total_answers : pendingCount > 0 ? pendingCount : 0);
-  const completedCount = Math.max(totalTracked - pendingCount, 0);
+  const {
+    pendingCount,
+    hasAllScores,
+    totalTracked,
+    completedCount,
+  } = deriveJudgePendingState({
+    isRunning,
+    pollingState: activePollingState,
+    pendingCountProp,
+    summaryTotalAnswers: summary?.total_answers,
+  });
   const hasSummaryValues = !isRunning && summary?.accuracy != null && summary?.reliability != null;
 
   const handleRun = async () => {
-    const initialPending = pendingCount;
+    const initialPending = pendingCount ?? await fetchPendingCount();
     const createdJobs = await onJobStart(judge.id);
     if (createdJobs && createdJobs.length > 0) {
       startPolling(initialPending);
