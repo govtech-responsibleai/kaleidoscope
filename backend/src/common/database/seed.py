@@ -259,3 +259,22 @@ def run_manual_migrations(engine: Engine) -> None:
             conn.execute(text(sql))
         conn.commit()
     logger.info("✓ Manual migrations applied")
+
+    # Backfill judge_prompt for fixed rubrics created before the column was populated
+    from src.rubric.services.system_rubrics import build_fixed_definition
+    with engine.connect() as conn:
+        rows = conn.execute(
+            text('SELECT id, name FROM target_rubrics WHERE "group" = \'fixed\' AND judge_prompt IS NULL')
+        ).fetchall()
+        updated = 0
+        for row in rows:
+            definition = build_fixed_definition(row.name)
+            if definition and definition.get("judge_prompt"):
+                conn.execute(
+                    text("UPDATE target_rubrics SET judge_prompt = :prompt WHERE id = :id"),
+                    {"prompt": definition["judge_prompt"], "id": row.id},
+                )
+                updated += 1
+        if updated:
+            conn.commit()
+            logger.info("✓ Backfilled judge_prompt for %d fixed rubric(s)", updated)

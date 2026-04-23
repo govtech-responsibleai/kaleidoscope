@@ -9,10 +9,11 @@ from unittest.mock import Mock, patch, AsyncMock
 from src.scoring.services.qa_job_processor import (
     QAJobProcessor, run_qajob, run_qajobs_batch,
     pause_qajob, pause_qajobs_batch, get_or_create_qajobs_batch, create_all_jobs,
+    _is_rubric_score_complete,
 )
 from src.common.database.models import (
     JobStatusEnum, QAJobStageEnum, QAJobTypeEnum,
-    Answer, AnswerClaim, AnswerScore, Judge,
+    Answer, AnswerClaim, AnswerClaimScore, AnswerScore, Judge,
     Question, QuestionTypeEnum, QuestionScopeEnum, StatusEnum,
 )
 from src.common.database.repositories.qa_job_repo import QAJobRepository
@@ -252,10 +253,14 @@ class TestQAJobProcessor:
         sample_snapshot,
         sample_answer,
         sample_qa_job,
+        sample_claims,
         sample_rubric,
         sample_rubric_second,
     ):
         """Completed jobs should resume only when the reconciled full rubric set still has gaps."""
+        for claim in sample_claims:
+            claim.checked_at = claim.created_at + timedelta(seconds=1)
+
         existing_empathy_judge = Judge(
             target_id=sample_snapshot.target_id,
             rubric_id=sample_rubric.id,
@@ -270,22 +275,35 @@ class TestQAJobProcessor:
         test_db.commit()
         test_db.refresh(existing_empathy_judge)
 
-        test_db.add_all([
-            AnswerScore(
-                answer_id=sample_answer.id,
-                rubric_id=sample_qa_job.judge.rubric_id,
-                judge_id=sample_qa_job.judge_id,
-                overall_label="Accurate",
-                explanation="Accuracy already scored",
-            ),
-            AnswerScore(
-                answer_id=sample_answer.id,
-                rubric_id=sample_rubric.id,
-                judge_id=existing_empathy_judge.id,
-                overall_label=sample_rubric.best_option,
-                explanation="Empathy already scored",
-            ),
-        ])
+        accuracy_score = AnswerScore(
+            answer_id=sample_answer.id,
+            rubric_id=sample_qa_job.judge.rubric_id,
+            judge_id=sample_qa_job.judge_id,
+            overall_label="Accurate",
+            explanation="Accuracy already scored",
+        )
+        empathy_score = AnswerScore(
+            answer_id=sample_answer.id,
+            rubric_id=sample_rubric.id,
+            judge_id=existing_empathy_judge.id,
+            overall_label=sample_rubric.best_option,
+            explanation="Empathy already scored",
+        )
+        test_db.add_all([accuracy_score, empathy_score])
+        test_db.commit()
+        test_db.refresh(accuracy_score)
+
+        test_db.add_all(
+            [
+                AnswerClaimScore(
+                    claim_id=claim.id,
+                    answer_score_id=accuracy_score.id,
+                    label=True,
+                    explanation="Accuracy already scored",
+                )
+                for claim in sample_claims
+            ]
+        )
         sample_qa_job.status = JobStatusEnum.completed
         sample_qa_job.stage = QAJobStageEnum.completed
         sample_qa_job.rubric_specs = [
@@ -472,6 +490,189 @@ class TestQAJobProcessor:
             "prompt_tokens": 0,
             "completion_tokens": 0,
             "total_cost": 0.0,
+        }
+
+    def test_is_rubric_score_complete_requires_full_claim_score_count(
+        self,
+        test_db,
+        sample_answer,
+        sample_qa_job,
+        sample_claims,
+    ):
+        """Claim-based completeness requires one persisted claim score per current checkworthy claim."""
+        for claim in sample_claims:
+            claim.checked_at = claim.created_at + timedelta(seconds=1)
+        test_db.commit()
+
+        score = AnswerScoreRepository.create(
+            test_db,
+            {
+                "answer_id": sample_answer.id,
+                "rubric_id": sample_qa_job.judge.rubric_id,
+                "judge_id": sample_qa_job.judge_id,
+                "overall_label": "Accurate",
+                "explanation": "Incomplete claim score set",
+            },
+        )
+        test_db.add(
+            AnswerClaimScore(
+                claim_id=sample_claims[0].id,
+                answer_score_id=score.id,
+                label=True,
+                explanation="Only one claim scored",
+            )
+        )
+        test_db.commit()
+
+        assert _is_rubric_score_complete(
+            test_db,
+            sample_answer.id,
+            sample_qa_job.judge_id,
+            sample_qa_job.judge.rubric_id,
+        ) is False
+
+    def test_create_all_jobs_resumes_completed_job_when_claim_scores_incomplete(
+        self,
+        test_db,
+        sample_snapshot,
+        sample_answer,
+        sample_qa_job,
+        sample_claims,
+    ):
+        """Completed jobs should reopen when a claim-based score row exists without the full claim score set."""
+        for claim in sample_claims:
+            claim.checked_at = claim.created_at + timedelta(seconds=1)
+        test_db.commit()
+
+        score = AnswerScoreRepository.create(
+            test_db,
+            {
+                "answer_id": sample_answer.id,
+                "rubric_id": sample_qa_job.judge.rubric_id,
+                "judge_id": sample_qa_job.judge_id,
+                "overall_label": "Accurate",
+                "explanation": "Missing some claim scores",
+            },
+        )
+        test_db.add(
+            AnswerClaimScore(
+                claim_id=sample_claims[0].id,
+                answer_score_id=score.id,
+                label=True,
+                explanation="Only one claim scored",
+            )
+        )
+        sample_qa_job.status = JobStatusEnum.completed
+        sample_qa_job.stage = QAJobStageEnum.completed
+        sample_qa_job.rubric_specs = [
+            {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
+        ]
+        test_db.commit()
+
+        jobs = create_all_jobs(
+            db=test_db,
+            snapshot_id=sample_snapshot.id,
+            question_ids=[sample_qa_job.question_id],
+            rubric_specs=sample_qa_job.rubric_specs,
+        )
+
+        assert len(jobs) == 1
+        test_db.refresh(sample_qa_job)
+        assert sample_qa_job.status == JobStatusEnum.running
+        assert sample_qa_job.stage == QAJobStageEnum.scoring_answers
+
+    @pytest.mark.asyncio
+    @patch("src.scoring.services.qa_job_processor.extract_and_check_claims", new_callable=AsyncMock)
+    @patch("src.scoring.services.qa_job_processor.AnswerJudge")
+    @patch("src.scoring.services.qa_job_processor.SessionLocal")
+    async def test_score_rubric_spec_rescores_incomplete_claim_score_set(
+        self,
+        MockSessionLocal,
+        MockAnswerJudge,
+        mock_extract_claims,
+        test_db,
+        sample_answer,
+        sample_qa_job,
+        sample_claims,
+    ):
+        """Claim-based skip logic should rerun when the existing score row is missing claim scores."""
+        from src.scoring.services.qa_job_processor import _score_rubric_spec
+
+        for claim in sample_claims:
+            claim.checked_at = claim.created_at + timedelta(seconds=1)
+
+        score = AnswerScoreRepository.create(
+            test_db,
+            {
+                "answer_id": sample_answer.id,
+                "rubric_id": sample_qa_job.judge.rubric_id,
+                "judge_id": sample_qa_job.judge_id,
+                "overall_label": "Accurate",
+                "explanation": "Incomplete claim score set",
+            },
+        )
+        test_db.add(
+            AnswerClaimScore(
+                claim_id=sample_claims[0].id,
+                answer_score_id=score.id,
+                label=True,
+                explanation="Only one claim scored",
+            )
+        )
+        sample_qa_job.answer_id = sample_answer.id
+        sample_qa_job.status = JobStatusEnum.running
+        test_db.commit()
+
+        mock_session = Mock(wraps=test_db)
+        mock_session.close = Mock()
+        MockSessionLocal.return_value = mock_session
+
+        mock_judge_instance = MockAnswerJudge.return_value
+        mock_judge_instance.cost_tracker.get_summary.return_value = {
+            "prompt_tokens": 11,
+            "completion_tokens": 7,
+            "total_cost": 0.3,
+        }
+
+        async def persist_complete_claim_scores(*args, **kwargs):
+            repaired_score = AnswerScoreRepository.replace_for_answer_judge_rubric(
+                test_db,
+                {
+                    "answer_id": sample_answer.id,
+                    "rubric_id": sample_qa_job.judge.rubric_id,
+                    "judge_id": sample_qa_job.judge_id,
+                    "overall_label": "Accurate",
+                    "explanation": "Now complete",
+                },
+            )
+            test_db.add_all(
+                [
+                    AnswerClaimScore(
+                        claim_id=claim.id,
+                        answer_score_id=repaired_score.id,
+                        label=True,
+                        explanation="Recovered during rescore",
+                    )
+                    for claim in sample_claims
+                ]
+            )
+            test_db.commit()
+
+        mock_judge_instance.score = AsyncMock(side_effect=persist_complete_claim_scores)
+
+        result = await _score_rubric_spec(
+            sample_qa_job.id,
+            sample_qa_job.judge_id,
+            sample_qa_job.judge.rubric_id,
+        )
+
+        mock_extract_claims.assert_not_awaited()
+        MockAnswerJudge.assert_called_once()
+        mock_judge_instance.score.assert_awaited_once_with(raise_on_error=True)
+        assert result == {
+            "prompt_tokens": 11,
+            "completion_tokens": 7,
+            "total_cost": 0.3,
         }
 
 

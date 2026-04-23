@@ -259,6 +259,63 @@ class TestAnswerJudge:
         assert all(score.label is False for score in claim_scores)
         assert all("Error during scoring" in score.explanation for score in claim_scores)
 
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_claim_level_persists_with_single_commit_boundary(
+        self, mock_llm_class, test_db, sample_qa_job, sample_claims, sample_kb_documents
+    ):
+        """Claim-based writes should use one commit for the score + claim-score set."""
+        for claim in sample_claims:
+            claim.checked_at = claim.created_at
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            ClaimJudgmentResult(label=True, reasoning="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id, skip_job_update=True)
+
+        with patch.object(test_db, "commit", wraps=test_db.commit) as mock_commit:
+            await scorer._score_claim_level()
+
+        assert mock_commit.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.AnswerClaimScoreRepository.create_many_no_commit')
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_claim_level_rolls_back_when_claim_score_write_fails(
+        self,
+        mock_llm_class,
+        mock_create_many_no_commit,
+        test_db,
+        sample_qa_job,
+        sample_answer,
+        sample_claims,
+        sample_kb_documents,
+    ):
+        """Claim-based write failures should not leave behind a durable AnswerScore row."""
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            ClaimJudgmentResult(label=True, reasoning="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+        mock_create_many_no_commit.side_effect = RuntimeError("boom")
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id, skip_job_update=True)
+
+        with pytest.raises(RuntimeError, match="boom"):
+            await scorer._score_claim_level()
+
+        from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
+        answer_score = AnswerScoreRepository.get_by_answer_and_judge(
+            test_db, sample_answer.id, sample_qa_job.judge_id, sample_qa_job.judge.rubric_id
+        )
+        assert answer_score is None
+
 
 @pytest.mark.unit
 class TestContextPriority:

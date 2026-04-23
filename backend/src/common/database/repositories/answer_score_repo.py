@@ -50,8 +50,8 @@ class AnswerScoreRepository:
         return score
 
     @staticmethod
-    def replace_for_answer_judge_rubric(db: Session, score_data: dict) -> AnswerScore:
-        """Replace the canonical score for an (answer, rubric, judge) triple."""
+    def replace_for_answer_judge_rubric_no_commit(db: Session, score_data: dict) -> AnswerScore:
+        """Replace the canonical score for an (answer, rubric, judge) triple without committing."""
         payload = AnswerScoreRepository._validate_payload(score_data)
         answer_id = payload["answer_id"]
         judge_id = payload["judge_id"]
@@ -76,6 +76,13 @@ class AnswerScoreRepository:
             for key, value in payload.items():
                 setattr(score, key, value)
 
+        db.flush()
+        return score
+
+    @staticmethod
+    def replace_for_answer_judge_rubric(db: Session, score_data: dict) -> AnswerScore:
+        """Replace the canonical score for an (answer, rubric, judge) triple."""
+        score = AnswerScoreRepository.replace_for_answer_judge_rubric_no_commit(db, score_data)
         db.commit()
         db.refresh(score)
         return score

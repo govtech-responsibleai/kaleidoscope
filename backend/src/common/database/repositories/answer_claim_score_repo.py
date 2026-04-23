@@ -23,10 +23,16 @@ class AnswerClaimScoreRepository:
     @staticmethod
     def create_many(db: Session, claim_scores_data: List[dict]) -> List[AnswerClaimScore]:
         """Create multiple answer claim scores."""
+        claim_scores = AnswerClaimScoreRepository.create_many_no_commit(db, claim_scores_data)
+        db.commit()
+        return claim_scores
+
+    @staticmethod
+    def create_many_no_commit(db: Session, claim_scores_data: List[dict]) -> List[AnswerClaimScore]:
+        """Create multiple answer claim scores without committing."""
         claim_scores = [AnswerClaimScore(**data) for data in claim_scores_data]
         db.add_all(claim_scores)
         db.flush()
-        db.commit()
         return claim_scores
 
     @staticmethod

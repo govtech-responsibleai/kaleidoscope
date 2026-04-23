@@ -19,6 +19,7 @@ from src.common.database.models import QAJob, QAJobStageEnum, JobStatusEnum, QAJ
 from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
+from src.common.database.repositories.answer_claim_score_repo import AnswerClaimScoreRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
@@ -33,6 +34,32 @@ def _claims_ready(claims) -> bool:
     return bool(claims) and all(claim.created_at != claim.checked_at for claim in claims)
 
 
+def _is_rubric_score_complete(
+    db: Session,
+    answer_id: int,
+    judge_id: int,
+    rubric_id: int,
+    claims=None,
+    rubric=None,
+) -> bool:
+    """Return whether a rubric result is complete for the current answer state."""
+    score = AnswerScoreRepository.get_by_answer_judge_rubric(db, answer_id, judge_id, rubric_id)
+    if score is None:
+        return False
+
+    resolved_rubric = rubric or TargetRubricRepository.get_by_id(db, rubric_id)
+    if resolved_rubric is None or resolved_rubric.scoring_mode != "claim_based":
+        return True
+
+    current_claims = claims if claims is not None else AnswerClaimRepository.get_by_answer(db, answer_id)
+    if not _claims_ready(current_claims):
+        return False
+
+    checkworthy_count = sum(1 for claim in current_claims if claim.checkworthy)
+    claim_scores = AnswerClaimScoreRepository.get_by_answer_score(db, score.id)
+    return len(claim_scores) == checkworthy_count
+
+
 def _job_needs_scoring(
     db: Session,
     job: QAJob,
@@ -42,9 +69,12 @@ def _job_needs_scoring(
         return True
 
     for spec in (rubric_specs or job.rubric_specs or []):
-        if AnswerScoreRepository.get_by_answer_judge_rubric(
-            db, job.answer_id, spec["judge_id"], spec["rubric_id"]
-        ) is None:
+        if not _is_rubric_score_complete(
+            db,
+            job.answer_id,
+            spec["judge_id"],
+            spec["rubric_id"],
+        ):
             return True
 
     return False
@@ -89,7 +119,12 @@ def _verify_expected_scores(
             spec["judge_id"],
             spec["rubric_id"],
         )
-        if score is None:
+        if score is None or not _is_rubric_score_complete(
+            db,
+            job.answer_id,
+            spec["judge_id"],
+            spec["rubric_id"],
+        ):
             missing_specs.append(
                 f"rubric {spec['rubric_id']} / judge {spec['judge_id']}"
             )
@@ -196,10 +231,18 @@ class QAJobProcessor:
                 return 1
 
         judge = JudgeRepository.get_by_id(self.db, self.judge_id)
-        score = AnswerScoreRepository.get_by_answer_judge_rubric(
-            self.db, answer.id, self.judge_id, judge.rubric_id if judge else None
+        rubric_id = judge.rubric_id if judge else None
+        score_complete = (
+            rubric_id is not None
+            and _is_rubric_score_complete(
+                self.db,
+                answer.id,
+                self.judge_id,
+                rubric_id,
+                claims=claims if self._uses_claim_processing() else None,
+            )
         )
-        if not score:
+        if not score_complete:
             return 2 if self._uses_claim_processing() else 1
 
         return 3 if self._uses_claim_processing() else 2
@@ -267,12 +310,12 @@ def get_or_create_qajobs_batch(
             if existing_job:
                 needs_scoring = (
                     not existing_job.answer_id
-                    or AnswerScoreRepository.get_by_answer_judge_rubric(
+                    or not _is_rubric_score_complete(
                         db,
                         existing_job.answer_id,
                         judge_id,
                         judge_rubric_id,
-                    ) is None
+                    )
                 )
                 if existing_job.status == JobStatusEnum.completed and needs_scoring:
                     next_stage = QAJobStageEnum.scoring_answers if existing_job.answer_id else QAJobStageEnum.starting
@@ -480,10 +523,7 @@ async def _score_response_level(
     try:
         job = QAJobRepository.get_by_id(db, job_id)
         if job and job.answer_id:
-            existing = AnswerScoreRepository.get_by_answer_judge_rubric(
-                db, job.answer_id, judge_id, rubric_id
-            )
-            if existing:
+            if _is_rubric_score_complete(db, job.answer_id, judge_id, rubric_id):
                 logger.info(f"QAJob {job_id}: rubric {rubric_id} score already exists, skipping")
                 return {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0}
 
@@ -526,13 +566,7 @@ async def _score_rubric_spec(
         if not job.answer_id:
             raise RuntimeError(f"QAJob {job_id} has no answer after generation")
 
-        existing_score = AnswerScoreRepository.get_by_answer_judge_rubric(
-            db,
-            job.answer_id,
-            judge_id,
-            rubric_id,
-        )
-        if existing_score is not None:
+        if _is_rubric_score_complete(db, job.answer_id, judge_id, rubric_id):
             logger.info(f"QAJob {job_id}: rubric {rubric_id} score already exists, skipping")
             return {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0}
 
@@ -566,14 +600,14 @@ async def _score_rubric_spec(
         if refreshed and refreshed.status == JobStatusEnum.failed:
             raise RuntimeError(refreshed.error_message or f"Rubric scoring failed for rubric {rubric_id}")
 
-        persisted = AnswerScoreRepository.get_by_answer_judge_rubric(
+        if not _is_rubric_score_complete(
             db,
             job.answer_id,
             judge_id,
             rubric_id,
-        )
-        if persisted is None:
-            raise RuntimeError(f"Rubric {rubric_id} score was not persisted")
+            rubric=rubric,
+        ):
+            raise RuntimeError(f"Rubric {rubric_id} score was not persisted completely")
 
         return judge.cost_tracker.get_summary()
     finally:

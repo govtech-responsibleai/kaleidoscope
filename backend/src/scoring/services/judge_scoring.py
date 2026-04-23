@@ -221,25 +221,37 @@ class AnswerJudge:
         # Aggregate claim scores
         overall_label, overall_explanation = self._aggregate_claim_scores(results)
 
-        # Create AnswerScore first (needed for foreign key)
         answer_score_data = {
             "answer_id": self.answer.id,
             "rubric_id": self._resolved_rubric_id(),
             "judge_id": self.judge.id,
             "overall_label": overall_label,
-            "explanation": overall_explanation
+            "explanation": overall_explanation,
         }
-        answer_score = AnswerScoreRepository.replace_for_answer_judge_rubric(self.db, answer_score_data)
 
-        # Create AnswerClaimScore records
-        for (claim, _), result in zip(tasks, results):
-            claim_score_data = {
+        claim_scores_data = [
+            {
                 "claim_id": claim.id,
-                "answer_score_id": answer_score.id,
+                "answer_score_id": None,
                 "label": result.label,
-                "explanation": result.reasoning
+                "explanation": result.reasoning,
             }
-            AnswerClaimScoreRepository.create(self.db, claim_score_data)
+            for (claim, _), result in zip(tasks, results)
+        ]
+
+        try:
+            answer_score = AnswerScoreRepository.replace_for_answer_judge_rubric_no_commit(
+                self.db,
+                answer_score_data,
+            )
+            for claim_score_data in claim_scores_data:
+                claim_score_data["answer_score_id"] = answer_score.id
+            AnswerClaimScoreRepository.create_many_no_commit(self.db, claim_scores_data)
+            self.db.commit()
+            self.db.refresh(answer_score)
+        except Exception:
+            self.db.rollback()
+            raise
 
         logger.info(f"Scored {len(checkworthy_claims)} claims for answer {self.answer.id}. Overall: {overall_label}")
         return answer_score
