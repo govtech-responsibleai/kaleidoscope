@@ -160,6 +160,7 @@ export default function AnnotationForm({
   const [rubricNotes, setRubricNotes] = useState<Record<number, string>>({});
   const [loading, setLoading] = useState(false);
   const [savingRubric, setSavingRubric] = useState<number | null>(null);
+  const [loadedAnswerId, setLoadedAnswerId] = useState<number | null>(null);
 
   const rubricRowRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -174,10 +175,10 @@ export default function AnnotationForm({
   );
 
   useEffect(() => {
-    if (answer && onCompletenessChanged) {
+    if (answer && loadedAnswerId === answer.id && onCompletenessChanged) {
       onCompletenessChanged(answer.id, isFullyAnnotated);
     }
-  }, [answer?.id, isFullyAnnotated, onCompletenessChanged]);
+  }, [answer?.id, isFullyAnnotated, loadedAnswerId, onCompletenessChanged]);
 
   useEffect(() => {
     if (activeRubricId === undefined || activeRubricId === null) return;
@@ -198,8 +199,11 @@ export default function AnnotationForm({
     if (!answer) {
       setRubricLabels({});
       setRubricNotes({});
+      setLoadedAnswerId(null);
       return;
     }
+
+    setLoadedAnswerId(null);
 
     const fetchAnnotations = async () => {
       setLoading(true);
@@ -217,6 +221,7 @@ export default function AnnotationForm({
         setRubricLabels({});
         setRubricNotes({});
       } finally {
+        setLoadedAnswerId(answer.id);
         setLoading(false);
       }
     };

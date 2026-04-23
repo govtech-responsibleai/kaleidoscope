@@ -131,6 +131,9 @@ export default function QAItem({
   onToggleSelection,
   onSelect,
 }: QAItemProps) {
+  const isSelectedAndIncomplete = isChecked && !isFullyAnnotated;
+  const selectedBorderColor = isSelectedAndIncomplete ? "error.main" : "primary.main";
+
   const checkbox = (
     <Checkbox
       checked={isChecked}
@@ -156,7 +159,7 @@ export default function QAItem({
           border: (theme) =>
             isActive ? `1px solid ${theme.palette.primary.main}` : `1px solid ${theme.palette.divider}`,
           borderLeft: isChecked ? "3px solid" : undefined,
-          borderLeftColor: isChecked ? "primary.main" : undefined,
+          borderLeftColor: isChecked ? selectedBorderColor : undefined,
         }}
       >
         <Stack spacing={2} sx={{ width: "100%" }}>

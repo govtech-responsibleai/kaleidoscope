@@ -371,6 +371,7 @@ export default function QAList({
       (entry) => entry.answer && annotationCompletenessByAnswerId[entry.answer.id]
     ).length;
   }, [annotationCompletenessByAnswerId, qaMap]);
+  const hasMissingSelectedAnnotations = savedSelections.size > 0 && annotatedCount < savedSelections.size;
 
   const handleFilterChange = (
     _event: React.MouseEvent<HTMLElement>,
@@ -454,7 +455,16 @@ export default function QAList({
           </Tooltip>
         </Stack>
 
-        <Paper variant="outlined" sx={{ mt: 2, mb: 2, p: 1.5, flexShrink: 0 }}>
+        <Paper
+          variant="outlined"
+          sx={{
+            mt: 2,
+            mb: 2,
+            p: 1.5,
+            flexShrink: 0,
+            borderColor: hasMissingSelectedAnnotations ? "error.main" : "divider",
+          }}
+        >
           <Stack spacing={1}>
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Typography variant="caption" fontWeight={600}>
@@ -467,8 +477,23 @@ export default function QAList({
             <LinearProgress
               variant="determinate"
               value={savedSelections.size > 0 ? (annotatedCount / savedSelections.size) * 100 : 0}
-              sx={{ height: 6, borderRadius: 1 }}
+              sx={{
+                height: 6,
+                borderRadius: 1,
+                ...(hasMissingSelectedAnnotations
+                  ? {
+                      "& .MuiLinearProgress-bar": {
+                        backgroundColor: "error.main",
+                      },
+                    }
+                  : {}),
+              }}
             />
+            {hasMissingSelectedAnnotations ? (
+              <Typography variant="caption" color="error.main" fontWeight={600}>
+                Some annotations are missing.
+              </Typography>
+            ) : null}
             <Stack direction="row" justifyContent="space-between" alignItems="center">
               <Typography variant="caption" color="text.secondary">
                 {effectiveDraftSelections.size} question{effectiveDraftSelections.size === 1 ? "" : "s"} in annotation set
