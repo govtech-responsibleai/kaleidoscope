@@ -18,7 +18,6 @@ from sqlalchemy.exc import OperationalError
 from src.common.config import get_settings
 from src.common.auth import auth_router, get_scoped_db
 from src.common.database.connection import init_db, engine
-from src.common.database.seed import run_manual_migrations
 from src.common.llm.instrumentation import setup_phoenix_instrumentation
 
 # Import routers from query generation
@@ -49,9 +48,6 @@ async def lifespan(app: FastAPI):
     # Initialize database
     init_db()
     logger.info("✓ Database initialized")
-
-    # Run manual migrations (e.g. adding columns to existing tables)
-    run_manual_migrations(engine)
 
     # Load connector extensions (e.g. KALEIDOSCOPE_EXTENSIONS=aibots)
     from src.extensions import load_extensions
