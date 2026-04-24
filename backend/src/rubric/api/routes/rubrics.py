@@ -176,7 +176,7 @@ def create_rubric(
         options_dicts = [option.model_dump() for option in rubric.options if option.option.strip()]
         try:
             data["judge_prompt"] = generate_judge_prompt(
-                data["name"], rubric.criteria, options_dicts, rubric.best_option
+                db, target_id, data["name"], rubric.criteria, options_dicts, rubric.best_option
             )
         except Exception as exc:
             logger.warning("Augmenter failed for rubric '%s', using fallback: %s", rubric.name, exc)
@@ -250,7 +250,14 @@ def update_rubric(
         best_option = data.get("best_option", existing_rubric.best_option)
         non_empty_options = [option for option in options if option.get("option", "").strip()]
         try:
-            data["judge_prompt"] = generate_judge_prompt(name, criteria, non_empty_options, best_option)
+            data["judge_prompt"] = generate_judge_prompt(
+                db,
+                target_id,
+                name,
+                criteria,
+                non_empty_options,
+                best_option,
+            )
         except Exception as exc:
             logger.warning("Augmenter failed for rubric %s, using fallback: %s", rubric_id, exc)
             data["judge_prompt"] = build_fallback_judge_prompt(name, criteria, non_empty_options, best_option)

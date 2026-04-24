@@ -7,8 +7,8 @@ from unittest.mock import patch, MagicMock
 
 from src.common.models import PersonaBase, PersonaListOutput
 
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
-@pytest.mark.integration
 class TestPersonaGenerationAPI:
     """Integration tests for persona generation API."""
 

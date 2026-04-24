@@ -17,7 +17,8 @@ class PremadeRubricTemplateResponse(BaseModel):
     criteria: str
     options: List[RubricOption]
     best_option: str
-    recommended_model: str
+    recommended_model_provider: str
+    recommended_model_name: str
     group: str = "preset"
 
 

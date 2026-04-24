@@ -19,6 +19,7 @@ from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.database.repositories.kb_document_repo import KBDocumentRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.llm import LLMClient, CostTracker
+from src.common.llm.provider_service import resolve_model_runtime_config_for_target
 from src.common.prompts import render_template
 from src.common.prompts.template_loader import get_loader
 from src.common.models import ClaimJudgmentResult, RubricJudgmentResult
@@ -78,8 +79,15 @@ class AnswerJudge:
             if not self.rubric:
                 raise ValueError(f"Rubric {rubric_id} not found")
 
-        # Initialize LLM client with judge's model
-        self.llm_client = LLMClient(model=self.judge.model_name)
+        runtime_config = resolve_model_runtime_config_for_target(
+            db,
+            self.answer.question.target_id,
+            self.judge.model_name,
+        )
+        self.llm_client = LLMClient(
+            model=self.judge.model_name,
+            provider_kwargs=runtime_config.litellm_kwargs,
+        )
 
     async def score(self, raise_on_error: bool = False) -> None:
         """

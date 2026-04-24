@@ -15,11 +15,8 @@ FIXED_RUBRIC_TEMPLATES: dict[str, dict] = {
         "judge_prompt_path": "accuracy_judge.md",
         "group": "fixed",
         "scoring_mode": "claim_based",
-        "judge_models": [
-            "litellm_proxy/gemini-3.1-flash-lite-preview-global",
-            "litellm_proxy/gemini-3-flash-preview",
-            "azure/gpt-5-nano-2025-08-07",
-        ],
+        "recommended_model_provider": "gemini",
+        "recommended_model_name": "gemini/gemini-3.1-flash-lite-preview",
     },
 }
 
@@ -34,7 +31,8 @@ def list_fixed_templates() -> list[dict]:
             "best_option": tmpl["best_option"],
             "group": tmpl["group"],
             "scoring_mode": tmpl["scoring_mode"],
-            "judge_models": tmpl["judge_models"],
+            "recommended_model_provider": tmpl["recommended_model_provider"],
+            "recommended_model_name": tmpl["recommended_model_name"],
         }
         for tmpl in FIXED_RUBRIC_TEMPLATES.values()
     ]

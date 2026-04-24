@@ -5,8 +5,8 @@ Integration tests for question generation API endpoints.
 import io
 import pytest
 
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
-@pytest.mark.integration
 class TestQuestionGenerationAPI:
     """Integration tests for question generation API."""
 
@@ -183,7 +183,6 @@ class TestQuestionGenerationAPI:
         assert job_response.json()["id"] == job_id
 
 
-@pytest.mark.integration
 class TestQuestionUploadAPI:
     """Integration tests for question file upload endpoint."""
 

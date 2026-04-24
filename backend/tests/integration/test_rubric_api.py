@@ -15,8 +15,8 @@ from src.common.database.models import (
 from src.rubric.services.prompt_files import custom_rubric_prompt_path
 from src.rubric.services.system_rubrics import ensure_system_rubrics
 
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
-@pytest.mark.integration
 class TestRubric:
     """CRUD and scoring lifecycle tests for rubrics."""
 
@@ -415,7 +415,6 @@ class TestRubric:
         assert data["is_complete"] is False
 
 
-@pytest.mark.integration
 class TestRubricValidation:
     """Validation and error-case tests for rubrics."""
 

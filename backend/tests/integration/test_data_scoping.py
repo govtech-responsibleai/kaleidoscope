@@ -20,6 +20,7 @@ from src.scoring.api.routes import judges
 from tests.conftest import get_test_password_hash
 
 settings = get_settings()
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
 
 @pytest.fixture
@@ -215,7 +216,6 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
     return {"user_a": judge_a, "user_b": judge_b, "baseline": baseline_judge}
 
 
-@pytest.mark.integration
 class TestTargetScoping:
     """Tests for target data scoping."""
 
@@ -273,7 +273,6 @@ class TestTargetScoping:
         assert "User B Target" in target_names
 
 
-@pytest.mark.integration
 class TestJudgeScoping:
     """Tests for judge data scoping."""
 

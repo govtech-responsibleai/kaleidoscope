@@ -2,7 +2,14 @@
 Registry of pre-made rubric templates that users can add to their targets.
 
 Add new templates to PREMADE_RUBRIC_TEMPLATES to make them available.
-Each entry must include: name, criteria, options, best_option, judge_prompt_path, recommended_model.
+Each entry must include:
+- name
+- criteria
+- options
+- best_option
+- judge_prompt_path
+- recommended_model_provider
+- recommended_model_name
 """
 
 from typing import Optional
@@ -18,7 +25,8 @@ PREMADE_RUBRIC_TEMPLATES: dict[str, dict] = {
         ],
         "best_option": "Empathetic",
         "judge_prompt_path": "empathy_rubric_judge.md",
-        "recommended_model": "litellm_proxy/gemini-3-flash-preview",
+        "recommended_model_provider": "gemini",
+        "recommended_model_name": "gemini/gemini-3-flash-preview",
     },
     "verbosity": {
         "name": "Verbosity",
@@ -29,7 +37,8 @@ PREMADE_RUBRIC_TEMPLATES: dict[str, dict] = {
         ],
         "best_option": "Concise",
         "judge_prompt_path": "verbosity_rubric_judge.md",
-        "recommended_model": "gemini/gemini-3.1-flash-lite-preview-global",
+        "recommended_model_provider": "gemini",
+        "recommended_model_name": "gemini/gemini-3.1-flash-lite-preview",
     },
 }
 
@@ -42,7 +51,8 @@ def list_premade_templates() -> list[dict]:
             "criteria": tmpl["criteria"],
             "options": tmpl["options"],
             "best_option": tmpl["best_option"],
-            "recommended_model": tmpl["recommended_model"],
+            "recommended_model_provider": tmpl["recommended_model_provider"],
+            "recommended_model_name": tmpl["recommended_model_name"],
             "group": "preset",
         }
         for key, tmpl in PREMADE_RUBRIC_TEMPLATES.items()

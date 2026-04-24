@@ -19,6 +19,7 @@ from src.common.connectors.http_auth import prepare_http_config_for_storage, per
 from src.common.database.models import StatusEnum
 from src.common.auth import get_current_user_id
 from src.common.connectors.registry import get_registered_types, get_connector, validate_connector_config
+from src.common.llm.provider_service import require_user_has_valid_provider
 from src.common.services.export_service import ExportService, ExportFormat
 from src.rubric.services.system_rubrics import bootstrap_target_rubrics_and_judges
 
@@ -197,6 +198,10 @@ def create_target(
         Created target
     """
     target_data = target.model_dump()
+    try:
+        require_user_has_valid_provider(db, user_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     try:
         endpoint_config, pending_secret_value, should_keep_secret = _normalize_target_payload_for_storage(
             target_data.get("endpoint_type"),

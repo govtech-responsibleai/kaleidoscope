@@ -258,13 +258,14 @@ class TestClaimProcessorErrors:
     @pytest.mark.asyncio
     async def test_missing_answer_sets_job_failed_with_error_message(self, test_db, sample_qa_job):
         """Test that missing answer sets job failed with error_message."""
+        from src.scoring.services.claim_processor import extract_and_check_claims
+
         # Set answer_id to non-existent answer
         sample_qa_job.answer_id = 99999
         test_db.commit()
 
-        # Process
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
-        await processor.process()
+        # Process via the public wrapper so init errors are handled
+        await extract_and_check_claims(test_db, sample_qa_job.id)
 
         # Verify job marked as failed
         test_db.refresh(sample_qa_job)

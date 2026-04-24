@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 from src.common.database.models import Judge, TargetRubric
 from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
+from src.common.database.repositories.target_repo import TargetRepository
+from src.common.llm.provider_service import _model_label, get_valid_model_options, list_resolved_providers
 from src.rubric.services.fixed_rubrics import get_fixed_template, list_fixed_templates
 from src.rubric.services.premade_rubrics import get_premade_template, list_premade_templates
 from src.rubric.services.prompt_files import load_prompt_template_text
@@ -83,14 +85,67 @@ def _model_pool_to_configs(models: List[str], prompt_template: str, is_baseline_
     return [
         {
             "name": JUDGE_NAMES[idx],
-            "model_name": _require_model(model),
-            "model_label": AVAILABLE_MODEL_MAP[model]["label"],
+            "model_name": model,
+            "model_label": _model_label(model),
             "prompt_template": prompt_template,
             "is_baseline": idx == is_baseline_idx,
             "is_editable": False,
         }
         for idx, model in enumerate(models)
     ]
+
+
+
+def _valid_provider_default_models(db: Session, user_id: int) -> list[str]:
+    return [
+        provider.catalog.default_model
+        for provider in list_resolved_providers(db, user_id)
+        if provider.is_valid
+    ]
+
+
+def _select_seed_models(db: Session, rubric: TargetRubric) -> list[str]:
+    target = TargetRepository.get_by_id(db, int(rubric.target_id))
+    if not target or target.user_id is None:
+        return []
+    user_id = int(target.user_id)
+
+    default_models = _valid_provider_default_models(db, user_id)
+    if not default_models:
+        return []
+
+    recommended_provider: str | None = None
+    recommended_model_name: str | None = None
+    if rubric.group == RUBRIC_GROUP_FIXED:
+        fixed_template = get_fixed_template(str(rubric.name)) or {}
+        recommended_provider = fixed_template.get("recommended_model_provider")
+        recommended_model_name = fixed_template.get("recommended_model_name")
+    elif rubric.group == RUBRIC_GROUP_PRESET:
+        preset_template = get_premade_template(str(rubric.name).strip().lower()) or get_premade_template(str(rubric.name))
+        if preset_template:
+            recommended_provider = preset_template.get("recommended_model_provider")
+            recommended_model_name = preset_template.get("recommended_model_name")
+
+    selected: list[str] = []
+    if recommended_provider and recommended_model_name:
+        matching_provider_model = next(
+            (model for model in default_models if model.startswith(f"{recommended_provider}/")),
+            None,
+        )
+        valid_models = {option.value for option in get_valid_model_options(db, user_id)}
+        if recommended_model_name in valid_models and matching_provider_model:
+            selected.append(recommended_model_name)
+            default_models = [model for model in default_models if not model.startswith(f"{recommended_provider}/")]
+
+    if not selected:
+        selected.append(default_models.pop(0))
+
+    for model in list(default_models):
+        if len(selected) >= 3:
+            break
+        selected.append(model)
+
+    return selected[:3]
 
 
 def reserved_preset_names() -> set[str]:
@@ -283,17 +338,8 @@ def ensure_judges(db: Session, rubric_id: int) -> None:
     if rubric is None:
         return
 
-    if rubric.group == RUBRIC_GROUP_FIXED:
-        fixed_template = get_fixed_template(str(rubric.name))
-        models = list(fixed_template.get("judge_models", [])) if fixed_template else []
-    elif rubric.group == RUBRIC_GROUP_PRESET:
-        preset_map: Dict[str, List[str]] = {
-            "Empathy": EMPATHY_MODELS,
-            "Verbosity": VERBOSITY_MODELS,
-        }
-        models = preset_map.get(str(rubric.name), [])
-    elif rubric.group == RUBRIC_GROUP_CUSTOM:
-        models = DEFAULT_RUBRIC_MODELS
+    if rubric.group in {RUBRIC_GROUP_FIXED, RUBRIC_GROUP_PRESET, RUBRIC_GROUP_CUSTOM}:
+        models = _select_seed_models(db, rubric)
     else:
         models = []
 

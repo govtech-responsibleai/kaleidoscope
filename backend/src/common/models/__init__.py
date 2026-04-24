@@ -132,6 +132,17 @@ from src.common.models.web_search import (
     SearchResult,
     SearchResultsOutput
 )
+from src.common.models.provider_setup import (
+    ProviderCredentialFieldResponse,
+    ProviderModelOption,
+    ProviderSetupEntryResponse,
+    ServiceCredentialSetupResponse,
+    ProviderServiceDefaultsResponse,
+    ProviderCatalogResponse,
+    ProviderSetupResponse,
+    ProviderCredentialUpsertRequest,
+    ServiceCredentialUpsertRequest,
+)
 
 from src.common.models.metrics import (
     AggregationMethod,
@@ -263,6 +274,16 @@ __all__ = [
     "SearchResultSitelink",
     "SearchResult",
     "SearchResultsOutput",
+    # Provider setup
+    "ProviderCredentialFieldResponse",
+    "ProviderModelOption",
+    "ProviderSetupEntryResponse",
+    "ServiceCredentialSetupResponse",
+    "ProviderServiceDefaultsResponse",
+    "ProviderCatalogResponse",
+    "ProviderSetupResponse",
+    "ProviderCredentialUpsertRequest",
+    "ServiceCredentialUpsertRequest",
     # Metrics
     "AggregationMethod",
     "AggregatedScore",

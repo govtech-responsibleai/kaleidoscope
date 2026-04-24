@@ -4,8 +4,8 @@ Integration tests for snapshot API endpoints.
 
 import pytest
 
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
-@pytest.mark.integration
 class TestSnapshotAPI:
     """Integration tests for snapshot API."""
 

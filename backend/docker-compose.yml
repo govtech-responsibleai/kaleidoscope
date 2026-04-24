@@ -29,28 +29,14 @@ services:
     container_name: kaleidoscope-api
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       # Database
       DATABASE_URL: postgresql://kaleidoscope:kaleidoscope_dev_password@db:5432/kaleidoscope
       DATABASE_ECHO: "False"
 
-      # LLM Settings
-      # DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-}  # Optional - defaults to gemini/gemini-2.5-flash-lite
-      GEMINI_API_KEY: ${GEMINI_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      AZURE_API_KEY: ${AZURE_API_KEY}
-      AZURE_API_BASE: ${AZURE_API_BASE}
-      LITELLM_PROXY_API_KEY: ${LITELLM_PROXY_API_KEY}
-      LITELLM_PROXY_API_BASE: ${LITELLM_PROXY_API_BASE}
-
-      # Web Search
-      SERPER_API_KEY: ${SERPER_API_KEY:-}
-
       # Langfuse (optional - set in .env)
-      LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
-      LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
-      LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-}
       # Point the OTEL exporter to the system CA bundle (includes Cloudflare CA)
       # so traces reach self-hosted Langfuse instances behind Cloudflare inspection
       OTEL_EXPORTER_OTLP_CERTIFICATE: /etc/ssl/certs/ca-certificates.crt
@@ -61,11 +47,6 @@ services:
       API_VERSION: 1.0.0
 
       # Auth
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      ADMIN_API_KEY: ${ADMIN_API_KEY}
-
-      # Extensions
-      KALEIDOSCOPE_EXTENSIONS: ${KALEIDOSCOPE_EXTENSIONS:-}
     depends_on:
       db:
         condition: service_healthy

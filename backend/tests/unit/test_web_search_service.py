@@ -61,8 +61,7 @@ def _make_service(test_db, sample_target):
         svc.template_name = "web_search_queries_qngen.md"
         svc.cost_tracker = MagicMock()
         svc.llm_client = MagicMock()
-        svc.settings = MagicMock()
-        svc.settings.serper_api_key = "test-api-key"
+        svc.serper_api_key = "test-api-key"
         return svc
 
 
@@ -124,7 +123,7 @@ class TestWebSearchService:
     def test_execute_searches_skips_missing_api_key(self, test_db, sample_target):
         """Missing API key returns empty list with warning."""
         svc = _make_service(test_db, sample_target)
-        svc.settings.serper_api_key = None
+        svc.serper_api_key = None
 
         results = svc.execute_searches(["test query"])
 
