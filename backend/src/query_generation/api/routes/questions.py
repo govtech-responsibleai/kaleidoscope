@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from src.common.database.connection import get_db
 from src.common.database.repositories import QuestionRepository, TargetRepository
 from src.common.database.models import StatusEnum
+from src.common.llm.provider_service import require_default_embedding_model, resolve_model_runtime_config
 from src.common.models import (
     AnswerResponse,
     QuestionResponse,
@@ -261,10 +262,18 @@ def find_similar_questions_endpoint(
 
     # Find similar questions using batch processing
     try:
+        embedding_model = "gemini/gemini-embedding-001"
+        runtime_kwargs = {}
+        if target.user_id is not None:
+            embedding_model = require_default_embedding_model(db, int(target.user_id))
+            runtime_config = resolve_model_runtime_config(db, int(target.user_id), embedding_model)
+            runtime_kwargs = runtime_config.litellm_kwargs
         similar_results = find_similar_questions_batch(
             query_texts=query_texts,
             candidate_texts=candidate_texts,
-            threshold=request.similarity_threshold
+            threshold=request.similarity_threshold,
+            model=embedding_model,
+            provider_kwargs=runtime_kwargs,
         )
 
         logger.info(f"Completed similarity search for {len(request.question_ids)} queries")
@@ -291,9 +300,11 @@ def find_similar_questions_endpoint(
 
     except Exception as e:
         logger.error(f"Failed to find similar questions: {e}", exc_info=True)
+        detail = str(e)
+        status_code = status.HTTP_400_BAD_REQUEST if "embedding model" in detail.lower() else status.HTTP_500_INTERNAL_SERVER_ERROR
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to find similar questions: {str(e)}"
+            status_code=status_code,
+            detail=f"Failed to find similar questions: {detail}"
         )
 
 

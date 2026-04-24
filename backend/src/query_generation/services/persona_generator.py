@@ -10,6 +10,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from src.common.llm import LLMClient, CostTracker
+from src.common.llm.provider_service import resolve_model_runtime_config_for_target
 from src.common.prompts import render_template
 from src.common.models import PersonaListOutput, PersonaBase
 from src.common.database.repositories import (
@@ -74,8 +75,11 @@ class PersonaGenerator:
         if not self.target:
             raise ValueError(f"Target {self.job.target_id} not found")
 
-        # Initialize LLM client
-        self.llm_client = LLMClient(model=self.job.model_used)
+        runtime_config = resolve_model_runtime_config_for_target(db, self.target.id, self.job.model_used)
+        self.llm_client = LLMClient(
+            model=self.job.model_used,
+            provider_kwargs=runtime_config.litellm_kwargs,
+        )
 
     def generate(self) -> List[Dict[str, Any]]:
         """

@@ -3,9 +3,26 @@ Integration tests for judge API endpoints.
 """
 
 import pytest
+from contextlib import contextmanager
+
+from src.common.config import get_settings
+
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
 
-@pytest.mark.integration
+@contextmanager
+def override_settings(**values):
+    settings = get_settings()
+    original = {key: getattr(settings, key) for key in values}
+    try:
+        for key, value in values.items():
+            setattr(settings, key, value)
+        yield settings
+    finally:
+        for key, value in original.items():
+            setattr(settings, key, value)
+
+
 class TestJudgeAPI:
     """Integration tests for judge API."""
 

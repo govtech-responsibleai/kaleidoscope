@@ -11,7 +11,7 @@ class JudgeCreate(BaseModel):
     """Request model for creating a judge."""
     target_id: Optional[int] = Field(None, description="Target to scope this judge to (NULL = global)")
     name: str = Field(..., description="Name of the judge (e.g., 'Baseline Judge', 'GPT-4 Judge')")
-    model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-3.1-flash-lite-preview-global')")
+    model_name: str = Field(..., description="LLM model to use (e.g., 'gemini/gemini-2.5-flash-lite')")
     model_label: Optional[str] = Field(None, description="Display label for the model")
     prompt_template: str = Field(..., description="Jinja2 prompt template for the judge")
     params: Dict[str, Any] = Field(default_factory=dict, description="Additional parameters (temperature, etc.)")

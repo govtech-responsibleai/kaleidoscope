@@ -96,6 +96,16 @@ class User(Base):
     # Relationships
     targets = relationship("Target", back_populates="owner")
     judges = relationship("Judge", back_populates="owner")
+    provider_credentials = relationship(
+        "UserProviderCredential",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    service_credentials = relationship(
+        "UserServiceCredential",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self):
         return f"<User(id={self.id}, username='{self.username}', is_admin={self.is_admin})>"
@@ -154,6 +164,44 @@ class TargetHttpAuthSecret(Base):
 
     def __repr__(self):
         return f"<TargetHttpAuthSecret(target_id={self.target_id})>"
+
+
+class UserProviderCredential(Base):
+    """Encrypted provider credentials owned by one user."""
+
+    __tablename__ = "user_provider_credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider_key = Column(String, nullable=False, index=True)
+    encrypted_credentials = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="provider_credentials")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider_key", name="uix_user_provider_credential"),
+    )
+
+
+class UserServiceCredential(Base):
+    """Encrypted non-provider service credentials owned by one user."""
+
+    __tablename__ = "user_service_credentials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    service_key = Column(String, nullable=False, index=True)
+    encrypted_credentials = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    user = relationship("User", back_populates="service_credentials")
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "service_key", name="uix_user_service_credential"),
+    )
 
 
 ##### QUERY GENERATION #####

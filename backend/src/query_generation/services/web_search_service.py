@@ -12,8 +12,12 @@ from typing import List, Optional
 import httpx
 from sqlalchemy.orm import Session
 
-from src.common.config import get_settings
 from src.common.llm import LLMClient, CostTracker
+from src.common.llm.provider_service import (
+    require_default_generation_model,
+    resolve_model_runtime_config,
+    resolve_serper_api_key,
+)
 from src.common.prompts import render_template
 from src.common.models.web_search import (
     SearchQueryListOutput,
@@ -61,8 +65,12 @@ class WebSearchService:
         if not self.target:
             raise ValueError(f"Target {target_id} not found")
 
-        self.llm_client = LLMClient()
-        self.settings = get_settings()
+        if self.target.user_id is None:
+            raise ValueError(f"Target {target_id} has no owner for provider resolution")
+        default_model = require_default_generation_model(db, int(self.target.user_id))
+        runtime_config = resolve_model_runtime_config(db, int(self.target.user_id), default_model)
+        self.llm_client = LLMClient(model=default_model, provider_kwargs=runtime_config.litellm_kwargs)
+        self.serper_api_key = resolve_serper_api_key(db, int(self.target.user_id))
 
     def generate_search_queries(self) -> List[str]:
         """
@@ -102,7 +110,7 @@ class WebSearchService:
         Returns:
             List of SearchResult objects, deduplicated by URL
         """
-        if not self.settings.serper_api_key:
+        if not self.serper_api_key:
             logger.warning("SERPER_API_KEY not set, skipping web search")
             return []
 
@@ -115,7 +123,7 @@ class WebSearchService:
                     response = client.post(
                         "https://google.serper.dev/search",
                         headers={
-                            "X-API-KEY": self.settings.serper_api_key,
+                            "X-API-KEY": self.serper_api_key,
                             "Content-Type": "application/json",
                         },
                         json={"q": query, "gl": "sg", "num": 5},

@@ -6,13 +6,14 @@ import pytest
 
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
+
 
 def _accuracy_rubric(test_db, target_id: int):
     return TargetRubricRepository.get_by_target(
         test_db, target_id, group="fixed", name="Accuracy"
     )[0]
 
-@pytest.mark.integration
 class TestMetricsAPI:
     """Integration tests for metrics API."""
 

@@ -459,6 +459,7 @@ class TestQAJobProcessor:
         test_db,
         sample_answer,
         sample_qa_job,
+        sample_claims,
     ):
         """Full-set retries should not rescore rubric specs that already persisted a score."""
         from src.scoring.services.qa_job_processor import _score_rubric_spec
@@ -468,13 +469,27 @@ class TestQAJobProcessor:
         MockSessionLocal.return_value = mock_session
 
         test_db.add(
-            AnswerScore(
+            score := AnswerScore(
                 answer_id=sample_answer.id,
                 rubric_id=sample_qa_job.judge.rubric_id,
                 judge_id=sample_qa_job.judge_id,
                 overall_label="Accurate",
                 explanation="Already persisted",
             )
+        )
+        for claim in sample_claims:
+            claim.checked_at = claim.created_at + timedelta(seconds=1)
+        test_db.flush()
+        test_db.add_all(
+            [
+                AnswerClaimScore(
+                    claim_id=claim.id,
+                    answer_score_id=score.id,
+                    label=True,
+                    explanation="Persisted claim score",
+                )
+                for claim in sample_claims
+            ]
         )
         sample_qa_job.answer_id = sample_answer.id
         sample_qa_job.status = JobStatusEnum.running

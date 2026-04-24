@@ -11,6 +11,8 @@ import pytest
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.rubric.services.system_rubrics import ensure_system_rubrics
 
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
+
 
 def _accuracy_override_path(test_db, sample_answer) -> str:
     ensure_system_rubrics(test_db, sample_answer.snapshot.target_id)
@@ -23,7 +25,6 @@ def _accuracy_override_path(test_db, sample_answer) -> str:
     return f"/api/v1/answers/{sample_answer.id}/label-overrides/{accuracy_rubric.id}"
 
 
-@pytest.mark.integration
 class TestAnswerSelectionAPI:
     """Integration tests for answer selection workflows."""
 
@@ -99,7 +100,6 @@ class TestAnswerSelectionAPI:
 
 
 
-@pytest.mark.integration
 class TestAnswerClaimsAPI:
     """Integration tests for answer claims endpoints."""
 
@@ -185,7 +185,6 @@ class TestAnswerClaimsAPI:
             assert claim["score"] is None
 
 
-@pytest.mark.integration
 class TestLabelOverrideAPI:
     """Integration tests for answer label override endpoints."""
 
@@ -282,7 +281,6 @@ class TestLabelOverrideAPI:
         )
 
 
-@pytest.mark.integration
 class TestLabelOverrideReliability:
     """Tests that label overrides affect judge reliability via alignment calculation."""
 
@@ -402,7 +400,6 @@ class TestLabelOverrideReliability:
         assert response.status_code == 400
 
 
-@pytest.mark.integration
 class TestLegacyAnnotationStorage:
     """Regression coverage for the rubric-native annotation bridge behind legacy endpoints."""
 

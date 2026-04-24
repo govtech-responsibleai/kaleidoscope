@@ -234,7 +234,7 @@ class TestHttpConnector:
 
         assert result.metadata["rag_citations"] == [{
             "id": "rag.chunks",
-            "source": "HTTP retrieved context (rag.chunks)",
+            "source": "Retrieved context path: (rag.chunks)",
             "chunk": (
                 '[\n'
                 '  {\n'

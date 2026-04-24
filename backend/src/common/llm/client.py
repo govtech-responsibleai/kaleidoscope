@@ -33,15 +33,17 @@ class LLMClient:
     _semaphores: dict[tuple[str, asyncio.AbstractEventLoop], asyncio.Semaphore] = {}
     _sem_lock = threading.Lock()
 
-    def __init__(self, model: Optional[str] = None):
+    def __init__(self, model: Optional[str] = None, provider_kwargs: Optional[Dict[str, Any]] = None):
         """
         Initialize LLM client.
 
         Args:
             model: Model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-20241022")
                    Defaults to settings.default_llm_model
+            provider_kwargs: Provider-specific kwargs injected into LiteLLM calls
         """
         self.model = model or settings.default_llm_model
+        self.provider_kwargs = provider_kwargs or {}
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         """Get or create a semaphore bound to the current running event loop."""
@@ -155,12 +157,13 @@ class LLMClient:
         messages.append({"role": "user", "content": prompt})
 
         # Check if model forces temperature params (e.g. for reasoning)
-        if [keyword in self.model for keyword in MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE]:
+        if any(keyword in self.model for keyword in MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE):
             temperature = 1.0
 
         try:
             logger.info(f"Calling {self.model} with {len(prompt)} char prompt")
 
+            request_kwargs = {**self.provider_kwargs, **kwargs}
             response = litellm.completion(
                 model=self.model,
                 messages=messages,
@@ -169,7 +172,7 @@ class LLMClient:
                 response_format=response_format,
                 num_retries=settings.llm_num_retries,
                 timeout=600,
-                **kwargs
+                **request_kwargs
             )
 
             # Extract response data
@@ -348,6 +351,7 @@ class LLMClient:
                     f"Acquired semaphore for {self.model} "
                     f"({semaphore._value} slots remaining)"
                 )
+                request_kwargs = {**self.provider_kwargs, **kwargs}
                 response = await litellm.acompletion(
                     model=self.model,
                     messages=messages,
@@ -356,7 +360,7 @@ class LLMClient:
                     response_format=response_format,
                     num_retries=settings.llm_num_retries,
                     timeout=600,
-                    **kwargs
+                    **request_kwargs
                 )
 
             # Extract response data

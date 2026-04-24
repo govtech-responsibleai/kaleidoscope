@@ -6,7 +6,11 @@ to generate a complete, ready-to-use judge evaluation prompt.
 """
 
 import logging
+from sqlalchemy.orm import Session
+
+from src.common.database.repositories import TargetRepository
 from src.common.llm import LLMClient
+from src.common.llm.provider_service import require_default_generation_model, resolve_model_runtime_config
 from src.rubric.services.prompt_files import write_custom_rubric_prompt
 
 logger = logging.getLogger(__name__)
@@ -155,7 +159,14 @@ def _format_rubric_definition(name: str, criteria: str, options: list[dict], bes
     return "\n".join(lines)
 
 
-def generate_judge_prompt(name: str, criteria: str, options: list[dict], best_option: str) -> str:
+def generate_judge_prompt(
+    db: Session,
+    target_id: int,
+    name: str,
+    criteria: str,
+    options: list[dict],
+    best_option: str,
+) -> str:
     """
     Generate a complete judge evaluation prompt from a rubric definition.
 
@@ -174,7 +185,12 @@ def generate_judge_prompt(name: str, criteria: str, options: list[dict], best_op
     rubric_text = _format_rubric_definition(name, criteria, options, best_option)
     prompt = AUGMENTATION_PROMPT.format(rubric=rubric_text)
 
-    llm_client = LLMClient(model=AUGMENTER_MODEL)
+    target = TargetRepository.get_by_id(db, target_id)
+    if not target or target.user_id is None:
+        raise ValueError("Target owner could not be resolved for rubric augmentation.")
+    model_name = require_default_generation_model(db, int(target.user_id))
+    runtime_config = resolve_model_runtime_config(db, int(target.user_id), model_name)
+    llm_client = LLMClient(model=model_name, provider_kwargs=runtime_config.litellm_kwargs)
     response = llm_client.generate(
         prompt=prompt,
         temperature=0.3,

@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
+from src.common.api.routes import providers
 from src.common.config import get_settings
 from src.common.auth import auth_router, get_scoped_db
 from src.common.database.connection import init_db, engine
@@ -82,6 +83,11 @@ app.add_middleware(
     allow_origins=[
         "https://kaleidoscope.app.tc1.airbase.sg",
         "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://0.0.0.0:3000",
+        "http://0.0.0.0:3001",
         "http://127.0.2.2:3000"
     ],
     allow_credentials=True,
@@ -106,6 +112,7 @@ async def database_exception_handler(request: Request, exc: OperationalError):
 
 # Auth router (no auth required - users need to log in)
 app.include_router(auth_router, prefix=f"{settings.api_prefix}/auth", tags=["Auth"])
+app.include_router(providers.router, prefix=settings.api_prefix, tags=["Providers"], dependencies=[Depends(get_scoped_db)])
 
 # Include routers from query generation service (all require auth + user scoping)
 app.include_router(targets.router, prefix=f"{settings.api_prefix}/targets", tags=["Targets"], dependencies=[Depends(get_scoped_db)])

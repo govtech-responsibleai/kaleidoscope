@@ -22,6 +22,7 @@ from src.common.database.repositories.answer_claim_repo import AnswerClaimReposi
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.qa_job_repo import QAJobRepository
 from src.common.llm import LLMClient, CostTracker
+from src.common.llm.provider_service import require_default_generation_model, resolve_model_runtime_config
 from src.common.prompts import render_template
 from src.common.models import CheckworthyResult
 from src.scoring.services.claim_processor_steps import (
@@ -64,8 +65,20 @@ class ClaimProcessor:
         if not self.job:
             raise ValueError(f"QAJob {job_id} not found")
 
+        self.answer = AnswerRepository.get_by_id(db, self.job.answer_id)
+        if not self.answer:
+            raise ValueError(f"Answer {self.job.answer_id} not found")
+        target_owner_id = self.answer.question.target.user_id
+        if target_owner_id is None:
+            raise ValueError("Answer target owner could not be resolved for claim processing.")
+
         # Lazily initialize LLM client so tests can override after instantiation
-        self._llm_model_name = "litellm_proxy/gemini-3.1-flash-lite-preview-global"
+        self._llm_model_name = require_default_generation_model(db, int(target_owner_id))
+        self._provider_kwargs = resolve_model_runtime_config(
+            db,
+            int(target_owner_id),
+            self._llm_model_name,
+        ).litellm_kwargs
         self.llm_client = None
 
         # --- Pipeline steps (add new steps here) ---
@@ -138,9 +151,7 @@ class ClaimProcessor:
             List of created AnswerClaim objects
         """
         # Get the answer
-        answer = AnswerRepository.get_by_id(self.db, answer_id)
-        if not answer:
-            raise ValueError(f"Answer with id {answer_id} not found")
+        answer = self.answer
 
         # Cache system prompt for checkworthy checks
         self._system_prompt = answer.system_prompt or "[No system prompt available]"
@@ -340,7 +351,10 @@ class ClaimProcessor:
     def _get_llm_client(self):
         """Create or return the cached LLM client."""
         if self.llm_client is None:
-            self.llm_client = LLMClient(model=self._llm_model_name)
+            self.llm_client = LLMClient(
+                model=self._llm_model_name,
+                provider_kwargs=self._provider_kwargs,
+            )
         return self.llm_client
 
 
@@ -350,5 +364,14 @@ async def extract_and_check_claims(
     raise_on_error: bool = False,
 ) -> None:
     """Async convenience wrapper used by the QA job pipeline."""
-    processor = ClaimProcessor(db, job_id)
+    try:
+        processor = ClaimProcessor(db, job_id)
+    except Exception as e:
+        logger.error(f"ClaimProcessor init failed for job {job_id}: {e}", exc_info=True)
+        QAJobRepository.update_status(
+            db, job_id, JobStatusEnum.failed, error_message=str(e)
+        )
+        if raise_on_error:
+            raise
+        return
     await processor.process(raise_on_error=raise_on_error)

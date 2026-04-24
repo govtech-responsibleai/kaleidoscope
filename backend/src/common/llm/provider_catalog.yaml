@@ -1,0 +1,129 @@
+providers:
+  - key: gemini
+    display_name: Gemini
+    litellm_prefix: gemini/
+    logo_path: /icons/Google_Gemini_icon_2025.png
+    credential_fields:
+      - key: GEMINI_API_KEY
+        label: API Key
+        env_var: GEMINI_API_KEY
+        required: true
+    default_model: gemini/gemini-3.1-flash-lite-preview
+    common_models:
+      - gemini/gemini-3.1-flash-lite-preview
+      - gemini/gemini-3-flash-preview
+      - gemini/gemini-3.1-pro-preview
+    embedding_models:
+      - gemini/text-embedding-004
+
+  - key: openai
+    display_name: OpenAI
+    litellm_prefix: openai/
+    logo_path: /icons/OpenAI-black-monoblossom.png
+    credential_fields:
+      - key: OPENAI_API_KEY
+        label: API Key
+        env_var: OPENAI_API_KEY
+        required: true
+    default_model: openai/gpt-5.4-nano
+    common_models:
+      - openai/gpt-5.4
+      - openai/gpt-5.4-mini
+    embedding_models:
+      - openai/text-embedding-3-small
+
+  - key: azure
+    display_name: Azure OpenAI
+    litellm_prefix: azure/
+    logo_path: /icons/OpenAI-black-monoblossom.png
+    credential_fields:
+      - key: AZURE_API_KEY
+        label: API Key
+        env_var: AZURE_API_KEY
+        required: true
+      - key: AZURE_API_BASE
+        label: API Base
+        env_var: AZURE_API_BASE
+        required: true
+    default_model: azure/gpt-5.4-nano
+    common_models:
+      - azure/gpt-5.4
+      - azure/gpt-5.4-mini
+    embedding_models: []
+
+  - key: anthropic
+    display_name: Anthropic
+    litellm_prefix: anthropic/
+    logo_path: /icons/Claude_AI_symbol.png
+    credential_fields:
+      - key: ANTHROPIC_API_KEY
+        label: API Key
+        env_var: ANTHROPIC_API_KEY
+        required: true
+    default_model: anthropic/claude-3-7-sonnet-latest
+    common_models:
+      - anthropic/claude-3-5-haiku-latest
+      - anthropic/claude-3-7-sonnet-latest
+      - anthropic/claude-sonnet-4-0
+    embedding_models: []
+
+  - key: bedrock
+    display_name: AWS Bedrock
+    litellm_prefix: bedrock/
+    logo_path: /icons/AWS-Bedrock_logo.png
+    credential_fields:
+      - key: AWS_BEARER_TOKEN_BEDROCK
+        label: Bearer Token
+        env_var: AWS_BEARER_TOKEN_BEDROCK
+        required: true
+    default_model: bedrock/anthropic.claude-3-sonnet-20240229-v1:0
+    common_models:
+      - bedrock/anthropic.claude-3-haiku-20240307-v1:0
+      - bedrock/anthropic.claude-3-sonnet-20240229-v1:0
+      - bedrock/amazon.titan-text-express-v1
+    embedding_models:
+      - bedrock/amazon.titan-embed-text-v2:0
+
+  - key: openrouter
+    display_name: OpenRouter
+    litellm_prefix: openrouter/
+    logo_path: /icons/OpenRouter_logo.png
+    description: Use the free `openrouter/openrouter/free` model to get started. Create an API key at https://openrouter.ai/.
+    credential_fields:
+      - key: OPENROUTER_API_KEY
+        label: API Key
+        env_var: OPENROUTER_API_KEY
+        required: true
+      - key: OPENROUTER_API_BASE
+        label: API Base
+        env_var: OPENROUTER_API_BASE
+        required: false
+    default_model: openrouter/openrouter/free
+    common_models:
+      - openrouter/openrouter/free
+    embedding_models: []
+
+  - key: fireworks
+    display_name: Fireworks
+    litellm_prefix: fireworks/
+    logo_path: /icons/Fireworks-ai-logo.png
+    credential_fields:
+      - key: FIREWORKS_AI_API_KEY
+        label: API Key
+        env_var: FIREWORKS_AI_API_KEY
+        required: true
+    default_model: fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct
+    common_models:
+      - fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct
+      - fireworks/accounts/fireworks/models/deepseek-r1
+      - fireworks/accounts/fireworks/models/qwen3-235b-a22b
+    embedding_models: []
+
+services:
+  - key: serper
+    display_name: Serper
+    credential_fields:
+      - key: SERPER_API_KEY
+        label: API Key
+        env_var: SERPER_API_KEY
+        required: true

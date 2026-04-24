@@ -2,12 +2,17 @@
 Pytest fixtures for testing.
 """
 
+import os
 import pytest
 import shutil
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("JWT_SECRET_KEY", "test-secret-key")
+os.environ.setdefault("ADMIN_API_KEY", "test-admin-key")
 
 from src.common.database.connection import Base
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
@@ -30,6 +35,19 @@ TEST_PASSWORD_HASHES = {
     "password_a": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
     "password_b": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
     "adminpass": "$2b$12$LQv3c1yqBWVHxkd0LHAkCOYz6TtxMQJqhN8/X4.njBGSCRsLXGDOK",
+}
+
+PROVIDER_SETTING_DEFAULTS = {
+    "openai_api_key": None,
+    "azure_api_key": None,
+    "azure_api_base": None,
+    "anthropic_api_key": None,
+    "gemini_api_key": None,
+    "aws_bearer_token_bedrock": None,
+    "openrouter_api_key": None,
+    "openrouter_api_base": None,
+    "fireworks_ai_api_key": None,
+    "serper_api_key": None,
 }
 
 
@@ -56,12 +74,155 @@ def get_accuracy_rubric(db, target_id: int) -> TargetRubric:
     return rubrics[0]
 
 
+@contextmanager
+def override_settings(**values):
+    """Temporarily override cached application settings."""
+    from src.common.config import get_settings
+
+    settings = get_settings()
+    original = {key: getattr(settings, key) for key in values}
+    try:
+        for key, value in values.items():
+            setattr(settings, key, value)
+        yield settings
+    finally:
+        for key, value in original.items():
+            setattr(settings, key, value)
+
+
 @pytest.fixture(autouse=True)
 def cleanup_generated_custom_prompt_files():
     """Keep generated custom rubric prompt files isolated per test."""
     shutil.rmtree(generated_custom_prompts_dir().parent, ignore_errors=True)
     yield
     shutil.rmtree(generated_custom_prompts_dir().parent, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def mock_provider_resolution(request):
+    """Stub out DB-backed provider resolution for unit tests.
+
+    Services instantiated in unit tests call provider helpers through direct imports in
+    their own modules. Patch those call sites so unrelated unit tests stay focused.
+    """
+    if "unit" not in (m.name for m in request.node.iter_markers()):
+        yield
+        return
+
+    from unittest.mock import patch
+    from src.common.llm.provider_service import ProviderRuntimeConfig
+
+    default_runtime = ProviderRuntimeConfig(
+        provider_key="gemini",
+        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        litellm_kwargs={},
+    )
+    default_model = "litellm_proxy/gemini-3.1-flash-lite-preview-global"
+
+    patch_targets = [
+        ("src.query_generation.services.persona_generator.resolve_model_runtime_config_for_target", default_runtime),
+        ("src.query_generation.services.question_generator.resolve_model_runtime_config_for_target", default_runtime),
+        ("src.scoring.services.judge_scoring.resolve_model_runtime_config_for_target", default_runtime),
+        ("src.query_generation.services.web_search_service.require_default_generation_model", default_model),
+        ("src.query_generation.services.web_search_service.resolve_model_runtime_config", default_runtime),
+        ("src.query_generation.services.web_search_service.resolve_serper_api_key", None),
+        ("src.scoring.services.claim_processor.require_default_generation_model", default_model),
+        ("src.scoring.services.claim_processor.resolve_model_runtime_config", default_runtime),
+        ("src.rubric.services.rubric_augmenter.require_default_generation_model", default_model),
+        ("src.rubric.services.rubric_augmenter.resolve_model_runtime_config", default_runtime),
+    ]
+
+    with ExitStack() as stack:
+        for target, value in patch_targets:
+            stack.enter_context(patch(target, return_value=value))
+        yield
+
+
+@pytest.fixture
+def with_provider_bypass():
+    """Bypass provider validation for tests that are not about provider behavior.
+
+    This fixture is explicit on purpose: provider-focused integration tests should not use it.
+    """
+    from unittest.mock import patch
+    from src.common.llm.provider_service import ResolvedProvider
+    from src.common.llm.provider_service import ProviderRuntimeConfig
+    from src.common.models.provider_setup import ProviderModelOption
+    from src.common.llm.provider_catalog import get_provider_entry
+
+    default_runtime = ProviderRuntimeConfig(
+        provider_key="gemini",
+        model_name="gemini/gemini-3.1-flash-lite-preview",
+        litellm_kwargs={},
+    )
+    gemini_provider = get_provider_entry("gemini")
+    default_model_option = ProviderModelOption(
+        value=default_runtime.model_name,
+        label="gemini-3.1-flash-lite-preview",
+        provider_key=gemini_provider.key,
+        provider_name=gemini_provider.display_name,
+        logo_path=gemini_provider.logo_path,
+    )
+    seeded_model_options = [
+        default_model_option,
+        ProviderModelOption(
+            value="gemini/gemini-3.1-pro-preview",
+            label="gemini-3.1-pro-preview",
+            provider_key=gemini_provider.key,
+            provider_name=gemini_provider.display_name,
+            logo_path=gemini_provider.logo_path,
+        ),
+        ProviderModelOption(
+            value="gemini/gemini-2.5-flash",
+            label="gemini-2.5-flash",
+            provider_key=gemini_provider.key,
+            provider_name=gemini_provider.display_name,
+            logo_path=gemini_provider.logo_path,
+        ),
+    ]
+    seeded_models = [option.value for option in seeded_model_options]
+    resolved_provider = ResolvedProvider(
+        catalog=gemini_provider,
+        source="shared",
+        credentials={"GEMINI_API_KEY": "test-gemini-key"},
+        is_valid=True,
+        shared_values={"GEMINI_API_KEY": "test-gemini-key"},
+        personal_values={},
+    )
+
+    patch_targets = [
+        ("src.query_generation.api.routes.targets.require_user_has_valid_provider", None),
+        ("src.query_generation.api.routes.jobs.require_valid_model_for_user", None),
+        ("src.query_generation.api.routes.jobs.require_default_generation_model", default_runtime.model_name),
+        ("src.scoring.api.routes.judges.require_valid_model_for_user", None),
+        ("src.scoring.api.routes.judges.get_valid_model_options", seeded_model_options),
+        ("src.rubric.services.system_rubrics.list_resolved_providers", [resolved_provider]),
+        ("src.rubric.services.system_rubrics.get_valid_model_options", seeded_model_options),
+        ("src.rubric.services.system_rubrics._select_seed_models", seeded_models),
+        ("src.query_generation.services.persona_generator.resolve_model_runtime_config_for_target", default_runtime),
+        ("src.query_generation.services.question_generator.resolve_model_runtime_config_for_target", default_runtime),
+        ("src.scoring.services.judge_scoring.resolve_model_runtime_config_for_target", default_runtime),
+        ("src.rubric.services.rubric_augmenter.require_default_generation_model", default_runtime.model_name),
+        ("src.rubric.services.rubric_augmenter.resolve_model_runtime_config", default_runtime),
+    ]
+
+    with ExitStack() as stack:
+        for target, value in patch_targets:
+            stack.enter_context(patch(target, return_value=value))
+        yield
+
+
+@pytest.fixture
+def provider_settings():
+    """Return a context manager that clears provider settings unless explicitly set."""
+
+    @contextmanager
+    def _provider_settings(**overrides):
+        settings = {**PROVIDER_SETTING_DEFAULTS, **overrides}
+        with override_settings(**settings):
+            yield
+
+    return _provider_settings
 
 
 @pytest.fixture(scope="function")
@@ -121,10 +282,11 @@ def test_client(test_db_factory):
         test_db_factory: Session factory for test database
     """
     from fastapi import FastAPI
+    from src.common.api.routes import providers
     from src.common.config import get_settings
     from src.query_generation.api.routes import targets, personas, questions, jobs, kb_documents, answers
     from src.rubric.api.routes import rubrics
-    from src.scoring.api.routes import snapshots, metrics, annotations, qa_jobs
+    from src.scoring.api.routes import snapshots, metrics, annotations, qa_jobs, judges
     from src.common.database.connection import get_db
 
     settings = get_settings()
@@ -136,6 +298,7 @@ def test_client(test_db_factory):
     )
 
     # Include routers
+    test_app.include_router(providers.router, prefix=settings.api_prefix, tags=["Providers"])
     test_app.include_router(targets.router, prefix=f"{settings.api_prefix}/targets", tags=["Targets"])
     test_app.include_router(rubrics.router, prefix=f"{settings.api_prefix}/targets", tags=["Rubrics"])
     test_app.include_router(personas.router, prefix=f"{settings.api_prefix}/personas", tags=["Personas"])
@@ -150,6 +313,7 @@ def test_client(test_db_factory):
     test_app.include_router(metrics.router, prefix=f"{settings.api_prefix}", tags=["Metrics"])
     test_app.include_router(annotations.router, prefix=f"{settings.api_prefix}", tags=["Annotations"])
     test_app.include_router(qa_jobs.router, prefix=f"{settings.api_prefix}", tags=["QA Jobs"])
+    test_app.include_router(judges.router, prefix=f"{settings.api_prefix}", tags=["Judges"])
 
     # Override database dependency to use test session factory
     def override_get_db():
@@ -170,11 +334,12 @@ def test_client(test_db_factory):
 
 
 @pytest.fixture
-def sample_target(test_db):
+def sample_target(test_db, test_user):
     """Create a sample target for testing.
 
     Args:
         test_db: Database session for test
+        test_user: Owner user (required for provider-scoped service resolution)
     """
     target = Target(
         name="Test RAI Bot",
@@ -184,6 +349,7 @@ def sample_target(test_db):
         api_endpoint="https://api.test.com/chat",
         endpoint_type="http",
         endpoint_config={"response_content_path": "output"},
+        user_id=test_user.id,
     )
     test_db.add(target)
     test_db.commit()
@@ -192,13 +358,14 @@ def sample_target(test_db):
 
 
 @pytest.fixture
-def other_target(test_db):
+def other_target(test_db, test_user):
     """Create a second target for cross-target tests."""
     target = Target(
         name="Other Bot",
         agency="Other Agency",
         purpose="Different purpose",
-        target_users="Different users"
+        target_users="Different users",
+        user_id=test_user.id,
     )
     test_db.add(target)
     test_db.commit()
@@ -749,6 +916,7 @@ def auth_client(test_db_factory, test_user):
     This client has all routes protected by authentication.
     """
     from fastapi import FastAPI, Depends
+    from src.common.api.routes import providers
     from src.common.config import get_settings
     from src.common.database.connection import get_db
     from src.common.auth import auth_router, get_scoped_db
@@ -767,6 +935,12 @@ def auth_client(test_db_factory, test_user):
     test_app.include_router(auth_router, prefix=f"{settings.api_prefix}/auth", tags=["Auth"])
 
     # Protected routes
+    test_app.include_router(
+        providers.router,
+        prefix=f"{settings.api_prefix}",
+        tags=["Providers"],
+        dependencies=[Depends(get_scoped_db)]
+    )
     test_app.include_router(
         targets.router,
         prefix=f"{settings.api_prefix}/targets",
@@ -789,6 +963,18 @@ def auth_client(test_db_factory, test_user):
         snapshots.router,
         prefix=f"{settings.api_prefix}",
         tags=["Snapshots"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        questions.router,
+        prefix=f"{settings.api_prefix}/questions",
+        tags=["Questions"],
+        dependencies=[Depends(get_scoped_db)]
+    )
+    test_app.include_router(
+        jobs.router,
+        prefix=f"{settings.api_prefix}",
+        tags=["Jobs"],
         dependencies=[Depends(get_scoped_db)]
     )
     test_app.include_router(

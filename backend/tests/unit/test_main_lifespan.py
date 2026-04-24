@@ -13,15 +13,14 @@ async def test_lifespan_does_not_run_runtime_rubric_bootstrap(monkeypatch):
     monkeypatch.setattr(main_module, "init_db", lambda: calls.append("init_db"))
     monkeypatch.setattr(
         main_module,
-        "run_manual_migrations",
-        lambda engine: calls.append("run_manual_migrations"),
+        "setup_langfuse_instrumentation",
+        lambda: calls.append("setup_langfuse_instrumentation"),
     )
     monkeypatch.setattr(
-        main_module,
-        "setup_phoenix_instrumentation",
-        lambda project_name: None,
+        main_module.engine,
+        "dispose",
+        lambda: calls.append("dispose"),
     )
-    monkeypatch.setattr(main_module.engine, "dispose", lambda: calls.append("dispose"))
     monkeypatch.setattr(extensions_module, "load_extensions", lambda: calls.append("load_extensions"))
 
     async with AsyncExitStack() as stack:
@@ -29,7 +28,7 @@ async def test_lifespan_does_not_run_runtime_rubric_bootstrap(monkeypatch):
 
     assert calls == [
         "init_db",
-        "run_manual_migrations",
         "load_extensions",
+        "setup_langfuse_instrumentation",
         "dispose",
     ]

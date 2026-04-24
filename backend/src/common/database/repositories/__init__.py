@@ -19,6 +19,8 @@ from src.common.database.repositories.answer_label_override_repo import AnswerLa
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.repositories.web_document_repo import WebDocumentRepository
 from src.common.database.repositories.target_http_auth_secret_repo import TargetHttpAuthSecretRepository
+from src.common.database.repositories.user_provider_credential_repo import UserProviderCredentialRepository
+from src.common.database.repositories.user_service_credential_repo import UserServiceCredentialRepository
 
 __all__ = [
     "TargetRepository",
@@ -38,4 +40,6 @@ __all__ = [
     "TargetRubricRepository",
     "WebDocumentRepository",
     "TargetHttpAuthSecretRepository",
+    "UserProviderCredentialRepository",
+    "UserServiceCredentialRepository",
 ]

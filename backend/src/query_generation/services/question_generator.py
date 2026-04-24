@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from litellm import embedding
 
 from src.common.llm import LLMClient, CostTracker
+from src.common.llm.provider_service import resolve_model_runtime_config_for_target
 from src.common.prompts import render_template
 from src.common.config import get_settings
 from src.common.models import (
@@ -71,8 +72,11 @@ class QuestionGenerator:
         if not self.target:
             raise ValueError(f"Target {self.job.target_id} not found")
 
-        # Initialize LLM client
-        self.llm_client = LLMClient(model=self.job.model_used)
+        runtime_config = resolve_model_runtime_config_for_target(db, self.target.id, self.job.model_used)
+        self.llm_client = LLMClient(
+            model=self.job.model_used,
+            provider_kwargs=runtime_config.litellm_kwargs,
+        )
 
     def generate(self) -> List[Dict[str, Any]]:
         """
@@ -416,7 +420,11 @@ def generate_questions_for_job(
 
 # Question Similarity Functions
 
-def get_question_embedding(text: str, model: str = "gemini/gemini-embedding-001") -> List[float]:
+def get_question_embedding(
+    text: str,
+    model: str = "gemini/gemini-embedding-001",
+    provider_kwargs: Optional[Dict[str, Any]] = None,
+) -> List[float]:
     """
     Get embedding vector for a question text using Gemini's embedding model.
 
@@ -430,7 +438,8 @@ def get_question_embedding(text: str, model: str = "gemini/gemini-embedding-001"
     try:
         response = embedding(
             model=model,
-            input=[text]
+            input=[text],
+            **(provider_kwargs or {}),
         )
         return response.data[0]["embedding"]
     except Exception as e:
@@ -466,7 +475,8 @@ def find_similar_questions_batch(
     query_texts: List[Tuple[int, str]],
     candidate_texts: List[Tuple[int, str]],
     threshold: float = 0.7,
-    model: str = "gemini/gemini-embedding-001"
+    model: str = "gemini/gemini-embedding-001",
+    provider_kwargs: Optional[Dict[str, Any]] = None,
 ) -> Dict[int, List[Tuple[int, float]]]:
     """
     Find similar questions for multiple queries using matrix multiplication.
@@ -501,7 +511,8 @@ def find_similar_questions_batch(
         all_texts = query_text_list + candidate_text_list
         response = embedding(
             model=model,
-            input=all_texts
+            input=all_texts,
+            **(provider_kwargs or {}),
         )
 
         # Extract embeddings and convert to numpy arrays
@@ -561,7 +572,8 @@ def find_similar_questions(
     query_text: str,
     candidate_texts: List[Tuple[int, str]],
     threshold: float = 0.7,
-    model: str = "gemini/gemini-embedding-001"
+    model: str = "gemini/gemini-embedding-001",
+    provider_kwargs: Optional[Dict[str, Any]] = None,
 ) -> List[Tuple[int, float]]:
     """
     Find similar questions from a list of candidates using cosine similarity.
@@ -580,5 +592,11 @@ def find_similar_questions(
     """
     # Use a dummy ID for the single query
     query_texts = [(0, query_text)]
-    results = find_similar_questions_batch(query_texts, candidate_texts, threshold, model)
+    results = find_similar_questions_batch(
+        query_texts,
+        candidate_texts,
+        threshold,
+        model,
+        provider_kwargs=provider_kwargs,
+    )
     return results[0]

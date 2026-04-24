@@ -2,43 +2,29 @@
 
 from __future__ import annotations
 
-import base64
 import copy
-import hashlib
 from typing import Any, Dict, Optional
 
-from cryptography.fernet import Fernet, InvalidToken
 from sqlalchemy.orm import Session
 
-from src.common.config import get_settings
 from src.common.database.repositories import TargetHttpAuthSecretRepository
+from src.common.secrets import decrypt_secret, encrypt_secret, mask_secret
 
 HTTP_AUTH_PRESETS: dict[str, dict[str, str]] = {
     "bearer": {"header_name": "Authorization", "prefix": "Bearer "},
     "x-api-key": {"header_name": "x-api-key", "prefix": ""},
     "api-key": {"header_name": "api-key", "prefix": ""},
 }
-
-
-def _fernet() -> Fernet:
-    digest = hashlib.sha256(get_settings().jwt_secret_key.encode("utf-8")).digest()
-    return Fernet(base64.urlsafe_b64encode(digest))
-
-
 def encrypt_http_auth_secret(secret: str) -> str:
-    return _fernet().encrypt(secret.encode("utf-8")).decode("utf-8")
+    return encrypt_secret(secret)
 
 
 def decrypt_http_auth_secret(token: str) -> str:
-    try:
-        return _fernet().decrypt(token.encode("utf-8")).decode("utf-8")
-    except InvalidToken as exc:  # pragma: no cover - corruption/rotation edge case
-        raise ValueError("Managed auth secret could not be decrypted.") from exc
+    return decrypt_secret(token)
 
 
 def mask_http_auth_secret(secret: str) -> str:
-    tail = secret[-4:] if len(secret) >= 4 else secret
-    return f"{'•' * max(4, len(secret) - len(tail))}{tail}"
+    return mask_secret(secret)
 
 
 def normalize_http_auth_preset(preset: Any) -> str:

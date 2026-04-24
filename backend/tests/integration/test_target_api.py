@@ -9,8 +9,8 @@ from src.common.connectors.http_auth import decrypt_http_auth_secret
 from src.common.database.repositories import TargetHttpAuthSecretRepository, TargetRepository
 from src.rubric.services.fixed_rubrics import get_fixed_template
 
+pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
-@pytest.mark.integration
 class TestTargetAPI:
     """Integration tests for target API."""
 

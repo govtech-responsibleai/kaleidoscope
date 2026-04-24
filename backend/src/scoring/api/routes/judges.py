@@ -8,13 +8,13 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import JudgeRepository
+from src.common.llm.provider_service import get_valid_model_options, require_valid_model_for_user
 from src.common.models import (
     JudgeCreate,
     JudgeUpdate,
     JudgeResponse
 )
 from src.common.auth import get_current_user_id
-from src.rubric.services.system_rubrics import AVAILABLE_MODELS
 
 router = APIRouter()
 
@@ -37,6 +37,10 @@ def create_judge(
         Created judge
     """
     judge_data = judge.model_dump()
+    try:
+        require_valid_model_for_user(db, user_id, judge_data["model_name"])
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if judge_data.get("rubric_id") is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -68,11 +72,14 @@ def list_judges(
 
 
 @router.get("/judges/available-models")
-def list_available_models():
+def list_available_models(
+    user_id: int = Depends(get_current_user_id),
+    db: Session = Depends(get_db),
+):
     """
-    Return the static list of available judge models.
+    Return the current user's valid judge models.
     """
-    return AVAILABLE_MODELS
+    return get_valid_model_options(db, user_id)
 
 
 @router.get("/judges/by-rubric/{rubric_id}", response_model=List[JudgeResponse])
@@ -165,6 +172,11 @@ def update_judge(
         )
 
     update_data = judge_update.model_dump(exclude_unset=True)
+    if "model_name" in update_data and update_data["model_name"] is not None:
+        try:
+            require_valid_model_for_user(db, int(judge.user_id), update_data["model_name"])
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     updated_judge = JudgeRepository.update(db, judge_id, update_data)
     return updated_judge
 

@@ -15,6 +15,7 @@ from src.common.database.repositories import (
     PersonaRepository,
     QuestionRepository
 )
+from src.common.llm.provider_service import require_default_generation_model, require_valid_model_for_user
 from src.common.models import (
     JobCreate,
     JobResponse,
@@ -26,6 +27,18 @@ from src.query_generation.services import generate_personas_for_job, generate_qu
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _resolve_job_model(db: Session, target, model_used: Optional[str]) -> str:
+    settings = get_settings()
+    resolved = model_used or settings.default_llm_model
+    if target.user_id is not None:
+        try:
+            resolved = model_used or require_default_generation_model(db, int(target.user_id))
+            require_valid_model_for_user(db, int(target.user_id), resolved)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return resolved
 
 
 def run_persona_generation_background(
@@ -127,11 +140,12 @@ def create_persona_generation_job(
 
     # Create job
     settings = get_settings()
+    resolved_model = _resolve_job_model(db, target, job_request.model_used)
     job_data = {
         "target_id": job_request.target_id,
         "type": JobTypeEnum.persona_generation,
         "count_requested": job_request.count_requested or settings.default_persona_count,
-        "model_used": job_request.model_used or settings.default_llm_model,
+        "model_used": resolved_model,
         "status": "running"
     }
     job = JobRepository.create(db, job_data)
@@ -189,6 +203,7 @@ def create_question_generation_job_for_target(
 
     settings = get_settings()
     resolved_count_requested = job_request.count_requested or settings.default_question_count
+    resolved_model = _resolve_job_model(db, target, job_request.model_used)
 
     selected_persona_ids: Optional[List[int]] = None
 
@@ -233,7 +248,7 @@ def create_question_generation_job_for_target(
         "type": JobTypeEnum.question_generation,
         "persona_id": None,  # Multiple personas
         "count_requested": resolved_count_requested,
-        "model_used": job_request.model_used or settings.default_llm_model,
+        "model_used": resolved_model,
         "status": "running"
     }
     job = JobRepository.create(db, job_data)
