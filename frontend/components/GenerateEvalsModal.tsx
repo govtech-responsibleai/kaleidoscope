@@ -27,22 +27,27 @@ import {
   IconTypography,
   IconUsersGroup,
   IconX,
+  IconCheck,
 } from "@tabler/icons-react";
 import { getApiErrorMessage, jobApi, personaApi, providerApi, questionApi } from "@/lib/api";
 import { PersonaResponse, InputStyle, ProviderModelOption } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
 import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
-import PersonaSelect from "@/components/questions/PersonaSelect";
-import PersonaReview from "@/components/questions/PersonaReview";
-import PersonaManualAdd from "@/components/questions/PersonaManualAdd";
+import PersonaGenerationPanel from "@/components/questions/PersonaGenerationPanel";
 import { actionIconProps } from "@/lib/iconStyles";
+
+const GENERATE_FLOW_STEPS = [
+  { number: 1, eyebrow: "Step 1", title: "Select Personas" },
+  { number: 2, eyebrow: "Step 2", title: "Configure Questions" },
+];
 
 type ModalStep =
   | "choose_mode"
   | "upload_file"
   | "upload_manual"
   | "generate_personas"
+  | "configure_questions"
   | "select_personas"
   | "generating";
 
@@ -78,7 +83,6 @@ export default function GenerateEvalsModal({
 
   // Rejection tracking
   const [rejectedPersonaIds, setRejectedPersonaIds] = useState<Set<number>>(new Set());
-  const [showPersonaManualAdd, setShowPersonaManualAdd] = useState(false);
 
   // Existing personas (for select_personas flow)
   const [existingPersonas, setExistingPersonas] = useState<PersonaResponse[]>([]);
@@ -89,6 +93,7 @@ export default function GenerateEvalsModal({
   const [inputStyle, setInputStyle] = useState<InputStyle>(InputStyle.BRIEF);
   const [availableModels, setAvailableModels] = useState<ProviderModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
+  const [personaModel, setPersonaModel] = useState("");
   const [generatingQuestions, setGeneratingQuestions] = useState(false);
 
   // Upload state
@@ -109,7 +114,9 @@ export default function GenerateEvalsModal({
           return;
         }
         setAvailableModels(response.data.valid_models);
-        setSelectedModel((prev) => prev || response.data.valid_models[0]?.value || "");
+        const firstModel = response.data.valid_models[0]?.value || "";
+        setSelectedModel((prev) => prev || firstModel);
+        setPersonaModel((prev) => prev || firstModel);
       })
       .catch((err) => {
         if (isMounted) {
@@ -254,13 +261,13 @@ export default function GenerateEvalsModal({
       personaGen.reset();
       personaEdit.reset();
       setRejectedPersonaIds(new Set());
-      setShowPersonaManualAdd(false);
       setExistingPersonas([]);
       setSelectedExistingIds([]);
       setNumQuestions(30);
       setInputStyle(InputStyle.BRIEF);
       setAvailableModels([]);
       setSelectedModel("");
+      setPersonaModel("");
       setGeneratingQuestions(false);
       setUploadFile(null);
       setUploading(false);
@@ -268,7 +275,9 @@ export default function GenerateEvalsModal({
     }, 200);
   };
 
-  const combinedError = error || personaGen.error;
+  const combinedError = error;
+  const generateFlowStepIndex =
+    step === "generate_personas" ? 0 : step === "configure_questions" ? 1 : -1;
   const newSelectedCount = personaGen.personas.length - rejectedPersonaIds.size;
   const selectedPersonaCount = step === "select_personas" ? selectedExistingIds.length : newSelectedCount;
   const hasInsufficientQuestions = selectedPersonaCount > 0 && numQuestions < selectedPersonaCount;
@@ -278,21 +287,68 @@ export default function GenerateEvalsModal({
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>
+      <DialogTitle sx={{ pb: generateFlowStepIndex >= 0 ? 0 : undefined }}>
         <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Typography variant="h6">
-            {step === "choose_mode" && "Add Questions"}
-            {step === "upload_file" && "Upload Questions File"}
-            {step === "upload_manual" && "Type Questions"}
-            {step === "generate_personas" && "Generate New Personas"}
-            {step === "select_personas" && "Use Existing Personas"}
-            {step === "generating" && "Generating Questions..."}
-          </Typography>
+          {generateFlowStepIndex >= 0 ? (
+            <Box sx={{ visibility: "hidden", flex: 1 }} />
+          ) : (
+            <Typography variant="h6">
+              {step === "choose_mode" && "Add Questions"}
+              {step === "upload_file" && "Upload Questions File"}
+              {step === "upload_manual" && "Type Questions"}
+              {step === "select_personas" && "Use Existing Personas"}
+              {step === "generating" && "Generating Questions..."}
+            </Typography>
+          )}
           <IconButton onClick={handleClose} size="small">
             <IconX {...actionIconProps} />
           </IconButton>
         </Box>
       </DialogTitle>
+
+      {generateFlowStepIndex >= 0 && (
+        <Box sx={{ display: "flex", justifyContent: "center", pt: 2, pb: 1.5, }}>
+          <Box sx={{ display: "flex", alignItems: "flex-start", position: "relative", width: 340 }}>
+            {/* Connector line aligned to circle centers */}
+            <Box sx={{
+              position: "absolute",
+              top: "calc(0.65rem + 4px + 14px)",
+              left: "25%",
+              right: "25%",
+              height: "2px",
+              bgcolor: generateFlowStepIndex > 0 ? "primary.main" : "grey.300",
+              transition: "background-color 300ms ease",
+            }} />
+            {GENERATE_FLOW_STEPS.map((s, idx) => {
+              const isActive = generateFlowStepIndex === idx;
+              const isComplete = generateFlowStepIndex > idx;
+              return (
+                <Box key={s.number} sx={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 0.5, position: "relative", zIndex: 1 }}>
+                  <Typography variant="caption" sx={{ textTransform: "uppercase", letterSpacing: 0.6, color: isActive ? "primary.main" : isComplete ? "primary.light" : "text.disabled", fontWeight: 600, fontSize: "0.65rem" }}>
+                    {s.eyebrow}
+                  </Typography>
+                  <Box sx={{
+                    width: 28, height: 28, borderRadius: "50%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    bgcolor: isActive || isComplete ? "primary.main" : "background.paper",
+                    color: isActive || isComplete ? "primary.contrastText" : "text.disabled",
+                    border: "2px solid",
+                    borderColor: isActive || isComplete ? "primary.main" : "grey.300",
+                    fontSize: "0.75rem", fontWeight: 700,
+                    boxShadow: isActive ? `0 0 0 3px ${alpha("#1d2766", 0.14)}` : "none",
+                    transition: "all 300ms ease",
+                  }}>
+                    {isComplete ? <IconCheck size={14} stroke={2.5} /> : s.number}
+                  </Box>
+                  <Typography variant="caption" sx={{ fontWeight: isActive ? 700 : 500, color: isActive ? "text.primary" : isComplete ? "primary.light" : "text.secondary", whiteSpace: "nowrap", transition: "color 300ms ease" }}>
+                    {s.title}
+                  </Typography>
+                </Box>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
 
       <DialogContent>
         {combinedError && (
@@ -304,6 +360,19 @@ export default function GenerateEvalsModal({
           <Alert severity="warning" sx={{ mb: 2 }}>
             {countValidationMessage}
           </Alert>
+        )}
+
+        {generateFlowStepIndex >= 0 && (
+          <Box textAlign="center" sx={{ mb: 2, mt: 1 }}>
+            <Typography variant="h6" fontWeight={700}>
+              {step === "generate_personas" ? "Select Personas" : "Configure Questions"}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+              {step === "generate_personas"
+                ? "Choose how you'd like to add personas for this target."
+                : `Configure how questions will be generated from the ${newSelectedCount} selected persona${newSelectedCount !== 1 ? "s" : ""}.`}
+            </Typography>
+          </Box>
         )}
 
         {/* Step: Choose mode */}
@@ -332,7 +401,7 @@ export default function GenerateEvalsModal({
                   pointerEvents: selectedMode === "upload" ? "none" : "auto",
                   "&:hover": {
                     transform: selectedMode === "upload" ? "none" : "translateY(-4px)",
-                    boxShadow: selectedMode === "upload" ? 0 : 4,
+                    boxShadow: selectedMode === "upload" ? 0 : 2,
                   },
                 }}
                 onClick={() => setSelectedMode("generate")}
@@ -379,7 +448,7 @@ export default function GenerateEvalsModal({
                   pointerEvents: selectedMode === "generate" ? "none" : "auto",
                   "&:hover": {
                     transform: selectedMode === "generate" ? "none" : "translateY(-4px)",
-                    boxShadow: selectedMode === "generate" ? 0 : 4,
+                    boxShadow: selectedMode === "generate" ? 0 : 2,
                   },
                 }}
                 onClick={() => setSelectedMode("upload")}
@@ -498,162 +567,86 @@ export default function GenerateEvalsModal({
 
         {/* Step: Generate from Personas */}
         {step === "generate_personas" && (
-          <>
-            {/* Three-card persona selection */}
-            {personaGen.personas.length === 0 && !showPersonaManualAdd && !personaGen.loading && (
-              <Box mb={3}>
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-                  Add New Personas (optional)
-                </Typography>
-                <PersonaSelect
-                  onGenerateAI={() => personaGen.generateWithAI(undefined, selectedModel || undefined)}
-                  onSampleRandom={() => personaGen.sampleNemotron()}
-                  onAddManual={() => setShowPersonaManualAdd(true)}
-                />
-              </Box>
-            )}
+          <PersonaGenerationPanel
+            availableModels={availableModels}
+            selectedModel={personaModel}
+            onModelChange={setPersonaModel}
+            personaGen={personaGen}
+            personaEdit={personaEdit}
+            rejectedIds={rejectedPersonaIds}
+            onToggleReject={handleToggleReject}
+            onSetRejectedIds={setRejectedPersonaIds}
+          />
+        )}
 
-            {/* Loading state */}
-            {personaGen.loading && personaGen.personas.length === 0 && !showPersonaManualAdd && (
-              <Box display="flex" flexDirection="column" alignItems="center" py={4} gap={2}>
-                <CircularProgress />
-                <Typography variant="body2" color="text.secondary">
-                  {personaGen.source === "ai" ? "Generating personas with AI..." : "Sampling personas..."}
-                </Typography>
-              </Box>
-            )}
-
-            {/* Manual persona form */}
-            {showPersonaManualAdd && personaGen.personas.length === 0 && (
-              <Box mb={3}>
-                <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 1 }}>
-                  Add Persona Manually
-                </Typography>
-                <PersonaManualAdd
-                  onSubmit={async (data) => {
-                    const result = await personaGen.addManualPersona(data);
-                    if (result) setShowPersonaManualAdd(false);
-                  }}
-                  onBack={() => setShowPersonaManualAdd(false)}
-                  loading={personaGen.loading}
-                />
-              </Box>
-            )}
-
-            {/* Persona review grid */}
-            {personaGen.personas.length > 0 && (
-              <Box mb={3}>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                  <Typography variant="subtitle2" fontWeight={600}>
-                    New Personas
-                  </Typography>
-                  <Button
-                    size="small"
-                    onClick={() =>
-                      setRejectedPersonaIds(
-                        rejectedPersonaIds.size === 0
-                          ? new Set(personaGen.personas.map((p) => p.id))
-                          : new Set()
-                      )
-                    }
-                    sx={{ textTransform: "none", fontSize: "0.75rem", whiteSpace: "nowrap" }}
-                  >
-                    {rejectedPersonaIds.size === 0 ? "Deselect All" : "Select All"}
-                  </Button>
-                </Box>
-                <Box display="flex" gap={1} mb={2}>
-                  <Button
-                    startIcon={personaGen.loading && personaGen.source === "ai" ? <CircularProgress size={16} /> : <IconSparkles {...actionIconProps} />}
-                    onClick={() => personaGen.generateWithAI(undefined, selectedModel || undefined)}
-                    disabled={personaGen.loading}
-                    size="small"
-                    variant="outlined"
-                  >
-                    {personaGen.loading && personaGen.source === "ai" ? "Generating..." : "More (AI)"}
-                  </Button>
-                  <Button
-                    startIcon={personaGen.loading && personaGen.source === "general" ? <CircularProgress size={16} /> : <IconUsersGroup {...actionIconProps} />}
-                    onClick={() => personaGen.sampleNemotron()}
-                    disabled={personaGen.loading}
-                    size="small"
-                    variant="outlined"
-                  >
-                    {personaGen.loading && personaGen.source === "general" ? "Sampling..." : "More (Random)"}
-                  </Button>
-                </Box>
-                <PersonaReview
-                  personas={personaGen.personas}
-                  rejectedIds={rejectedPersonaIds}
-                  onToggleReject={handleToggleReject}
-                  editingPersonaId={personaEdit.editingPersonaId}
-                  editedTitle={personaEdit.editedTitle}
-                  editedInfo={personaEdit.editedInfo}
-                  editedStyle={personaEdit.editedStyle}
-                  editedUseCase={personaEdit.editedUseCase}
-                  savingPersonaId={personaEdit.savingPersonaId}
-                  onSetEditedTitle={personaEdit.setEditedTitle}
-                  onSetEditedInfo={personaEdit.setEditedInfo}
-                  onSetEditedStyle={personaEdit.setEditedStyle}
-                  onSetEditedUseCase={personaEdit.setEditedUseCase}
-                  onStartEdit={personaEdit.startEdit}
-                  onCancelEdit={personaEdit.cancelEdit}
-                  onSaveEdit={(id) => personaEdit.saveEdit(id, personaGen.personas)}
-                  disabled={personaGen.loading}
-                />
-              </Box>
-            )}
-
-            <Box sx={{ borderTop: 1, borderColor: "divider", pt: 3, mt: 1 }}>
-              <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>
-                Generation Settings
-              </Typography>
-              <Box display="flex" gap={2} alignItems="center">
-                <TextField
-                  label="Number of questions"
-                  type="number"
-                  value={numQuestions}
-                  onChange={(e) => {
-                    const val = parseInt(e.target.value);
-                    if (!isNaN(val) && val > 0 && val <= 200) setNumQuestions(val);
-                  }}
-                  size="small"
-                  sx={{ width: 180 }}
-                  slotProps={{ htmlInput: { min: 1, max: 200 } }}
-                />
-                <TextField
-                  select
-                  label="Generation Model"
-                  size="small"
-                  sx={{ minWidth: 280 }}
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  helperText={availableModels.length === 0 ? "No valid providers configured yet." : undefined}
-                >
-                  {availableModels.length === 0 ? (
-                    <MenuItem value="" disabled>No valid models available</MenuItem>
-                  ) : (
-                    availableModels.map((model) => (
-                      <MenuItem key={model.value} value={model.value}>
-                        {model.provider_name}: {model.label}
-                      </MenuItem>
-                    ))
-                  )}
-                </TextField>
-                <TextField
-                  select
-                  label="Input Style"
-                  size="small"
-                  sx={{ width: 160 }}
-                  value={inputStyle}
-                  onChange={(e) => setInputStyle(e.target.value as InputStyle)}
-                >
-                  <MenuItem value={InputStyle.BRIEF}>Brief</MenuItem>
-                  <MenuItem value={InputStyle.REGULAR}>Regular</MenuItem>
-                  <MenuItem value={InputStyle.DETAILED}>Detailed</MenuItem>
-                </TextField>
-              </Box>
+        {/* Step: Configure Questions */}
+        {step === "configure_questions" && (
+          <Box
+            display="flex"
+            flexDirection="column"
+            alignItems="center"
+            justifyContent="center"
+            py={2}
+            minHeight={160}
+          >
+            <Box
+              display="flex"
+              gap={2}
+              alignItems="flex-start"
+              sx={{
+                width: "100%",
+                p: 2.5,
+                borderRadius: 2.5,
+                border: "1px solid",
+                borderColor: "divider",
+                bgcolor: "grey.50",
+              }}
+            >
+              <TextField
+                label="Number of questions"
+                type="number"
+                value={numQuestions}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value);
+                  if (!isNaN(val) && val > 0 && val <= 200) setNumQuestions(val);
+                }}
+                size="small"
+                sx={{ width: 180 }}
+                slotProps={{ htmlInput: { min: 1, max: 200 } }}
+              />
+              <TextField
+                select
+                label="Generation Model"
+                size="small"
+                sx={{ flex: 1, minWidth: 220 }}
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                helperText={availableModels.length === 0 ? "No valid providers configured yet." : undefined}
+              >
+                {availableModels.length === 0 ? (
+                  <MenuItem value="" disabled>No valid models available</MenuItem>
+                ) : (
+                  availableModels.map((model) => (
+                    <MenuItem key={model.value} value={model.value}>
+                      {model.provider_name}: {model.label}
+                    </MenuItem>
+                  ))
+                )}
+              </TextField>
+              <TextField
+                select
+                label="Input Style"
+                size="small"
+                sx={{ width: 160 }}
+                value={inputStyle}
+                onChange={(e) => setInputStyle(e.target.value as InputStyle)}
+              >
+                <MenuItem value={InputStyle.BRIEF}>Brief</MenuItem>
+                <MenuItem value={InputStyle.REGULAR}>Regular</MenuItem>
+                <MenuItem value={InputStyle.DETAILED}>Detailed</MenuItem>
+              </TextField>
             </Box>
-          </>
+          </Box>
         )}
 
         {/* Step: Use Existing Personas */}
@@ -797,13 +790,29 @@ export default function GenerateEvalsModal({
       {/* Actions for generate_personas */}
       {step === "generate_personas" && (
         <DialogActions>
-          <Button onClick={() => setStep("choose_mode")} disabled={personaGen.loading || generatingQuestions}>
+          <Button onClick={() => setStep("choose_mode")} disabled={personaGen.loading}>
+            Back
+          </Button>
+          <Button
+            onClick={() => setStep("configure_questions")}
+            variant="contained"
+            disabled={personaGen.loading || newSelectedCount === 0}
+          >
+            Next: Configure Questions
+          </Button>
+        </DialogActions>
+      )}
+
+      {/* Actions for configure_questions */}
+      {step === "configure_questions" && (
+        <DialogActions>
+          <Button onClick={() => setStep("generate_personas")} disabled={generatingQuestions}>
             Back
           </Button>
           <Button
             onClick={handleGenerateQuestions}
             variant="contained"
-            disabled={personaGen.loading || generatingQuestions || newSelectedCount === 0 || hasInsufficientQuestions || availableModels.length === 0}
+            disabled={generatingQuestions || newSelectedCount === 0 || hasInsufficientQuestions || availableModels.length === 0}
             startIcon={generatingQuestions ? <CircularProgress size={20} /> : undefined}
           >
             {generatingQuestions

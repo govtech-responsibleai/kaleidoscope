@@ -13,14 +13,14 @@ import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaGenerationPanel from "@/components/questions/PersonaGenerationPanel";
 import { actionIconProps } from "@/lib/iconStyles";
 
-interface AddPersonasDialogProps {
+interface AddPersonasModalProps {
   open: boolean;
   onClose: () => void;
   targetId: number;
   onPersonasAdded: () => void;
 }
 
-export default function AddPersonasDialog({ open, onClose, targetId, onPersonasAdded }: AddPersonasDialogProps) {
+export default function AddPersonasModal({ open, onClose, targetId, onPersonasAdded }: AddPersonasModalProps) {
   const [rejectedIds, setRejectedIds] = useState<Set<number>>(new Set());
   const [availableModels, setAvailableModels] = useState<ProviderModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
@@ -77,16 +77,18 @@ export default function AddPersonasDialog({ open, onClose, targetId, onPersonasA
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
-      <DialogTitle>
-        <Box display="flex" justifyContent="space-between" alignItems="center">
-          <Typography variant="h6">Add Personas</Typography>
+      <DialogTitle sx={{ pb: 0 }}>
+        <Box display="flex" justifyContent="flex-end">
           <IconButton onClick={handleClose} size="small"><IconX {...actionIconProps} /></IconButton>
         </Box>
-        <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-          Choose how you&apos;d like to add personas for this target.
-        </Typography>
       </DialogTitle>
       <DialogContent>
+        <Box textAlign="center" sx={{ mb: 2, mt: 1 }}>
+          <Typography variant="h6" fontWeight={700}>Add Personas</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+            Choose how you&apos;d like to add personas for this target.
+          </Typography>
+        </Box>
         <PersonaGenerationPanel
           availableModels={availableModels}
           selectedModel={selectedModel}
@@ -100,7 +102,6 @@ export default function AddPersonasDialog({ open, onClose, targetId, onPersonasA
             return n;
           })}
           onSetRejectedIds={setRejectedIds}
-          onManualPersonaAdded={() => { onPersonasAdded(); handleClose(); }}
         />
       </DialogContent>
       {personaGen.personas.length > 0 && (

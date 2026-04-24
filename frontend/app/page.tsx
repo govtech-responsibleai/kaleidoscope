@@ -182,7 +182,7 @@ export default function Home() {
                   transition: "transform 0.2s, box-shadow 0.2s",
                   "&:hover": {
                     transform: "translateY(-2px)",
-                    boxShadow: 3,
+                    boxShadow: 2,
                   },
                 }}
                 onClick={() => handleTargetClick(target.id)}
