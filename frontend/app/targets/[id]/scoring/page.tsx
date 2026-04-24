@@ -377,6 +377,14 @@ export default function ScoringPage() {
     fetchScoringContracts,
   ]);
 
+  const refreshJudgeMutationState = useCallback(async (rubricId: number | null | undefined) => {
+    if (!selectedSnapshotId || rubricId == null) {
+      return;
+    }
+    const pendingRequestId = ++pendingCountsRequestRef.current;
+    await fetchScoringPendingCountsForRubric(selectedSnapshotId, rubricId, pendingRequestId);
+  }, [selectedSnapshotId, fetchScoringPendingCountsForRubric]);
+
   const openDialog = (
     mode: "create" | "edit" | "duplicate",
     config: DialogConfig,
@@ -582,7 +590,10 @@ export default function ScoringPage() {
           setDialogJudge(null);
         }}
         onSuccess={async () => {
-          await fetchJudgesForRubrics(rubrics);
+          await Promise.all([
+            fetchJudgesForRubrics(rubrics),
+            refreshJudgeMutationState(dialogConfig.rubricId),
+          ]);
           setDialogOpen(false);
           setDialogJudge(null);
         }}
@@ -593,8 +604,12 @@ export default function ScoringPage() {
         onClose={() => setJudgeToDelete(null)}
         onConfirm={async () => {
           if (!judgeToDelete) return;
+          const rubricId = judgeToDelete.rubric_id;
           await judgeApi.delete(judgeToDelete.id);
-          await fetchJudgesForRubrics(rubrics);
+          await Promise.all([
+            fetchJudgesForRubrics(rubrics),
+            refreshJudgeMutationState(rubricId),
+          ]);
           setJudgeToDelete(null);
         }}
         title="Delete Judge"

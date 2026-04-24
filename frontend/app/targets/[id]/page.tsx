@@ -211,7 +211,6 @@ export default function TargetOverview() {
         <Box
           sx={{
             flex: { md: "0 0 55%" },
-            pl: 2,
             pb: 6,
           }}
         >

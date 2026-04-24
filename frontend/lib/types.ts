@@ -122,6 +122,61 @@ export interface TargetStats {
   total_cost: number;
 }
 
+export interface ProviderCredentialFieldStatus {
+  key: string;
+  label: string;
+  env_var: string;
+  required: boolean;
+  is_configured: boolean;
+  masked_value?: string | null;
+}
+
+export interface ProviderModelOption {
+  value: string;
+  label: string;
+  provider_key: string;
+  provider_name: string;
+  logo_path: string;
+}
+
+export interface ProviderSetupEntry {
+  key: string;
+  display_name: string;
+  logo_path: string;
+  description?: string | null;
+  source: "shared" | "personal" | "personal_override" | "none";
+  is_valid: boolean;
+  is_read_only: boolean;
+  default_model: string;
+  common_models: string[];
+  embedding_models: string[];
+  credential_fields: ProviderCredentialFieldStatus[];
+}
+
+export interface ServiceCredentialSetup {
+  key: string;
+  display_name: string;
+  source: "shared" | "personal" | "personal_override" | "none";
+  is_valid: boolean;
+  is_read_only: boolean;
+  credential_fields: ProviderCredentialFieldStatus[];
+}
+
+export interface ProviderServiceDefaults {
+  generation_default_model?: string | null;
+  embedding_default_model?: string | null;
+  judge_default_models: string[];
+  web_search_enabled: boolean;
+}
+
+export interface ProviderSetupResponse {
+  providers: ProviderSetupEntry[];
+  services: ServiceCredentialSetup[];
+  valid_models: ProviderModelOption[];
+  valid_embedding_models: ProviderModelOption[];
+  defaults: ProviderServiceDefaults;
+}
+
 // Persona types
 export interface PersonaBase {
   title: string;
@@ -445,6 +500,9 @@ export interface AnnotationCompletionStatus {
 export interface JudgeModelOption {
   value: string;
   label: string;
+  provider_key: string;
+  provider_name: string;
+  logo_path: string;
 }
 
 export interface JudgeConfig {
@@ -756,7 +814,8 @@ export interface PremadeRubricTemplate {
   criteria: string;
   options: RubricOption[];
   best_option: string;
-  recommended_model: string;
+  recommended_model_provider: string;
+  recommended_model_name: string;
   group: "preset";
 }
 

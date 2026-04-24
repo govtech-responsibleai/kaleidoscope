@@ -710,7 +710,7 @@ export default function ConnectorConfigFields({
       )}
       {renderProbePanel()}
       {wrapField("Response Path",
-          <TextField
+        <TextField
           {...(!isForm && { label: "Response Content Path", required: true })}
           fullWidth
           value={config.response_content_path || ""}
@@ -719,7 +719,7 @@ export default function ConnectorConfigFields({
           placeholder="choices.0.message.content"
           helperText={probeResult?.success ? "Dot-notation path to extract answer text — click a row in the probe result above to fill" : ""}
           size="small"
-        />
+        />,
       )}
       {wrapField("Retrieved Context Path",
         <TextField

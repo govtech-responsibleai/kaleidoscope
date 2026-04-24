@@ -49,7 +49,7 @@ import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionT
 import { JOB_POLLING_INTERVAL } from "@/lib/constants";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 import PersonaTable from "@/components/questions/PersonaTable";
-import AddPersonasDialog from "@/components/questions/AddPersonasDialog";
+import AddPersonasModal from "@/components/questions/AddPersonasModal";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
 import {
@@ -696,7 +696,7 @@ export default function QuestionsPage() {
         )
       )}
 
-      <AddPersonasDialog
+      <AddPersonasModal
         open={addPersonasOpen}
         onClose={() => setAddPersonasOpen(false)}
         targetId={targetId}
