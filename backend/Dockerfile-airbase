@@ -10,12 +10,14 @@ USER root
 RUN apt-get update && apt-get install -y \
     postgresql-client \
     && rm -rf /var/lib/apt/lists/*
+ENV NLTK_DATA=/usr/local/share/nltk_data
 
 # Copy requirements first for better caching
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt
 
 # Copy pre-downloaded HuggingFace dataset (avoids SSL/timeout issues)
 # Run: cp -r ~/.cache/huggingface/datasets/nvidia___nemotron-personas-singapore ./nemotron-dataset

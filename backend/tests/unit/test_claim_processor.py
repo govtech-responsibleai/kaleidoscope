@@ -6,7 +6,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime
 
-from src.scoring.services.claim_processor import ClaimProcessor
+from src.scoring.services.claim_processor import ClaimProcessor, SENTENCE_TOKENIZER_ERROR
 from src.scoring.services.claim_processor_steps import (
     ClaimMergeCodeBlocks,
     ClaimCitationFilter,
@@ -33,6 +33,27 @@ class TestClaimProcessor:
         assert claims[2].claim_text == "Transparency is important."
         assert all(claim.checkworthy is True for claim in claims)
         assert all(claim.answer_id == sample_answer.id for claim in claims)
+
+    @patch('src.scoring.services.claim_processor.nltk')
+    def test_extract_claims_raises_nice_error_when_punkt_missing(
+        self, mock_nltk, test_db, sample_qa_job, sample_answer
+    ):
+        """Test that claim extraction raises a clear error when punkt is unavailable."""
+        mock_nltk.sent_tokenize.side_effect = LookupError("punkt not found")
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+
+        with pytest.raises(RuntimeError, match="sentence tokenizer data"):
+            processor._extract_claims(sample_answer.id)
+
+    @patch('src.scoring.services.claim_processor.nltk', None)
+    def test_extract_claims_raises_nice_error_when_nltk_missing(
+        self, test_db, sample_qa_job, sample_answer
+    ):
+        """Test that claim extraction raises a clear error when nltk is not installed."""
+        processor = ClaimProcessor(test_db, sample_qa_job.id)
+
+        with pytest.raises(RuntimeError, match="sentence tokenizer data"):
+            processor._extract_claims(sample_answer.id)
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
@@ -273,6 +294,22 @@ class TestClaimProcessorErrors:
         assert sample_qa_job.error_message is not None
         assert "not found" in sample_qa_job.error_message.lower()
 
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.claim_processor.nltk')
+    async def test_missing_punkt_sets_job_failed_with_nice_error_message(
+        self, mock_nltk, test_db, sample_qa_job
+    ):
+        """Test that missing punkt marks the job failed with an operational error message."""
+        from src.scoring.services.claim_processor import extract_and_check_claims
+
+        mock_nltk.sent_tokenize.side_effect = LookupError("punkt not found")
+
+        await extract_and_check_claims(test_db, sample_qa_job.id)
+
+        test_db.refresh(sample_qa_job)
+        assert sample_qa_job.status == JobStatusEnum.failed
+        assert sample_qa_job.error_message == SENTENCE_TOKENIZER_ERROR
+
 
 @pytest.mark.unit
 class TestClaimTransform:
@@ -317,4 +354,3 @@ class TestClaimFilter:
         f = ClaimCitationFilter()
         assert f.check("1. Source ID: career_guidance.txt") is False
         assert f.check("AI is transforming healthcare.") is None
-

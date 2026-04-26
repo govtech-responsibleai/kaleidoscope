@@ -19,12 +19,14 @@ https://seed-general-public-files.s3.ap-southeast-1.amazonaws.com/seed-cloudflar
 
 # Set SSL cert path for httpx
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV NLTK_DATA=/usr/local/share/nltk_data
 
 # Copy requirements first for better caching
 COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt
 
 # Copy application code
 COPY src/ ./src/

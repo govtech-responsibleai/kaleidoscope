@@ -36,13 +36,10 @@ from src.scoring.services.claim_processor_steps import (
 )
 
 logger = logging.getLogger(__name__)
-
-# Ensure NLTK punkt tokenizer is available when the package exists.
-if nltk is not None:  # pragma: no branch
-    try:
-        nltk.data.find('tokenizers/punkt')
-    except LookupError:  # pragma: no cover - download path
-        nltk.download('punkt')
+SENTENCE_TOKENIZER_ERROR = (
+    "Claim extraction requires the NLTK sentence tokenizer data ('punkt'). "
+    "Restart the container with the sentence tokenizer package installed."
+)
 
 
 class ClaimProcessor:
@@ -142,7 +139,7 @@ class ClaimProcessor:
 
     def _extract_claims(self, answer_id: int) -> List[AnswerClaim]:
         """
-        Extract claims from an answer using NLTK sentence tokenizer.
+        Extract claims from an answer using sentence tokenization.
 
         Args:
             answer_id: Answer ID to extract claims from
@@ -156,10 +153,13 @@ class ClaimProcessor:
         # Cache system prompt for checkworthy checks
         self._system_prompt = answer.system_prompt or "[No system prompt available]"
 
-        # Use NLTK to split into sentences
         if nltk is None:
-            raise ImportError("nltk is required for claim extraction. Install nltk to run claim processing.")
-        sentences = nltk.sent_tokenize(answer.answer_content)
+            raise RuntimeError(SENTENCE_TOKENIZER_ERROR)
+
+        try:
+            sentences = nltk.sent_tokenize(answer.answer_content)
+        except LookupError as exc:
+            raise RuntimeError(SENTENCE_TOKENIZER_ERROR) from exc
 
         # Apply transforms pipeline
         sentences = self._apply_transforms(sentences)
