@@ -478,11 +478,18 @@ export default function QAJobControl({
     pollingIntervalRef.current = window.setInterval(checkData, 2000);
   }, [checkData]);
 
-  // Automatically trigger default selection once answers exist but none are selected.
+  // Automatically trigger default selection once the full answer set is available and none are selected.
+  // Wait for initial load and all jobs to reach a terminal state so we don't select from a partial set.
   useEffect(() => {
     if (!snapshotId) return;
+    if (loadingInitialData) return;
     if (defaultSelectionAttemptedRef.current.has(snapshotId)) return;
     if (defaultSelectionInFlightRef.current.has(snapshotId)) return;
+
+    const allJobsTerminal = qaJobs.length === 0 || qaJobs.every(
+      (job) => job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED
+    );
+    if (!allJobsTerminal) return;
 
     const answers: Answer[] = Object.values(qaMap)
       .map((entry) => entry.answer)
@@ -535,7 +542,7 @@ export default function QAJobControl({
     return () => {
       cancelled = true;
     };
-  }, [snapshotId, qaMap, setQaMap]);
+  }, [snapshotId, qaMap, setQaMap, loadingInitialData, qaJobs]);
 
   // Cleanup polling on snapshot/judge change
   useEffect(() => {
