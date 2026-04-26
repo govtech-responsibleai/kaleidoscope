@@ -4,6 +4,8 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   IconChevronDown,
   IconChevronUp,
+  IconEye,
+  IconEyeOff,
   IconFlask2,
   IconPlayerPlay,
   IconPlus,
@@ -16,6 +18,7 @@ import {
   CircularProgress,
   Collapse,
   IconButton,
+  InputAdornment,
   Link,
   MenuItem,
   TextField,
@@ -243,6 +246,8 @@ export default function ConnectorConfigFields({
   const [probing, setProbing] = useState(false);
   const [probeResult, setProbeResult] = useState<ProbeResponse | null>(null);
   const [showRawJson, setShowRawJson] = useState(false);
+  const [showAuthToken, setShowAuthToken] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const [headerRows, setHeaderRows] = useState<KeyValueRow[]>(() => headersToRows(config.headers));
   const [metadataRows, setMetadataRows] = useState<KeyValueRow[]>(() =>
     metadataToRows(config.metadata_fields, config.response_model_path),
@@ -469,11 +474,22 @@ export default function ConnectorConfigFields({
       </TextField>
       <TextField
         size="small"
-        type="password"
+        type={showAuthToken ? "text" : "password"}
         placeholder={authIsConfigured ? authMaskedValue || "Saved secret" : "Enter token"}
         value={authSecretValue}
         onChange={(e) => handleAuthSecretChange(e.target.value)}
         disabled={disabled}
+        slotProps={{
+          input: {
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setShowAuthToken((v) => !v)} edge="end" tabIndex={-1}>
+                  {showAuthToken ? <IconEyeOff size={16} stroke={2} /> : <IconEye size={16} stroke={2} />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          },
+        }}
         sx={{
           flex: "1 1 65%",
           "& .MuiOutlinedInput-notchedOutline": {
@@ -939,11 +955,22 @@ export default function ConnectorConfigFields({
       <TextField
         {...(!isForm && { label: "API Key", required: true })}
         fullWidth
-        type="password"
+        type={showApiKey ? "text" : "password"}
         value={config.api_key || ""}
         onChange={(e) => onConfigField("api_key", e.target.value)}
         disabled={disabled}
         size="small"
+        slotProps={{
+          input: {
+            endAdornment: (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setShowApiKey((v) => !v)} edge="end" tabIndex={-1}>
+                  {showApiKey ? <IconEyeOff size={16} stroke={2} /> : <IconEye size={16} stroke={2} />}
+                </IconButton>
+              </InputAdornment>
+            ),
+          },
+        }}
       />
     );
 

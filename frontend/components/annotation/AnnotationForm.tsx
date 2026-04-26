@@ -28,6 +28,10 @@ const toggleSx = {
     flex: 1,
     transition: "all 0.15s",
   },
+  "& .MuiToggleButton-root:not(:first-of-type)": {
+    borderLeft: "none",
+    marginLeft: 0,
+  },
 };
 
 interface NoteFieldProps {
@@ -90,8 +94,7 @@ interface RubricRowProps {
 function getOptionColor(opt: string, rubric: TargetRubricResponse): { main: string; dark: string } {
   const bestOption = rubric.best_option || rubric.options?.[0]?.option || "";
   if (opt === bestOption) return { main: "success.main", dark: "success.dark" };
-  if (rubric.options.length <= 2) return { main: "error.main", dark: "error.dark" };
-  return { main: "text.secondary", dark: "text.primary" };
+  return { main: "error.main", dark: "error.dark" };
 }
 
 function RubricRow({ rubric, value, onChange, saving, notes, onNotesChange, onNotesSave }: RubricRowProps) {

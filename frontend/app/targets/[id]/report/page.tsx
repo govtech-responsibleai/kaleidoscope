@@ -261,13 +261,10 @@ export default function TargetReport() {
         sx={{ mb: 3 }}
       >
         <Box>
-          <Typography variant="overline" sx={{ color: "primary.main", fontWeight: 800, letterSpacing: 1.2 }}>
-            Report Dashboard
+          <Typography variant="h5" fontWeight={700}>
+            Report
           </Typography>
-          <Typography variant="h4" fontWeight={700} sx={{ mt: 0.5 }}>
-            {target.name}
-          </Typography>
-          <Typography variant="body1" color="text.secondary" sx={{ mt: 1, maxWidth: 780 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, maxWidth: 780 }}>
             Executive overview of evaluation coverage, snapshot performance, and judge-backed reliability signals.
           </Typography>
         </Box>

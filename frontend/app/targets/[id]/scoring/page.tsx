@@ -444,7 +444,7 @@ export default function ScoringPage() {
 
   return (
     <Box>
-      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1, mb: 2 }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 1 }}>
         <Box sx={{ flex: 1 }}>
           <SnapshotHeader
             targetId={targetId}
@@ -703,7 +703,7 @@ function MetricSection({
           sx={{
             display: "grid",
             gap: 2,
-            gridTemplateColumns: { xs: "1fr", xl: "280px minmax(0, 1fr)" },
+            gridTemplateColumns: { xs: "1fr", lg: "280px minmax(0, 1fr)" },
             alignItems: "center",
           }}
         >

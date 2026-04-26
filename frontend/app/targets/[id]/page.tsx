@@ -8,9 +8,12 @@ import {
   CircularProgress,
   Button,
   TextField,
-  Paper,
   MenuItem,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
 } from "@mui/material";
+import { IconChevronDown } from "@tabler/icons-react";
 import { useParams } from "next/navigation";
 import { targetApi, webSearchApi } from "@/lib/api";
 import { TargetResponse, TargetStats, TargetUpdate } from "@/lib/types";
@@ -212,10 +215,11 @@ export default function TargetOverview() {
           sx={{
             flex: { md: "0 0 55%" },
             pb: 6,
+            overflowY: "auto",
           }}
         >
           <Box sx={{ mb: 3 }}>
-            <Typography variant="h6" fontWeight={600}>
+            <Typography variant="h5" fontWeight={700}>
               Target Details
             </Typography>
             <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic' }}>
@@ -252,11 +256,14 @@ export default function TargetOverview() {
               />
             </DetailsField>
 
-            <Box sx={{ display: "flex", flexDirection: "column", gap: 1.25 }}>
-              <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>
-                Endpoint Configuration
-              </Typography>
-              <Paper variant="outlined" sx={{ p: 2, bgcolor: "grey.50", display: "flex", flexDirection: "column", gap: 2.5 }}>
+            <Accordion defaultExpanded={false} disableGutters sx={{ boxShadow: "none", "&:before": { display: "none" }, borderTop: "1px solid", borderColor: "divider" }}>
+              <AccordionSummary expandIcon={<IconChevronDown size={18} stroke={2} />} sx={{ px: 0 }}>
+                <Typography variant="subtitle1" sx={{ fontWeight: 600, textAlign: "left" }}>
+                  Endpoint Configuration
+                </Typography>
+              </AccordionSummary>
+              <AccordionDetails sx={{ p: 0 }}>
+              <Box sx={{ p: 2, bgcolor: "grey.50", display: "flex", flexDirection: "column", gap: 2.5 }}>
               {connectorTypesError && (
                 <Typography variant="body2" color="error">
                   {connectorTypesError}
@@ -352,8 +359,9 @@ export default function TargetOverview() {
                   Load the available connector types before editing endpoint-specific settings.
                 </Typography>
               )}
-              </Paper>
-            </Box>
+              </Box>
+              </AccordionDetails>
+            </Accordion>
 
             {updateError && (
               <Typography variant="body2" color="error">{updateError}</Typography>
@@ -386,6 +394,8 @@ export default function TargetOverview() {
             display: "flex",
             flexDirection: "column",
             gap: 1,
+            height: "calc(100vh - 100px)",
+            overflow: "hidden",
           }}
         >
           <DocumentList

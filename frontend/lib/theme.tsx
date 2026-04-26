@@ -26,17 +26,12 @@ export const theme = createTheme({
     },
   },
   typography: {
-    fontFamily: [
-      "-apple-system",
-      "BlinkMacSystemFont",
-      '"Segoe UI"',
-      "Roboto",
-      '"Helvetica Neue"',
-      "Arial",
-      "sans-serif",
-    ].join(","),
+    fontFamily: "var(--font-lato), sans-serif",
   },
   components: {
+    MuiButtonBase: {
+      defaultProps: { disableRipple: true },
+    },
     MuiCssBaseline: {
       styleOverrides: {
         html: {
@@ -58,7 +53,30 @@ export const theme = createTheme({
           boxShadow: "none",
           "&:hover": { boxShadow: "none" },
           textTransform: "none",
-          fontWeight: "bold"
+          fontWeight: "bold",
+          transition: "transform 0.1s ease-out",
+          "&:active": {
+            transform: "scale(0.97)",
+            transition:  "transform 0.1s ease-in",
+          },
+        },
+      },
+    },
+    MuiIconButton: {
+      styleOverrides: {
+        root: {
+          transition: "transform 0.1s ease-out",
+          "&:active": {
+            transform: "scale(0.97)",
+            transition: "transform 0.1s ease-in",
+          },
+        },
+      },
+    },
+    MuiListItemButton: {
+      styleOverrides: {
+        root: {
+          transition: "background-color 0ms",
         },
       },
     },

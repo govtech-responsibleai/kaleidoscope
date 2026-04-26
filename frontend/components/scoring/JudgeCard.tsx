@@ -186,7 +186,7 @@ export default function JudgeCard({
   };
 
   return (
-    <Card variant="outlined" sx={{ height: "100%", ...cardSx }}>
+    <Card variant="outlined" sx={{ height: "100%", borderColor: "divider", ...cardSx }}>
       <CardContent>
         <Stack direction="row" justifyContent="space-between" alignItems="flex-start" spacing={1}>
           <Box sx={{ flex: 1, minWidth: 0 }}>
@@ -277,7 +277,7 @@ export default function JudgeCard({
             </Box>
           ) : hasQuestionsWithoutAnswers && !hasAllScores ? (
             "Run in Annotations"
-          ) : pendingCount > 0 ? (
+          ) : (pendingCount ?? 0) > 0 ? (
             `Run (${pendingCount} pending)`
           ) : !summary ? (
             "Run Judge"

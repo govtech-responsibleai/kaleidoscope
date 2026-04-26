@@ -505,8 +505,7 @@ export default function CreateTargetModal({
                   borderRadius: 2.5,
                   border: 1,
                   borderColor: isActive ? "primary.main" : isComplete ? "primary.light" : "divider",
-                  bgcolor: isActive ? "rgba(25, 118, 210, 0.08)" : isComplete ? "rgba(25, 118, 210, 0.04)" : "rgba(255, 255, 255, 0.66)",
-                  boxShadow: isActive ? 2 : "none",
+                  bgcolor: isActive ? "rgba(25, 118, 210, 0.15)" : isComplete ? "rgba(25, 118, 210, 0.04)" : "rgba(255, 255, 255, 0.66)",
                   transition: "all 160ms ease",
                 }}
               >

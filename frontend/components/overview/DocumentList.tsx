@@ -103,7 +103,7 @@ export default function DocumentList({
 
   return (
     <Box sx={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={2} sx={{ gap: 1 }}>
         <Box>
           <Typography variant="h6" fontWeight={600}>
             Knowledge Base Documents

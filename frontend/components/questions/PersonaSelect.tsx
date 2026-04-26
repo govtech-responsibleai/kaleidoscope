@@ -14,11 +14,14 @@ interface PersonaSelectProps {
   onAddManual: () => void;
 }
 
-const cardSx = {
+const baseCardSx = {
   width: 200,
   cursor: "pointer",
-  transition: "all 0.2s",
-  "&:hover": { transform: "translateY(-4px)", boxShadow: 4 },
+  boxShadow: "none",
+  border: "1px solid #E0E0E0",
+  transition: "transform 0.2s ease",
+  "&:hover": { transform: "translateY(-4px)" },
+  "& .card-icon svg": { transition: "stroke 0.3s ease" },
 };
 
 export default function PersonaSelect({
@@ -28,9 +31,25 @@ export default function PersonaSelect({
 }: PersonaSelectProps) {
   return (
     <Box display="flex" gap={2} flexWrap="wrap" justifyContent="center">
-      <Card sx={cardSx} onClick={onGenerateAI}>
+      <svg width="0" height="0" style={{ position: "absolute" }}>
+        <defs>
+          <linearGradient id="pg-primary" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#0d1433" />
+            <stop offset="100%" stopColor="#7b9dff" />
+          </linearGradient>
+          <linearGradient id="pg-secondary" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#6b0024" />
+            <stop offset="100%" stopColor="#ff6b9d" />
+          </linearGradient>
+          <linearGradient id="pg-info" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stopColor="#003060" />
+            <stop offset="100%" stopColor="#80d8ff" />
+          </linearGradient>
+        </defs>
+      </svg>
+      <Card sx={{ ...baseCardSx, "&:hover .card-icon svg": { stroke: "url(#pg-primary) #1976d2" } }} onClick={onGenerateAI}>
         <CardContent sx={{ textAlign: "center", py: 3 }}>
-          <Box sx={{ color: "primary.main", mb: 1, display: "flex", justifyContent: "center" }}>
+          <Box className="card-icon" sx={{ color: "primary.main", mb: 1, display: "flex", justifyContent: "center" }}>
             <IconSparkles size={40} stroke={1.8} />
           </Box>
           <Typography variant="subtitle1" fontWeight={600}>
@@ -41,9 +60,9 @@ export default function PersonaSelect({
           </Typography>
         </CardContent>
       </Card>
-      <Card sx={cardSx} onClick={onSampleRandom}>
+      <Card sx={{ ...baseCardSx, "&:hover .card-icon svg": { stroke: "url(#pg-secondary) #dc004e" } }} onClick={onSampleRandom}>
         <CardContent sx={{ textAlign: "center", py: 3 }}>
-          <Box sx={{ color: "secondary.main", mb: 1, display: "flex", justifyContent: "center" }}>
+          <Box className="card-icon" sx={{ color: "secondary.main", mb: 1, display: "flex", justifyContent: "center" }}>
             <IconUsersGroup size={40} stroke={1.8} />
           </Box>
           <Typography variant="subtitle1" fontWeight={600}>
@@ -54,9 +73,9 @@ export default function PersonaSelect({
           </Typography>
         </CardContent>
       </Card>
-      <Card sx={cardSx} onClick={onAddManual}>
+      <Card sx={{ ...baseCardSx, "&:hover .card-icon svg": { stroke: "url(#pg-info) #0288d1" } }} onClick={onAddManual}>
         <CardContent sx={{ textAlign: "center", py: 3 }}>
-          <Box sx={{ color: "info.main", mb: 1, display: "flex", justifyContent: "center" }}>
+          <Box className="card-icon" sx={{ color: "info.main", mb: 1, display: "flex", justifyContent: "center" }}>
             <IconUserPlus size={40} stroke={1.8} />
           </Box>
           <Typography variant="subtitle1" fontWeight={600}>

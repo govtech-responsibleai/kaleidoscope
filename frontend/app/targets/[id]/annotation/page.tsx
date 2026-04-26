@@ -3,7 +3,7 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Alert, Box, CircularProgress, IconButton, Tooltip, Typography } from "@mui/material";
-import { IconCode } from "@tabler/icons-react";
+import { IconDownload } from "@tabler/icons-react";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
@@ -198,7 +198,7 @@ function AnnotationPageContent() {
             onSnapshotDeleted={fetchSnapshots}
           />
         </Box>
-        <Tooltip title="Download data for this snapshot">
+        <Tooltip title="Download as JSON">
           <span>
             <IconButton
               onClick={handleExportSnapshot}
@@ -211,7 +211,7 @@ function AnnotationPageContent() {
                 "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
               }}
             >
-              <IconCode {...actionIconProps} />
+              <IconDownload {...actionIconProps} />
             </IconButton>
           </span>
         </Tooltip>

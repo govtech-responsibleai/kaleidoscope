@@ -388,6 +388,14 @@ export default function GenerateEvalsModal({
             <Typography variant="body1" color="text.secondary" textAlign="center" sx={{ maxWidth: 500 }}>
               Generate questions from personas using AI, or upload your own.
             </Typography>
+            <svg width="0" height="0" style={{ position: "absolute" }}>
+                <defs>
+                  <linearGradient id="modal-icon-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#0d1433" />
+                    <stop offset="100%" stopColor="#ff2060" />
+                  </linearGradient>
+                </defs>
+              </svg>
             <Box display="flex" gap={3} mt={2} alignItems="flex-start">
               <Card
                 sx={{
@@ -395,19 +403,21 @@ export default function GenerateEvalsModal({
                   height: selectedMode === "generate" ? "auto" : "200px",
                   cursor: "pointer",
                   transition: "all 0.2s",
-                  border: selectedMode === "generate" ? "2px solid" : "2px solid transparent",
-                  borderColor: selectedMode === "generate" ? "primary.main" : "transparent",
+                  boxShadow: "none",
+                  border: selectedMode === "generate" ? "2px solid" : "2px solid #E0E0E0",
+                  borderColor: selectedMode === "generate" ? "primary.main" : "#E0E0E0",
                   opacity: selectedMode === "upload" ? 0.4 : 1,
                   pointerEvents: selectedMode === "upload" ? "none" : "auto",
+                  "& .card-icon svg": { transition: "stroke 0.3s ease" },
                   "&:hover": {
                     transform: selectedMode === "upload" ? "none" : "translateY(-4px)",
-                    boxShadow: selectedMode === "upload" ? 0 : 2,
+                    "& .card-icon svg": { stroke: "url(#modal-icon-gradient) #1d2766" },
                   },
                 }}
                 onClick={() => setSelectedMode("generate")}
               >
                 <CardContent sx={{ textAlign: "center", py: 4, height: "200px" }}>
-                  <Box sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconSparkles size={48} stroke={1.8} /></Box>
+                  <Box className="card-icon" sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconSparkles size={48} stroke={1.8} /></Box>
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Generate from Personas
                   </Typography>
@@ -442,19 +452,21 @@ export default function GenerateEvalsModal({
                   height: selectedMode === "upload" ? "auto" : "200px",
                   cursor: "pointer",
                   transition: "all 0.2s",
-                  border: selectedMode === "upload" ? "2px solid" : "2px solid transparent",
-                  borderColor: selectedMode === "upload" ? "primary.main" : "transparent",
+                  boxShadow: "none",
+                  border: selectedMode === "upload" ? "2px solid" : "2px solid #E0E0E0",
+                  borderColor: selectedMode === "upload" ? "primary.main" : "#E0E0E0",
                   opacity: selectedMode === "generate" ? 0.4 : 1,
                   pointerEvents: selectedMode === "generate" ? "none" : "auto",
+                  "& .card-icon svg": { transition: "stroke 0.3s ease" },
                   "&:hover": {
                     transform: selectedMode === "generate" ? "none" : "translateY(-4px)",
-                    boxShadow: selectedMode === "generate" ? 0 : 2,
+                    "& .card-icon svg": { stroke: "url(#modal-icon-gradient) #1d2766" },
                   },
                 }}
                 onClick={() => setSelectedMode("upload")}
               >
                 <CardContent sx={{ textAlign: "center", py: 4, height: "200px" }}>
-                  <Box sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconUpload size={48} stroke={1.8} /></Box>
+                  <Box className="card-icon" sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconUpload size={48} stroke={1.8} /></Box>
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Upload
                   </Typography>

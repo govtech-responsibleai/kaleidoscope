@@ -21,6 +21,7 @@ import {
   CircularProgress,
   Tooltip,
   Chip,
+  Stack,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -368,32 +369,46 @@ export default function RubricsPage() {
     </>
   );
 
+  const groupSubtitles: Record<string, string> = {
+    Fixed:  "Built-in rubrics applied to every evaluation. Cannot be removed.",
+    Preset: "Curated rubric templates. Add from the library and customise.",
+    Custom: "Rubrics you define. Full control over criteria and options.",
+  };
+
   const renderGroupHeader = (title: string, count: number, onAdd: (() => void) | null, accent?: string) => (
-    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5 }}>
-      <Typography
-        variant="subtitle2"
-        fontWeight={700}
-        sx={{ textTransform: "uppercase", letterSpacing: 0.6 }}
-      >
-        {title}
-      </Typography>
-      <Chip label={count} size="small" sx={accent ? { bgcolor: accent, color: "#fff" } : undefined} />
-      <Box sx={{ flex: 1 }} />
-      {onAdd && (
-        <Tooltip title={`Add ${title.toLowerCase()} rubric`} arrow>
-          <IconButton
-            size="small"
-            onClick={onAdd}
-            sx={{
-              border: "1px solid",
-              borderColor: accent ?? "primary.main",
-              color: accent ?? "primary.main",
-              "&:hover": { bgcolor: accent ?? "primary.main", color: "#fff" },
-            }}
-          >
-            <IconPlus {...compactActionIconProps} />
-          </IconButton>
-        </Tooltip>
+    <Box>
+      <Stack direction="row" alignItems="center" gap={1.5}>
+        <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: accent ?? "primary.main", flexShrink: 0 }} />
+        <Typography
+          variant="subtitle2"
+          fontWeight={700}
+          sx={{ textTransform: "uppercase", letterSpacing: 0.6 }}
+        >
+          {title}
+        </Typography>
+        <Chip label={count} size="small" sx={accent ? { bgcolor: accent, color: "#fff" } : undefined} />
+        <Box sx={{ flex: 1 }} />
+        {onAdd && (
+          <Tooltip title={`Add ${title.toLowerCase()} rubric`} arrow>
+            <IconButton
+              size="small"
+              onClick={onAdd}
+              sx={{
+                border: "1px solid",
+                borderColor: accent ?? "primary.main",
+                color: accent ?? "primary.main",
+                "&:hover": { bgcolor: accent ?? "primary.main", color: "#fff" },
+              }}
+            >
+              <IconPlus {...compactActionIconProps} />
+            </IconButton>
+          </Tooltip>
+        )}
+      </Stack>
+      {groupSubtitles[title] && (
+        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, ml: 2.5 }}>
+          {groupSubtitles[title]}
+        </Typography>
       )}
     </Box>
   );
@@ -411,10 +426,14 @@ export default function RubricsPage() {
     "& .MuiAccordionSummary-content": { alignItems: "center" },
   };
 
-  const getGroupSx = (group: keyof typeof groupColors) => ({
-    bgcolor: groupColors[group].bg,
-    borderLeft: "4px solid",
-    borderColor: groupColors[group].border,
+  const groupTint: Record<keyof typeof groupColors, string> = {
+    fixed:  "rgba(92, 107, 192, 0.06)",
+    preset: "rgba(38, 166, 154, 0.06)",
+    custom: "rgba(255, 167, 38, 0.06)",
+  };
+
+  const groupSectionSx = (group: keyof typeof groupColors) => ({
+    bgcolor: groupTint[group],
     borderRadius: 2,
     p: 2,
     mb: 3,
@@ -433,7 +452,8 @@ export default function RubricsPage() {
       </Alert>
 
       {/* FIXED group */}
-      <Box sx={getGroupSx("fixed")}>
+      <Divider sx={{ mb: 1.5 }} />
+      <Box sx={groupSectionSx("fixed")}>
         <Box sx={{ mb: 2 }}>{renderGroupHeader("Fixed", fixedRubrics.length, null, groupColors.fixed.border)}</Box>
         {fixedRubrics.map((rubric) => (
           <Accordion key={rubric.id} variant="outlined" disableGutters>
@@ -453,7 +473,8 @@ export default function RubricsPage() {
       </Box>
 
       {/* PRESET group */}
-      <Box sx={getGroupSx("preset")}>
+      <Divider sx={{ mb: 1.5 }} />
+      <Box sx={groupSectionSx("preset")}>
         <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, openPremadeDialog, groupColors.preset.border)}</Box>
         {premadeRubrics.length === 0 ? (
           renderEmptyState("No preset rubrics added yet. Click + to browse templates.")
@@ -497,7 +518,8 @@ export default function RubricsPage() {
       </Box>
 
       {/* CUSTOM group */}
-      <Box sx={getGroupSx("custom")}>
+      <Divider sx={{ mb: 1.5 }} />
+      <Box sx={groupSectionSx("custom")}>
         <Box sx={{ mb: 2 }}>{renderGroupHeader("Custom", customRubrics.length, addRubric, groupColors.custom.border)}</Box>
         {loading ? (
           <CircularProgress size={24} />

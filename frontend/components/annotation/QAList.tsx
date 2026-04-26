@@ -455,6 +455,7 @@ export default function QAList({
           </Tooltip>
         </Stack>
 
+        <Box sx={{ opacity: savedSelections.size === 0 ? 0.5 : 1, pointerEvents: savedSelections.size === 0 ? "none" : "auto" }}>
         <Paper
           variant="outlined"
           sx={{
@@ -509,6 +510,7 @@ export default function QAList({
             </Stack>
           </Stack>
         </Paper>
+        </Box>
 
 
         <Box sx={{ overflowY: "auto", flexGrow: 1 }}>
