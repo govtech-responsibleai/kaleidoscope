@@ -10,6 +10,7 @@ import logging
 
 import httpx
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from src.common.config import get_settings
 from src.common.connectors.base import TargetHttpError
@@ -190,7 +191,29 @@ class AnswerGenerator:
         if snapshot_id is not None:
             answer_data["snapshot_id"] = snapshot_id
 
-        answer = AnswerRepository.create(self.db, answer_data)
+        try:
+            answer = AnswerRepository.create(self.db, answer_data)
+        except IntegrityError:
+            self.db.rollback()
+            if snapshot_id is None:
+                raise
+
+            # Another runner won the insert race for this question/snapshot pair.
+            answer = AnswerRepository.get_by_question_and_snapshot(
+                self.db,
+                question.id,
+                snapshot_id,
+            )
+            if answer is None:
+                raise
+            logger.info(
+                "Reused existing answer %s for question %s in snapshot %s after insert conflict",
+                answer.id,
+                question.id,
+                snapshot_id,
+            )
+            return answer
+
         logger.info(f"Saved answer {answer.id} for question {question.id}")
         return answer
 

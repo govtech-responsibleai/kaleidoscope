@@ -5,10 +5,12 @@ Unit tests for AnswerGenerator service.
 import pytest
 import httpx
 from unittest.mock import Mock, patch, AsyncMock
+from sqlalchemy.exc import IntegrityError
 
 from src.query_generation.services.answer_generator import AnswerGenerator, APIResponseError, APIConnectionError
 from src.common.connectors.base import ConnectorResponse, TargetHttpError
 from src.common.database.models import JobStatusEnum
+from src.common.database.repositories.answer_repo import AnswerRepository
 
 
 def _make_connector_response(**overrides):
@@ -157,6 +159,52 @@ class TestAnswerGenerator:
             generator = AnswerGenerator(test_db, sample_qa_job.id)
             await generator.generate_for_job(sample_question.id, sample_qa_job.snapshot_id)
             mock_gc.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.get_connector')
+    async def test_generate_for_job_reuses_existing_answer_after_insert_conflict(
+        self, mock_get_connector, test_db, test_db_factory, sample_qa_job_no_answer
+    ):
+        """A duplicate start should reuse the winner answer instead of failing the job."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        target.endpoint_type = "http"
+        target.api_endpoint = "https://api.test.com"
+        target.endpoint_config = {"response_content_path": "output"}
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.return_value = _make_connector_response()
+        mock_get_connector.return_value = mock_connector
+
+        original_create = AnswerRepository.create
+
+        def create_with_race(db, answer_data):
+            winner_session = test_db_factory()
+            try:
+                original_create(winner_session, dict(answer_data))
+            finally:
+                winner_session.close()
+            raise IntegrityError("INSERT INTO answers ...", {}, Exception("duplicate key value"))
+
+        with patch.object(AnswerRepository, "create", side_effect=create_with_race):
+            generator = AnswerGenerator(test_db, qa_job.id)
+            await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        test_db.refresh(qa_job)
+        winner_answer = AnswerRepository.get_by_question_and_snapshot(
+            test_db,
+            question.id,
+            qa_job.snapshot_id,
+        )
+
+        assert winner_answer is not None
+        assert qa_job.answer_id == winner_answer.id
+        assert qa_job.status == JobStatusEnum.running
+        assert qa_job.error_message in (None, "")
 
 
 @pytest.mark.unit
