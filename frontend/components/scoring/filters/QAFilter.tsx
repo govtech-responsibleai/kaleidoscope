@@ -5,16 +5,13 @@ import {
   Box,
   Button,
   Checkbox,
-  FormControl,
-  InputLabel,
   ListItemText,
   MenuItem,
-  OutlinedInput,
   Popover,
   Select,
   Typography,
 } from "@mui/material";
-import { IconFilter } from "@tabler/icons-react";
+import { IconFilter2 } from "@tabler/icons-react";
 import { actionIconProps } from "@/lib/iconStyles";
 import { PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
 
@@ -27,6 +24,12 @@ interface QAFilterProps {
   onScopesChange: (scopes: QuestionScope[]) => void;
   onPersonaIdsChange: (personaIds: number[]) => void;
 }
+
+const filterLabelSx = {
+  mb: 0.5,
+  display: "block",
+  fontWeight: 600,
+} as const;
 
 export default function QAFilter({
   selectedTypes,
@@ -48,12 +51,12 @@ export default function QAFilter({
     <>
       <Button
         variant="outlined"
-        endIcon={<IconFilter {...actionIconProps} />}
+        endIcon={<IconFilter2 {...actionIconProps} />}
         onClick={(e) => setAnchorEl(e.currentTarget)}
         color={isFilterActive ? "primary" : "inherit"}
         disableRipple
         size="small"
-        sx={{ px: 1.5, height: "40px", fontWeight: 400, borderColor: "rgba(0, 0, 0, 0.2)", }}
+        sx={{ px: 1.5, height: "40px", fontWeight: 400, borderColor: "rgba(0, 0, 0, 0.2)" }}
       >
         Questions
       </Button>
@@ -73,14 +76,16 @@ export default function QAFilter({
           </Typography>
 
           {/* Type Filter */}
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel id="type-filter-label">Type</InputLabel>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="caption" color="text.secondary" sx={filterLabelSx}>
+              Type
+            </Typography>
             <Select
-              labelId="type-filter-label"
+              size="small"
+              fullWidth
               multiple
               value={selectedTypes}
               onChange={(e) => onTypesChange(e.target.value as QuestionType[])}
-              input={<OutlinedInput label="Type" />}
               renderValue={(selected) =>
                 selected.length === 2 ? "All Types" : selected.join(", ")
               }
@@ -94,17 +99,19 @@ export default function QAFilter({
                 <ListItemText primary="Edge" />
               </MenuItem>
             </Select>
-          </FormControl>
+          </Box>
 
           {/* Scope Filter */}
-          <FormControl fullWidth size="small" sx={{ mb: 2 }}>
-            <InputLabel id="scope-filter-label">Scope</InputLabel>
+          <Box sx={{ mb: 2 }}>
+            <Typography variant="caption" color="text.secondary" sx={filterLabelSx}>
+              Scope
+            </Typography>
             <Select
-              labelId="scope-filter-label"
+              size="small"
+              fullWidth
               multiple
               value={selectedScopes}
               onChange={(e) => onScopesChange(e.target.value as QuestionScope[])}
-              input={<OutlinedInput label="Scope" />}
               renderValue={(selected) =>
                 selected.length === 2
                   ? "All Scopes"
@@ -120,17 +127,19 @@ export default function QAFilter({
                 <ListItemText primary="Out KB" />
               </MenuItem>
             </Select>
-          </FormControl>
+          </Box>
 
           {/* Persona Filter */}
-          <FormControl fullWidth size="small">
-            <InputLabel id="persona-filter-label">Personas</InputLabel>
+          <Box>
+            <Typography variant="caption" color="text.secondary" sx={filterLabelSx}>
+              Personas
+            </Typography>
             <Select
-              labelId="persona-filter-label"
+              size="small"
+              fullWidth
               multiple
               value={selectedPersonaIds}
               onChange={(e) => onPersonaIdsChange(e.target.value as number[])}
-              input={<OutlinedInput label="Personas" />}
               renderValue={(selected) =>
                 selected.length === personas.length
                   ? "All Personas"
@@ -144,7 +153,7 @@ export default function QAFilter({
                 </MenuItem>
               ))}
             </Select>
-          </FormControl>
+          </Box>
         </Box>
       </Popover>
     </>

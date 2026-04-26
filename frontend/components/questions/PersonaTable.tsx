@@ -10,39 +10,31 @@ import {
   TableHead,
   TableRow,
   TablePagination,
-  Paper,
   Chip,
   IconButton,
-  TextField,
-  CircularProgress,
-  Menu,
-  MenuItem,
-  ListItemIcon,
-  ListItemText,
-  Select,
-  Divider,
   Typography,
 } from "@mui/material";
 import {
-  IconDeviceFloppy,
-  IconDots,
+  IconCircleCheck,
+  IconCircleX,
+  IconLoader,
   IconPencil,
   IconTrash,
-  IconX,
 } from "@tabler/icons-react";
 import { personaApi } from "@/lib/api";
 import { PersonaResponse } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
-import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
-import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import EditPersonaDialog from "@/components/questions/EditPersonaDialog";
+import { compactActionIconProps } from "@/lib/iconStyles";
 import {
   compactChipSx,
+  getTableBodyRowSx,
   subtleActionButtonSx,
-  tableContainerSx,
   tableHeaderCellSx,
   tableHeaderRowSx,
 } from "@/lib/uiStyles";
+import { useTheme } from "@mui/material";
 
 interface PersonaTableProps {
   personas: PersonaResponse[];
@@ -50,63 +42,23 @@ interface PersonaTableProps {
   onError?: (message: string) => void;
 }
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case "approved": return "success";
-    case "rejected": return "error";
-    case "edited": return "info";
-    default: return "warning";
-  }
+const StatusIcon = ({ status }: { status: string }) => {
+  if (status === "approved") return <Box sx={{ color: "success.main", display: "flex" }}><IconCircleCheck {...compactActionIconProps} /></Box>;
+  if (status === "pending") return <Box sx={{ color: "warning.main", display: "flex" }}><IconLoader {...compactActionIconProps} /></Box>;
+  return <Box sx={{ color: "error.main", display: "flex" }}><IconCircleX {...compactActionIconProps} /></Box>;
 };
-
-
 
 export default function PersonaTable({
   personas,
   onPersonasChanged,
   onError,
 }: PersonaTableProps) {
-  const personaEdit = usePersonaEdit({
-    onSaved: () => onPersonasChanged(),
-    onError: (msg) => onError?.(msg),
-  });
-
+  const theme = useTheme();
   const [page, setPage] = useState(0);
   const rowsPerPage = 10;
 
-  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const [menuPersona, setMenuPersona] = useState<PersonaResponse | null>(null);
   const [personaToDelete, setPersonaToDelete] = useState<PersonaResponse | null>(null);
-
-  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>, persona: PersonaResponse) => {
-    setMenuAnchor(event.currentTarget);
-    setMenuPersona(persona);
-  };
-
-  const handleMenuClose = () => {
-    setMenuAnchor(null);
-    setMenuPersona(null);
-  };
-
-  const handleStatusChange = async (personaId: number, action: "approved" | "rejected") => {
-    handleMenuClose();
-    try {
-      if (action === "approved") {
-        await personaApi.approve(personaId);
-      } else {
-        await personaApi.reject(personaId);
-      }
-      onPersonasChanged();
-    } catch (err) {
-      console.error(`Failed to update persona status:`, err);
-      onError?.("Failed to update persona status. Please try again.");
-    }
-  };
-
-  const handleEditFromMenu = (persona: PersonaResponse) => {
-    handleMenuClose();
-    personaEdit.startEdit(persona);
-  };
+  const [editingPersona, setEditingPersona] = useState<PersonaResponse | null>(null);
 
   const handleDeleteConfirm = async () => {
     if (!personaToDelete) return;
@@ -124,8 +76,7 @@ export default function PersonaTable({
 
   return (
     <>
-      <>
-      <TableContainer component={Paper} variant="outlined" sx={tableContainerSx}>
+      <TableContainer>
         <Table>
           <TableHead>
             <TableRow sx={tableHeaderRowSx}>
@@ -133,168 +84,92 @@ export default function PersonaTable({
               <TableCell sx={tableHeaderCellSx}>Background</TableCell>
               <TableCell sx={tableHeaderCellSx}>Style</TableCell>
               <TableCell sx={tableHeaderCellSx}>Use Case</TableCell>
-              <TableCell align="center" sx={{ ...tableHeaderCellSx, width: 80 }}>Source</TableCell>
-              <TableCell align="center" sx={{ ...tableHeaderCellSx, width: 90 }}>Status</TableCell>
-              <TableCell align="center" sx={{ width: 50, py: 1.5 }} />
+              <TableCell sx={{ ...tableHeaderCellSx, width: 80 }}>Source</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: 60 }}>Approved</TableCell>
+              <TableCell sx={{ width: 80, py: 1.5 }} />
             </TableRow>
           </TableHead>
           <TableBody>
-            {personas.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((persona) => {
-              const isEditing = personaEdit.editingPersonaId === persona.id;
-              return (
-                <TableRow key={persona.id}>
-                  <TableCell sx={{ minWidth: 140 }}>
-                    {isEditing ? (
-                      <TextField
-                        value={personaEdit.editedTitle}
-                        onChange={(e) => personaEdit.setEditedTitle(e.target.value)}
-                        size="small"
-                        fullWidth
-                        required
-                      />
-                    ) : (
-                      <Typography variant="body2" fontWeight={600}>
-                        {persona.title}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell sx={{ maxWidth: 250 }}>
-                    {isEditing ? (
-                      <TextField
-                        value={personaEdit.editedInfo}
-                        onChange={(e) => personaEdit.setEditedInfo(e.target.value)}
-                        size="small"
-                        fullWidth
-                        multiline
-                        rows={2}
-                      />
-                    ) : (
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 3,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {persona.info || "-"}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell sx={{ maxWidth: 180 }}>
-                    {isEditing ? (
-                      <TextField
-                        value={personaEdit.editedStyle}
-                        onChange={(e) => personaEdit.setEditedStyle(e.target.value)}
-                        size="small"
-                        fullWidth
-                      />
-                    ) : (
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {persona.style || "-"}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell sx={{ maxWidth: 180 }}>
-                    {isEditing ? (
-                      <TextField
-                        value={personaEdit.editedUseCase}
-                        onChange={(e) => personaEdit.setEditedUseCase(e.target.value)}
-                        size="small"
-                        fullWidth
-                      />
-                    ) : (
-                      <Typography
-                        variant="body2"
-                        color="text.secondary"
-                        sx={{
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          overflow: "hidden",
-                        }}
-                      >
-                        {persona.use_case || "-"}
-                      </Typography>
-                    )}
-                  </TableCell>
-                  <TableCell align="center">
-                    <Chip
-                      label={getSourceChip(persona.source).label}
+            {personas.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((persona) => (
+              <TableRow key={persona.id} sx={getTableBodyRowSx(theme)}>
+                <TableCell sx={{ minWidth: 140 }}>
+                  <Typography variant="body2" fontWeight={600}>
+                    {persona.title}
+                  </Typography>
+                </TableCell>
+                <TableCell sx={{ maxWidth: 250 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 3,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {persona.info || "-"}
+                  </Typography>
+                </TableCell>
+                <TableCell sx={{ maxWidth: 180 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {persona.style || "-"}
+                  </Typography>
+                </TableCell>
+                <TableCell sx={{ maxWidth: 180 }}>
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
+                    sx={{
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                    }}
+                  >
+                    {persona.use_case || "-"}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Chip
+                    label={getSourceChip(persona.source).label}
+                    size="small"
+                    variant="outlined"
+                    sx={{ ...compactChipSx, ...getSourceChip(persona.source) }}
+                  />
+                </TableCell>
+                <TableCell>
+                  <StatusIcon status={persona.status} />
+                </TableCell>
+                <TableCell>
+                  <Box display="flex" gap={0.5}>
+                    <IconButton
                       size="small"
-                      variant="outlined"
-                      sx={{ ...compactChipSx, ...getSourceChip(persona.source) }}
-                    />
-                  </TableCell>
-                  <TableCell align="center">
-                    {isEditing ? (
-                      <Select
-                        value={persona.status}
-                        size="small"
-                        onChange={(e) => handleStatusChange(persona.id, e.target.value as "approved" | "rejected")}
-                        sx={{ minWidth: 100, fontSize: 12 }}
-                      >
-                        <MenuItem value="approved">Approved</MenuItem>
-                        <MenuItem value="pending" disabled>Pending</MenuItem>
-                        <MenuItem value="rejected">Rejected</MenuItem>
-                      </Select>
-                    ) : (
-                      <Chip
-                        label={persona.status}
-                        size="small"
-                        color={getStatusColor(persona.status) as "success" | "error" | "info" | "warning"}
-                        variant="filled"
-                      />
-                    )}
-                  </TableCell>
-                  <TableCell align="center">
-                    {isEditing ? (
-                      <Box display="flex" gap={0.5} justifyContent="center">
-                        <IconButton
-                          size="small"
-                          color="primary"
-                          onClick={() => personaEdit.saveEdit(persona.id, personas)}
-                          disabled={personaEdit.savingPersonaId !== null || !personaEdit.editedTitle.trim()}
-                        >
-                          {personaEdit.savingPersonaId === persona.id ? (
-                            <CircularProgress size={18} />
-                          ) : (
-                            <IconDeviceFloppy {...actionIconProps} />
-                          )}
-                        </IconButton>
-                        <IconButton
-                          size="small"
-                          onClick={personaEdit.cancelEdit}
-                          disabled={personaEdit.savingPersonaId !== null}
-                        >
-                          <IconX {...actionIconProps} />
-                        </IconButton>
-                      </Box>
-                    ) : (
-                      <IconButton
-                        size="small"
-                        onClick={(e) => handleMenuOpen(e, persona)}
-                        disabled={personaEdit.savingPersonaId !== null}
-                        sx={subtleActionButtonSx}
-                      >
-                        <IconDots {...compactActionIconProps} />
-                      </IconButton>
-                    )}
-                  </TableCell>
-                </TableRow>
-              );
-            })}
+                      onClick={() => setEditingPersona(persona)}
+                      sx={subtleActionButtonSx}
+                    >
+                      <IconPencil {...compactActionIconProps} />
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      onClick={() => setPersonaToDelete(persona)}
+                      sx={{ ...subtleActionButtonSx, "&:hover": { opacity: 1, bgcolor: "error.50", color: "error.main" } }}
+                    >
+                      <IconTrash {...compactActionIconProps} />
+                    </IconButton>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ))}
           </TableBody>
         </Table>
       </TableContainer>
@@ -306,31 +181,6 @@ export default function PersonaTable({
         page={currentPage}
         onPageChange={(_event, newPage) => setPage(newPage)}
       />
-      </>
-
-      <Menu
-        anchorEl={menuAnchor}
-        open={!!menuAnchor}
-        onClose={handleMenuClose}
-        transformOrigin={{ horizontal: "right", vertical: "top" }}
-        anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
-      >
-        <MenuItem onClick={() => menuPersona && handleEditFromMenu(menuPersona)}>
-          <ListItemIcon><IconPencil {...actionIconProps} /></ListItemIcon>
-          <ListItemText>Edit</ListItemText>
-        </MenuItem>
-        <Divider />
-        <MenuItem
-          onClick={() => {
-            if (menuPersona) setPersonaToDelete(menuPersona);
-            handleMenuClose();
-          }}
-          sx={{ color: "error.main" }}
-        >
-          <ListItemIcon><IconTrash {...actionIconProps} /></ListItemIcon>
-          <ListItemText>Delete</ListItemText>
-        </MenuItem>
-      </Menu>
 
       <ConfirmDeleteDialog
         open={!!personaToDelete}
@@ -339,6 +189,14 @@ export default function PersonaTable({
         title="Delete Persona"
         itemName={personaToDelete?.title}
         description="This will permanently delete this persona and all questions associated with it."
+      />
+
+      <EditPersonaDialog
+        open={!!editingPersona}
+        persona={editingPersona}
+        personas={personas}
+        onClose={() => setEditingPersona(null)}
+        onSaved={onPersonasChanged}
       />
     </>
   );

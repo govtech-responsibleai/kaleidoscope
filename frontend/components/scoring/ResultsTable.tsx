@@ -9,7 +9,6 @@ import {
   Chip,
   ChipProps,
   Collapse,
-  Divider,
   IconButton,
   Paper,
   Stack,
@@ -82,7 +81,7 @@ const getRubricOptionColor = (
   if (value === rubric.best_option) {
     return "success";
   }
-  return isBinaryRubric(rubric) ? "error" : "primary";
+  return "error";
 };
 
 
@@ -332,71 +331,74 @@ export default function ResultsTable({
   };
 
   return (
-    <Box>
-      <Stack direction="row" spacing={2} alignItems="center" sx={{ mb: 1 }}>
-        <Typography variant="h5">Error analysis table</Typography>
-        <Box sx={{ flexGrow: 1 }} />
+    <Box sx={tableContainerSx}>
+      <Box sx={{ px: 2, pt: 2, pb: 1 }}>
+        <Stack direction="row" spacing={2} alignItems="center">
+          <Typography variant="subtitle1" fontWeight={700} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+            Results
+            <Chip label={filteredResults.length} size="small" sx={{ height: 18, fontSize: "0.65rem", "& .MuiChip-label": { px: 0.75 } }} />
+          </Typography>
+          <Box sx={{ flexGrow: 1 }} />
 
-        <QAFilter
-          selectedTypes={selectedTypes}
-          selectedScopes={selectedScopes}
-          selectedPersonaIds={selectedPersonaIds}
-          personas={[...personasMap.values()]}
-          onTypesChange={(types) => { setSelectedTypes(types); setPage(0); }}
-          onScopesChange={(scopes) => { setSelectedScopes(scopes); setPage(0); }}
-          onPersonaIdsChange={(ids) => { setSelectedPersonaIds(ids); setPage(0); }}
-        />
-
-        <JudgeFilter
-          judges={tableJudges}
-          selectedJudgeIds={selectedJudges}
-          onSelectionChange={setSelectedJudges}
-        />
-
-        <Button
-          variant="outlined"
-          size="small"
-          color="inherit"
-          disableRipple
-          sx={{ pr: 1.5, height: "40px", fontWeight: 400, borderColor: "rgba(0,0,0,0.2)" }}
-        >
-          <Checkbox
-            size="small"
-            checked={showDisagreementsOnly}
-            onChange={(e) => { setPage(0); setShowDisagreementsOnly(e.target.checked); }}
+          <QAFilter
+            selectedTypes={selectedTypes}
+            selectedScopes={selectedScopes}
+            selectedPersonaIds={selectedPersonaIds}
+            personas={[...personasMap.values()]}
+            onTypesChange={(types) => { setSelectedTypes(types); setPage(0); }}
+            onScopesChange={(scopes) => { setSelectedScopes(scopes); setPage(0); }}
+            onPersonaIdsChange={(ids) => { setSelectedPersonaIds(ids); setPage(0); }}
           />
-          Show only disagreements
-        </Button>
 
-        <Divider orientation="vertical" flexItem />
+          <JudgeFilter
+            judges={tableJudges}
+            selectedJudgeIds={selectedJudges}
+            onSelectionChange={setSelectedJudges}
+          />
 
-        <Button
-          variant="contained"
-          startIcon={<IconFileTypeCsv {...actionIconProps} />}
-          onClick={handleExport}
-          disabled={exporting}
-          sx={{ bgcolor: theme.palette.secondary.main }}
-        >
-          {exporting ? "Exporting..." : "Export CSV"}
-        </Button>
-      </Stack>
+          <Button
+            variant="outlined"
+            size="small"
+            color="inherit"
+            disableRipple
+            sx={{ pr: 1.5, height: "40px", fontWeight: 400, borderColor: "rgba(0,0,0,0.2)" }}
+          >
+            <Checkbox
+              size="small"
+              checked={showDisagreementsOnly}
+              onChange={(e) => { setPage(0); setShowDisagreementsOnly(e.target.checked); }}
+            />
+            Show only disagreements
+          </Button>
+
+          <Button
+            variant="contained"
+            startIcon={<IconFileTypeCsv {...actionIconProps} />}
+            onClick={handleExport}
+            disabled={exporting}
+            sx={{ bgcolor: theme.palette.secondary.main }}
+          >
+            {exporting ? "Exporting..." : "Export CSV"}
+          </Button>
+        </Stack>
+      </Box>
 
       {excludedJudges.length > 0 && (
-        <Alert severity="warning" sx={{ mb: 2 }}>
+        <Alert severity="warning" sx={{ mx: 2, mb: 1 }}>
           Excluded judges (not reliable): {excludedJudges.map((judge) => judge.name).join(", ")}
         </Alert>
       )}
 
-      <TableContainer component={Paper} sx={tableContainerSx}>
-        <Table size="small">
+      <TableContainer>
+        <Table>
           <TableHead>
             <TableRow sx={tableHeaderRowSx}>
               <TableCell sx={{ width: "5%" }} />
               <TableCell sx={{ ...tableHeaderCellSx, width: "5%" }}>ID</TableCell>
-              <TableCell sx={{ ...tableHeaderCellSx, width: "28%" }}>Question</TableCell>
-              <TableCell sx={{ ...tableHeaderCellSx, width: "28%" }}>Answer</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: "20%" }}>Question</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: "36%" }}>Answer</TableCell>
               {activeRubric ? (
-                <TableCell sx={{ ...tableHeaderCellSx, width: "110px" }}>
+                <TableCell sx={{ ...tableHeaderCellSx, width: 140, minWidth: 140, maxWidth: 140 }}>
                   <TableHeaderFilter
                     label={activeRubric.name}
                     options={labelFilterOptions}
@@ -406,10 +408,8 @@ export default function ResultsTable({
                   />
                 </TableCell>
               ) : (
-                <TableCell sx={{ ...tableHeaderCellSx, width: "90px", textAlign: "center", whiteSpace: "normal", wordBreak: "break-word", px: 0.5 }}>
-                  <Typography variant="body2" sx={{ lineHeight: 1.3, fontSize: "0.8rem", fontWeight: 700 }}>
-                    Label
-                  </Typography>
+                <TableCell sx={{ ...tableHeaderCellSx, width: 140, minWidth: 140, maxWidth: 140 }}>
+                  Label
                 </TableCell>
               )}
               <TableCell sx={{ ...tableHeaderCellSx, width: "130px" }}>
@@ -478,10 +478,10 @@ export default function ResultsTable({
                     </TableCell>
 
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">{truncate(result.answer_content, 160)}</Typography>
+                      <Typography variant="body2" color="text.secondary" sx={{ display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{result.answer_content}</Typography>
                     </TableCell>
 
-                    <TableCell>
+                    <TableCell sx={{ width: 140, minWidth: 140, maxWidth: 140 }}>
                       {activeRubric ? (
                         <LabelCell
                           answerId={result.answer_id}

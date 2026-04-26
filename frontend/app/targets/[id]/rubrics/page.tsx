@@ -386,7 +386,7 @@ export default function RubricsPage() {
         >
           {title}
         </Typography>
-        <Chip label={count} size="small" sx={accent ? { bgcolor: accent, color: "#fff" } : undefined} />
+        <Chip label={count} size="small" sx={{ height: 18, fontSize: "0.65rem", "& .MuiChip-label": { px: 0.75 }, ...(accent ? { bgcolor: accent, color: "#fff" } : {}) }} />
         <Box sx={{ flex: 1 }} />
         {onAdd && (
           <Tooltip title={`Add ${title.toLowerCase()} rubric`} arrow>
@@ -452,7 +452,6 @@ export default function RubricsPage() {
       </Alert>
 
       {/* FIXED group */}
-      <Divider sx={{ mb: 1.5 }} />
       <Box sx={groupSectionSx("fixed")}>
         <Box sx={{ mb: 2 }}>{renderGroupHeader("Fixed", fixedRubrics.length, null, groupColors.fixed.border)}</Box>
         {fixedRubrics.map((rubric) => (
@@ -473,7 +472,6 @@ export default function RubricsPage() {
       </Box>
 
       {/* PRESET group */}
-      <Divider sx={{ mb: 1.5 }} />
       <Box sx={groupSectionSx("preset")}>
         <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, openPremadeDialog, groupColors.preset.border)}</Box>
         {premadeRubrics.length === 0 ? (
@@ -518,7 +516,6 @@ export default function RubricsPage() {
       </Box>
 
       {/* CUSTOM group */}
-      <Divider sx={{ mb: 1.5 }} />
       <Box sx={groupSectionSx("custom")}>
         <Box sx={{ mb: 2 }}>{renderGroupHeader("Custom", customRubrics.length, addRubric, groupColors.custom.border)}</Box>
         {loading ? (

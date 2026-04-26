@@ -32,10 +32,10 @@ import {
 } from "@mui/material";
 import { alpha } from "@mui/material/styles";
 import {
-  IconCode,
   IconCircleCheck,
   IconCircleX,
   IconDeviceFloppy,
+  IconDownload,
   IconMessageQuestion,
   IconPencil,
   IconPlus,
@@ -58,6 +58,8 @@ import {
   tableContainerSx,
   tableHeaderCellSx,
   tableHeaderRowSx,
+  tabSx,
+  tabsSx,
 } from "@/lib/uiStyles";
 
 const cardSx = {
@@ -473,18 +475,16 @@ export default function QuestionsPage() {
       </Box>
 
       {/* ── Summary Cards ── */}
-      <Box sx={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 2, mb: 3 }}>
+      <Box sx={{ display: "grid", gridTemplateColumns: "1fr 1fr 2fr 2fr", gap: 2, mb: 3 }}>
         <Box sx={cardSx}>
           <Typography sx={{ fontSize: 11, fontWeight: 700, letterSpacing: 0.5, color: "text.secondary", textTransform: "uppercase" }}>
             Total Questions
           </Typography>
           <Box sx={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center" }}>
             <Typography variant="h3" fontWeight={700} sx={{ color: "primary.main" }}>{approvedQuestions.length}</Typography>
-            {reviewQuestions.length > 0 && (
-              <Typography variant="caption" sx={{ color: "text.secondary", mt: 0.5 }}>
-                {reviewQuestions.length} pending review
-              </Typography>
-            )}
+            <Typography variant="caption" sx={{ color: reviewQuestions.length > 0 ? "text.secondary" : "transparent", mt: 0.5 }}>
+              {reviewQuestions.length > 0 ? `${reviewQuestions.length} pending review` : " "}
+            </Typography>
           </Box>
         </Box>
 
@@ -584,67 +584,15 @@ export default function QuestionsPage() {
       </Box>
 
       {/* ── Tabs ── */}
-      <Box sx={{ display: "flex", alignItems: "center", borderBottom: 1, borderColor: "divider", mb: 3 }}>
+      <Box sx={{ borderBottom: 1, borderColor: "divider", mb: 2 }}>
         <Tabs
           value={activeTab}
           onChange={(_, newValue) => setActiveTab(newValue)}
-          sx={{ flex: 1 }}
+          sx={tabsSx}
         >
-          <Tab label="Questions" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 }} />
-          <Tab label="Manage Personas" sx={{ fontWeight: 700, textTransform: "uppercase", letterSpacing: 0.6 }} />
+          <Tab label="Evaluation Set" sx={tabSx} />
+          <Tab label="Manage Personas" sx={tabSx} />
         </Tabs>
-        {activeTab === 0 && hasQuestions && (
-          <Box display="flex" gap={1} alignItems="center">
-            <Button
-              size="small"
-              startIcon={<IconPlus {...actionIconProps} />}
-              onClick={() => setGenerateModalOpen(true)}
-              sx={{
-                border: "1px solid",
-                borderColor: "primary.light",
-                color: "primary.light",
-                "&:hover": { bgcolor: "primary.light", color: "#fff" },
-              }}
-            >
-              Add Questions
-            </Button>
-            <Tooltip title="Download questions">
-              <IconButton
-                size="small"
-                onClick={handleExportQuestions}
-                sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
-              >
-                <IconCode {...actionIconProps} />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        )}
-        {activeTab === 1 && personas.length > 0 && (
-          <Box display="flex" gap={1} alignItems="center">
-            <Button
-              size="small"
-              startIcon={<IconPlus {...actionIconProps} />}
-              onClick={() => setAddPersonasOpen(true)}
-              sx={{
-                border: "1px solid",
-                borderColor: "primary.light",
-                color: "primary.light",
-                "&:hover": { bgcolor: "primary.light", color: "#fff" },
-              }}
-            >
-              Add Personas
-            </Button>
-            <Tooltip title="Download personas">
-              <IconButton
-                size="small"
-                onClick={handleExportPersonas}
-                sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
-              >
-                <IconCode {...actionIconProps} />
-              </IconButton>
-            </Tooltip>
-          </Box>
-        )}
       </Box>
 
       {/* ── Personas Tab ── */}
@@ -686,7 +634,37 @@ export default function QuestionsPage() {
             </Button>
           </Box>
         ) : (
-          <Box>
+          <Box sx={tableContainerSx}>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, pt: 2, pb: 1 }}>
+              <Typography variant="subtitle1" fontWeight={700} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                Personas
+                <Chip label={personas.length} size="small" sx={{ height: 18, fontSize: "0.65rem", "& .MuiChip-label": { px: 0.75 } }} />
+              </Typography>
+              <Box display="flex" gap={1} alignItems="center">
+                <Button
+                  size="small"
+                  startIcon={<IconPlus {...actionIconProps} />}
+                  onClick={() => setAddPersonasOpen(true)}
+                  sx={{
+                    border: "1px solid",
+                    borderColor: "primary.light",
+                    color: "primary.light",
+                    "&:hover": { bgcolor: "primary.light", color: "#fff" },
+                  }}
+                >
+                  Add Personas
+                </Button>
+                <Tooltip title="Download as JSON">
+                  <IconButton
+                    size="small"
+                    onClick={handleExportPersonas}
+                    sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
+                  >
+                    <IconDownload {...actionIconProps} />
+                  </IconButton>
+                </Tooltip>
+              </Box>
+            </Box>
             <PersonaTable
               personas={personas}
               onPersonasChanged={fetchData}
@@ -1025,103 +1003,134 @@ export default function QuestionsPage() {
               </Button>
             </Box>
           ) : (<>
-            <TableContainer component={Paper} variant="outlined" sx={tableContainerSx}>
-              <Table>
-                <TableHead>
-                  <TableRow sx={tableHeaderRowSx}>
-                    <TableCell sx={{ width: 70, ...tableHeaderCellSx }}>ID</TableCell>
-                    <TableCell sx={tableHeaderCellSx}>Question</TableCell>
-                    <TableCell align="center" sx={{ width: 160, ...tableHeaderCellSx }}>
-                      <TableHeaderFilter
-                        label="Persona"
-                        options={personaFilterOptions}
-                        value={selectedPersonaIds}
-                        onChange={(ids) => { setSelectedPersonaIds(ids); setPage(0); }}
-                        allSelectedLabel="All Personas"
-                      />
-                    </TableCell>
-                    <TableCell align="center" sx={{ width: 120, ...tableHeaderCellSx }}>
-                      <TableHeaderFilter
-                        label="Type"
-                        options={typeFilterOptions}
-                        value={selectedTypes}
-                        onChange={(types) => { setSelectedTypes(types); setPage(0); }}
-                        allSelectedLabel="All Types"
-                      />
-                    </TableCell>
-                    <TableCell align="center" sx={{ width: 120, ...tableHeaderCellSx }}>
-                      <TableHeaderFilter
-                        label="Scope"
-                        options={scopeFilterOptions}
-                        value={selectedScopes}
-                        onChange={(scopes) => { setSelectedScopes(scopes); setPage(0); }}
-                        allSelectedLabel="All Scopes"
-                      />
-                    </TableCell>
-                    <TableCell align="center" sx={{ width: 50, py: 1.5 }} />
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {filteredQuestions.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((question) => (
-                    <TableRow
-                      key={question.id}
-                      sx={getTableBodyRowSx(theme)}
+            <Box sx={tableContainerSx}>
+              <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", px: 2, pt: 2, pb: 1 }}>
+                <Typography variant="subtitle1" fontWeight={700} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
+                  Questions
+                  <Chip label={filteredQuestions.length} size="small" sx={{ height: 18, fontSize: "0.65rem", "& .MuiChip-label": { px: 0.75 } }} />
+                </Typography>
+                <Box display="flex" gap={1} alignItems="center">
+                  <Button
+                    size="small"
+                    startIcon={<IconPlus {...actionIconProps} />}
+                    onClick={() => setGenerateModalOpen(true)}
+                    sx={{
+                      border: "1px solid",
+                      borderColor: "primary.light",
+                      color: "primary.light",
+                      "&:hover": { bgcolor: "primary.light", color: "#fff" },
+                    }}
+                  >
+                    Add Questions
+                  </Button>
+                  <Tooltip title="Download as JSON">
+                    <IconButton
+                      size="small"
+                      onClick={handleExportQuestions}
+                      sx={{ bgcolor: "secondary.main", color: "white", borderRadius: 1, "&:hover": { bgcolor: "secondary.dark" } }}
                     >
-                      <TableCell>
-                        <Typography sx={{ fontFamily: "monospace", fontSize: 12, color: "text.secondary", fontWeight: 500 }}>
-                          {question.id}
-                        </Typography>
-                      </TableCell>
-                      <TableCell>
-                        <Typography>{question.text}</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Typography>{getPersonaTitle(question.persona_id)}</Typography>
-                      </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          label={question.type || "NA"}
-                          size="small"
-                          variant="outlined"
-                          sx={{
-                            ...compactChipSx,
-                            ...(question.type === "edge"
-                              ? { bgcolor: alpha(theme.palette.warning.main, 0.1), color: "warning.dark", borderColor: alpha(theme.palette.warning.main, 0.3) }
-                              : question.type === "typical"
-                              ? { bgcolor: alpha(theme.palette.success.main, 0.1), color: "success.dark", borderColor: alpha(theme.palette.success.main, 0.3) }
-                              : { borderColor: "grey.300", color: "text.secondary" }),
-                          }}
+                      <IconDownload {...actionIconProps} />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              </Box>
+              <TableContainer>
+                <Table>
+                  <TableHead>
+                    <TableRow sx={tableHeaderRowSx}>
+                      <TableCell sx={{ width: 70, ...tableHeaderCellSx }}>ID</TableCell>
+                      <TableCell sx={tableHeaderCellSx}>Question</TableCell>
+                      <TableCell sx={{ width: 220, ...tableHeaderCellSx }}>
+                        <TableHeaderFilter
+                          label="Persona"
+                          options={personaFilterOptions}
+                          value={selectedPersonaIds}
+                          onChange={(ids) => { setSelectedPersonaIds(ids); setPage(0); }}
+                          allSelectedLabel="All Personas"
                         />
                       </TableCell>
-                      <TableCell align="center">
-                        <Chip
-                          label={question.scope ? (question.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
-                          size="small"
-                          variant="outlined"
-                          sx={{
-                            ...compactChipSx,
-                            ...(question.scope === "in_kb"
-                              ? { bgcolor: alpha(theme.palette.info.main, 0.1), color: "info.dark", borderColor: alpha(theme.palette.info.main, 0.3) }
-                              : question.scope === "out_kb"
-                              ? { bgcolor: alpha(theme.palette.secondary.main, 0.1), color: "secondary.dark", borderColor: alpha(theme.palette.secondary.main, 0.3) }
-                              : { borderColor: "grey.300", color: "text.secondary" }),
-                          }}
+                      <TableCell sx={{ width: 110, ...tableHeaderCellSx }}>
+                        <TableHeaderFilter
+                          label="Type"
+                          options={typeFilterOptions}
+                          value={selectedTypes}
+                          onChange={(types) => { setSelectedTypes(types); setPage(0); }}
+                          allSelectedLabel="All Types"
                         />
                       </TableCell>
-                      <TableCell align="center">
-                        <IconButton
-                          size="small"
-                          onClick={() => setQuestionToDelete(question)}
-                          sx={{ opacity: 0.35, "&:hover": { opacity: 1, color: "error.main" } }}
-                        >
-                          <IconTrash {...compactActionIconProps} />
-                        </IconButton>
+                      <TableCell sx={{ width: 110, ...tableHeaderCellSx }}>
+                        <TableHeaderFilter
+                          label="Scope"
+                          options={scopeFilterOptions}
+                          value={selectedScopes}
+                          onChange={(scopes) => { setSelectedScopes(scopes); setPage(0); }}
+                          allSelectedLabel="All Scopes"
+                        />
                       </TableCell>
+                      <TableCell sx={{ width: 50, py: 1.5 }} />
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
+                  </TableHead>
+                  <TableBody>
+                    {filteredQuestions.slice(currentPage * rowsPerPage, currentPage * rowsPerPage + rowsPerPage).map((question) => (
+                      <TableRow
+                        key={question.id}
+                        sx={getTableBodyRowSx(theme)}
+                      >
+                        <TableCell>
+                          <Typography sx={{ fontFamily: "monospace", fontSize: 12, color: "text.secondary", fontWeight: 500 }}>
+                            {question.id}
+                          </Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography>{question.text}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Typography>{getPersonaTitle(question.persona_id)}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={question.type || "NA"}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              ...compactChipSx,
+                              ...(question.type === "edge"
+                                ? { bgcolor: alpha(theme.palette.warning.main, 0.1), color: "warning.dark", borderColor: alpha(theme.palette.warning.main, 0.3) }
+                                : question.type === "typical"
+                                ? { bgcolor: alpha(theme.palette.success.main, 0.1), color: "success.dark", borderColor: alpha(theme.palette.success.main, 0.3) }
+                                : { borderColor: "grey.300", color: "text.secondary" }),
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={question.scope ? (question.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                            size="small"
+                            variant="outlined"
+                            sx={{
+                              ...compactChipSx,
+                              ...(question.scope === "in_kb"
+                                ? { bgcolor: alpha(theme.palette.info.main, 0.1), color: "info.dark", borderColor: alpha(theme.palette.info.main, 0.3) }
+                                : question.scope === "out_kb"
+                                ? { bgcolor: alpha(theme.palette.secondary.main, 0.1), color: "secondary.dark", borderColor: alpha(theme.palette.secondary.main, 0.3) }
+                                : { borderColor: "grey.300", color: "text.secondary" }),
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <IconButton
+                            size="small"
+                            onClick={() => setQuestionToDelete(question)}
+                            sx={{ opacity: 0.35, "&:hover": { opacity: 1, color: "error.main" } }}
+                          >
+                            <IconTrash {...compactActionIconProps} />
+                          </IconButton>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
               <TablePagination
                 component="div"
                 rowsPerPageOptions={[rowsPerPage]}
@@ -1130,6 +1139,7 @@ export default function QuestionsPage() {
                 page={currentPage}
                 onPageChange={(_event, newPage) => setPage(newPage)}
               />
+            </Box>
           </>)}
         </>
       )}

@@ -189,7 +189,7 @@ export default function QAItem({
             </Box>
 
             {answer ? (
-              checkbox
+              <Box>{checkbox}</Box>
             ) : (
               <Tooltip title="Answer not available yet">
                 <Box>{checkbox}</Box>

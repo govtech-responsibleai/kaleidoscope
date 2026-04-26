@@ -2,6 +2,7 @@
 
 import React from "react";
 import {
+  Box,
   Checkbox,
   IconButton,
   ListItemIcon,
@@ -9,9 +10,8 @@ import {
   Menu,
   MenuItem,
   Stack,
-  Typography,
 } from "@mui/material";
-import { IconFilter } from "@tabler/icons-react";
+import { IconFilter2 } from "@tabler/icons-react";
 import { actionIconProps } from "@/lib/iconStyles";
 import { compactActionButtonSx } from "@/lib/uiStyles";
 
@@ -59,9 +59,9 @@ export default function TableHeaderFilter<T extends string | number>({
   return (
     <>
       <Stack direction="row" alignItems="center" spacing={0.5} justifyContent="flex-start">
-        <Typography variant="body2" fontWeight={600}>
+        <Box component="span" sx={{ fontWeight: 600 }}>
           {label}
-        </Typography>
+        </Box>
         <IconButton
           size="small"
           onClick={(e) => setAnchorEl(e.currentTarget)}
@@ -70,7 +70,7 @@ export default function TableHeaderFilter<T extends string | number>({
             color: isActive ? "primary.main" : "action.active",
           }}
         >
-          <IconFilter {...actionIconProps} />
+          <IconFilter2 {...actionIconProps} />
         </IconButton>
       </Stack>
 

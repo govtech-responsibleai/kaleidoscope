@@ -16,9 +16,10 @@ import {
   Typography,
 } from "@mui/material";
 import {
-  IconCode,
+  IconDownload,
   IconPlus,
 } from "@tabler/icons-react";
+import { tabSx, tabsSx } from "@/lib/uiStyles";
 import ScoreGauge from "@/components/shared/AccuracyGauge";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
@@ -455,7 +456,7 @@ export default function ScoringPage() {
             onSnapshotDeleted={fetchSnapshots}
           />
         </Box>
-        <Tooltip title="Download data for this snapshot">
+        <Tooltip title="Download as JSON">
           <span>
             <Button
               onClick={handleExportSnapshot}
@@ -467,7 +468,7 @@ export default function ScoringPage() {
                 "&:hover": { bgcolor: "secondary.dark" },
                 "&.Mui-disabled": { bgcolor: "action.disabledBackground", color: "action.disabled" },
               }}
-              startIcon={<IconCode {...actionIconProps} />}
+              startIcon={<IconDownload {...actionIconProps} />}
             >
               Export JSON
             </Button>
@@ -527,15 +528,14 @@ export default function ScoringPage() {
       ) : (
         <Stack spacing={2}>
           <Box sx={{ borderBottom: 1, borderColor: "divider" }}>
-            <Tabs value={activeMetricTab} onChange={(_, value) => setActiveMetricTab(value)}>
+            <Tabs value={activeMetricTab} onChange={(_, value) => setActiveMetricTab(value)} sx={tabsSx}>
               {metricSections.map((section, index) => (
                 <Tab
                   key={section.key}
                   label={section.title}
                   value={index}
                   sx={{
-                    textTransform: "none",
-                    fontWeight: 600,
+                    ...tabSx,
                     color: groupColors[section.sourceGroup].border,
                     "&.Mui-selected": {
                       color: groupColors[section.sourceGroup].border,
@@ -686,19 +686,12 @@ function MetricSection({
   };
 
   return (
-    <Paper
-      variant="outlined"
+    <Box
       sx={{
-        borderColor: "divider",
-        bgcolor: "background.paper",
         p: 2,
       }}
     >
-      <Stack spacing={2}>
-        <Typography variant="h6" fontWeight={700}>
-          {section.title}
-        </Typography>
-
+      <Stack>
         <Box
           sx={{
             display: "grid",
@@ -732,7 +725,7 @@ function MetricSection({
           />
         </Box>
       </Stack>
-    </Paper>
+    </Box>
   );
 }
 

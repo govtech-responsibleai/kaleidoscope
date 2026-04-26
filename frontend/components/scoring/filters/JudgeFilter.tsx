@@ -8,7 +8,7 @@ import {
   Menu,
   MenuItem,
 } from "@mui/material";
-import { IconFilter } from "@tabler/icons-react";
+import { IconFilter2 } from "@tabler/icons-react";
 import { actionIconProps } from "@/lib/iconStyles";
 import { JudgeConfig } from "@/lib/types";
 
@@ -41,7 +41,7 @@ export default function JudgeFilter({
     <>
       <Button
         variant="outlined"
-        endIcon={<IconFilter {...actionIconProps} />}
+        endIcon={<IconFilter2 {...actionIconProps} />}
         onClick={(e) => setAnchorEl(e.currentTarget)}
         color={isFilterActive ? "primary" : "inherit"}
         disableRipple

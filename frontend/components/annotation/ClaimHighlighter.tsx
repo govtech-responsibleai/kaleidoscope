@@ -350,14 +350,14 @@ export default function ClaimHighlighter({
   // If no claims or no matches, show raw text
   if (segments.length === 0) {
     return (
-      <Typography variant="body1" sx={{ whiteSpace: "pre-wrap", p: 2 }}>
+      <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", p: 2, lineHeight: 1.8 }}>
         {answerContent}
       </Typography>
     );
   }
 
   return (
-    <Box sx={{ p: 2, borderRadius: 1, lineHeight: 1.8, whiteSpace: "pre-wrap" }}>
+    <Box sx={{ borderRadius: 1, whiteSpace: "pre-wrap", p: 2, typography: "body2", lineHeight: 1.8 }}>
       {segments}
     </Box>
   );

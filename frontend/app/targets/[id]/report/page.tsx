@@ -18,7 +18,7 @@ import {
 } from "@mui/material";
 import {
   IconChevronDown,
-  IconFileTypePdf,
+  IconDownload,
   IconMessageQuestion,
   IconRobotFace,
   IconScreenshot,
@@ -269,18 +269,18 @@ export default function TargetReport() {
           </Typography>
         </Box>
 
-        <Tooltip title={downloading ? "Generating PDF..." : "Export PDF report"}>
+        <Tooltip title={downloading ? "Generating PDF..." : "Download as PDF"}>
           <span>
             <Button
               variant="contained"
               startIcon={
-                downloading ? <CircularProgress size={20} color="inherit" /> : <IconFileTypePdf {...actionIconProps} />
+                downloading ? <CircularProgress size={20} color="inherit" /> : <IconDownload {...actionIconProps} />
               }
               onClick={handleDownloadReport}
               disabled={downloading || loading}
-              sx={{ 
+              sx={{
                 bgcolor: "secondary.main",
-                minWidth: 120 
+                minWidth: 120
               }}
             >
               {downloading ? "Generating..." : "Export PDF"}

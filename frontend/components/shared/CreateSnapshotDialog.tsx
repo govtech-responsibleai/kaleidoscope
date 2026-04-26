@@ -1,19 +1,10 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Button,
-  TextField,
-  Box,
-  CircularProgress,
-  Alert,
-} from "@mui/material";
+import { TextField } from "@mui/material";
 import { snapshotApi } from "@/lib/api";
 import { Snapshot } from "@/lib/types";
+import FormDialog from "./FormDialog";
 
 interface CreateSnapshotDialogProps {
   open: boolean;
@@ -51,7 +42,6 @@ export default function CreateSnapshotDialog({
       return;
     }
 
-    // Check for duplicate names (case-insensitive)
     const isDuplicate = existingSnapshots.some(
       (snapshot) => snapshot.name.toLowerCase() === trimmedName.toLowerCase()
     );
@@ -86,50 +76,36 @@ export default function CreateSnapshotDialog({
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-      <DialogTitle>Create New Snapshot</DialogTitle>
-      <DialogContent>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
-          {error && (
-            <Alert severity="error" onClose={() => setError(null)}>
-              {error}
-            </Alert>
-          )}
+    <FormDialog
+      open={open}
+      title="Create New Snapshot"
+      onClose={handleClose}
+      onSubmit={handleSubmit}
+      submitLabel="Create"
+      loading={loading}
+      disabled={loading || !name.trim()}
+      error={error}
+    >
+      <TextField
+        label="Snapshot Name"
+        required
+        fullWidth
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        disabled={loading}
+        placeholder="e.g., Version 1.0"
+      />
 
-          <TextField
-            label="Snapshot Name"
-            required
-            fullWidth
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={loading}
-            placeholder="e.g., Version 1.0"
-          />
-
-          <TextField
-            label="Description"
-            fullWidth
-            multiline
-            rows={3}
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            disabled={loading}
-            placeholder="Optional description of this snapshot"
-          />
-        </Box>
-      </DialogContent>
-      <DialogActions>
-        <Button onClick={handleClose} disabled={loading}>
-          Cancel
-        </Button>
-        <Button
-          onClick={handleSubmit}
-          variant="contained"
-          disabled={loading || !name.trim()}
-        >
-          {loading ? <CircularProgress size={24} /> : "Create"}
-        </Button>
-      </DialogActions>
-    </Dialog>
+      <TextField
+        label="Description"
+        fullWidth
+        multiline
+        rows={3}
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        disabled={loading}
+        placeholder="Optional description of this snapshot"
+      />
+    </FormDialog>
   );
 }

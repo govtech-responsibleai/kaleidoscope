@@ -14,6 +14,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { alpha } from "@mui/material/styles";
 import { IconCheck, IconPencil, IconRestore, IconX } from "@tabler/icons-react";
 import axios from "axios";
 import { answerApi, getApiErrorMessage } from "@/lib/api";
@@ -40,6 +41,30 @@ interface LabelCellProps {
   editTooltip?: string;
   onLabelChange?: () => void;
 }
+
+const chipColorToCss: Record<string, string> = {
+  success: "#2e7d32",
+  error: "#d32f2f",
+  primary: "#1d2766",
+  secondary: "#dc004e",
+  warning: "#ed6c02",
+  info: "#0288d1",
+  default: "#9e9e9e",
+};
+
+const resolveColor = (color: ChipProps["color"]): string =>
+  chipColorToCss[color ?? "default"] ?? chipColorToCss.default;
+
+const labelSelectMenuProps = {
+  PaperProps: {
+    sx: {
+      boxShadow: "0 4px 16px rgba(0, 0, 0, 0.06)",
+    },
+  },
+  MenuListProps: {
+    sx: { py: 0.5, px: 0.5 },
+  },
+};
 
 const getOptionMeta = (
   options: LabelCellOption[],
@@ -149,23 +174,40 @@ export default function LabelCell({
             <Select
               value={selectedValue}
               onChange={(event) => setSelectedValue(event.target.value)}
-              displayEmpty
+              MenuProps={labelSelectMenuProps}
               renderValue={(selected) => {
-                if (!selected) {
-                  return <Typography variant="body2" color="text.secondary">Select...</Typography>;
-                }
                 const option = getOptionMeta(options, selected, displayLabel, chipColor);
-                return <Chip label={option.label} color={option.color} size="small" />;
+                const css = resolveColor(option.color);
+                return (
+                  <Box display="flex" alignItems="center" gap={0.75} overflow="hidden" height="100%">
+                    <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: css, flexShrink: 0 }} />
+                    <Typography fontSize={12} fontWeight={600} noWrap>{option.label}</Typography>
+                  </Box>
+                );
               }}
             >
-              <MenuItem value="" disabled>
-                <Typography variant="body2" color="text.secondary">Select...</Typography>
-              </MenuItem>
-              {options.map((option) => (
-                <MenuItem key={option.value} value={option.value}>
-                  <Chip label={option.label} color={option.color} size="small" />
-                </MenuItem>
-              ))}
+              {options.map((option) => {
+                const css = resolveColor(option.color);
+                return (
+                  <MenuItem
+                    key={option.value}
+                    value={option.value}
+                    sx={{
+                      py: 0.5,
+                      px: 1,
+                      minHeight: "unset",
+                      "&:hover": { bgcolor: alpha(css, 0.08) },
+                      "&.Mui-selected": { bgcolor: alpha(css, 0.12) },
+                      "&.Mui-selected:hover": { bgcolor: alpha(css, 0.12) },
+                    }}
+                  >
+                    <Box display="flex" alignItems="center" gap={0.75}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: css, flexShrink: 0 }} />
+                      <Typography fontSize={12} fontWeight={600} lineHeight={1}>{option.label}</Typography>
+                    </Box>
+                  </MenuItem>
+                );
+              })}
             </Select>
           </FormControl>
           <Tooltip title="Save">
@@ -196,11 +238,13 @@ export default function LabelCell({
     );
   }
 
+  const readOption = getOptionMeta(options, selectedValue, displayLabel, chipColor);
+
   return (
     <Stack spacing={0.5}>
       <Stack direction="row" justifyContent="space-between" alignItems="center">
         <Box display="flex" alignItems="center" gap={0.5}>
-          <Chip label={displayLabel} color={chipColor} size="small" />
+          <Chip label={readOption.label} color={readOption.color} size="small" />
           {showEditedBadge && (
             <Typography color="text.secondary" sx={{ fontStyle: "italic", fontSize: "0.7rem" }}>
               (edited)

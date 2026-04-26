@@ -205,8 +205,7 @@ export default function QAContent({
 
       {/* Judge verdict — inline, no accordion */}
       <Box sx={{
-        px: 2,
-        py: 2,
+        p: 2,
         bgcolor: isClaimBasedRubric
           ? (answerScore ? (answerScore.overall_label === activeRubric?.best_option ? "#f0faf0" : "#fef0f0") : undefined)
           : (verdictScore
@@ -226,7 +225,7 @@ export default function QAContent({
                     {answerScore.overall_label}
                   </Box>
                 </Typography>
-                <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                <Typography variant="caption" color="text.secondary" sx={{ px: 2, lineHeight: 1.5 }}>
                   {claimScoreSummary.totalCheckworthy === 0
                     ? "No claims found, answer defaults to accurate."
                     : claimScoreSummary.scored === 0
@@ -264,7 +263,7 @@ export default function QAContent({
                       {activeMetricStatus.score.value}
                     </Box>
                   </Typography>
-                  <Typography variant="caption" color="text.secondary" sx={{ lineHeight: 1.6 }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ px:2, lineHeight: 1.5 }}>
                     {activeMetricStatus.score.explanation}
                   </Typography>
                 </>
@@ -332,7 +331,6 @@ export default function QAContent({
               <Box
                 sx={{
                   maxWidth: { xs: "100%", sm: "85%" },
-                  ...(isClaimBasedRubric && { px: 1, py: 0.5 }),
                   borderRadius: "30px 30px 30px 0",
                   border: (theme) => `1px solid ${theme.palette.divider}`,
                 }}
@@ -352,7 +350,7 @@ export default function QAContent({
                   }}
                 />
               ) : (
-                  <Typography variant="body1" sx={{ p: 2, whiteSpace: "pre-wrap" }}>
+                  <Typography variant="body2" sx={{ whiteSpace: "pre-wrap", p:2, lineHeight: 1.5 }}>
                     {answer.answer_content}
                   </Typography>
                 )}
