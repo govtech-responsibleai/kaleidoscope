@@ -480,7 +480,7 @@ export default function RubricsPage() {
           premadeRubrics.map((rubric) => (
             <Accordion key={rubric.id} variant="outlined" disableGutters sx={{ mb: 1 }}>
               <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1 }}>
                   <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
                   {rubricHasRunningJobs(rubric) && (
                     <Chip label="Jobs running" size="small" color="error" variant="outlined" />
@@ -548,7 +548,7 @@ export default function RubricsPage() {
                       onClick={(e) => e.stopPropagation()}
                       onChange={(e) => updateField(rubric.id, { name: e.target.value })}
                       slotProps={{
-                        input: { style: { fontWeight: 600, fontSize: "0.95rem" } },
+                        input: { style: { fontWeight: 600, fontSize: "1rem" } },
                       }}
                       sx={{
                         flexGrow: 1,

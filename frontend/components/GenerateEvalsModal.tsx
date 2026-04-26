@@ -312,7 +312,7 @@ export default function GenerateEvalsModal({
             {/* Connector line aligned to circle centers */}
             <Box sx={{
               position: "absolute",
-              top: "calc(0.65rem + 4px + 14px)",
+              top: "calc(0.65rem + 24px)",
               left: "25%",
               right: "25%",
               height: "2px",
@@ -400,7 +400,7 @@ export default function GenerateEvalsModal({
               <Card
                 sx={{
                   width: 250,
-                  height: selectedMode === "generate" ? "auto" : "200px",
+                  height: selectedMode === "generate" ? "auto" : "20vh",
                   cursor: "pointer",
                   transition: "all 0.2s",
                   boxShadow: "none",
@@ -416,7 +416,7 @@ export default function GenerateEvalsModal({
                 }}
                 onClick={() => setSelectedMode("generate")}
               >
-                <CardContent sx={{ textAlign: "center", py: 4, height: "200px" }}>
+                <CardContent sx={{ textAlign: "center", py: 4, height: "20vh" }}>
                   <Box className="card-icon" sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconSparkles size={48} stroke={1.8} /></Box>
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Generate from Personas
@@ -449,7 +449,7 @@ export default function GenerateEvalsModal({
               <Card
                 sx={{
                   width: 250,
-                  height: selectedMode === "upload" ? "auto" : "200px",
+                  height: selectedMode === "upload" ? "auto" : "20vh",
                   cursor: "pointer",
                   transition: "all 0.2s",
                   boxShadow: "none",
@@ -465,7 +465,7 @@ export default function GenerateEvalsModal({
                 }}
                 onClick={() => setSelectedMode("upload")}
               >
-                <CardContent sx={{ textAlign: "center", py: 4, height: "200px" }}>
+                <CardContent sx={{ textAlign: "center", py: 4, height: "auto" }}>
                   <Box className="card-icon" sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconUpload size={48} stroke={1.8} /></Box>
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Upload
