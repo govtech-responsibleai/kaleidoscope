@@ -8,13 +8,12 @@ import React, {
   useState,
 } from "react";
 import {
-  IconPlayerPause,
-  IconPlayerPlay,
+  IconPlayerPauseFilled,
+  IconPlayerPlayFilled,
 } from "@tabler/icons-react";
 import {
   Box,
   Button,
-  Chip,
   CircularProgress,
   Stack,
 } from "@mui/material";
@@ -29,7 +28,6 @@ import {
   RubricSpec,
 } from "@/lib/types";
 import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
-import { actionIconProps } from "@/lib/iconStyles";
 import {
   buildMissingRubricCoverage,
   emptyMissingRubricCoverage,
@@ -596,85 +594,9 @@ export default function QAJobControl({
   const totalJobs = qaJobs.length;
   const hasPendingRubricMetrics = hasMissingRubricCoverage(missingRubricCoverage);
 
-  // UI chip to display progress
-  const getStatusChip = () => {
-    if (!snapshotId) {
-      return <Chip label="Select a snapshot" size="small" />;
-    }
-
-    if (loadingInitialData) {
-      return (
-        <Chip
-          icon={<CircularProgress size={14} />}
-          label="Loading..."
-          size="small"
-        />
-      );
-    }
-
-    if (totalJobs === 0) {
-      return <Chip label="Not Started" color="default" size="small" />;
-    }
-
-    if (runningCount > 0) {
-      return (
-        <Chip
-          icon={<CircularProgress size={14} />}
-          label={`Evaluating \u2022 ${questionsFullyComplete}/${totalQuestions}`}
-          color="warning"
-          size="small"
-        />
-      );
-    }
-
-    if (hasPendingRubricMetrics) {
-      return (
-        <Chip
-          label={`Metrics pending • ${missingRubricCoverage.pendingQuestionCount} question${missingRubricCoverage.pendingQuestionCount === 1 ? "" : "s"}`}
-          color="warning"
-          size="small"
-        />
-      );
-    }
-
-    if (questionsFullyComplete === totalQuestions && totalQuestions > 0) {
-      if (questionsWithoutAnswers.length > 0) {
-        return (
-          <Chip
-            label={`${questionsWithoutAnswers.length} new question${questionsWithoutAnswers.length === 1 ? "" : "s"} ready to evaluate`}
-            color="warning"
-            size="small"
-          />
-        );
-      }
-      return <Chip label="Evaluations complete — ready to annotate" color="success" size="small" />;
-    }
-
-    if (failedCount > 0 && runningCount === 0 && pausedCount === 0) {
-      const failedQuestions = new Set(
-        qaJobs.filter((j) => j.status === JobStatus.FAILED).map((j) => j.question_id)
-      ).size;
-      return (
-        <Chip
-          label={`${failedQuestions} of ${totalQuestions} evaluation${failedQuestions === 1 ? "" : "s"} failed`}
-          color="error"
-          size="small"
-        />
-      );
-    }
-
-    if (pausedCount > 0) {
-      return (
-        <Chip
-          label={`Paused: ${questionsFullyComplete}/${totalQuestions}`}
-          color="default"
-          size="small"
-        />
-      );
-    }
-
-    return <Chip label="Idle" size="small" />;
-  };
+  const failedQuestionCount = new Set(
+    qaJobs.filter((j) => j.status === JobStatus.FAILED).map((j) => j.question_id)
+  ).size;
 
   const controlState: ControlState = (() => {
     if (!snapshotId) {
@@ -710,24 +632,24 @@ export default function QAJobControl({
 
   const controlButtonText = (() => {
     switch (controlState) {
+      case "pause":
+        return `Evaluating: ${questionsFullyComplete}/${totalQuestions}`;
+      case "resume":
+        return `Resume: ${questionsFullyComplete}/${totalQuestions}`;
       case "start":
         if (hasPendingRubricMetrics) {
-          return "Retry Missing Metrics";
+          return `Retry Missing Metrics: ${missingRubricCoverage.pendingQuestionCount} Question${missingRubricCoverage.pendingQuestionCount === 1 ? "" : "s"}`;
+        }
+        if (questionsWithoutAnswers.length > 0) {
+          return `Evaluate ${questionsWithoutAnswers.length} New Question${questionsWithoutAnswers.length === 1 ? "" : "s"}`;
         }
         if (failedCount > 0) {
-          return "Retry Failed Evaluations";
-        }
-        if (questionsFullyComplete > 0 && questionsWithoutAnswers.length > 0) {
-          return "Evaluate New Questions";
+          return `Retry: ${failedQuestionCount} of ${totalQuestions} Evaluation${failedQuestionCount === 1 ? "" : "s"} Failed`;
         }
         if (isScoringComplete) {
-          return "All Evaluations Complete";
+          return "Evaluations Complete — Ready to Annotate";
         }
         return "Start Evaluations";
-      case "pause":
-        return "Pause Evaluation";
-      case "resume":
-        return "Resume Evaluation";
       default:
         return "Select a Snapshot";
     }
@@ -855,6 +777,7 @@ export default function QAJobControl({
         <Button
           variant="contained"
           color="primary"
+          size="small"
           onClick={handleControlClick}
           disabled={
             controlState === "disabled" ||
@@ -863,19 +786,20 @@ export default function QAJobControl({
             isScoringComplete
           }
           startIcon={
-            jobInAction ? (
-              <CircularProgress size={16} />
-            ) : controlState === "pause" ? (
-              <IconPlayerPause {...actionIconProps} />
+            controlState === "pause" ? (
+              <Box sx={{ position: "relative", width: 14, height: 14, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>
+                <CircularProgress size={14} sx={{ color: "inherit" }} />
+                <IconPlayerPauseFilled size={12} style={{ position: "absolute" }} />
+              </Box>
+            ) : jobInAction ? (
+              <CircularProgress size={14} sx={{ color: "inherit" }} />
             ) : (
-              <IconPlayerPlay {...actionIconProps} />
+              <IconPlayerPlayFilled size={12} />
             )
           }
         >
           {controlButtonText}
         </Button>
-
-        {getStatusChip()}
       </Stack>
     </Box>
   );

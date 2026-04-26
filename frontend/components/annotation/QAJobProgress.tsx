@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
-import { IconAlertCircle, IconPlayerPause } from "@tabler/icons-react";
+import { IconAlertCircle, IconPlayerPauseFilled } from "@tabler/icons-react";
 import {
   Alert,
   Box,
@@ -106,7 +106,7 @@ export default function QAJobProgress({ job }: QAJobProgressProps) {
     if (job.status === JobStatus.PAUSED) {
       return (
         <Chip
-          icon={<IconPlayerPause {...compactActionIconProps} />}
+          icon={<IconPlayerPauseFilled {...compactActionIconProps} />}
           label="Paused"
           color="default"
           size="small"
