@@ -41,7 +41,7 @@ export default function LoginPage() {
     try {
       await authApi.login(username, password);
       router.push("/");
-    } catch (err) {
+    } catch {
       setError("Invalid username or password");
     } finally {
       setLoading(false);

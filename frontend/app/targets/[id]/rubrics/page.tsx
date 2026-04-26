@@ -529,7 +529,6 @@ export default function RubricsPage() {
             const errors = getRubricErrors(rubric);
             const isSaving = saving.has(rubric.id);
             const saveError = saveErrors[rubric.id];
-            const hasBoundData = rubricHasBoundData(rubric);
             const hasRunningJobs = rubricHasRunningJobs(rubric);
             return (
               <Accordion

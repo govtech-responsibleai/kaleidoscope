@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   IconFile,
   IconTrash,
@@ -42,7 +42,7 @@ export default function DocumentList({
   const [totalSize, setTotalSize] = useState(0);
   const [documentToDelete, setDocumentToDelete] = useState<number | null>(null);
 
-  const fetchDocuments = async () => {
+  const fetchDocuments = useCallback(async () => {
     try {
       const response = await kbDocumentApi.list(targetId);
       setDocuments(response.data.documents);
@@ -52,11 +52,11 @@ export default function DocumentList({
     } finally {
       setLoading(false);
     }
-  };
+  }, [targetId]);
 
   useEffect(() => {
-    fetchDocuments();
-  }, [targetId]);
+    void fetchDocuments();
+  }, [fetchDocuments]);
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = event.target.files;

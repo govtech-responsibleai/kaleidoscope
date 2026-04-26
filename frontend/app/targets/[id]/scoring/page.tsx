@@ -8,7 +8,6 @@ import {
   Button,
   CircularProgress,
   IconButton,
-  Paper,
   Stack,
   Tab,
   Tabs,
@@ -686,46 +685,40 @@ function MetricSection({
   };
 
   return (
-    <Box
-      sx={{
-        p: 2,
-      }}
-    >
-      <Stack>
-        <Box
-          sx={{
-            display: "grid",
-            gap: 2,
-            gridTemplateColumns: { xs: "1fr", lg: "280px minmax(0, 1fr)" },
-            alignItems: "center",
-          }}
-        >
-          <Box sx={{ display: "flex", justifyContent: "center", alignSelf: "center" }}>
-            <MetricSummaryTile
-              metric={section.metric}
-              loading={loading}
-              emptyMessage={section.emptyMessage}
-              gaugeLabel={section.gaugeLabel}
-            />
-          </Box>
-
-          <JudgeStrip
-            judges={section.judges}
-            section={section}
-            snapshotId={snapshotId}
-            questionsWithoutAnswers={questionsWithoutAnswers}
-            pendingCountsByRubricId={pendingCountsByRubricId}
-            onJobStart={onJobStart}
-            onJobComplete={onJobComplete}
-            onEditJudge={onEditJudge}
-            onDuplicateJudge={onDuplicateJudge}
-            onDeleteJudge={onDeleteJudge}
-            onAddJudge={onAddJudge}
-            dialogConfig={dialogConfig}
+    <Stack>
+      <Box
+        sx={{
+          display: "grid",
+          gap: 2,
+          gridTemplateColumns: { xs: "1fr", lg: "280px minmax(0, 1fr)" },
+          alignItems: "center",
+        }}
+      >
+        <Box sx={{ display: "flex", justifyContent: "center", alignSelf: "center" }}>
+          <MetricSummaryTile
+            metric={section.metric}
+            loading={loading}
+            emptyMessage={section.emptyMessage}
+            gaugeLabel={section.gaugeLabel}
           />
         </Box>
-      </Stack>
-    </Box>
+
+        <JudgeStrip
+          judges={section.judges}
+          section={section}
+          snapshotId={snapshotId}
+          questionsWithoutAnswers={questionsWithoutAnswers}
+          pendingCountsByRubricId={pendingCountsByRubricId}
+          onJobStart={onJobStart}
+          onJobComplete={onJobComplete}
+          onEditJudge={onEditJudge}
+          onDuplicateJudge={onDuplicateJudge}
+          onDeleteJudge={onDeleteJudge}
+          onAddJudge={onAddJudge}
+          dialogConfig={dialogConfig}
+        />
+      </Box>
+    </Stack>
   );
 }
 
@@ -762,8 +755,7 @@ function JudgeStrip({
       sx={{
         bgcolor: "grey.100",
         borderRadius: 1.5,
-        px: 1.5,
-        py: 1.5,
+        p: 1.5,
       }}
     >
       <Box
@@ -772,7 +764,7 @@ function JudgeStrip({
           alignItems: "center",
           justifyContent: "space-between",
           gap: 2,
-          mb: 1.5,
+          mb: 0.5,
         }}
       >
         <Typography variant="subtitle2" fontWeight={700} color="text.primary">

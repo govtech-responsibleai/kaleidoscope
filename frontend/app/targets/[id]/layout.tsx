@@ -23,23 +23,23 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
   const [stats, setStats] = useState<TargetStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchData = async () => {
-    try {
-      const [targetRes, statsRes] = await Promise.all([
-        targetApi.get(targetId),
-        targetApi.getStats(targetId),
-      ]);
-      setTarget(targetRes.data);
-      setStats(statsRes.data);
-    } catch (error) {
-      console.error("Failed to fetch target data:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchData();
+    const fetchData = async () => {
+      try {
+        const [targetRes, statsRes] = await Promise.all([
+          targetApi.get(targetId),
+          targetApi.getStats(targetId),
+        ]);
+        setTarget(targetRes.data);
+        setStats(statsRes.data);
+      } catch (error) {
+        console.error("Failed to fetch target data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    void fetchData();
   }, [targetId]);
 
 

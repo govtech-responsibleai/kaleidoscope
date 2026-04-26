@@ -30,36 +30,48 @@ export default function EditPersonaDialog({
 }: EditPersonaDialogProps) {
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  const personaEdit = usePersonaEdit({
+  const {
+    cancelEdit,
+    editedInfo,
+    editedStyle,
+    editedTitle,
+    editedUseCase,
+    saveEdit,
+    saveError: hookSaveError,
+    savingPersonaId,
+    setEditedInfo,
+    setEditedStyle,
+    setEditedTitle,
+    setEditedUseCase,
+    startEdit,
+  } = usePersonaEdit({
     onSaved: () => {
       setSaveError(null);
       onSaved();
       onClose();
     },
-    onError: (msg) => setSaveError(msg),
   });
 
   useEffect(() => {
     if (open && persona) {
-      personaEdit.startEdit(persona);
-      setSaveError(null);
+      startEdit(persona);
+      return;
     }
     if (!open) {
-      personaEdit.cancelEdit();
-      setSaveError(null);
+      cancelEdit();
     }
-  }, [open, persona?.id]);
+  }, [cancelEdit, open, persona, startEdit]);
 
-  const isSaving = personaEdit.savingPersonaId !== null;
-  const canSave = personaEdit.editedTitle.trim().length > 0 && !isSaving;
+  const isSaving = savingPersonaId !== null;
+  const canSave = editedTitle.trim().length > 0 && !isSaving;
 
   const handleSave = () => {
     if (!persona) return;
-    personaEdit.saveEdit(persona.id, personas);
+    void saveEdit(persona.id, personas);
   };
 
   const handleClose = () => {
-    personaEdit.cancelEdit();
+    cancelEdit();
     setSaveError(null);
     onClose();
   };
@@ -72,22 +84,22 @@ export default function EditPersonaDialog({
       onSubmit={handleSave}
       loading={isSaving}
       disabled={!canSave}
-      error={saveError}
+      error={saveError ?? hookSaveError}
     >
       <TextField
         label="Title"
-        value={personaEdit.editedTitle}
-        onChange={(e) => personaEdit.setEditedTitle(e.target.value)}
+        value={editedTitle}
+        onChange={(e) => setEditedTitle(e.target.value)}
         size="small"
         fullWidth
         required
-        error={personaEdit.editedTitle.trim().length === 0}
+        error={editedTitle.trim().length === 0}
       />
 
       <TextField
         label="Background"
-        value={personaEdit.editedInfo}
-        onChange={(e) => personaEdit.setEditedInfo(e.target.value)}
+        value={editedInfo}
+        onChange={(e) => setEditedInfo(e.target.value)}
         size="small"
         fullWidth
         multiline
@@ -96,8 +108,8 @@ export default function EditPersonaDialog({
 
       <TextField
         label="Style"
-        value={personaEdit.editedStyle}
-        onChange={(e) => personaEdit.setEditedStyle(e.target.value)}
+        value={editedStyle}
+        onChange={(e) => setEditedStyle(e.target.value)}
         size="small"
         fullWidth
         multiline
@@ -106,8 +118,8 @@ export default function EditPersonaDialog({
 
       <TextField
         label="Use Case"
-        value={personaEdit.editedUseCase}
-        onChange={(e) => personaEdit.setEditedUseCase(e.target.value)}
+        value={editedUseCase}
+        onChange={(e) => setEditedUseCase(e.target.value)}
         size="small"
         fullWidth
         multiline

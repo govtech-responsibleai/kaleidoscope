@@ -6,7 +6,6 @@ import {
   Typography,
   Button,
   CircularProgress,
-  Paper,
   Table,
   TableBody,
   TableCell,

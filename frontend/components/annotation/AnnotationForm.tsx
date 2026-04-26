@@ -176,12 +176,13 @@ export default function AnnotationForm({
     () => annotatableRubrics.every((rubric) => rubricLabels[rubric.id] !== undefined),
     [annotatableRubrics, rubricLabels]
   );
+  const answerId = answer?.id ?? null;
 
   useEffect(() => {
-    if (answer && loadedAnswerId === answer.id && onCompletenessChanged) {
-      onCompletenessChanged(answer.id, isFullyAnnotated);
+    if (answerId !== null && loadedAnswerId === answerId && onCompletenessChanged) {
+      onCompletenessChanged(answerId, isFullyAnnotated);
     }
-  }, [answer?.id, isFullyAnnotated, loadedAnswerId, onCompletenessChanged]);
+  }, [answerId, isFullyAnnotated, loadedAnswerId, onCompletenessChanged]);
 
   useEffect(() => {
     if (activeRubricId === undefined || activeRubricId === null) return;
@@ -199,7 +200,7 @@ export default function AnnotationForm({
   );
 
   useEffect(() => {
-    if (!answer) {
+    if (answerId === null) {
       setRubricLabels({});
       setRubricNotes({});
       setLoadedAnswerId(null);
@@ -211,7 +212,7 @@ export default function AnnotationForm({
     const fetchAnnotations = async () => {
       setLoading(true);
       try {
-        const response = await annotationApi.listByAnswer(answer.id);
+        const response = await annotationApi.listByAnswer(answerId);
         const labelMap: Record<number, string> = {};
         const notesMap: Record<number, string> = {};
         response.data.forEach((annotation: AnswerAnnotation) => {
@@ -224,13 +225,13 @@ export default function AnnotationForm({
         setRubricLabels({});
         setRubricNotes({});
       } finally {
-        setLoadedAnswerId(answer.id);
+        setLoadedAnswerId(answerId);
         setLoading(false);
       }
     };
 
     void fetchAnnotations();
-  }, [answer?.id]);
+  }, [answerId]);
 
   const handleRubricNotesSave = async (rubricId: number, value: string) => {
     if (!answer) return;

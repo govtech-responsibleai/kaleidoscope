@@ -10,7 +10,6 @@ import {
   ChipProps,
   Collapse,
   IconButton,
-  Paper,
   Stack,
   Table,
   TableBody,
@@ -68,8 +67,6 @@ interface JudgeVerdictSummary {
   summaryLabel: string;
   summaryColor: ChipProps["color"];
 }
-
-const isBinaryRubric = (rubric: TargetRubricResponse | null): boolean => (rubric?.options.length ?? 0) === 2;
 
 const getRubricOptionColor = (
   value: string | null | undefined,

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React from "react";
 import { IconAlertCircle, IconPlayerPauseFilled } from "@tabler/icons-react";
 import {
   Alert,
@@ -8,7 +8,6 @@ import {
   Chip,
   CircularProgress,
   LinearProgress,
-  Paper,
   Stack,
   Typography,
 } from "@mui/material";

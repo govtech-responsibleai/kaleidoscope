@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import {
   Box,
   Chip,
@@ -10,8 +10,8 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, RubricAnswerScore, JudgeConfig, QARubricStatus } from "@/lib/types";
-import { rubricScoreApi, judgeApi, qaJobApi } from "@/lib/api";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, QARubricStatus } from "@/lib/types";
+import { qaJobApi } from "@/lib/api";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
@@ -26,7 +26,6 @@ interface QAContentProps {
 }
 
 export default function QAContent({
-  targetId,
   question,
   persona,
   qaEntry,
@@ -34,60 +33,22 @@ export default function QAContent({
   activeRubric,
   pendingRubricIds = [],
 }: QAContentProps) {
-  const [rubricScores, setRubricScores] = useState<RubricAnswerScore[]>([]);
-  const [rubricScoresLoading, setRubricScoresLoading] = useState(false);
-  const [rubricJudges, setRubricJudges] = useState<JudgeConfig[]>([]);
   const [jobDetail, setJobDetail] = useState<QAJob | null>(job);
   const [rubricVerdictLoading, setRubricVerdictLoading] = useState(false);
   const hasLoadedJobDetailRef = useRef(false);
   const isClaimBasedRubric = activeRubric?.scoring_mode === "claim_based";
+  const jobId = job?.id ?? null;
+  const jobStatus = job?.status ?? null;
+  const jobStage = job?.stage ?? null;
+  const claims = useMemo(() => qaEntry?.claims ?? [], [qaEntry?.claims]);
+  const claimScores = useMemo(() => qaEntry?.claimScores ?? [], [qaEntry?.claimScores]);
 
   useEffect(() => {
-    const answerId = qaEntry?.answer?.id;
-    if (!activeRubric || !answerId) {
-      setRubricScores([]);
-      setRubricJudges([]);
-      setJobDetail(job);
-      setRubricVerdictLoading(false);
-      return;
-    }
-
-    judgeApi.getForRubric(activeRubric.id, targetId)
-      .then((res) => setRubricJudges(res.data))
-      .catch(() => setRubricJudges([]));
-
-    let cancelled = false;
-    let pollTimer: number | null = null;
-
-    const fetchScores = async () => {
-      try {
-        if (!cancelled) setRubricScoresLoading(true);
-        const res = await rubricScoreApi.getForAnswer(answerId, activeRubric.id);
-        if (cancelled) return;
-        setRubricScores(res.data);
-        setRubricScoresLoading(false);
-        if (pendingRubricIds.includes(activeRubric.id)) {
-          pollTimer = window.setTimeout(fetchScores, 5000);
-        }
-      } catch {
-        if (!cancelled) {
-          setRubricScores([]);
-          setRubricScoresLoading(false);
-          pollTimer = window.setTimeout(fetchScores, 5000);
-        }
-      }
-    };
-
-    fetchScores();
-
-    return () => {
-      cancelled = true;
-      if (pollTimer !== null) window.clearTimeout(pollTimer);
-    };
-  }, [activeRubric, qaEntry?.answer?.id, targetId, pendingRubricIds, job]);
+    setJobDetail(job);
+  }, [job]);
 
   useEffect(() => {
-    if (!job?.id) {
+    if (!jobId) {
       setJobDetail(job);
       setRubricVerdictLoading(false);
       hasLoadedJobDetailRef.current = false;
@@ -100,7 +61,7 @@ export default function QAContent({
     const fetchJobDetail = async () => {
       try {
         if (!cancelled && !hasLoadedJobDetailRef.current) setRubricVerdictLoading(true);
-        const response = await qaJobApi.get(job.id);
+        const response = await qaJobApi.get(jobId);
         if (cancelled) return;
         const fetched = response.data;
         setJobDetail((prev) => {
@@ -119,7 +80,7 @@ export default function QAContent({
           pollTimer = window.setTimeout(fetchJobDetail, 5000);
         }
       } catch {
-        if (!cancelled && job.stage !== QAJobStageEnum.COMPLETED && job.status === "running") {
+        if (!cancelled && jobStage !== QAJobStageEnum.COMPLETED && jobStatus === "running") {
           pollTimer = window.setTimeout(fetchJobDetail, 5000);
         }
       } finally {
@@ -132,14 +93,12 @@ export default function QAContent({
       cancelled = true;
       if (pollTimer !== null) window.clearTimeout(pollTimer);
     };
-  }, [job?.id, job?.status, job?.stage]);
+  }, [job, jobId, jobStage, jobStatus]);
 
   const answer = qaEntry?.answer;
-  const claims = qaEntry?.claims ?? [];
-  const claimScores = qaEntry?.claimScores ?? [];
   const answerScore = qaEntry?.answerScore ?? null;
 
-  const claimScoreSummary = React.useMemo(() => {
+  const claimScoreSummary = useMemo(() => {
     const checkworthyIds = new Set(
       claims.filter((claim) => claim.checkworthy).map((claim) => claim.id)
     );
@@ -156,16 +115,7 @@ export default function QAContent({
 
   const isActiveRubricPending = Boolean(activeRubric && pendingRubricIds.includes(activeRubric.id));
 
-  // For custom rubric tabs, show the first (recommended) judge
-  const recommendedJudge = React.useMemo(
-    () => rubricJudges[0] ?? null,
-    [rubricJudges]
-  );
-  const recommendedScore = React.useMemo(
-    () => recommendedJudge ? rubricScores.find((s) => s.judge_id === recommendedJudge.id) : undefined,
-    [rubricScores, recommendedJudge]
-  );
-  const activeMetricStatus: QARubricStatus | null = React.useMemo(() => {
+  const activeMetricStatus: QARubricStatus | null = useMemo(() => {
     const activeRubricId = activeRubric?.id ?? null;
     if (!activeRubricId) return null;
     return jobDetail?.rubric_statuses?.find((status) => status.rubric_id === activeRubricId) ?? null;
