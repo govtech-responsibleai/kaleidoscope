@@ -561,21 +561,51 @@ export default function QuestionsPage() {
                   <Box sx={{ width: `${(summaryStats.typicalCount / approvedQuestions.length) * 100}%`, bgcolor: "success.main", transition: "width 0.3s" }} />
                   <Box sx={{ width: `${(summaryStats.edgeCount / approvedQuestions.length) * 100}%`, bgcolor: "warning.main", transition: "width 0.3s" }} />
                 </Box>
-                <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.25 }}>
-                  <Typography sx={{ fontSize: 10, color: "success.dark", fontWeight: 600 }}>Typical {summaryStats.typicalCount}</Typography>
-                  <Typography sx={{ fontSize: 10, color: "warning.dark", fontWeight: 600 }}>Edge {summaryStats.edgeCount}</Typography>
+                <Box sx={{ display: "flex", mt: 0.25 }}>
+                  {summaryStats.typicalCount > 0 && (
+                    <Typography sx={{ fontSize: 10, color: "success.dark", fontWeight: 600, width: `${(summaryStats.typicalCount / approvedQuestions.length) * 100}%`, minWidth: "fit-content" }}>
+                      Typical ({summaryStats.typicalCount})
+                    </Typography>
+                  )}
+                  {summaryStats.edgeCount > 0 && (
+                    <Typography sx={{ fontSize: 10, color: "warning.dark", fontWeight: 600, width: `${(summaryStats.edgeCount / approvedQuestions.length) * 100}%`, minWidth: "fit-content" }}>
+                      Edge ({summaryStats.edgeCount})
+                    </Typography>
+                  )}
                 </Box>
               </Box>
               <Box>
                 <Typography sx={{ fontSize: 11, color: "text.secondary", mb: 0.5, fontWeight: 600 }}>Scope</Typography>
-                <Box sx={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", bgcolor: "grey.200" }}>
-                  <Box sx={{ width: `${(summaryStats.inKbCount / approvedQuestions.length) * 100}%`, bgcolor: "info.main", transition: "width 0.3s" }} />
-                  <Box sx={{ width: `${(summaryStats.outKbCount / approvedQuestions.length) * 100}%`, bgcolor: "secondary.main", transition: "width 0.3s" }} />
-                </Box>
-                <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.25 }}>
-                  <Typography sx={{ fontSize: 10, color: "info.dark", fontWeight: 600 }}>In KB {summaryStats.inKbCount}</Typography>
-                  <Typography sx={{ fontSize: 10, color: "secondary.dark", fontWeight: 600 }}>Out KB {summaryStats.outKbCount}</Typography>
-                </Box>
+                {(() => {
+                  const naCount = approvedQuestions.length - summaryStats.inKbCount - summaryStats.outKbCount;
+                  const total = approvedQuestions.length;
+                  return (
+                    <>
+                      <Box sx={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", bgcolor: "grey.200" }}>
+                        <Box sx={{ width: `${(summaryStats.inKbCount / total) * 100}%`, bgcolor: "info.main", transition: "width 0.3s" }} />
+                        <Box sx={{ width: `${(summaryStats.outKbCount / total) * 100}%`, bgcolor: "secondary.main", transition: "width 0.3s" }} />
+                        <Box sx={{ width: `${(naCount / total) * 100}%`, bgcolor: "grey.400", transition: "width 0.3s" }} />
+                      </Box>
+                      <Box sx={{ display: "flex", mt: 0.25 }}>
+                        {summaryStats.inKbCount > 0 && (
+                          <Typography sx={{ fontSize: 10, color: "info.dark", fontWeight: 600, width: `${(summaryStats.inKbCount / total) * 100}%`, minWidth: "fit-content" }}>
+                            In KB ({summaryStats.inKbCount})
+                          </Typography>
+                        )}
+                        {summaryStats.outKbCount > 0 && (
+                          <Typography sx={{ fontSize: 10, color: "secondary.dark", fontWeight: 600, width: `${(summaryStats.outKbCount / total) * 100}%`, minWidth: "fit-content" }}>
+                            Out KB ({summaryStats.outKbCount})
+                          </Typography>
+                        )}
+                        {naCount > 0 && (
+                          <Typography sx={{ fontSize: 10, color: "text.disabled", fontWeight: 600, width: `${(naCount / total) * 100}%`, minWidth: "fit-content" }}>
+                            NA ({naCount})
+                          </Typography>
+                        )}
+                      </Box>
+                    </>
+                  );
+                })()}
               </Box>
             </Box>
           )}
@@ -1081,10 +1111,10 @@ export default function QuestionsPage() {
                           </Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography>{question.text}</Typography>
+                          <Typography variant="body2">{question.text}</Typography>
                         </TableCell>
                         <TableCell>
-                          <Typography>{getPersonaTitle(question.persona_id)}</Typography>
+                          <Typography variant="body2" color="text.secondary">{getPersonaTitle(question.persona_id)}</Typography>
                         </TableCell>
                         <TableCell>
                           <Chip

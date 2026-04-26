@@ -35,7 +35,7 @@ export const theme = createTheme({
     MuiCssBaseline: {
       styleOverrides: {
         html: {
-          fontSize: "90%", // Scale down all rem-based values
+          // fontSize: "90%", // Scale down all rem-based values
         },
       },
     },

@@ -80,7 +80,7 @@ export default function PersonaTable({
         <Table>
           <TableHead>
             <TableRow sx={tableHeaderRowSx}>
-              <TableCell sx={tableHeaderCellSx}>Title</TableCell>
+              <TableCell sx={{ ...tableHeaderCellSx, width: 160 }}>Title</TableCell>
               <TableCell sx={tableHeaderCellSx}>Background</TableCell>
               <TableCell sx={tableHeaderCellSx}>Style</TableCell>
               <TableCell sx={tableHeaderCellSx}>Use Case</TableCell>

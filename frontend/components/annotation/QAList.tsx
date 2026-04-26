@@ -418,7 +418,7 @@ export default function QAList({
           alignItems="center"
           sx={{ mt:1, mb: 1, flexShrink: 0 }}
         >
-          <Typography variant="h5">Evaluation Set</Typography>
+          <Typography variant="h5">Question List</Typography>
           <Tooltip title="Toggle between all answers or selected only">
             <ToggleButtonGroup
               size="small"
