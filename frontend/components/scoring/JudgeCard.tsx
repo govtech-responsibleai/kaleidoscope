@@ -18,7 +18,9 @@ import {
 } from "@mui/material";
 import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
 import { JudgeConfig, JudgeScoreSummary, QAJob } from "@/lib/types";
-import { questionApi } from "@/lib/api";
+import { metricsApi } from "@/lib/api";
+import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
+import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
 import { getModelIcon } from "@/lib/modelIcons";
 import { compactActionIconProps } from "@/lib/styles";
 import { deriveJudgePendingState } from "@/components/scoring/judgePendingState.mjs";
@@ -64,7 +66,6 @@ export default function JudgeCard({
     runTotalCount: number;
   } | null>(null);
 
-  const pollingRef = useRef<number | null>(null);
   const onJobCompleteRef = useRef(onJobComplete);
 
   // Keep the ref updated with latest callback
@@ -75,8 +76,8 @@ export default function JudgeCard({
   const fetchPendingCount = useCallback(async (): Promise<number> => {
     if (!snapshotId) return 0;
     try {
-      const response = await questionApi.listApprovedWithoutScores(snapshotId, judge.id, rubricId);
-      const nextPending = response.data.length;
+      const response = await metricsApi.getScoringPendingCounts(snapshotId, rubricId);
+      const nextPending = response.data.pending_counts[String(judge.id)] ?? 0;
       setPollingState((current) => (
         current && current.snapshotId === snapshotId && current.rubricId === rubricId
           ? { ...current, pendingCount: nextPending }
@@ -91,55 +92,32 @@ export default function JudgeCard({
     }
   }, [snapshotId, judge.id, rubricId, pollingState, pendingCountProp]);
 
-  const clearPollingTimer = useCallback(() => {
-    if (pollingRef.current) {
-      window.clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
+  const stopPolling = useCallback(() => {
+    setPollingState(null);
   }, []);
 
-  const stopPolling = useCallback(() => {
-    clearPollingTimer();
-    setPollingState(null);
-  }, [clearPollingTimer]);
-
   const startPolling = useCallback((initialPending: number) => {
-    clearPollingTimer();
     setPollingState({
       snapshotId,
       rubricId,
       pendingCount: initialPending,
       runTotalCount: initialPending,
     });
-
-    const poll = async () => {
-      try {
-        const remaining = await fetchPendingCount();
-        if (remaining === 0) {
-          stopPolling();
-          onJobCompleteRef.current();
-        }
-      } catch (error) {
-        console.error("Failed to poll pending score count:", error);
-      }
-    };
-
-    poll();
-    pollingRef.current = window.setInterval(poll, 5000);
-  }, [clearPollingTimer, fetchPendingCount, rubricId, snapshotId, stopPolling]);
-
-  useEffect(() => {
-    return () => {
-      clearPollingTimer();
-    };
-  }, [clearPollingTimer]);
-
-  useEffect(() => {
-    clearPollingTimer();
-  }, [snapshotId, rubricId, clearPollingTimer]);
+  }, [rubricId, snapshotId]);
 
   const activePollingState =
     pollingState?.snapshotId === snapshotId && pollingState.rubricId === rubricId ? pollingState : null;
+  useVisibilityPolling({
+    enabled: activePollingState !== null,
+    intervalMs: GLOBAL_POLLING_INTERVAL,
+    onPoll: async () => {
+      const remaining = await fetchPendingCount();
+      if (remaining === 0) {
+        stopPolling();
+        await onJobCompleteRef.current();
+      }
+    },
+  });
   const isRunning = activePollingState !== null;
   const {
     pendingCount,

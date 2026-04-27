@@ -12,6 +12,8 @@ import {
 } from "@mui/material";
 import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, QARubricStatus } from "@/lib/types";
 import { qaJobApi } from "@/lib/api";
+import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
+import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
@@ -38,8 +40,8 @@ export default function QAContent({
   const hasLoadedJobDetailRef = useRef(false);
   const isClaimBasedRubric = activeRubric?.scoring_mode === "claim_based";
   const jobId = job?.id ?? null;
-  const jobStatus = job?.status ?? null;
-  const jobStage = job?.stage ?? null;
+  const jobStatus = jobDetail?.status ?? job?.status ?? null;
+  const jobStage = jobDetail?.stage ?? job?.stage ?? null;
   const claims = useMemo(() => qaEntry?.claims ?? [], [qaEntry?.claims]);
   const claimScores = useMemo(() => qaEntry?.claimScores ?? [], [qaEntry?.claimScores]);
 
@@ -52,17 +54,18 @@ export default function QAContent({
       setJobDetail(job);
       setRubricVerdictLoading(false);
       hasLoadedJobDetailRef.current = false;
-      return;
     }
+  }, [job, jobId]);
 
-    let cancelled = false;
-    let pollTimer: number | null = null;
+  useVisibilityPolling({
+    enabled: Boolean(jobId && jobStatus === "running" && jobStage !== QAJobStageEnum.COMPLETED),
+    intervalMs: GLOBAL_POLLING_INTERVAL,
+    onPoll: async () => {
+      if (!jobId) return;
 
-    const fetchJobDetail = async () => {
       try {
-        if (!cancelled && !hasLoadedJobDetailRef.current) setRubricVerdictLoading(true);
+        if (!hasLoadedJobDetailRef.current) setRubricVerdictLoading(true);
         const response = await qaJobApi.get(jobId);
-        if (cancelled) return;
         const fetched = response.data;
         setJobDetail((prev) => {
           if (
@@ -76,24 +79,11 @@ export default function QAContent({
           return fetched;
         });
         hasLoadedJobDetailRef.current = true;
-        if (fetched.stage !== QAJobStageEnum.COMPLETED && fetched.status === "running") {
-          pollTimer = window.setTimeout(fetchJobDetail, 5000);
-        }
-      } catch {
-        if (!cancelled && jobStage !== QAJobStageEnum.COMPLETED && jobStatus === "running") {
-          pollTimer = window.setTimeout(fetchJobDetail, 5000);
-        }
       } finally {
-        if (!cancelled) setRubricVerdictLoading(false);
+        setRubricVerdictLoading(false);
       }
-    };
-
-    void fetchJobDetail();
-    return () => {
-      cancelled = true;
-      if (pollTimer !== null) window.clearTimeout(pollTimer);
-    };
-  }, [job, jobId, jobStage, jobStatus]);
+    },
+  });
 
   const answer = qaEntry?.answer;
   const answerScore = qaEntry?.answerScore ?? null;

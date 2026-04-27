@@ -45,7 +45,8 @@ import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
 import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, Status } from "@/lib/types";
-import { JOB_POLLING_INTERVAL } from "@/lib/constants";
+import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
+import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 import PersonaTable from "@/components/questions/PersonaTable";
 import AddPersonasModal from "@/components/questions/AddPersonasModal";
@@ -198,14 +199,15 @@ export default function QuestionsPage() {
     }
   }, [personas]);
 
-  useEffect(() => {
-    if (!activeJobId) return;
+  useVisibilityPolling({
+    enabled: activeJobId !== null,
+    intervalMs: GLOBAL_POLLING_INTERVAL,
+    onPoll: async () => {
+      if (!activeJobId) return;
 
-    const interval = setInterval(async () => {
       try {
         const response = await jobApi.get(activeJobId);
         if (response.data.status === JobStatus.COMPLETED) {
-          clearInterval(interval);
           setJobStatus("finding_similar");
 
           const jobQuestionsRes = await jobApi.getQuestions(activeJobId);
@@ -224,7 +226,6 @@ export default function QuestionsPage() {
           );
           setActiveJobId(null);
         } else if (response.data.status === JobStatus.FAILED) {
-          clearInterval(interval);
           setActiveJobId(null);
           setJobStatus(null);
           setGenerationSummary(null);
@@ -234,10 +235,8 @@ export default function QuestionsPage() {
       } catch (error) {
         console.error("Failed to check job status:", error);
       }
-    }, JOB_POLLING_INTERVAL);
-
-    return () => clearInterval(interval);
-  }, [activeJobId, fetchData, loadQuestionsForReview]);
+    },
+  });
 
   const approvedQuestions = useMemo(() => {
     return questions.filter((question) => question.status === Status.APPROVED);

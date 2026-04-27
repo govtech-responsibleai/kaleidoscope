@@ -33,7 +33,9 @@ import {
   hasMissingRubricCoverage,
   type MissingRubricCoverage,
 } from "@/app/targets/[id]/rubrics";
+import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
 import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
+import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
 
 interface QAJobControlProps {
   targetId: number;
@@ -87,7 +89,6 @@ export default function QAJobControl({
 }: QAJobControlProps) {
   const [jobInAction, setJobInAction] = useState(false);
   const [loadingInitialData, setLoadingInitialData] = useState(true);
-  const pollingIntervalRef = useRef<number | null>(null);
   const qaMapRef = useRef<QAMap>({});
   const activeSnapshotIdRef = useRef<number | null>(null);
   const onErrorRef = useRef(onError);
@@ -446,37 +447,22 @@ export default function QAJobControl({
     };
   }, [qaJobs, snapshotId, fetchAnswer, fetchClaims, fetchScore, setQaMap]);
 
-  // Polling control functions
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current !== null) {
-      window.clearInterval(pollingIntervalRef.current);
-      pollingIntervalRef.current = null;
-    }
-  }, []);
-
   const checkData = useCallback(async () => {
     if (!snapshotId) return;
     try {
       const response = await qaJobApi.list(snapshotId);
       const allJobs = response.data.filter((job) => approvedQuestionIdSet.has(job.question_id));
       setQaJobs(allJobs);
-
-      const allDone = allJobs.length > 0 && allJobs.every(
-        (job) => job.status === JobStatus.COMPLETED || job.status === JobStatus.FAILED
-      );
-
-      if (allDone) {
-        stopPolling();
-      }
     } catch (err) {
       console.error("Failed to poll job status:", err);
     }
-  }, [approvedQuestionIdSet, snapshotId, setQaJobs, stopPolling]);
+  }, [approvedQuestionIdSet, snapshotId, setQaJobs]);
 
-  const startPolling = useCallback(() => {
-    if (pollingIntervalRef.current !== null) return;
-    pollingIntervalRef.current = window.setInterval(checkData, 2000);
-  }, [checkData]);
+  useVisibilityPolling({
+    enabled: Boolean(snapshotId) && runningCount > 0,
+    intervalMs: GLOBAL_POLLING_INTERVAL,
+    onPoll: checkData,
+  });
 
   // Automatically trigger default selection once the full answer set is available and none are selected.
   // Wait for initial load and all jobs to reach a terminal state so we don't select from a partial set.
@@ -543,13 +529,6 @@ export default function QAJobControl({
       cancelled = true;
     };
   }, [snapshotId, qaMap, setQaMap, loadingInitialData, qaJobs]);
-
-  // Cleanup polling on snapshot/judge change
-  useEffect(() => {
-    return () => {
-      stopPolling();
-    };
-  }, [snapshotId, stopPolling]);
 
   const fetchMissingRubricCoverage = useCallback(async () => {
     if (!snapshotId || !rubrics || rubrics.length === 0) {
@@ -684,8 +663,7 @@ export default function QAJobControl({
         const mergedJobs = response.data;
         if (mergedJobs.length > 0) {
           setQaJobs((prev) => mergeJobs(prev, mergedJobs));
-          startPolling();
-          checkData();
+          void checkData();
         }
         return;
       }
@@ -715,8 +693,7 @@ export default function QAJobControl({
       } else {
         setQaJobs((prev) => mergeJobs(prev, response.data));
       }
-      startPolling();
-      checkData();
+      void checkData();
     } catch (err) {
       console.error("Failed to start QA jobs:", err);
       notifyError(getApiErrorMessage(err, "Failed to start QA jobs."));
@@ -733,7 +710,6 @@ export default function QAJobControl({
       const response = await qaJobApi.pause(runningJobs.map((job) => job.id));
       setQaJobs((prev) => mergeJobs(prev, response.data));
       await checkData();
-      stopPolling();
     } catch (err) {
       console.error("Failed to pause QA jobs:", err);
       notifyError(getApiErrorMessage(err, "Failed to pause QA jobs."));
@@ -758,8 +734,7 @@ export default function QAJobControl({
         resumedIds.has(job.id) ? { ...job, status: JobStatus.RUNNING } : job
       );
       setQaJobs((prev) => mergeJobs(prev, optimistic));
-      startPolling();
-      checkData();
+      void checkData();
     } catch (err) {
       console.error("Failed to resume QA jobs:", err);
       notifyError(getApiErrorMessage(err, "Failed to resume QA jobs."));

@@ -48,6 +48,7 @@ import {
 } from "@/lib/api";
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
+import { usePageActivity } from "@/hooks/useVisibilityPolling";
 
 type SourceGroup = "fixed" | "preset" | "custom";
 
@@ -111,8 +112,11 @@ export default function ScoringPage() {
   const [activeMetricTab, setActiveMetricTab] = useState(0);
   const pendingCountsRequestRef = useRef(0);
   const snapshotMetricsRequestRef = useRef(0);
+  const isPageActive = usePageActivity();
+  const wasPageActiveRef = useRef(isPageActive);
 
   const orderedRubrics = useMemo(() => orderRubricsForDisplay(rubrics), [rubrics]);
+  const activeRubricId = orderedRubrics[activeMetricTab]?.id ?? null;
 
   const getJudges = useCallback((rubricId: number | null | undefined) => {
     if (rubricId == null) {
@@ -336,6 +340,55 @@ export default function ScoringPage() {
     }
   }, [selectedSnapshotId, annotationStatus, fetchScoringContracts]);
 
+  useEffect(() => {
+    const becameActive = isPageActive && !wasPageActiveRef.current;
+    wasPageActiveRef.current = isPageActive;
+
+    if (!becameActive || !selectedSnapshotId || rubrics.length === 0) {
+      return;
+    }
+
+    const pendingRequestId = ++pendingCountsRequestRef.current;
+    void Promise.allSettled([
+      checkAnnotationCompletion(selectedSnapshotId, pendingRequestId),
+      fetchScoringPendingCounts(selectedSnapshotId, rubrics, pendingRequestId),
+    ]);
+
+    if (annotationStatus?.is_complete) {
+      const metricsRequestId = ++snapshotMetricsRequestRef.current;
+      void fetchScoringContracts(selectedSnapshotId, metricsRequestId);
+    }
+  }, [
+    annotationStatus,
+    checkAnnotationCompletion,
+    fetchScoringContracts,
+    fetchScoringPendingCounts,
+    isPageActive,
+    rubrics,
+    selectedSnapshotId,
+  ]);
+
+  useEffect(() => {
+    if (!selectedSnapshotId || activeRubricId == null) {
+      return;
+    }
+
+    const pendingRequestId = ++pendingCountsRequestRef.current;
+    void fetchScoringPendingCountsForRubric(selectedSnapshotId, activeRubricId, pendingRequestId);
+
+    if (annotationStatus?.is_complete) {
+      const metricsRequestId = ++snapshotMetricsRequestRef.current;
+      void fetchScoringContracts(selectedSnapshotId, metricsRequestId);
+    }
+  }, [
+    activeMetricTab,
+    annotationStatus,
+    fetchScoringContracts,
+    fetchScoringPendingCountsForRubric,
+    selectedSnapshotId,
+    activeRubricId,
+  ]);
+
   const handleSnapshotSelect = (snapshotId: number | null) => updateSnapshotSelection(snapshotId);
 
   const handleJobStart = async (judgeId: number, rubricId: number): Promise<QAJob[] | null> => {
@@ -355,6 +408,12 @@ export default function ScoringPage() {
         question_ids: questionIdsToScore,
         rubric_specs: [rubricSpecResponse.data],
       });
+      const pendingRequestId = ++pendingCountsRequestRef.current;
+      const metricsRequestId = ++snapshotMetricsRequestRef.current;
+      void Promise.all([
+        fetchScoringPendingCountsForRubric(selectedSnapshotId, rubricId, pendingRequestId),
+        fetchScoringContracts(selectedSnapshotId, metricsRequestId),
+      ]);
       return response.data;
     } catch (jobError) {
       setError(getApiErrorMessage(jobError, "Unable to start judge run."));

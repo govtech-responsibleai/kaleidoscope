@@ -435,7 +435,7 @@ The frontend integrates with the Kaleidoscope backend API:
 
 ```typescript
 APP_NAME = "Kaleidoscope"
-JOB_POLLING_INTERVAL = 10000  // 10 seconds
+GLOBAL_POLLING_INTERVAL = 3000  // 3 seconds
 DEFAULT_PERSONA_COUNT = 5
 ```
 

@@ -3,7 +3,8 @@
 import { useState, useRef, useCallback } from "react";
 import { getApiErrorMessage, jobApi, personaApi } from "@/lib/api";
 import { PersonaResponse, JobStatus } from "@/lib/types";
-import { DEFAULT_PERSONA_COUNT } from "@/lib/constants";
+import { DEFAULT_PERSONA_COUNT, GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
+import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
 
 export type PersonaSource = "ai" | "general" | null;
 
@@ -12,6 +13,7 @@ export function usePersonaGeneration(targetId: number) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [source, setSource] = useState<PersonaSource>(null);
+  const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const cancelledRef = useRef(false);
 
   const generateWithAI = useCallback(async (count = DEFAULT_PERSONA_COUNT, modelUsed?: string) => {
@@ -24,34 +26,44 @@ export function usePersonaGeneration(targetId: number) {
         count_requested: count,
         model_used: modelUsed,
       });
-      const jobId = jobResponse.data.id;
-      let completed = false;
-      while (!completed) {
-        if (cancelledRef.current) return;
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        if (cancelledRef.current) return;
-        const statusResponse = await jobApi.get(jobId);
-        if (statusResponse.data.status === JobStatus.COMPLETED) {
-          completed = true;
-          const personasResponse = await jobApi.getPersonas(jobId);
-          if (!cancelledRef.current) {
-            setPersonas((prev) => [...prev, ...personasResponse.data]);
-          }
-        } else if (statusResponse.data.status === JobStatus.FAILED) {
-          throw new Error("Persona generation failed");
-        }
-      }
+      setActiveJobId(jobResponse.data.id);
     } catch (err) {
       if (!cancelledRef.current) {
         console.error("Failed to generate personas:", err);
         setError(getApiErrorMessage(err, "Failed to generate personas. Please try again."));
-      }
-    } finally {
-      if (!cancelledRef.current) {
         setLoading(false);
       }
     }
   }, [targetId]);
+
+  useVisibilityPolling({
+    enabled: activeJobId !== null,
+    intervalMs: GLOBAL_POLLING_INTERVAL,
+    onPoll: async () => {
+      if (!activeJobId || cancelledRef.current) return;
+
+      try {
+        const statusResponse = await jobApi.get(activeJobId);
+        if (cancelledRef.current) return;
+
+        if (statusResponse.data.status === JobStatus.COMPLETED) {
+          const personasResponse = await jobApi.getPersonas(activeJobId);
+          if (cancelledRef.current) return;
+          setPersonas((prev) => [...prev, ...personasResponse.data]);
+          setActiveJobId(null);
+          setLoading(false);
+        } else if (statusResponse.data.status === JobStatus.FAILED) {
+          throw new Error("Persona generation failed");
+        }
+      } catch (err) {
+        if (cancelledRef.current) return;
+        console.error("Failed to generate personas:", err);
+        setError(getApiErrorMessage(err, "Failed to generate personas. Please try again."));
+        setActiveJobId(null);
+        setLoading(false);
+      }
+    },
+  });
 
   const sampleNemotron = useCallback(async (count = DEFAULT_PERSONA_COUNT) => {
     setSource("general");
@@ -101,6 +113,7 @@ export function usePersonaGeneration(targetId: number) {
     setLoading(false);
     setError(null);
     setSource(null);
+    setActiveJobId(null);
   }, []);
 
   const updatePersona = useCallback((personaId: number, updated: PersonaResponse) => {
