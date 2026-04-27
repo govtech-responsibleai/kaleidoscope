@@ -1,0 +1,39 @@
+# Dockerfile for Kaleidoscope API (Airbase deployment)
+# Build with: docker build --platform linux/amd64 -f Dockerfile-airbase -t kaleidoscope-api .
+
+FROM gdssingapore/airbase:python-3.13
+
+WORKDIR /app
+
+# Install system dependencies
+USER root
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+ENV NLTK_DATA=/usr/local/share/nltk_data
+
+# Copy requirements first for better caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+RUN python -m nltk.downloader -d /usr/local/share/nltk_data punkt
+
+# Copy pre-downloaded HuggingFace dataset (avoids SSL/timeout issues)
+# Run: cp -r ~/.cache/huggingface/datasets/nvidia___nemotron-personas-singapore ./nemotron-dataset
+COPY nemotron-dataset/ /app/.cache/huggingface/datasets/nvidia___nemotron-personas-singapore/
+
+# Copy application code
+COPY src/ ./src/
+
+# Fix permissions for app user
+RUN chmod -R 755 ./src/ && chown -R app:app /app/.cache/
+
+# Switch to non-root user (provided by Airbase base image)
+USER app
+
+# Expose port (Airbase injects $PORT)
+EXPOSE 8000
+
+# Run the main API (use $PORT from Airbase, fallback to 8000)
+CMD ["sh", "-c", "python -m uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

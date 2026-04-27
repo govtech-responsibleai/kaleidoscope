@@ -1,0 +1,1 @@
+"""Rubric domain module."""
