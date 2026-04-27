@@ -60,11 +60,10 @@ providers:
         label: API Key
         env_var: ANTHROPIC_API_KEY
         required: true
-    default_model: anthropic/claude-3-7-sonnet-latest
+    default_model: anthropic/claude-haiku-4-5
     common_models:
-      - anthropic/claude-3-5-haiku-latest
-      - anthropic/claude-3-7-sonnet-latest
-      - anthropic/claude-sonnet-4-0
+      - anthropic/claude-sonnet-4-6
+      - anthropic/claude-opus-4-7
     embedding_models: []
 
   - key: bedrock
@@ -76,11 +75,10 @@ providers:
         label: Bearer Token
         env_var: AWS_BEARER_TOKEN_BEDROCK
         required: true
-    default_model: bedrock/anthropic.claude-3-sonnet-20240229-v1:0
+    default_model: bedrock/anthropic.claude-haiku-4-5-20251001-v1:0
     common_models:
-      - bedrock/anthropic.claude-3-haiku-20240307-v1:0
-      - bedrock/anthropic.claude-3-sonnet-20240229-v1:0
-      - bedrock/amazon.titan-text-express-v1
+      - bedrock/anthropic.claude-sonnet-4-6
+      - bedrock/anthropic.claude-opus-4-7
     embedding_models:
       - bedrock/amazon.titan-embed-text-v2:0
 
