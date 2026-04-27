@@ -16,9 +16,11 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.exc import OperationalError
 
 from src.common.api.routes import providers
-from src.common.config import get_settings
 from src.common.auth import auth_router, get_scoped_db
-from src.common.database.connection import init_db, engine
+from src.common.auth.utils import hash_password
+from src.common.config import get_settings
+from src.common.database.connection import init_db, engine, SessionLocal
+from src.common.database.repositories.user_repo import UserRepository
 from src.common.llm.instrumentation import setup_langfuse_instrumentation
 
 # Import routers from query generation
@@ -52,6 +54,16 @@ async def lifespan(app: FastAPI):
     # Initialize database
     init_db()
     logger.info("✓ Database initialized")
+
+    # Seed default dev user when running with dev defaults (local dev only)
+    if settings.jwt_secret_key == "dev-jwt-secret":
+        db = SessionLocal()
+        try:
+            if not UserRepository.get_by_username(db, "dev"):
+                UserRepository.create(db, "dev", hash_password("dev"), is_admin=True)
+                logger.warning("⚠️  Dev user created (username: dev, password: dev) — change secrets before deploying to production")
+        finally:
+            db.close()
 
     # Load connector extensions (e.g. KALEIDOSCOPE_EXTENSIONS=aibots)
     from src.extensions import load_extensions
