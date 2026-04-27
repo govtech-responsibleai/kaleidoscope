@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import {
   Box,
   Chip,
@@ -45,6 +45,30 @@ export default function QAContent({
   const claims = useMemo(() => qaEntry?.claims ?? [], [qaEntry?.claims]);
   const claimScores = useMemo(() => qaEntry?.claimScores ?? [], [qaEntry?.claimScores]);
 
+  const loadJobDetail = useCallback(async () => {
+    if (!jobId) return;
+
+    try {
+      if (!hasLoadedJobDetailRef.current) setRubricVerdictLoading(true);
+      const response = await qaJobApi.get(jobId);
+      const fetched = response.data;
+      setJobDetail((prev) => {
+        if (
+          prev?.id === fetched.id &&
+          prev?.status === fetched.status &&
+          prev?.stage === fetched.stage &&
+          JSON.stringify(prev?.rubric_statuses) === JSON.stringify(fetched.rubric_statuses)
+        ) {
+          return prev;
+        }
+        return fetched;
+      });
+      hasLoadedJobDetailRef.current = true;
+    } finally {
+      setRubricVerdictLoading(false);
+    }
+  }, [jobId]);
+
   useEffect(() => {
     setJobDetail(job);
   }, [job]);
@@ -57,31 +81,22 @@ export default function QAContent({
     }
   }, [job, jobId]);
 
+  useEffect(() => {
+    if (!jobId) return;
+    if (job?.rubric_statuses?.length) {
+      hasLoadedJobDetailRef.current = true;
+      return;
+    }
+    if (hasLoadedJobDetailRef.current) return;
+
+    void loadJobDetail();
+  }, [jobId, job?.rubric_statuses, loadJobDetail]);
+
   useVisibilityPolling({
     enabled: Boolean(jobId && jobStatus === "running" && jobStage !== QAJobStageEnum.COMPLETED),
     intervalMs: GLOBAL_POLLING_INTERVAL,
     onPoll: async () => {
-      if (!jobId) return;
-
-      try {
-        if (!hasLoadedJobDetailRef.current) setRubricVerdictLoading(true);
-        const response = await qaJobApi.get(jobId);
-        const fetched = response.data;
-        setJobDetail((prev) => {
-          if (
-            prev?.id === fetched.id &&
-            prev?.status === fetched.status &&
-            prev?.stage === fetched.stage &&
-            JSON.stringify(prev?.rubric_statuses) === JSON.stringify(fetched.rubric_statuses)
-          ) {
-            return prev;
-          }
-          return fetched;
-        });
-        hasLoadedJobDetailRef.current = true;
-      } finally {
-        setRubricVerdictLoading(false);
-      }
+      await loadJobDetail();
     },
   });
 
@@ -107,8 +122,10 @@ export default function QAContent({
 
   const activeMetricStatus: QARubricStatus | null = useMemo(() => {
     const activeRubricId = activeRubric?.id ?? null;
+
     if (!activeRubricId) return null;
     return jobDetail?.rubric_statuses?.find((status) => status.rubric_id === activeRubricId) ?? null;
+
   }, [activeRubric?.id, jobDetail?.rubric_statuses]);
   const verdictScore = activeMetricStatus?.score;
 
