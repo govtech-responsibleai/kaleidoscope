@@ -10,7 +10,7 @@ import {
 import { FormDialog } from "@/components/shared";
 import { personaApi } from "@/lib/api";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
-import { PersonaResponse } from "@/lib/types";
+import { PersonaResponse, Status } from "@/lib/types";
 import { useEffect, useState } from "react";
 
 interface EditPersonaDialogProps {
@@ -130,7 +130,7 @@ export default function EditPersonaDialog({
         <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: "block" }}>
           Status
         </Typography>
-        {persona?.status === "approved" ? (
+        {persona?.status === Status.APPROVED ? (
           <Typography variant="body2" sx={{ color: "success.main", fontWeight: 600, py: 0.5 }}>
             Approved
           </Typography>
@@ -140,7 +140,7 @@ export default function EditPersonaDialog({
             size="small"
             fullWidth
             onChange={async (e) => {
-              if (!persona || e.target.value !== "approved") return;
+              if (!persona || (e.target.value as Status) !== Status.APPROVED) return;
               try {
                 await personaApi.approve(persona.id);
                 onSaved();
