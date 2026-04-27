@@ -1,0 +1,5 @@
+/* MUI CssBaseline handles most resets - only add specific overrides here */
+
+html {
+  overflow-y: scroll; /* Prevent layout shift from scrollbar */
+}
