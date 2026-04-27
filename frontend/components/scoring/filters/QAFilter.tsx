@@ -12,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { IconFilter2 } from "@tabler/icons-react";
-import { actionIconProps } from "@/lib/iconStyles";
+import { actionIconProps } from "@/lib/styles";
 import { PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
 
 interface QAFilterProps {

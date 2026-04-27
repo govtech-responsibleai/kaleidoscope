@@ -15,7 +15,7 @@ import { Snapshot } from "@/lib/types";
 import CreateSnapshotDialog from "./CreateSnapshotDialog";
 import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
 import { snapshotApi } from "@/lib/api";
-import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 
 interface SnapshotHeaderProps {
   targetId: number;

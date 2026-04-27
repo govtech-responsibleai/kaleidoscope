@@ -18,7 +18,7 @@ import { alpha } from "@mui/material/styles";
 import { IconCheck, IconPencil, IconRestore, IconX } from "@tabler/icons-react";
 import axios from "axios";
 import { answerApi, getApiErrorMessage } from "@/lib/api";
-import { compactActionIconProps } from "@/lib/iconStyles";
+import { compactActionIconProps } from "@/lib/styles";
 
 export interface LabelCellOption {
   value: string;

@@ -12,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { QAJob, QAJobStageEnum, JobStatus } from "@/lib/types";
-import { compactActionIconProps } from "@/lib/iconStyles";
+import { compactActionIconProps } from "@/lib/styles";
 
 interface QAJobProgressProps {
   job: QAJob | null;

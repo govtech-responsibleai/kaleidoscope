@@ -23,7 +23,7 @@ import {
 } from "@/lib/types";
 import { answerApi, questionApi, personaApi, rubricScoreApi } from "@/lib/api";
 import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
-import { compactChipSx } from "@/lib/uiStyles";
+import { compactChipSx } from "@/lib/styles";
 
 interface ResultsTableExpandedRowProps {
   result: ScoringRowResult;

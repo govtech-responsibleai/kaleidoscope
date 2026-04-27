@@ -20,7 +20,7 @@ import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
 import { JudgeConfig, JudgeScoreSummary, QAJob } from "@/lib/types";
 import { questionApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
-import { compactActionIconProps } from "@/lib/iconStyles";
+import { compactActionIconProps } from "@/lib/styles";
 import { deriveJudgePendingState } from "@/components/scoring/judgePendingState.mjs";
 
 interface JudgeCardProps {

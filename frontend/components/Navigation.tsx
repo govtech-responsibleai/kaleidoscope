@@ -31,7 +31,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Image from "next/image";
 import { APP_NAME } from "@/lib/constants";
 import { authApi } from "@/lib/api";
-import { navIconProps } from "@/lib/iconStyles";
+import { navIconProps } from "@/lib/styles";
 
 const DRAWER_WIDTH_OPEN = 240;
 const DRAWER_WIDTH_CLOSED = 64;

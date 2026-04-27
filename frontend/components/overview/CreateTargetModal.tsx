@@ -22,7 +22,7 @@ import { targetApi, kbDocumentApi, webSearchApi } from "@/lib/api";
 import { TargetCreate } from "@/lib/types";
 import ConnectorConfigFields, { getHttpUrlError, validateEndpointConfig } from "./ConnectorConfigFields";
 import PendingDocumentsPanel from "./PendingDocumentsPanel";
-import { compactActionIconProps, sectionIconProps } from "@/lib/iconStyles";
+import { compactActionIconProps, sectionIconProps } from "@/lib/styles";
 
 interface CreateTargetModalProps {
   open: boolean;

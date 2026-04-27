@@ -50,7 +50,7 @@ import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 import PersonaTable from "@/components/questions/PersonaTable";
 import AddPersonasModal from "@/components/questions/AddPersonasModal";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
-import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import {
   compactChipSx,
   getTableBodyRowSx,
@@ -59,7 +59,7 @@ import {
   tableHeaderRowSx,
   tabSx,
   tabsSx,
-} from "@/lib/uiStyles";
+} from "@/lib/styles";
 
 const cardSx = {
   p: 2.5,

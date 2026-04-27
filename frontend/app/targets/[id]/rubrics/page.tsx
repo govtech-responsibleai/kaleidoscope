@@ -43,7 +43,7 @@ import { metricsApi, qaJobApi, snapshotApi, targetRubricApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
 import { JobStatus, PremadeRubricTemplate, TargetRubricResponse, RubricOption } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
-import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/iconStyles";
+import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/styles";
 
 export default function RubricsPage() {
   const params = useParams();

@@ -26,14 +26,14 @@ import { PersonaResponse } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import EditPersonaDialog from "@/components/questions/EditPersonaDialog";
-import { compactActionIconProps } from "@/lib/iconStyles";
+import { compactActionIconProps } from "@/lib/styles";
 import {
   compactChipSx,
   getTableBodyRowSx,
   subtleActionButtonSx,
   tableHeaderCellSx,
   tableHeaderRowSx,
-} from "@/lib/uiStyles";
+} from "@/lib/styles";
 import { useTheme } from "@mui/material";
 
 interface PersonaTableProps {

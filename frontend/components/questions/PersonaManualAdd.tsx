@@ -8,7 +8,7 @@ import {
   CircularProgress,
 } from "@mui/material";
 import { IconUserPlus } from "@tabler/icons-react";
-import { actionIconProps } from "@/lib/iconStyles";
+import { actionIconProps } from "@/lib/styles";
 
 interface PersonaManualAddProps {
   onSubmit: (data: { title: string; info?: string; style?: string; use_case?: string }) => Promise<unknown>;

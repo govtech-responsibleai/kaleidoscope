@@ -12,10 +12,10 @@ import {
   ToggleButtonGroup,
   Typography,
 } from "@mui/material";
+import { orderRubricsForDisplay } from "@/app/targets/[id]/rubrics";
 import { Answer, AnswerAnnotation, TargetRubricResponse } from "@/lib/types";
 import { annotationApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
-import { orderRubricsForDisplay } from "@/lib/rubrics";
 
 const toggleSx = {
   "& .MuiToggleButton-root": {

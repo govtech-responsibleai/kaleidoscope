@@ -7,10 +7,10 @@ import { IconDownload } from "@tabler/icons-react";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import QAJobControl from "@/components/annotation/QAJobControl";
 import QAList from "@/components/annotation/QAList";
+import { emptyMissingRubricCoverage, type MissingRubricCoverage } from "@/app/targets/[id]/rubrics";
 import { Snapshot, QAJob, QAMap, TargetRubricResponse, QuestionResponse, Status } from "@/lib/types";
 import { snapshotApi, metricsApi, targetRubricApi, questionApi } from "@/lib/api";
-import { actionIconProps } from "@/lib/iconStyles";
-import { emptyMissingRubricCoverage, type MissingRubricCoverage } from "@/lib/evaluationCoverage";
+import { actionIconProps } from "@/lib/styles";
 
 export default function AnnotationPage() {
   return (

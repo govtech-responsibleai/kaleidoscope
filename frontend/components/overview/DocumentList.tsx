@@ -21,7 +21,7 @@ import {
 import { kbDocumentApi } from "@/lib/api";
 import { KBDocumentResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
-import { actionIconProps, sectionIconProps } from "@/lib/iconStyles";
+import { actionIconProps, sectionIconProps } from "@/lib/styles";
 
 interface DocumentListProps {
   targetId: number;

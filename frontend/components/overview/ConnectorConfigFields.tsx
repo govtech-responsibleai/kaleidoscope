@@ -28,7 +28,7 @@ import { alpha } from "@mui/material/styles";
 import { EndpointConfig, HttpAuthPreset, ManagedHttpAuthConfig, ProbeResponse } from "@/lib/types";
 import { targetApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
-import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 
 /**
  * Walk a parsed JSON body and emit a flat list of leaf paths matching the

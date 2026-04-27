@@ -27,13 +27,13 @@ import {
   TargetRubricResponse,
   RubricSpec,
 } from "@/lib/types";
-import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
 import {
   buildMissingRubricCoverage,
   emptyMissingRubricCoverage,
   hasMissingRubricCoverage,
   type MissingRubricCoverage,
-} from "@/lib/evaluationCoverage";
+} from "@/app/targets/[id]/rubrics";
+import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
 
 interface QAJobControlProps {
   targetId: number;

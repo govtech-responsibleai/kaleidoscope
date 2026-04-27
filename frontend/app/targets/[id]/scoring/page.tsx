@@ -18,7 +18,8 @@ import {
   IconDownload,
   IconPlus,
 } from "@tabler/icons-react";
-import { tabSx, tabsSx } from "@/lib/uiStyles";
+import { orderRubricsForDisplay } from "@/app/targets/[id]/rubrics";
+import { tabSx, tabsSx } from "@/lib/styles";
 import ScoreGauge from "@/components/shared/AccuracyGauge";
 import SnapshotHeader from "@/components/shared/SnapshotHeader";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
@@ -45,10 +46,8 @@ import {
   targetRubricApi,
   getApiErrorMessage,
 } from "@/lib/api";
-import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
-import { sortJudges } from "@/lib/judgeOrdering";
-import { orderRubricsForDisplay } from "@/lib/rubrics";
 
 type SourceGroup = "fixed" | "preset" | "custom";
 
@@ -119,7 +118,7 @@ export default function ScoringPage() {
     if (rubricId == null) {
       return [];
     }
-    return sortJudges(judges.filter((judge) => judge.rubric_id === rubricId));
+    return judges.filter((judge) => judge.rubric_id === rubricId);
   }, [judges]);
 
   const getBaselineJudge = useCallback((rubricId: number | null | undefined) => (
@@ -142,7 +141,7 @@ export default function ScoringPage() {
           deduped.set(judge.id, judge);
         });
       });
-      setJudges(sortJudges(Array.from(deduped.values())));
+      setJudges(Array.from(deduped.values()));
     } catch (judgeError) {
       setError(getApiErrorMessage(judgeError, "Failed to load judges."));
     } finally {

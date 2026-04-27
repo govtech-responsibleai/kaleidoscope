@@ -9,7 +9,7 @@ import {
 import { IconAlertTriangle } from "@tabler/icons-react";
 import { SnapshotMetric } from "@/lib/types";
 import ScoreGauge from "@/components/shared/AccuracyGauge";
-import { statusIconProps } from "@/lib/iconStyles";
+import { statusIconProps } from "@/lib/styles";
 
 interface SnapshotAccuracyCardProps {
   snapshotMetric: SnapshotMetric | null;

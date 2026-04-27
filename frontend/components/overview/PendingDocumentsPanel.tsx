@@ -18,7 +18,7 @@ import {
   Paper,
   Typography,
 } from "@mui/material";
-import { actionIconProps } from "@/lib/iconStyles";
+import { actionIconProps } from "@/lib/styles";
 
 interface PendingDocumentsPanelProps {
   selectedFiles: File[];

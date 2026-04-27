@@ -11,7 +11,7 @@ import { ProviderModelOption } from "@/lib/types";
 import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaGenerationPanel from "@/components/questions/PersonaGenerationPanel";
-import { actionIconProps } from "@/lib/iconStyles";
+import { actionIconProps } from "@/lib/styles";
 
 interface AddPersonasModalProps {
   open: boolean;

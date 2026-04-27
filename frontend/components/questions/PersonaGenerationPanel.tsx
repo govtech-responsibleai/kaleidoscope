@@ -9,7 +9,7 @@ import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaSelect from "@/components/questions/PersonaSelect";
 import PersonaReview from "@/components/questions/PersonaReview";
 import PersonaManualAdd from "@/components/questions/PersonaManualAdd";
-import { actionIconProps } from "@/lib/iconStyles";
+import { actionIconProps } from "@/lib/styles";
 
 interface PersonaGenerationPanelProps {
   availableModels: ProviderModelOption[];

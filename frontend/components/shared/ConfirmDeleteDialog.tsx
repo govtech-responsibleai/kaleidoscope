@@ -12,7 +12,7 @@ import {
   Typography,
 } from "@mui/material";
 import { IconTrash } from "@tabler/icons-react";
-import { actionIconProps } from "@/lib/iconStyles";
+import { actionIconProps } from "@/lib/styles";
 
 interface ConfirmDeleteDialogProps {
   open: boolean;

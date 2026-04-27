@@ -25,6 +25,7 @@ import {
   IconUser,
 } from "@tabler/icons-react";
 import { useParams } from "next/navigation";
+import { orderRubricsForDisplay } from "@/app/targets/[id]/rubrics";
 import { targetApi, snapshotApi, judgeApi, metricsApi, targetRubricApi } from "@/lib/api";
 import { TargetResponse, TargetStats, SnapshotMetric, Snapshot, TargetRubricResponse } from "@/lib/types";
 import SnapshotScoreChart, {
@@ -32,8 +33,7 @@ import SnapshotScoreChart, {
 } from "@/components/overview/SnapshotAccuracyChart";
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
-import { actionIconProps, statIconProps } from "@/lib/iconStyles";
-import { orderRubricsForDisplay } from "@/lib/rubrics";
+import { actionIconProps, statIconProps } from "@/lib/styles";
 
 type RubricSeriesDefinition = {
   key: string;

@@ -23,16 +23,15 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
+import { emptyMissingRubricCoverage, type MissingRubricCoverage, orderRubricsForDisplay } from "@/app/targets/[id]/rubrics";
 import { Answer, QAJob, QuestionResponse, QAMap, PersonaResponse, TargetRubricResponse } from "@/lib/types";
 
 import { answerApi, personaApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
-import { orderRubricsForDisplay } from "@/lib/rubrics";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
 import AnnotationForm from "./AnnotationForm";
-import { compactActionIconProps } from "@/lib/iconStyles";
-import { emptyMissingRubricCoverage, type MissingRubricCoverage } from "@/lib/evaluationCoverage";
+import { compactActionIconProps } from "@/lib/styles";
 
 type FilterMode = "all" | "selected";
 

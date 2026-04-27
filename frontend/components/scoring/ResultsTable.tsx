@@ -41,15 +41,14 @@ import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
 import LabelCell, { type LabelCellOption } from "./LabelCell";
 import { QAFilter, JudgeFilter } from "./filters";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
-import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
-import { sortJudges } from "@/lib/judgeOrdering";
+import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import {
   compactChipSx,
   getTableBodyRowSx,
   tableContainerSx,
   tableHeaderCellSx,
   tableHeaderRowSx,
-} from "@/lib/uiStyles";
+} from "@/lib/styles";
 
 interface ResultsTableProps {
   results: ScoringRowResult[];
@@ -203,7 +202,7 @@ export default function ResultsTable({
     [contract, judges]
   );
   const tableJudges = useMemo(
-    () => sortJudges(judges.filter((judge) => reliableJudgeIds.has(judge.id))),
+    () => judges.filter((judge) => reliableJudgeIds.has(judge.id)),
     [judges, reliableJudgeIds]
   );
 

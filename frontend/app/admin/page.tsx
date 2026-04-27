@@ -39,7 +39,7 @@ import { useRouter } from "next/navigation";
 import { adminApi, authApi, getApiErrorMessage } from "@/lib/api";
 import { UserResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
-import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/iconStyles";
+import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/styles";
 
 export default function AdminPage() {
   const router = useRouter();

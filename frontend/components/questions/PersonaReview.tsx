@@ -18,7 +18,7 @@ import {
 } from "@tabler/icons-react";
 import { PersonaResponse } from "@/lib/types";
 import { getSourceChip } from "@/lib/theme";
-import { actionIconProps, compactActionIconProps } from "@/lib/iconStyles";
+import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 
 interface PersonaReviewProps {
   personas: PersonaResponse[];

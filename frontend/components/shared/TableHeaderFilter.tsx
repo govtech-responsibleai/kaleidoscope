@@ -12,8 +12,7 @@ import {
   Stack,
 } from "@mui/material";
 import { IconFilter2 } from "@tabler/icons-react";
-import { actionIconProps } from "@/lib/iconStyles";
-import { compactActionButtonSx } from "@/lib/uiStyles";
+import { actionIconProps, compactActionButtonSx } from "@/lib/styles";
 
 export interface FilterOption<T> {
   value: T;
