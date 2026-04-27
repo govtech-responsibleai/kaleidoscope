@@ -84,7 +84,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://kaleidoscope.app.tc1.airbase.sg",
         "http://localhost:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3000",
