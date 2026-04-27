@@ -13,13 +13,18 @@ import {
 } from "@mui/material";
 import { IconFilter2 } from "@tabler/icons-react";
 import { actionIconProps } from "@/lib/styles";
-import { PersonaResponse, QuestionType, QuestionScope } from "@/lib/types";
+import { QuestionType, QuestionScope } from "@/lib/types";
+
+interface PersonaFilterOption {
+  id: number;
+  title: string;
+}
 
 interface QAFilterProps {
   selectedTypes: QuestionType[];
   selectedScopes: QuestionScope[];
   selectedPersonaIds: number[];
-  personas: PersonaResponse[];
+  personas: PersonaFilterOption[];
   onTypesChange: (types: QuestionType[]) => void;
   onScopesChange: (scopes: QuestionScope[]) => void;
   onPersonaIdsChange: (personaIds: number[]) => void;

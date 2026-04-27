@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   Alert,
@@ -14,10 +14,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import {
-  IconDownload,
-  IconPlus,
-} from "@tabler/icons-react";
+import { IconDownload, IconPlus } from "@tabler/icons-react";
 import { orderRubricsForDisplay } from "@/app/targets/[id]/rubrics";
 import { tabSx, tabsSx } from "@/lib/styles";
 import ScoreGauge from "@/components/shared/AccuracyGauge";
@@ -27,24 +24,23 @@ import JudgeCard from "@/components/scoring/JudgeCard";
 import CreateJudgeDialog from "@/components/scoring/CreateJudgeDialog";
 import ResultsTable from "@/components/scoring/ResultsTable";
 import {
-  Snapshot,
   JudgeConfig,
-  AnnotationCompletionStatus,
   QAJob,
-  ScoringContract,
+  ScoringResultsFilters,
+  ScoringResultsResponse,
+  ScoringRubricResponse,
+  ScoringStatusResponse,
+  Snapshot,
   SnapshotMetric,
-  TargetRubricResponse,
 } from "@/lib/types";
 import {
-  snapshotApi,
-  judgeApi,
-  qaJobApi,
-  metricsApi,
-  annotationApi,
-  questionApi,
-  targetApi,
-  targetRubricApi,
   getApiErrorMessage,
+  judgeApi,
+  metricsApi,
+  qaJobApi,
+  questionApi,
+  snapshotApi,
+  targetApi,
 } from "@/lib/api";
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
@@ -56,8 +52,8 @@ interface MetricSectionConfig {
   key: string;
   title: string;
   sourceGroup: SourceGroup;
-  rubric: TargetRubricResponse | null;
-  contract: ScoringContract | null;
+  rubric: ScoringRubricResponse | null;
+  contract: ScoringResultsResponse | null;
   metric: SnapshotMetric | null;
   judges: JudgeConfig[];
   emptyMessage: string;
@@ -71,6 +67,25 @@ interface DialogConfig {
   defaultPromptTemplate: string;
 }
 
+interface TableQuery extends ScoringResultsFilters {
+  page: number;
+  page_size: number;
+}
+
+const DEFAULT_TABLE_QUERY: TableQuery = {
+  labels: [],
+  question_types: [],
+  question_scopes: [],
+  persona_ids: [],
+  disagreements_only: false,
+  judge_ids: [],
+  page: 0,
+  page_size: 10,
+};
+
+const getResultsCacheKey = (snapshotId: number, rubricId: number, query: TableQuery) =>
+  JSON.stringify({ snapshotId, rubricId, query });
+
 export default function ScoringPage() {
   const params = useParams();
   const router = useRouter();
@@ -80,14 +95,15 @@ export default function ScoringPage() {
   const snapshotIdFromUrl = searchParams.get("snapshot");
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
   const [selectedSnapshotId, setSelectedSnapshotId] = useState<number | null>(
-    snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null
+    snapshotIdFromUrl ? Number(snapshotIdFromUrl) : null,
   );
   const [snapshotsLoading, setSnapshotsLoading] = useState(true);
 
-  const [judges, setJudges] = useState<JudgeConfig[]>([]);
-  const [judgesLoading, setJudgesLoading] = useState(true);
-
-  const [rubrics, setRubrics] = useState<TargetRubricResponse[]>([]);
+  const [rubrics, setRubrics] = useState<ScoringRubricResponse[]>([]);
+  const [rubricsLoading, setRubricsLoading] = useState(true);
+  const [scoringStatus, setScoringStatus] = useState<ScoringStatusResponse | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [resultsLoading, setResultsLoading] = useState(false);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<"create" | "edit" | "duplicate">("create");
@@ -99,80 +115,34 @@ export default function ScoringPage() {
   });
   const [judgeToDelete, setJudgeToDelete] = useState<JudgeConfig | null>(null);
 
-  const [annotationStatus, setAnnotationStatus] = useState<AnnotationCompletionStatus | null>(null);
-  const [checkingAnnotations, setCheckingAnnotations] = useState(true);
-
-  const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number>(0);
-  const [pendingCountsByRubricId, setPendingCountsByRubricId] = useState<Record<number, Record<number, number>>>({});
-  const [metricsByRubricId, setMetricsByRubricId] = useState<Record<number, SnapshotMetric>>({});
-  const [metricsLoading, setMetricsLoading] = useState(false);
-  const [scoringContracts, setScoringContracts] = useState<ScoringContract[]>([]);
-
   const [error, setError] = useState<string | null>(null);
   const [activeMetricTab, setActiveMetricTab] = useState(0);
-  const pendingCountsRequestRef = useRef(0);
-  const snapshotMetricsRequestRef = useRef(0);
+  const [tableQuery, setTableQuery] = useState<TableQuery>(DEFAULT_TABLE_QUERY);
+  const [resultsCache, setResultsCache] = useState<Record<string, ScoringResultsResponse>>({});
+  const resultsCacheRef = useRef<Record<string, ScoringResultsResponse>>({});
+  const [latestResultsByRubricId, setLatestResultsByRubricId] = useState<Record<number, ScoringResultsResponse>>({});
+
+  const statusRequestRef = useRef(0);
+  const rubricsRequestRef = useRef(0);
+  const resultsRequestRef = useRef(0);
   const isPageActive = usePageActivity();
   const wasPageActiveRef = useRef(isPageActive);
 
   const orderedRubrics = useMemo(() => orderRubricsForDisplay(rubrics), [rubrics]);
-  const activeRubricId = orderedRubrics[activeMetricTab]?.id ?? null;
+  const activeRubric = orderedRubrics[activeMetricTab] ?? null;
+  const activeRubricId = activeRubric?.id ?? null;
+  const activeResults = activeRubricId != null ? latestResultsByRubricId[activeRubricId] ?? null : null;
 
   const getJudges = useCallback((rubricId: number | null | undefined) => {
     if (rubricId == null) {
       return [];
     }
-    return judges.filter((judge) => judge.rubric_id === rubricId);
-  }, [judges]);
+    return orderedRubrics.find((rubric) => rubric.id === rubricId)?.judges ?? [];
+  }, [orderedRubrics]);
 
   const getBaselineJudge = useCallback((rubricId: number | null | undefined) => (
     getJudges(rubricId).find((judge) => judge.is_baseline) ?? null
   ), [getJudges]);
-
-  const fetchJudgesForRubrics = useCallback(async (currentRubrics: TargetRubricResponse[]) => {
-    setJudgesLoading(true);
-    try {
-      if (currentRubrics.length === 0) {
-        setJudges([]);
-        return;
-      }
-      const responses = await Promise.all(
-        currentRubrics.map((rubric) => judgeApi.getForRubric(rubric.id, targetId))
-      );
-      const deduped = new Map<number, JudgeConfig>();
-      responses.forEach((response) => {
-        response.data.forEach((judge) => {
-          deduped.set(judge.id, judge);
-        });
-      });
-      setJudges(Array.from(deduped.values()));
-    } catch (judgeError) {
-      setError(getApiErrorMessage(judgeError, "Failed to load judges."));
-    } finally {
-      setJudgesLoading(false);
-    }
-  }, [targetId]);
-
-  const applyScoringContracts = useCallback((contracts: ScoringContract[]) => {
-    setScoringContracts(contracts);
-    setMetricsByRubricId(Object.fromEntries(
-      contracts.map((contract) => [contract.rubric_id, {
-        snapshot_id: contract.snapshot_id ?? selectedSnapshotId ?? 0,
-        snapshot_name: contract.snapshot_name ?? null,
-        created_at: contract.created_at ?? null,
-        rubric_id: contract.rubric_id ?? null,
-        rubric_name: contract.rubric_name ?? null,
-        aggregated_score: contract.aggregated_score,
-        total_answers: contract.total_answers,
-        accurate_count: contract.accurate_count,
-        inaccurate_count: contract.inaccurate_count,
-        pending_count: contract.pending_count,
-        edited_count: contract.edited_count,
-        judge_alignment_range: contract.judge_alignment_range,
-        aligned_judges: contract.aligned_judges,
-      } satisfies SnapshotMetric])
-    ));
-  }, [selectedSnapshotId]);
 
   const updateSnapshotSelection = useCallback((snapshotId: number | null) => {
     setSelectedSnapshotId(snapshotId);
@@ -195,7 +165,7 @@ export default function ScoringPage() {
       if (!hasSelected) {
         if (response.data.length > 0) {
           const mostRecent = [...response.data].sort((a, b) =>
-            new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+            new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
           )[0];
           updateSnapshotSelection(mostRecent.id);
         } else if (selectedSnapshotId !== null) {
@@ -207,187 +177,183 @@ export default function ScoringPage() {
     } finally {
       setSnapshotsLoading(false);
     }
-  }, [targetId, selectedSnapshotId, updateSnapshotSelection]);
+  }, [selectedSnapshotId, targetId, updateSnapshotSelection]);
 
-  const checkAnnotationCompletion = useCallback(async (snapshotId: number, requestId?: number) => {
-    setCheckingAnnotations(true);
+  const clearResultsCache = useCallback((rubricId?: number | null) => {
+    setResultsCache((current) => {
+      const next = rubricId == null
+        ? {}
+        : Object.fromEntries(Object.entries(current).filter(([key]) => !key.includes(`"rubricId":${rubricId},`)));
+      resultsCacheRef.current = next;
+      return next;
+    });
+    setLatestResultsByRubricId((current) => {
+      if (rubricId == null) {
+        return {};
+      }
+      const next = { ...current };
+      delete next[rubricId];
+      return next;
+    });
+  }, []);
+
+  const fetchScoringStatus = useCallback(async (snapshotId: number, requestId?: number) => {
+    setStatusLoading(true);
     try {
-      const response = await annotationApi.getCompletionStatus(snapshotId);
-      if (requestId && requestId !== pendingCountsRequestRef.current) return;
-      setAnnotationStatus(response.data);
-    } catch {
-      if (requestId && requestId !== pendingCountsRequestRef.current) return;
-      setAnnotationStatus(null);
+      const response = await metricsApi.getScoringStatus(snapshotId);
+      if (requestId && requestId !== statusRequestRef.current) return;
+      setScoringStatus(response.data);
+    } catch (statusError) {
+      if (requestId && requestId !== statusRequestRef.current) return;
+      setScoringStatus(null);
+      setError(getApiErrorMessage(statusError, "Failed to load scoring status."));
     } finally {
-      if (!requestId || requestId === pendingCountsRequestRef.current) {
-        setCheckingAnnotations(false);
+      if (!requestId || requestId === statusRequestRef.current) {
+        setStatusLoading(false);
       }
     }
   }, []);
 
-  const fetchScoringContracts = useCallback(async (snapshotId: number, requestId?: number) => {
-    setMetricsLoading(true);
+  const fetchScoringRubrics = useCallback(async (snapshotId: number, requestId?: number) => {
+    setRubricsLoading(true);
     try {
-      const response = await metricsApi.getScoringContracts(snapshotId);
-      if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      applyScoringContracts(response.data.rubrics ?? []);
-    } catch (contractError) {
-      if (requestId && requestId !== snapshotMetricsRequestRef.current) return;
-      setScoringContracts([]);
-      setMetricsByRubricId({});
-      setError(getApiErrorMessage(contractError, "Failed to load scoring data."));
+      const response = await metricsApi.getScoringRubrics(snapshotId);
+      if (requestId && requestId !== rubricsRequestRef.current) return;
+      setRubrics(response.data.rubrics ?? []);
+    } catch (rubricsError) {
+      if (requestId && requestId !== rubricsRequestRef.current) return;
+      setRubrics([]);
+      setError(getApiErrorMessage(rubricsError, "Failed to load scoring rubrics."));
     } finally {
-      if (!requestId || requestId === snapshotMetricsRequestRef.current) {
-        setMetricsLoading(false);
+      if (!requestId || requestId === rubricsRequestRef.current) {
+        setRubricsLoading(false);
       }
-    }
-  }, [applyScoringContracts]);
-
-  const fetchScoringPendingCounts = useCallback(async (
-    snapshotId: number,
-    currentRubrics: TargetRubricResponse[],
-    requestId?: number,
-  ) => {
-    try {
-      if (currentRubrics.length === 0) {
-        setQuestionsWithoutAnswers(0);
-        setPendingCountsByRubricId({});
-        return;
-      }
-
-      const responses = await Promise.all(
-        currentRubrics.map((rubric) => metricsApi.getScoringPendingCounts(snapshotId, rubric.id))
-      );
-      if (requestId && requestId !== pendingCountsRequestRef.current) return;
-
-      const unansweredQuestionCount = responses[0]?.data.unanswered_question_count ?? 0;
-      const nextPendingCountsByRubricId = Object.fromEntries(
-        responses.map(({ data }) => [
-          data.rubric_id,
-          Object.fromEntries(
-            Object.entries(data.pending_counts).map(([judgeId, pendingCount]) => [Number(judgeId), pendingCount])
-          ),
-        ])
-      );
-
-      setQuestionsWithoutAnswers(unansweredQuestionCount);
-      setPendingCountsByRubricId(nextPendingCountsByRubricId);
-    } catch (pendingError) {
-      if (requestId && requestId !== pendingCountsRequestRef.current) return;
-      setQuestionsWithoutAnswers(0);
-      setPendingCountsByRubricId({});
-      setError(getApiErrorMessage(pendingError, "Failed to load scoring pending counts."));
     }
   }, []);
 
-  const fetchScoringPendingCountsForRubric = useCallback(async (
+  const fetchScoringResults = useCallback(async (
     snapshotId: number,
     rubricId: number,
-    requestId?: number,
+    query: TableQuery,
+    useCache = true,
   ) => {
+    const cacheKey = getResultsCacheKey(snapshotId, rubricId, query);
+    if (useCache && resultsCacheRef.current[cacheKey]) {
+      const cached = resultsCacheRef.current[cacheKey];
+      setLatestResultsByRubricId((current) => ({ ...current, [rubricId]: cached }));
+      return cached;
+    }
+
+    const requestId = ++resultsRequestRef.current;
+    setResultsLoading(true);
     try {
-      const response = await metricsApi.getScoringPendingCounts(snapshotId, rubricId);
-      if (requestId && requestId !== pendingCountsRequestRef.current) return;
-
-      const nextPendingCounts = Object.fromEntries(
-        Object.entries(response.data.pending_counts).map(([judgeId, pendingCount]) => [Number(judgeId), pendingCount])
-      );
-
-      setQuestionsWithoutAnswers(response.data.unanswered_question_count ?? 0);
-      setPendingCountsByRubricId((current) => ({
-        ...current,
-        [rubricId]: nextPendingCounts,
-      }));
-    } catch (pendingError) {
-      if (requestId && requestId !== pendingCountsRequestRef.current) return;
-      setError(getApiErrorMessage(pendingError, "Failed to load scoring pending counts."));
+      const response = await metricsApi.getScoringResults(snapshotId, rubricId, query);
+      if (requestId !== resultsRequestRef.current) {
+        return null;
+      }
+      resultsCacheRef.current = { ...resultsCacheRef.current, [cacheKey]: response.data };
+      setResultsCache(resultsCacheRef.current);
+      setLatestResultsByRubricId((current) => ({ ...current, [rubricId]: response.data }));
+      return response.data;
+    } catch (resultsError) {
+      if (requestId === resultsRequestRef.current) {
+        setError(getApiErrorMessage(resultsError, "Failed to load scoring results."));
+      }
+      return null;
+    } finally {
+      if (requestId === resultsRequestRef.current) {
+        setResultsLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
-    fetchSnapshots();
-    targetRubricApi.list(targetId).then((res) => {
-      setRubrics(res.data);
-      void fetchJudgesForRubrics(res.data);
-    }).catch((rubricError) => {
-      setRubrics([]);
-      setJudges([]);
-      setJudgesLoading(false);
-      setError(getApiErrorMessage(rubricError, "Failed to load rubrics."));
-    });
-  }, [targetId, fetchJudgesForRubrics, fetchSnapshots]);
+    void fetchSnapshots();
+  }, [fetchSnapshots]);
 
   useEffect(() => {
-    setAnnotationStatus(null);
-    setQuestionsWithoutAnswers(0);
-    setScoringContracts([]);
-    setMetricsByRubricId({});
-    setPendingCountsByRubricId({});
+    setScoringStatus(null);
+    setRubrics([]);
+    setTableQuery(DEFAULT_TABLE_QUERY);
+    setActiveMetricTab(0);
+    clearResultsCache();
     setError(null);
-    if (selectedSnapshotId && rubrics.length > 0) {
-      const requestId = ++pendingCountsRequestRef.current;
-      void Promise.allSettled([
-        checkAnnotationCompletion(selectedSnapshotId, requestId),
-        fetchScoringPendingCounts(selectedSnapshotId, rubrics, requestId),
-      ]);
+
+    if (!selectedSnapshotId) {
+      setStatusLoading(false);
+      setRubricsLoading(false);
+      return;
     }
-  }, [selectedSnapshotId, rubrics, checkAnnotationCompletion, fetchScoringPendingCounts]);
+
+    const nextStatusRequestId = ++statusRequestRef.current;
+    const nextRubricsRequestId = ++rubricsRequestRef.current;
+    void Promise.allSettled([
+      fetchScoringStatus(selectedSnapshotId, nextStatusRequestId),
+      fetchScoringRubrics(selectedSnapshotId, nextRubricsRequestId),
+    ]);
+  }, [clearResultsCache, fetchScoringRubrics, fetchScoringStatus, selectedSnapshotId]);
 
   useEffect(() => {
-    if (selectedSnapshotId && annotationStatus?.is_complete) {
-      const requestId = ++snapshotMetricsRequestRef.current;
-      void fetchScoringContracts(selectedSnapshotId, requestId);
+    setTableQuery(DEFAULT_TABLE_QUERY);
+  }, [activeRubricId]);
+
+  useEffect(() => {
+    if (!selectedSnapshotId || !activeRubricId || !scoringStatus?.is_complete || scoringStatus.unanswered_question_count > 0) {
+      return;
     }
-  }, [selectedSnapshotId, annotationStatus, fetchScoringContracts]);
+    void fetchScoringResults(selectedSnapshotId, activeRubricId, tableQuery, true);
+  }, [
+    activeRubricId,
+    fetchScoringResults,
+    scoringStatus?.is_complete,
+    scoringStatus?.unanswered_question_count,
+    selectedSnapshotId,
+    tableQuery,
+  ]);
 
   useEffect(() => {
     const becameActive = isPageActive && !wasPageActiveRef.current;
     wasPageActiveRef.current = isPageActive;
 
-    if (!becameActive || !selectedSnapshotId || rubrics.length === 0) {
+    if (!becameActive || !selectedSnapshotId) {
       return;
     }
 
-    const pendingRequestId = ++pendingCountsRequestRef.current;
+    clearResultsCache(activeRubricId);
+    const nextStatusRequestId = ++statusRequestRef.current;
+    const nextRubricsRequestId = ++rubricsRequestRef.current;
     void Promise.allSettled([
-      checkAnnotationCompletion(selectedSnapshotId, pendingRequestId),
-      fetchScoringPendingCounts(selectedSnapshotId, rubrics, pendingRequestId),
-    ]);
-
-    if (annotationStatus?.is_complete) {
-      const metricsRequestId = ++snapshotMetricsRequestRef.current;
-      void fetchScoringContracts(selectedSnapshotId, metricsRequestId);
-    }
+      fetchScoringStatus(selectedSnapshotId, nextStatusRequestId),
+      fetchScoringRubrics(selectedSnapshotId, nextRubricsRequestId),
+    ]).then(() => {
+      if (activeRubricId != null) {
+        void fetchScoringResults(selectedSnapshotId, activeRubricId, tableQuery, false);
+      }
+    });
   }, [
-    annotationStatus,
-    checkAnnotationCompletion,
-    fetchScoringContracts,
-    fetchScoringPendingCounts,
+    activeRubricId,
+    clearResultsCache,
+    fetchScoringResults,
+    fetchScoringRubrics,
+    fetchScoringStatus,
     isPageActive,
-    rubrics,
     selectedSnapshotId,
+    tableQuery,
   ]);
 
-  useEffect(() => {
-    if (!selectedSnapshotId || activeRubricId == null) {
+  const refreshActiveRubric = useCallback(async (rubricId: number | null | undefined) => {
+    if (!selectedSnapshotId || rubricId == null) {
       return;
     }
-
-    const pendingRequestId = ++pendingCountsRequestRef.current;
-    void fetchScoringPendingCountsForRubric(selectedSnapshotId, activeRubricId, pendingRequestId);
-
-    if (annotationStatus?.is_complete) {
-      const metricsRequestId = ++snapshotMetricsRequestRef.current;
-      void fetchScoringContracts(selectedSnapshotId, metricsRequestId);
-    }
-  }, [
-    activeMetricTab,
-    annotationStatus,
-    fetchScoringContracts,
-    fetchScoringPendingCountsForRubric,
-    selectedSnapshotId,
-    activeRubricId,
-  ]);
+    clearResultsCache(rubricId);
+    const nextStatusRequestId = ++statusRequestRef.current;
+    const nextRubricsRequestId = ++rubricsRequestRef.current;
+    await Promise.allSettled([
+      fetchScoringStatus(selectedSnapshotId, nextStatusRequestId),
+      fetchScoringRubrics(selectedSnapshotId, nextRubricsRequestId),
+    ]);
+    await fetchScoringResults(selectedSnapshotId, rubricId, tableQuery, false);
+  }, [clearResultsCache, fetchScoringResults, fetchScoringRubrics, fetchScoringStatus, selectedSnapshotId, tableQuery]);
 
   const handleSnapshotSelect = (snapshotId: number | null) => updateSnapshotSelection(snapshotId);
 
@@ -408,12 +374,7 @@ export default function ScoringPage() {
         question_ids: questionIdsToScore,
         rubric_specs: [rubricSpecResponse.data],
       });
-      const pendingRequestId = ++pendingCountsRequestRef.current;
-      const metricsRequestId = ++snapshotMetricsRequestRef.current;
-      void Promise.all([
-        fetchScoringPendingCountsForRubric(selectedSnapshotId, rubricId, pendingRequestId),
-        fetchScoringContracts(selectedSnapshotId, metricsRequestId),
-      ]);
+      await refreshActiveRubric(rubricId);
       return response.data;
     } catch (jobError) {
       setError(getApiErrorMessage(jobError, "Unable to start judge run."));
@@ -422,31 +383,17 @@ export default function ScoringPage() {
   };
 
   const handleJobComplete = useCallback(async (rubricId: number) => {
-    if (!selectedSnapshotId) return;
-    const pendingRequestId = ++pendingCountsRequestRef.current;
-    const metricsRequestId = ++snapshotMetricsRequestRef.current;
-    await Promise.all([
-      fetchScoringPendingCountsForRubric(selectedSnapshotId, rubricId, pendingRequestId),
-      fetchScoringContracts(selectedSnapshotId, metricsRequestId),
-    ]);
-  }, [
-    selectedSnapshotId,
-    fetchScoringPendingCountsForRubric,
-    fetchScoringContracts,
-  ]);
+    await refreshActiveRubric(rubricId);
+  }, [refreshActiveRubric]);
 
   const refreshJudgeMutationState = useCallback(async (rubricId: number | null | undefined) => {
-    if (!selectedSnapshotId || rubricId == null) {
-      return;
-    }
-    const pendingRequestId = ++pendingCountsRequestRef.current;
-    await fetchScoringPendingCountsForRubric(selectedSnapshotId, rubricId, pendingRequestId);
-  }, [selectedSnapshotId, fetchScoringPendingCountsForRubric]);
+    await refreshActiveRubric(rubricId);
+  }, [refreshActiveRubric]);
 
   const openDialog = (
     mode: "create" | "edit" | "duplicate",
     config: DialogConfig,
-    judge?: JudgeConfig
+    judge?: JudgeConfig,
   ) => {
     setDialogMode(mode);
     setDialogConfig(config);
@@ -463,16 +410,20 @@ export default function ScoringPage() {
   };
 
   const handleLabelChange = useCallback(async () => {
-    if (!selectedSnapshotId) return;
-    const requestId = ++snapshotMetricsRequestRef.current;
-    await fetchScoringContracts(selectedSnapshotId, requestId);
-  }, [selectedSnapshotId, fetchScoringContracts]);
+    await refreshActiveRubric(activeRubricId);
+  }, [activeRubricId, refreshActiveRubric]);
 
   const handleExportSnapshot = async () => {
-    const activeRubricId = activeMetricSection?.rubric?.id;
     if (!selectedSnapshotId || !activeRubricId) return;
     try {
-      const response = await metricsApi.exportJSON(selectedSnapshotId, activeRubricId);
+      const response = await metricsApi.exportJSON(selectedSnapshotId, activeRubricId, {
+        labels: tableQuery.labels,
+        question_types: tableQuery.question_types,
+        question_scopes: tableQuery.question_scopes,
+        persona_ids: tableQuery.persona_ids,
+        disagreements_only: tableQuery.disagreements_only,
+        judge_ids: tableQuery.judge_ids,
+      });
       const blob = new Blob([JSON.stringify(response.data, null, 2)], { type: "application/json" });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -489,14 +440,13 @@ export default function ScoringPage() {
 
   const metricSections = buildMetricSections({
     rubrics: orderedRubrics,
-    scoringContracts,
-    metricsByRubricId,
+    resultsByRubricId: latestResultsByRubricId,
     getJudges,
     getBaselineJudge,
   });
   const activeMetricSection = metricSections[activeMetricTab] ?? metricSections[0] ?? null;
 
-  if (snapshotsLoading || judgesLoading) {
+  if (snapshotsLoading || rubricsLoading) {
     return <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>;
   }
 
@@ -517,7 +467,7 @@ export default function ScoringPage() {
           <span>
             <Button
               onClick={handleExportSnapshot}
-              disabled={!selectedSnapshotId}
+              disabled={!selectedSnapshotId || !activeRubricId}
               sx={{
                 bgcolor: "secondary.main",
                 color: "white",
@@ -539,16 +489,16 @@ export default function ScoringPage() {
         <Box sx={{ py: 6, textAlign: "center" }}>
           <Typography variant="body1" color="text.secondary">Select a snapshot to compare judges.</Typography>
         </Box>
-      ) : checkingAnnotations ? (
+      ) : statusLoading ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>
-      ) : !annotationStatus?.is_complete ? (
+      ) : !scoringStatus?.is_complete ? (
         <Alert severity="info">
-          {annotationStatus
+          {scoringStatus
             ? (() => {
-                const totalSelected = annotationStatus.selected_ids.length;
-                const totalAnnotated = annotationStatus.selected_and_annotated_ids.length;
-                const annotatedSet = new Set(annotationStatus.selected_and_annotated_ids);
-                const unannotatedIds = annotationStatus.selected_ids.filter((id) => !annotatedSet.has(id));
+                const totalSelected = scoringStatus.selected_ids.length;
+                const totalAnnotated = scoringStatus.selected_and_annotated_ids.length;
+                const annotatedSet = new Set(scoringStatus.selected_and_annotated_ids);
+                const unannotatedIds = scoringStatus.selected_ids.filter((id) => !annotatedSet.has(id));
                 return <>
                   {`Complete all ${totalSelected} annotations in the annotation tab to view scoring. (${totalAnnotated} / ${totalSelected} completed)`}
                   {unannotatedIds.length > 0 && (
@@ -578,9 +528,9 @@ export default function ScoringPage() {
               })()
             : "Complete annotations in the annotation tab to view scoring."}
         </Alert>
-      ) : questionsWithoutAnswers > 0 ? (
+      ) : (scoringStatus.unanswered_question_count ?? 0) > 0 ? (
         <Alert severity="warning">
-          {questionsWithoutAnswers} new question{questionsWithoutAnswers > 1 ? "s" : ""} found. Run primary judge in the annotation tab before viewing scoring.
+          {scoringStatus.unanswered_question_count} new question{scoringStatus.unanswered_question_count > 1 ? "s" : ""} found. Run primary judge in the annotation tab before viewing scoring.
         </Alert>
       ) : (
         <Stack spacing={2}>
@@ -609,9 +559,11 @@ export default function ScoringPage() {
               <MetricSection
                 section={activeMetricSection}
                 snapshotId={selectedSnapshotId}
-                loading={metricsLoading}
-                questionsWithoutAnswers={questionsWithoutAnswers}
-                pendingCountsByRubricId={pendingCountsByRubricId}
+                loading={resultsLoading && !activeMetricSection.contract}
+                questionsWithoutAnswers={scoringStatus.unanswered_question_count}
+                pendingCountsByRubricId={Object.fromEntries(
+                  Object.entries(latestResultsByRubricId).map(([rubricId, response]) => [Number(rubricId), response.pending_counts]),
+                )}
                 onJobStart={handleJobStart}
                 onJobComplete={handleJobComplete}
                 onEditJudge={(judge, config) => openDialog("edit", config, judge)}
@@ -621,13 +573,13 @@ export default function ScoringPage() {
               />
 
               <ResultsTable
-                results={activeMetricSection.contract?.rows ?? []}
-                contract={activeMetricSection.contract}
+                resultsResponse={activeResults}
+                activeRubric={activeRubric}
                 targetId={targetId}
                 snapshotId={selectedSnapshotId}
-                judges={activeMetricSection.judges}
-                rubrics={activeMetricSection.rubric ? [activeMetricSection.rubric] : []}
+                loading={resultsLoading}
                 onLabelChange={handleLabelChange}
+                onQueryChange={setTableQuery}
               />
             </Stack>
           )}
@@ -647,10 +599,7 @@ export default function ScoringPage() {
           setDialogJudge(null);
         }}
         onSuccess={async () => {
-          await Promise.all([
-            fetchJudgesForRubrics(rubrics),
-            refreshJudgeMutationState(dialogConfig.rubricId),
-          ]);
+          await refreshJudgeMutationState(dialogConfig.rubricId);
           setDialogOpen(false);
           setDialogJudge(null);
         }}
@@ -663,10 +612,7 @@ export default function ScoringPage() {
           if (!judgeToDelete) return;
           const rubricId = judgeToDelete.rubric_id;
           await judgeApi.delete(judgeToDelete.id);
-          await Promise.all([
-            fetchJudgesForRubrics(rubrics),
-            refreshJudgeMutationState(rubricId),
-          ]);
+          await refreshJudgeMutationState(rubricId);
           setJudgeToDelete(null);
         }}
         title="Delete Judge"
@@ -678,37 +624,48 @@ export default function ScoringPage() {
 
 function buildMetricSections({
   rubrics,
-  scoringContracts,
-  metricsByRubricId,
+  resultsByRubricId,
   getJudges,
   getBaselineJudge,
 }: {
-  rubrics: TargetRubricResponse[];
-  scoringContracts: ScoringContract[];
-  metricsByRubricId: Record<number, SnapshotMetric>;
+  rubrics: ScoringRubricResponse[];
+  resultsByRubricId: Record<number, ScoringResultsResponse>;
   getJudges: (rubricId: number | null | undefined) => JudgeConfig[];
   getBaselineJudge: (rubricId: number | null | undefined) => JudgeConfig | null;
 }): MetricSectionConfig[] {
-  const sections: MetricSectionConfig[] = [];
-  for (const rubric of rubrics) {
+  return rubrics.map((rubric) => {
     const sectionJudges = getJudges(rubric.id);
     const baselineJudge = getBaselineJudge(rubric.id);
-    const contract = scoringContracts.find((metric) => metric.rubric_id === rubric.id) ?? null;
-    sections.push({
+    const contract = resultsByRubricId[rubric.id] ?? null;
+    const metric = contract ? {
+      snapshot_id: contract.snapshot_id ?? 0,
+      snapshot_name: contract.snapshot_name ?? null,
+      created_at: contract.created_at ?? null,
+      rubric_id: contract.rubric_id ?? null,
+      rubric_name: contract.rubric_name ?? null,
+      aggregated_score: contract.aggregated_score,
+      total_answers: contract.total_answers,
+      accurate_count: contract.accurate_count,
+      inaccurate_count: contract.inaccurate_count,
+      pending_count: contract.pending_count,
+      edited_count: contract.edited_count,
+      judge_alignment_range: contract.judge_alignment_range,
+      aligned_judges: contract.aligned_judges,
+    } satisfies SnapshotMetric : null;
+
+    return {
       key: `rubric-${rubric.id}`,
       title: rubric.name,
       sourceGroup: rubric.group,
       rubric,
       contract,
-      metric: metricsByRubricId[rubric.id] ?? null,
+      metric,
       judges: sectionJudges,
-      emptyMessage: "Run judges to see results",
+      emptyMessage: "Open this rubric to load scoring data",
       gaugeLabel: `Share labeled ${contract?.best_option || rubric.best_option || rubric.options?.[0]?.option || rubric.name}`,
       defaultPromptTemplate: baselineJudge?.prompt_template || sectionJudges[0]?.prompt_template || "",
-    });
-  }
-
-  return sections;
+    };
+  });
 }
 
 function MetricSection({

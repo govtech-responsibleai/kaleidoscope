@@ -52,7 +52,6 @@ import {
   AnswerAnnotation,
   AnswerAnnotationUpsert,
   RubricAnswerScore,
-  SnapshotScoringContractsResponse,
   ScoringPendingCounts,
   Status,
   TestConnectionRequest,
@@ -571,21 +570,38 @@ export const metricsApi = {
   getResults: (snapshotId: number) =>
     api.get<SnapshotResultsResponse>(`/snapshots/${snapshotId}/results`),
 
-  getScoringContracts: (snapshotId: number) =>
-    api.get<SnapshotScoringContractsResponse>(`/snapshots/${snapshotId}/scoring-contracts`),
+  getScoringStatus: (snapshotId: number) =>
+    api.get<import("./types").ScoringStatusResponse>(`/snapshots/${snapshotId}/scoring-status`),
+
+  getScoringRubrics: (snapshotId: number) =>
+    api.get<import("./types").ScoringRubricsResponse>(`/snapshots/${snapshotId}/scoring-rubrics`),
+
+  getScoringResults: (
+    snapshotId: number,
+    rubricId: number,
+    params?: import("./types").ScoringResultsFilters & { page?: number; page_size?: number },
+  ) =>
+    api.get<import("./types").ScoringResultsResponse>(`/snapshots/${snapshotId}/rubrics/${rubricId}/scoring-results`, {
+      params,
+    }),
 
   getScoringPendingCounts: (snapshotId: number, rubricId: number) =>
     api.get<ScoringPendingCounts>(`/snapshots/${snapshotId}/rubrics/${rubricId}/scoring-pending-counts`),
 
-  exportCSV: (snapshotId: number, rubricId: number, format: "csv" | "json" = "csv") =>
+  exportCSV: (
+    snapshotId: number,
+    rubricId: number,
+    format: "csv" | "json" = "csv",
+    filters?: import("./types").ScoringResultsFilters,
+  ) =>
     api.get(`/targets/snapshots/${snapshotId}/export`, {
-      params: { format, rubric_id: rubricId },
+      params: { format, rubric_id: rubricId, ...filters },
       responseType: "blob",
     }),
 
-  exportJSON: (snapshotId: number, rubricId: number) =>
+  exportJSON: (snapshotId: number, rubricId: number, filters?: import("./types").ScoringResultsFilters) =>
     api.get(`/targets/snapshots/${snapshotId}/export`, {
-      params: { format: "json", include_evaluators: true, rubric_id: rubricId },
+      params: { format: "json", include_evaluators: true, rubric_id: rubricId, ...filters },
     }),
 
   getSnapshotMetrics: (targetId: number) =>

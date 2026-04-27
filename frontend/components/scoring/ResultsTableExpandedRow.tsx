@@ -16,14 +16,14 @@ import {
   JudgeConfig,
   AnswerClaim,
   AnswerClaimScore,
-  QuestionResponse,
-  PersonaResponse,
+  QuestionScope,
+  QuestionType,
   TargetRubricResponse,
   RubricAnswerScore,
   formatQuestionScope,
   formatQuestionType,
 } from "@/lib/types";
-import { answerApi, questionApi, personaApi, rubricScoreApi } from "@/lib/api";
+import { answerApi, rubricScoreApi } from "@/lib/api";
 import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
 import { compactChipSx } from "@/lib/styles";
 
@@ -69,8 +69,6 @@ export default function ResultsTableExpandedRow({
   const [claimsData, setClaimsData] = useState<ClaimsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [question, setQuestion] = useState<QuestionResponse | null>(null);
-  const [persona, setPersona] = useState<PersonaResponse | null>(null);
   const activeRubric = useMemo(
     () => activeRubricId !== null ? rubrics.find((rubric) => rubric.id === activeRubricId) ?? null : null,
     [activeRubricId, rubrics]
@@ -86,22 +84,6 @@ export default function ResultsTableExpandedRow({
     () => selectedJudgeIds.filter((id) => claimBasedJudges.some((j) => j.id === id)),
     [selectedJudgeIds, claimBasedJudges]
   );
-
-  useEffect(() => {
-    const fetchQuestionAndPersona = async () => {
-      try {
-        const questionRes = await questionApi.get(result.question_id);
-        setQuestion(questionRes.data);
-        if (questionRes.data.persona_id) {
-          const personaRes = await personaApi.get(questionRes.data.persona_id);
-          setPersona(personaRes.data);
-        }
-      } catch (err) {
-        console.error("Failed to fetch question/persona:", err);
-      }
-    };
-    fetchQuestionAndPersona();
-  }, [result.question_id]);
 
   useEffect(() => {
     const fetchClaims = async () => {
@@ -226,17 +208,17 @@ export default function ResultsTableExpandedRow({
               px: 3, py: 1.5, borderRadius: "30px 30px 0 30px",
             }}>
               <Typography variant="body2" sx={{ whiteSpace: "pre-wrap" }}>{result.question_text}</Typography>
-              {(question || persona) && (
+              {(result.persona_title || result.question_type || result.question_scope) && (
                 <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1.5 }}>
-                  {persona && <Chip label={persona.title} size="small" />}
-                  {question && (
-                    <>
-                      <Chip label={formatQuestionType(question.type)} size="small"
-                        color={question.type === "edge" ? "warning" : "default"}
-                        variant={question.type === "edge" ? "filled" : "outlined"} />
-                      <Chip label={formatQuestionScope(question.scope)} size="small"
-                        color={question.scope === "in_kb" ? "success" : "info"} variant="outlined" />
-                    </>
+                  {result.persona_title && <Chip label={result.persona_title} size="small" />}
+                  {result.question_type && (
+                    <Chip label={formatQuestionType(result.question_type as QuestionType | null)} size="small"
+                      color={result.question_type === "edge" ? "warning" : "default"}
+                      variant={result.question_type === "edge" ? "filled" : "outlined"} />
+                  )}
+                  {result.question_scope && (
+                    <Chip label={formatQuestionScope(result.question_scope as QuestionScope | null)} size="small"
+                      color={result.question_scope === "in_kb" ? "success" : "info"} variant="outlined" />
                   )}
                 </Box>
               )}

@@ -714,6 +714,8 @@ export interface ScoringRowResult {
   question_text: string | null;
   question_type: string | null;
   question_scope: string | null;
+  persona_id?: number | null;
+  persona_title?: string | null;
   answer_id: number;
   answer_content: string;
   aggregated_result: AggregatedRowResult;
@@ -739,6 +741,47 @@ export interface ScoringPendingCounts {
   unanswered_question_count: number;
   rubric_id: number;
   pending_counts: Record<string, number>;
+}
+
+export interface ScoringStatusResponse {
+  snapshot_id: number;
+  selected_ids: number[];
+  selected_and_annotated_ids: number[];
+  is_complete: boolean;
+  completion_percentage: number;
+  unanswered_question_count: number;
+}
+
+export interface ScoringRubricResponse extends TargetRubricResponse {
+  judges: JudgeConfig[];
+}
+
+export interface ScoringRubricsResponse {
+  snapshot_id: number;
+  rubrics: ScoringRubricResponse[];
+}
+
+export interface ScoringPersonaOption {
+  id: number;
+  title: string;
+}
+
+export interface ScoringResultsFilters {
+  labels?: string[];
+  question_types?: string[];
+  question_scopes?: string[];
+  persona_ids?: number[];
+  disagreements_only?: boolean;
+  judge_ids?: number[];
+}
+
+export interface ScoringResultsResponse extends ScoringContract {
+  snapshot_id: number;
+  total_count: number;
+  page: number;
+  page_size: number;
+  pending_counts: Record<string, number>;
+  persona_options: ScoringPersonaOption[];
 }
 
 export interface MetricsByRubric {
