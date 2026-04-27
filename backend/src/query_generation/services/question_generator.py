@@ -155,7 +155,7 @@ class QuestionGenerator:
 
             # Generate questions for each allocated persona/type/scope bucket
             for persona, question_type, question_scope, num_questions in allocations:
-                logger.info(
+                logger.debug(
                     f"Generating {num_questions} {question_type.value}/{question_scope.value} questions "
                     f"for persona {persona.id}: {persona.title}"
                 )
@@ -199,7 +199,7 @@ class QuestionGenerator:
                 else:
                     questions_to_save = question_list.questions[:num_questions]
 
-                logger.info(
+                logger.debug(
                     f"Generated {len(questions_to_save)} {question_type.value}/{question_scope.value} "
                     f"questions for persona {persona.id}"
                 )

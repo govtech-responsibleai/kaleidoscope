@@ -42,6 +42,9 @@ services:
       OTEL_EXPORTER_OTLP_CERTIFICATE: /etc/ssl/certs/ca-certificates.crt
       REQUESTS_CA_BUNDLE: /etc/ssl/certs/ca-certificates.crt
 
+      # Logging (set to DEBUG to see per-call LLM details)
+      LOG_LEVEL: "INFO"
+
       # API Settings
       API_TITLE: Kaleidoscope API
       API_VERSION: 1.0.0

@@ -327,7 +327,7 @@ def get_or_create_qajobs_batch(
                         error_message="",
                     )
                     db.refresh(existing_job)
-                logger.info(f"Retrieved existing job {existing_job.id} with status={existing_job.status.value}")
+                logger.debug(f"Retrieved existing job {existing_job.id} with status={existing_job.status.value}")
                 jobs.append(existing_job)
             else:
                 answer = AnswerRepository.get_by_question_and_snapshot(db, qn_id, snapshot_id)
@@ -343,7 +343,7 @@ def get_or_create_qajobs_batch(
                     job_data["answer_id"] = answer.id
 
                 job = QAJobRepository.create(db, job_data)
-                logger.info(f"Created new QAJob {job.id} for question {qn_id}")
+                logger.debug(f"Created new QAJob {job.id} for question {qn_id}")
                 jobs.append(job)
     else:
         for job_id in job_ids:
@@ -473,7 +473,7 @@ def create_all_jobs(
                     error_message="",
                 )
                 db.refresh(existing_job)
-            logger.info(f"Retrieved existing job {existing_job.id}")
+            logger.debug(f"Retrieved existing job {existing_job.id}")
             jobs.append(existing_job)
         else:
             answer = AnswerRepository.get_by_question_and_snapshot(db, qn_id, snapshot_id)
@@ -490,7 +490,7 @@ def create_all_jobs(
                 job_data["answer_id"] = answer.id
 
             job = QAJobRepository.create(db, job_data)
-            logger.info(f"Created QAJob {job.id} for question {qn_id}")
+            logger.debug(f"Created QAJob {job.id} for question {qn_id}")
             jobs.append(job)
 
     return jobs

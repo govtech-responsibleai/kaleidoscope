@@ -443,7 +443,7 @@ class MetricsService:
         recall = recall_score(y_true, y_pred, average='binary', pos_label=True, zero_division=0)
         accuracy = accuracy_score(y_true, y_pred)
 
-        logger.info(
+        logger.debug(
             f"Judge alignment for judge {judge_id}, snapshot {snapshot_id}: "
             f"F1={f1:.3f}, Precision={precision:.3f}, Recall={recall:.3f}, Accuracy={accuracy:.3f} "
             f"({len(y_true)} samples)"
@@ -505,7 +505,7 @@ class MetricsService:
         )
         accuracy = accurate_count / total_count if total_count > 0 else 0.0
 
-        logger.info(
+        logger.debug(
             f"Accuracy for judge {judge_id}, snapshot {snapshot_id}: "
             f"{accurate_count}/{total_count} = {accuracy:.3f}"
         )

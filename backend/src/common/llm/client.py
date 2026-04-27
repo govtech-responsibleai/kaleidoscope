@@ -161,7 +161,7 @@ class LLMClient:
             temperature = 1.0
 
         try:
-            logger.info(f"Calling {self.model} with {len(prompt)} char prompt")
+            logger.debug(f"Calling {self.model} with {len(prompt)} char prompt")
 
             request_kwargs = {**self.provider_kwargs, **kwargs}
             response = litellm.completion(
@@ -195,7 +195,7 @@ class LLMClient:
                 logger.warning(f"Failed to calculate cost: {e}")
                 result["cost"] = 0.0
 
-            logger.info(
+            logger.debug(
                 f"✓ Generated {usage.completion_tokens} tokens "
                 f"(total: {usage.total_tokens}, cost: ${result['cost']:.4f})"
             )
@@ -333,7 +333,7 @@ class LLMClient:
             temperature = 1.0
             
         try:
-            logger.info(f"Calling {self.model} (async) with {len(schema_prompt)} char prompt")
+            logger.debug(f"Calling {self.model} (async) with {len(schema_prompt)} char prompt")
 
             # Build response_format with JSON schema for structured output
             response_format = {
@@ -374,7 +374,7 @@ class LLMClient:
                 logger.warning(f"Failed to calculate cost: {e}")
                 cost = 0.0
 
-            logger.info(
+            logger.debug(
                 f"✓ Generated {usage.completion_tokens} tokens "
                 f"(total: {usage.total_tokens}, cost: ${cost:.4f})"
             )
@@ -447,7 +447,7 @@ class LLMClient:
 
         results = []
         for i, prompt in enumerate(prompts):
-            logger.info(f"Processing prompt {i+1}/{len(prompts)} (mode={mode})")
+            logger.debug(f"Processing prompt {i+1}/{len(prompts)} (mode={mode})")
 
             if mode == "text":
                 result = self.generate(

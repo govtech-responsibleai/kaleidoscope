@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     api_version: str = "1.0.0"
     api_prefix: str = "/api/v1"
 
+    # Logging
+    log_level: str = "INFO"
+
     # Database Settings
     database_url: str = "postgresql://localhost:5432/kaleidoscope"
     database_echo: bool = False  # Set to True for SQL query logging

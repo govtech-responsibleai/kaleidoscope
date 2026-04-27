@@ -91,7 +91,7 @@ class AnswerGenerator:
                 logger.info(f"Answer already exists for question {question_id}, snapshot {snapshot_id}. Skipping.")
             else:
                 answer = await self.generate_async(question_id, snapshot_id)
-                logger.info(f"Generated answer {answer.id} for question {question_id}, snapshot {snapshot_id}")
+                logger.debug(f"Generated answer {answer.id} for question {question_id}, snapshot {snapshot_id}")
 
             self._update_job(answer_id=answer.id)
 
@@ -214,7 +214,7 @@ class AnswerGenerator:
             )
             return answer
 
-        logger.info(f"Saved answer {answer.id} for question {question.id}")
+        logger.debug(f"Saved answer {answer.id} for question {question.id}")
         return answer
 
     def _update_job(self, answer_id: int = None) -> None:
