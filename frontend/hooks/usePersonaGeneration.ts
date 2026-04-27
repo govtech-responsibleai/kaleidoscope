@@ -4,7 +4,7 @@ import { useState, useRef, useCallback } from "react";
 import { getApiErrorMessage, jobApi, personaApi } from "@/lib/api";
 import { PersonaResponse, JobStatus } from "@/lib/types";
 import { DEFAULT_PERSONA_COUNT, GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
-import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
+import { usePolling } from "@/hooks/usePolling";
 
 export type PersonaSource = "ai" | "general" | null;
 
@@ -36,7 +36,7 @@ export function usePersonaGeneration(targetId: number) {
     }
   }, [targetId]);
 
-  useVisibilityPolling({
+  usePolling({
     enabled: activeJobId !== null,
     intervalMs: GLOBAL_POLLING_INTERVAL,
     onPoll: async () => {

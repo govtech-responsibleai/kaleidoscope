@@ -13,7 +13,7 @@ import {
 import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, QARubricStatus, formatQuestionScope, formatQuestionType } from "@/lib/types";
 import { qaJobApi } from "@/lib/api";
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
-import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
+import { usePolling } from "@/hooks/usePolling";
 import ClaimHighlighter from "./ClaimHighlighter";
 import QAJobProgress from "./QAJobProgress";
 
@@ -92,7 +92,7 @@ export default function QAContent({
     void loadJobDetail();
   }, [jobId, job?.rubric_statuses, loadJobDetail]);
 
-  useVisibilityPolling({
+  usePolling({
     enabled: Boolean(jobId && jobStatus === "running" && jobStage !== QAJobStageEnum.COMPLETED),
     intervalMs: GLOBAL_POLLING_INTERVAL,
     onPoll: async () => {

@@ -44,7 +44,6 @@ import {
 } from "@/lib/api";
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
-import { usePageActivity } from "@/hooks/useVisibilityPolling";
 
 type SourceGroup = "fixed" | "preset" | "custom";
 
@@ -118,16 +117,12 @@ export default function ScoringPage() {
   const [error, setError] = useState<string | null>(null);
   const [activeMetricTab, setActiveMetricTab] = useState(0);
   const [tableQuery, setTableQuery] = useState<TableQuery>(DEFAULT_TABLE_QUERY);
-  const [resultsCache, setResultsCache] = useState<Record<string, ScoringResultsResponse>>({});
   const resultsCacheRef = useRef<Record<string, ScoringResultsResponse>>({});
   const [latestResultsByRubricId, setLatestResultsByRubricId] = useState<Record<number, ScoringResultsResponse>>({});
 
   const statusRequestRef = useRef(0);
   const rubricsRequestRef = useRef(0);
   const resultsRequestRef = useRef(0);
-  const isPageActive = usePageActivity();
-  const wasPageActiveRef = useRef(isPageActive);
-
   const orderedRubrics = useMemo(() => orderRubricsForDisplay(rubrics), [rubrics]);
   const activeRubric = orderedRubrics[activeMetricTab] ?? null;
   const activeRubricId = activeRubric?.id ?? null;
@@ -180,13 +175,11 @@ export default function ScoringPage() {
   }, [selectedSnapshotId, targetId, updateSnapshotSelection]);
 
   const clearResultsCache = useCallback((rubricId?: number | null) => {
-    setResultsCache((current) => {
-      const next = rubricId == null
-        ? {}
-        : Object.fromEntries(Object.entries(current).filter(([key]) => !key.includes(`"rubricId":${rubricId},`)));
-      resultsCacheRef.current = next;
-      return next;
-    });
+    resultsCacheRef.current = rubricId == null
+      ? {}
+      : Object.fromEntries(
+          Object.entries(resultsCacheRef.current).filter(([key]) => !key.includes(`"rubricId":${rubricId},`)),
+        );
     setLatestResultsByRubricId((current) => {
       if (rubricId == null) {
         return {};
@@ -252,7 +245,6 @@ export default function ScoringPage() {
         return null;
       }
       resultsCacheRef.current = { ...resultsCacheRef.current, [cacheKey]: response.data };
-      setResultsCache(resultsCacheRef.current);
       setLatestResultsByRubricId((current) => ({ ...current, [rubricId]: response.data }));
       return response.data;
     } catch (resultsError) {
@@ -311,36 +303,6 @@ export default function ScoringPage() {
     tableQuery,
   ]);
 
-  useEffect(() => {
-    const becameActive = isPageActive && !wasPageActiveRef.current;
-    wasPageActiveRef.current = isPageActive;
-
-    if (!becameActive || !selectedSnapshotId) {
-      return;
-    }
-
-    clearResultsCache(activeRubricId);
-    const nextStatusRequestId = ++statusRequestRef.current;
-    const nextRubricsRequestId = ++rubricsRequestRef.current;
-    void Promise.allSettled([
-      fetchScoringStatus(selectedSnapshotId, nextStatusRequestId),
-      fetchScoringRubrics(selectedSnapshotId, nextRubricsRequestId),
-    ]).then(() => {
-      if (activeRubricId != null) {
-        void fetchScoringResults(selectedSnapshotId, activeRubricId, tableQuery, false);
-      }
-    });
-  }, [
-    activeRubricId,
-    clearResultsCache,
-    fetchScoringResults,
-    fetchScoringRubrics,
-    fetchScoringStatus,
-    isPageActive,
-    selectedSnapshotId,
-    tableQuery,
-  ]);
-
   const refreshActiveRubric = useCallback(async (rubricId: number | null | undefined) => {
     if (!selectedSnapshotId || rubricId == null) {
       return;
@@ -353,7 +315,22 @@ export default function ScoringPage() {
       fetchScoringRubrics(selectedSnapshotId, nextRubricsRequestId),
     ]);
     await fetchScoringResults(selectedSnapshotId, rubricId, tableQuery, false);
-  }, [clearResultsCache, fetchScoringResults, fetchScoringRubrics, fetchScoringStatus, selectedSnapshotId, tableQuery]);
+  }, [
+    clearResultsCache,
+    fetchScoringResults,
+    fetchScoringRubrics,
+    fetchScoringStatus,
+    selectedSnapshotId,
+    tableQuery,
+  ]);
+
+  const refreshJudgeRunState = useCallback(async (rubricId: number | null | undefined) => {
+    if (!selectedSnapshotId || rubricId == null) {
+      return;
+    }
+
+    await fetchScoringResults(selectedSnapshotId, rubricId, tableQuery, false);
+  }, [fetchScoringResults, selectedSnapshotId, tableQuery]);
 
   const handleSnapshotSelect = (snapshotId: number | null) => updateSnapshotSelection(snapshotId);
 
@@ -374,7 +351,6 @@ export default function ScoringPage() {
         question_ids: questionIdsToScore,
         rubric_specs: [rubricSpecResponse.data],
       });
-      await refreshActiveRubric(rubricId);
       return response.data;
     } catch (jobError) {
       setError(getApiErrorMessage(jobError, "Unable to start judge run."));
@@ -383,8 +359,8 @@ export default function ScoringPage() {
   };
 
   const handleJobComplete = useCallback(async (rubricId: number) => {
-    await refreshActiveRubric(rubricId);
-  }, [refreshActiveRubric]);
+    await refreshJudgeRunState(rubricId);
+  }, [refreshJudgeRunState]);
 
   const refreshJudgeMutationState = useCallback(async (rubricId: number | null | undefined) => {
     await refreshActiveRubric(rubricId);
@@ -449,6 +425,8 @@ export default function ScoringPage() {
   if (snapshotsLoading || rubricsLoading) {
     return <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}><CircularProgress /></Box>;
   }
+
+  console.log("Test 1")
 
   return (
     <Box>

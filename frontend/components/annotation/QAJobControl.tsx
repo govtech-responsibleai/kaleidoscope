@@ -35,7 +35,7 @@ import {
 } from "@/app/targets/[id]/rubrics";
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
 import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
-import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
+import { usePolling } from "@/hooks/usePolling";
 
 interface QAJobControlProps {
   targetId: number;
@@ -458,7 +458,7 @@ export default function QAJobControl({
     }
   }, [approvedQuestionIdSet, snapshotId, setQaJobs]);
 
-  useVisibilityPolling({
+  usePolling({
     enabled: Boolean(snapshotId) && runningCount > 0,
     intervalMs: GLOBAL_POLLING_INTERVAL,
     onPoll: checkData,

@@ -46,7 +46,7 @@ import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
 import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, Status, formatQuestionScope, formatQuestionType } from "@/lib/types";
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
-import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
+import { usePolling } from "@/hooks/usePolling";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
 import PersonaTable from "@/components/questions/PersonaTable";
 import AddPersonasModal from "@/components/questions/AddPersonasModal";
@@ -199,7 +199,7 @@ export default function QuestionsPage() {
     }
   }, [personas]);
 
-  useVisibilityPolling({
+  usePolling({
     enabled: activeJobId !== null,
     intervalMs: GLOBAL_POLLING_INTERVAL,
     onPoll: async () => {

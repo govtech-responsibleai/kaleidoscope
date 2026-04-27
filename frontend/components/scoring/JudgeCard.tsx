@@ -20,7 +20,7 @@ import { IconDotsVertical, IconInfoCircle } from "@tabler/icons-react";
 import { JudgeConfig, JudgeScoreSummary, QAJob } from "@/lib/types";
 import { metricsApi } from "@/lib/api";
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
-import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
+import { usePolling } from "@/hooks/usePolling";
 import { getModelIcon } from "@/lib/modelIcons";
 import { compactActionIconProps } from "@/lib/styles";
 import { deriveJudgePendingState } from "@/components/scoring/judgePendingState.mjs";
@@ -67,11 +67,15 @@ export default function JudgeCard({
   } | null>(null);
 
   const onJobCompleteRef = useRef(onJobComplete);
+  const pollingStateRef = useRef(pollingState);
 
-  // Keep the ref updated with latest callback
   useEffect(() => {
     onJobCompleteRef.current = onJobComplete;
   }, [onJobComplete]);
+
+  useEffect(() => {
+    pollingStateRef.current = pollingState;
+  }, [pollingState]);
 
   const fetchPendingCount = useCallback(async (): Promise<number> => {
     if (!snapshotId) return 0;
@@ -86,11 +90,12 @@ export default function JudgeCard({
       return nextPending;
     } catch (error) {
       console.error("Failed to fetch pending score count:", error);
-      return pollingState?.snapshotId === snapshotId && pollingState.rubricId === rubricId
-        ? pollingState.pendingCount
+      const ps = pollingStateRef.current;
+      return ps?.snapshotId === snapshotId && ps.rubricId === rubricId
+        ? ps.pendingCount
         : (pendingCountProp ?? 0);
     }
-  }, [snapshotId, judge.id, rubricId, pollingState, pendingCountProp]);
+  }, [snapshotId, judge.id, rubricId, pendingCountProp]);
 
   const stopPolling = useCallback(() => {
     setPollingState(null);
@@ -107,14 +112,14 @@ export default function JudgeCard({
 
   const activePollingState =
     pollingState?.snapshotId === snapshotId && pollingState.rubricId === rubricId ? pollingState : null;
-  useVisibilityPolling({
+  usePolling({
     enabled: activePollingState !== null,
     intervalMs: GLOBAL_POLLING_INTERVAL,
     onPoll: async () => {
       const remaining = await fetchPendingCount();
       if (remaining === 0) {
-        stopPolling();
         await onJobCompleteRef.current();
+        stopPolling();
       }
     },
   });
@@ -134,9 +139,10 @@ export default function JudgeCard({
 
   const handleRun = async () => {
     const initialPending = pendingCount ?? await fetchPendingCount();
+    startPolling(initialPending);
     const createdJobs = await onJobStart(judge.id);
-    if (createdJobs && createdJobs.length > 0) {
-      startPolling(initialPending);
+    if (!createdJobs || createdJobs.length === 0) {
+      stopPolling();
     }
   };
 
