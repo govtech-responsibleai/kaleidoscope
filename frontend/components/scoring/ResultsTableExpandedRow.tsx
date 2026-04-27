@@ -20,6 +20,8 @@ import {
   PersonaResponse,
   TargetRubricResponse,
   RubricAnswerScore,
+  formatQuestionScope,
+  formatQuestionType,
 } from "@/lib/types";
 import { answerApi, questionApi, personaApi, rubricScoreApi } from "@/lib/api";
 import ClaimHighlighter from "@/components/annotation/ClaimHighlighter";
@@ -229,10 +231,10 @@ export default function ResultsTableExpandedRow({
                   {persona && <Chip label={persona.title} size="small" />}
                   {question && (
                     <>
-                      <Chip label={question.type} size="small"
+                      <Chip label={formatQuestionType(question.type)} size="small"
                         color={question.type === "edge" ? "warning" : "default"}
                         variant={question.type === "edge" ? "filled" : "outlined"} />
-                      <Chip label={question.scope === "in_kb" ? "In KB" : "Out KB"} size="small"
+                      <Chip label={formatQuestionScope(question.scope)} size="small"
                         color={question.scope === "in_kb" ? "success" : "info"} variant="outlined" />
                     </>
                   )}

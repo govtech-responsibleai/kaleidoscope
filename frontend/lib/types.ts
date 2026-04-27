@@ -229,6 +229,28 @@ export enum InputStyle {
   DETAILED = "detailed",
 }
 
+export function formatQuestionType(type: QuestionType | null): string {
+  switch (type) {
+    case QuestionType.TYPICAL:
+      return "typical";
+    case QuestionType.EDGE:
+      return "edge";
+    default:
+      return "unknown type";
+  }
+}
+
+export function formatQuestionScope(scope: QuestionScope | null): string {
+  switch (scope) {
+    case QuestionScope.IN_KB:
+      return "In KB";
+    case QuestionScope.OUT_KB:
+      return "Out KB";
+    default:
+      return "unknown scope";
+  }
+}
+
 export interface QuestionBase {
   text: string;
   type: QuestionType | null;

@@ -10,7 +10,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, QARubricStatus } from "@/lib/types";
+import { QAJob, QuestionResponse, QARecord, QAJobStageEnum, PersonaResponse, TargetRubricResponse, QARubricStatus, formatQuestionScope, formatQuestionType } from "@/lib/types";
 import { qaJobApi } from "@/lib/api";
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
 import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
@@ -252,13 +252,13 @@ export default function QAContent({
                 <Box display="flex" gap={1} alignItems="center" flexWrap="wrap" sx={{ mt: 1.5 }}>
                   {persona && <Chip label={persona.title} size="small" />}
                   <Chip
-                    label={question.type}
+                    label={formatQuestionType(question.type)}
                     size="small"
                     color={question.type === "edge" ? "warning" : "default"}
                     variant={question.type === "edge" ? "filled" : "outlined"}
                   />
                   <Chip
-                    label={question.scope === "in_kb" ? "In KB" : "Out KB"}
+                    label={formatQuestionScope(question.scope)}
                     size="small"
                     color={question.scope === "in_kb" ? "success" : "info"}
                     variant="outlined"

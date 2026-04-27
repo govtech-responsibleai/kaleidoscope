@@ -44,7 +44,7 @@ import {
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
-import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, Status } from "@/lib/types";
+import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, Status, formatQuestionScope, formatQuestionType } from "@/lib/types";
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
 import { useVisibilityPolling } from "@/hooks/useVisibilityPolling";
 import GenerateEvalsModal from "@/components/GenerateEvalsModal";
@@ -869,7 +869,7 @@ export default function QuestionsPage() {
                                         sx={{ ...compactChipSx, fontWeight: 500, bgcolor: "grey.100", color: "text.secondary" }}
                                       />
                                       <Chip
-                                        label={newQ.type || "NA"}
+                                        label={formatQuestionType(newQ.type)}
                                         size="small"
                                         variant="outlined"
                                         sx={{
@@ -882,7 +882,7 @@ export default function QuestionsPage() {
                                         }}
                                       />
                                       <Chip
-                                        label={newQ.scope ? (newQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                                        label={formatQuestionScope(newQ.scope)}
                                         size="small"
                                         variant="outlined"
                                         sx={{
@@ -968,9 +968,9 @@ export default function QuestionsPage() {
                                     </Typography>
                                     <Box display="flex" gap={1} mt={0.5}>
                                       <Chip label={getPersonaTitle(similarQ.persona_id)} size="small" variant="outlined" />
-                                      <Chip label={similarQ.type || "NA"} size="small" variant="outlined" />
+                                      <Chip label={formatQuestionType(similarQ.type)} size="small" variant="outlined" />
                                       <Chip
-                                        label={similarQ.scope ? (similarQ.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                                        label={formatQuestionScope(similarQ.scope)}
                                         size="small"
                                         variant="outlined"
                                       />
@@ -1117,7 +1117,7 @@ export default function QuestionsPage() {
                         </TableCell>
                         <TableCell>
                           <Chip
-                            label={question.type || "NA"}
+                            label={formatQuestionType(question.type)}
                             size="small"
                             variant="outlined"
                             sx={{
@@ -1132,7 +1132,7 @@ export default function QuestionsPage() {
                         </TableCell>
                         <TableCell>
                           <Chip
-                            label={question.scope ? (question.scope === "in_kb" ? "In KB" : "Out KB") : "NA"}
+                            label={formatQuestionScope(question.scope)}
                             size="small"
                             variant="outlined"
                             sx={{
