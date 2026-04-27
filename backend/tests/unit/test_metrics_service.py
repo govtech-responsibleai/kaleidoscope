@@ -215,7 +215,7 @@ class TestMetricsService:
             side_effect=AssertionError("request-time ensure should not run"),
         ):
             rubric_id = self._accuracy_rubric_id(test_db, sample_snapshot.target_id)
-            contract = service.build_scoring_contract(sample_snapshot.id, rubric_id)
+            contract = service._build_base_scoring_contract(sample_snapshot.id, rubric_id)
             accuracy = service.calculate_accuracy(sample_snapshot.id, sample_judge_claim_based.id, rubric_id)
             results, _ = service.get_aggregated_results(sample_snapshot.id, rubric_id)
 
@@ -223,7 +223,7 @@ class TestMetricsService:
         assert accuracy.accuracy == 0.8
         assert len(results) == 10
 
-    def test_build_scoring_contract_raises_when_rubric_is_missing(
+    def test_build_base_scoring_contract_raises_when_rubric_is_missing(
         self,
         test_db,
         sample_snapshot,
@@ -232,7 +232,7 @@ class TestMetricsService:
         service = MetricsService(test_db)
 
         with pytest.raises(ValueError, match="Rubric 9999 not found"):
-            service.build_scoring_contract(sample_snapshot.id, 9999)
+            service._build_base_scoring_contract(sample_snapshot.id, 9999)
 
     def test_alignment_uses_rubric_annotations_as_ground_truth(
         self,
@@ -334,7 +334,7 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = service.build_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
 
         target_row = next(row for row in contract.rows if row.answer_id == sample_annotations[0].answer_id)
         assert any(summary.judge_id == second_judge.id for summary in contract.judge_summaries)
@@ -366,7 +366,7 @@ class TestMetricsService:
         test_db.refresh(unused_judge)
 
         service = MetricsService(test_db)
-        contract = service.build_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
 
         summary = next(summary for summary in contract.judge_summaries if summary.judge_id == unused_judge.id)
         assert summary.accuracy is None
@@ -390,7 +390,7 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = service.build_scoring_contract(sample_snapshot.id, accuracy_rubric_id)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, accuracy_rubric_id)
 
         row = next(row for row in contract.rows if row.answer_id == target_answer_id)
         assert row.aggregated_result.method == "override"
@@ -443,7 +443,7 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = service.build_scoring_contract(sample_snapshot.id, sample_rubric.id)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, sample_rubric.id)
 
         row = next(row for row in contract.rows if row.answer_id == overridden_answer_id)
         assert row.aggregated_result.method == "majority"
@@ -505,7 +505,7 @@ class TestMetricsService:
         test_db.commit()
 
         service = MetricsService(test_db)
-        contract = service.build_scoring_contract(sample_snapshot.id, sample_rubric.id)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, sample_rubric.id)
 
         row = next(row for row in contract.rows if row.answer_id == overridden_answer_id)
         assert row.aggregated_result.method == "override"

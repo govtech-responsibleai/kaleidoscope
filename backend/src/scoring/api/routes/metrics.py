@@ -12,9 +12,13 @@ from src.common.models.metrics import (
     ConfusionMatrixResponse,
     JudgeAccuracyResponse,
     JudgeAlignmentResponse,
+    ScoringResultsFilters,
+    ScoringResultsResponse,
+    ScoringRubricsResponse,
+    ScoringStatusResponse,
     SnapshotMetricsResponse,
     SnapshotResultsResponse,
-    SnapshotScoringContractsResponse,
+
     ScoringPendingCountsResponse,
 )
 from src.scoring.services.metrics_service import MetricsService
@@ -60,12 +64,13 @@ def get_aggregated_results(
         )
 
 
-@router.get("/snapshots/{snapshot_id}/scoring-contracts", response_model=SnapshotScoringContractsResponse)
-def get_snapshot_scoring_contracts(
+
+@router.get("/snapshots/{snapshot_id}/scoring-status", response_model=ScoringStatusResponse)
+def get_scoring_status(
     snapshot_id: int,
     db: Session = Depends(get_db),
 ):
-    """Get backend-owned scoring contracts for all rubric metrics in a snapshot."""
+    """Get snapshot-scoped gating data for the scoring page."""
     snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
     if not snapshot:
         raise HTTPException(
@@ -75,7 +80,76 @@ def get_snapshot_scoring_contracts(
 
     try:
         service = MetricsService(db)
-        return service.get_snapshot_scoring_contracts(snapshot_id)
+        return service.get_scoring_status(snapshot_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.get("/snapshots/{snapshot_id}/scoring-rubrics", response_model=ScoringRubricsResponse)
+def get_scoring_rubrics(
+    snapshot_id: int,
+    db: Session = Depends(get_db),
+):
+    """Get scoring-page rubric metadata with inline judges for one snapshot."""
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found",
+        )
+
+    try:
+        service = MetricsService(db)
+        return service.get_scoring_rubrics(snapshot_id)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+
+
+@router.get("/snapshots/{snapshot_id}/rubrics/{rubric_id}/scoring-results", response_model=ScoringResultsResponse)
+def get_scoring_results(
+    snapshot_id: int,
+    rubric_id: int,
+    labels: Optional[list[str]] = Query(None),
+    question_types: Optional[list[str]] = Query(None),
+    question_scopes: Optional[list[str]] = Query(None),
+    persona_ids: Optional[list[int]] = Query(None),
+    disagreements_only: bool = Query(False),
+    judge_ids: Optional[list[int]] = Query(None),
+    page: int = Query(0, ge=0),
+    page_size: int = Query(10, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """Get rubric-scoped scoring results for one page of the table."""
+    snapshot = SnapshotRepository.get_by_id(db, snapshot_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Snapshot {snapshot_id} not found",
+        )
+    rubric = TargetRubricRepository.get_by_id(db, rubric_id)
+    if not rubric:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Rubric {rubric_id} not found",
+        )
+
+    try:
+        service = MetricsService(db)
+        filters = ScoringResultsFilters(
+            labels=labels or [],
+            question_types=question_types or [],
+            question_scopes=question_scopes or [],
+            persona_ids=persona_ids or [],
+            disagreements_only=disagreements_only,
+            judge_ids=judge_ids or [],
+        )
+        return service.get_scoring_results(snapshot_id, rubric_id, filters=filters, page=page, page_size=page_size)
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

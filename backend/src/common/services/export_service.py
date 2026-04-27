@@ -20,6 +20,7 @@ from src.common.database.repositories.target_repo import TargetRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
+from src.common.models.metrics import ScoringResultsFilters
 from src.scoring.services.metrics_service import MetricsService
 
 logger = logging.getLogger(__name__)
@@ -184,6 +185,7 @@ class ExportService:
         format: ExportFormat = ExportFormat.CSV,
         include_evaluators: bool = False,
         rubric_id: int | None = None,
+        filters: Optional[ScoringResultsFilters] = None,
     ) -> Tuple[Union[str, List[Dict]], Optional[List[Dict]]]:
         """
         Export snapshot results including answers, annotations, and judge scores.
@@ -211,12 +213,46 @@ class ExportService:
         if rubric.target_id != snapshot.target_id:
             raise ValueError(f"Rubric {rubric.id} does not belong to snapshot {snapshot_id}")
 
-        # Get aggregated results from metrics service (includes annotations)
-        results, _ = self.metrics_service.get_aggregated_results(snapshot_id, rubric.id)
+        filters = filters or ScoringResultsFilters()
+        scoring_results = self.metrics_service.get_scoring_results(
+            snapshot_id,
+            rubric.id,
+            filters=filters,
+            page=0,
+            page_size=100000,
+        )
+        results: List[Dict] = []
+        for row in scoring_results.rows:
+            metadata = [
+                f"- {judge_result.name}: {judge_result.value.title() if judge_result.value else 'Pending'}"
+                for judge_result in row.judge_results
+            ]
+            results.append({
+                "question_id": row.question_id,
+                "question_text": row.question_text,
+                "question_type": row.question_type,
+                "question_scope": row.question_scope,
+                "persona_id": row.persona_id,
+                "persona_title": row.persona_title,
+                "rubric_id": scoring_results.rubric_id,
+                "rubric_name": scoring_results.rubric_name,
+                "group": scoring_results.group,
+                "answer_id": row.answer_id,
+                "answer_content": row.answer_content,
+                "aggregated_score": {
+                    "answer_id": row.answer_id,
+                    "method": row.aggregated_result.method,
+                    "label": row.aggregated_result.value,
+                    "is_edited": row.aggregated_result.is_edited,
+                    "metadata": metadata,
+                },
+                "human_label": row.human_label,
+                "human_notes": None,
+            })
         evaluator_payload: Optional[List[Dict]] = None
 
         if format == ExportFormat.JSON:
-            main_export: Union[str, List[Dict]] = [r.model_dump() for r in results]
+            main_export = results
         else:
             output = io.StringIO()
             writer = csv.writer(output)
@@ -226,16 +262,16 @@ class ExportService:
             ])
 
             for row in results:
-                agg = row.aggregated_score
+                agg = row["aggregated_score"]
                 writer.writerow([
-                    row.question_id,
-                    row.question_text or "",
-                    row.answer_id,
-                    row.answer_content,
-                    _format_label(row.human_label),
-                    row.human_notes or "",
-                    _format_label(agg.label),
-                    " | ".join(agg.metadata),
+                    row["question_id"],
+                    row["question_text"] or "",
+                    row["answer_id"],
+                    row["answer_content"],
+                    _format_label(row["human_label"]),
+                    row["human_notes"] or "",
+                    _format_label(agg["label"]),
+                    " | ".join(agg["metadata"]),
                 ])
 
             csv_content = output.getvalue()
@@ -314,10 +350,15 @@ class ExportService:
         """
         Build judge-level export payload including metrics and raw scores.
         """
+        allowed_answer_ids = None
+        if aggregated_results is not None:
+            allowed_answer_ids = {row["answer_id"] for row in aggregated_results}
+
         scores = [
             score
             for score in AnswerScoreRepository.get_by_snapshot(self.db, snapshot_id)
             if score.rubric_id == rubric_id
+            and (allowed_answer_ids is None or score.answer_id in allowed_answer_ids)
         ]
         if not scores:
             return []

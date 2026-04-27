@@ -5,7 +5,7 @@ Repository for Answer database operations.
 from typing import List, Optional, TYPE_CHECKING
 from sqlalchemy.orm import Session, joinedload
 
-from src.common.database.models import Answer
+from src.common.database.models import Answer, Question
 from src.common.models.answer import AnswerSelection
 
 
@@ -159,7 +159,7 @@ class AnswerRepository:
             .options(
                 joinedload(Answer.scores),
                 joinedload(Answer.annotations),
-                joinedload(Answer.question)
+                joinedload(Answer.question).joinedload(Question.persona)
             )
             .filter(Answer.snapshot_id == snapshot_id)
             .all()

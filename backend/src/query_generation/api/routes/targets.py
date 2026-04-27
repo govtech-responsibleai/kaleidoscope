@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.common.database.connection import get_db
 from src.common.database.repositories import TargetRepository, PersonaRepository, QuestionRepository, TargetRubricRepository
-from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TestConnectionRequest, TestConnectionResponse, ProbeRequest, ProbeResponse
+from src.common.models import TargetCreate, TargetUpdate, TargetResponse, TargetStats, PersonaResponse, QuestionResponse, QuestionListResponse, TestConnectionRequest, TestConnectionResponse, ProbeRequest, ProbeResponse, ScoringResultsFilters
 from src.common.connectors.base import TargetHttpError
 from src.common.connectors.http_auth import prepare_http_config_for_storage, persist_http_auth_secret
 from src.common.database.models import StatusEnum
@@ -582,6 +582,12 @@ def export_snapshot(
     rubric_id: int = Query(...),
     format: ExportFormat = Query(ExportFormat.CSV),
     include_evaluators: bool = Query(False),
+    labels: list[str] | None = Query(None),
+    question_types: list[str] | None = Query(None),
+    question_scopes: list[str] | None = Query(None),
+    persona_ids: list[int] | None = Query(None),
+    disagreements_only: bool = Query(False),
+    judge_ids: list[int] | None = Query(None),
     db: Session = Depends(get_db)
 ):
     """
@@ -600,11 +606,20 @@ def export_snapshot(
     """
     try:
         export_service = ExportService(db)
+        filters = ScoringResultsFilters(
+            labels=labels or [],
+            question_types=question_types or [],
+            question_scopes=question_scopes or [],
+            persona_ids=persona_ids or [],
+            disagreements_only=disagreements_only,
+            judge_ids=judge_ids or [],
+        )
         results_data, evaluator_payload = export_service.export_snapshot(
             snapshot_id,
             format=format,
             include_evaluators=include_evaluators,
             rubric_id=rubric_id,
+            filters=filters,
         )
 
         if format == ExportFormat.JSON:

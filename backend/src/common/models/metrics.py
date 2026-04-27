@@ -3,6 +3,9 @@
 from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
+from src.common.models.judge import JudgeResponse
+from src.common.models.target_rubric import TargetRubricResponse
+
 
 AggregationMethod = Literal["majority", "majority_tied", "no_aligned_judge", "override", "pending"]
 
@@ -85,6 +88,16 @@ class ScoringPendingCountsResponse(BaseModel):
     pending_counts: Dict[str, int] = Field(default_factory=dict)
 
 
+class ScoringStatusResponse(BaseModel):
+    """Snapshot-scoped gating data for the scoring page."""
+    snapshot_id: int
+    selected_ids: List[int] = Field(default_factory=list)
+    selected_and_annotated_ids: List[int] = Field(default_factory=list)
+    is_complete: bool
+    completion_percentage: float
+    unanswered_question_count: int
+
+
 class ConfusionMatrixResponse(BaseModel):
     """Confusion matrix for inaccurate answers by question type and scope."""
     matrix: Dict[str, int]
@@ -122,6 +135,8 @@ class ScoringRowResult(BaseModel):
     question_text: Optional[str] = None
     question_type: Optional[str] = None
     question_scope: Optional[str] = None
+    persona_id: Optional[int] = None
+    persona_title: Optional[str] = None
     answer_id: int
     answer_content: str
     aggregated_result: AggregatedRowResult
@@ -143,6 +158,43 @@ class SnapshotScoringContractsResponse(BaseModel):
     """All rubric-scoped scoring contracts for one snapshot."""
     snapshot_id: int
     rubrics: List[ScoringContract] = Field(default_factory=list)
+
+
+class ScoringRubricResponse(TargetRubricResponse):
+    """Rubric metadata plus inline judges for the scoring page."""
+    judges: List[JudgeResponse] = Field(default_factory=list)
+
+
+class ScoringRubricsResponse(BaseModel):
+    """All rubric tabs and their inline judges for a snapshot."""
+    snapshot_id: int
+    rubrics: List[ScoringRubricResponse] = Field(default_factory=list)
+
+
+class ScoringPersonaOption(BaseModel):
+    """Persona option presented in scoring table filters."""
+    id: int
+    title: str
+
+
+class ScoringResultsFilters(BaseModel):
+    """Backend-owned filter inputs for one rubric's scoring results."""
+    labels: List[str] = Field(default_factory=list)
+    question_types: List[str] = Field(default_factory=list)
+    question_scopes: List[str] = Field(default_factory=list)
+    persona_ids: List[int] = Field(default_factory=list)
+    disagreements_only: bool = False
+    judge_ids: List[int] = Field(default_factory=list)
+
+
+class ScoringResultsResponse(ScoringContract):
+    """Rubric-scoped scoring results payload for one page of table rows."""
+    snapshot_id: int
+    total_count: int
+    page: int
+    page_size: int
+    pending_counts: Dict[str, int] = Field(default_factory=dict)
+    persona_options: List[ScoringPersonaOption] = Field(default_factory=list)
 
 
 class MetricsByRubric(BaseModel):

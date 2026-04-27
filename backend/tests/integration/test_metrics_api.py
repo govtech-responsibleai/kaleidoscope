@@ -95,17 +95,50 @@ class TestMetricsAPI:
         assert data["pending_counts"][str(rubric_judge.id)] == 1
         assert str(accuracy_judge.id) not in data["pending_counts"]
 
-    def test_scoring_contracts_return_backend_owned_accuracy_and_rubric_metrics(
+    def test_scoring_status_returns_snapshot_scoped_gating_data(
+        self,
+        test_client,
+        test_db,
+        sample_target,
+        sample_job,
+        sample_personas,
+        sample_snapshot,
+        sample_annotations,
+    ):
+        """The scoring-status route should return only snapshot-wide gating state."""
+        from src.common.database.models import Question, QuestionTypeEnum, QuestionScopeEnum, StatusEnum
+
+        unanswered_question = Question(
+            job_id=sample_job.id,
+            persona_id=sample_personas[0].id,
+            target_id=sample_target.id,
+            text="What still needs an answer?",
+            type=QuestionTypeEnum.typical,
+            scope=QuestionScopeEnum.in_kb,
+            status=StatusEnum.approved,
+        )
+        test_db.add(unanswered_question)
+        test_db.commit()
+
+        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/scoring-status")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["snapshot_id"] == sample_snapshot.id
+        assert data["is_complete"] is True
+        assert data["unanswered_question_count"] == 1
+        assert len(data["selected_ids"]) == len(sample_annotations)
+        assert len(data["selected_and_annotated_ids"]) == len(sample_annotations)
+
+    def test_scoring_rubrics_return_inline_judges_without_rows(
         self,
         test_client,
         test_db,
         sample_target,
         sample_snapshot,
-        sample_annotations,
-        sample_answer_scores,
         sample_rubric,
     ):
-        """The scoring page should be able to fetch one backend-owned contract for all metric sections."""
+        """The scoring-rubrics route should return rubric metadata and inline judges only."""
         from src.common.database.models import Judge
         from src.rubric.services.system_rubrics import ensure_system_rubrics
 
@@ -135,23 +168,18 @@ class TestMetricsAPI:
         test_db.add(rubric_judge)
         test_db.commit()
 
-        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/scoring-contracts")
+        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/scoring-rubrics")
 
         assert response.status_code == 200
         data = response.json()
         assert data["snapshot_id"] == sample_snapshot.id
-        accuracy_metric = next(metric for metric in data["rubrics"] if metric["group"] == "fixed")
-        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
+        returned_rubrics = {rubric["id"]: rubric for rubric in data["rubrics"]}
+        assert accuracy_rubric.id in returned_rubrics
+        assert sample_rubric.id in returned_rubrics
+        assert returned_rubrics[sample_rubric.id]["judges"][0]["name"] == "Tone Judge"
+        assert "rows" not in returned_rubrics[sample_rubric.id]
 
-        assert accuracy_metric["rubric_name"] == "Accuracy"
-        assert isinstance(accuracy_metric["judge_summaries"], list)
-        assert len(accuracy_metric["rows"]) == len(sample_annotations)
-
-        assert rubric_metric["rubric_name"] == sample_rubric.name
-        assert rubric_metric["best_option"] == sample_rubric.best_option
-        assert len(rubric_metric["rows"]) == len(sample_annotations)
-
-    def test_scoring_contracts_return_null_summaries_for_judges_that_have_not_run(
+    def test_scoring_results_return_filtered_rows_and_export_parity(
         self,
         test_client,
         test_db,
@@ -160,138 +188,96 @@ class TestMetricsAPI:
         sample_annotations,
         sample_rubric,
     ):
-        """Created judges without metric results should return unavailable summaries."""
-        from src.common.database.models import Judge
-        from src.rubric.services.system_rubrics import ensure_system_rubrics
-
-        ensure_system_rubrics(test_db, sample_target.id)
-        accuracy_rubric = _accuracy_rubric(test_db, sample_target.id)
-        accuracy_judge = Judge(
-            target_id=sample_target.id,
-            rubric_id=accuracy_rubric.id,
-            name="Custom Accuracy Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
-            prompt_template="Accuracy prompt",
-            params={"temperature": 0.0},
-            is_baseline=False,
-            is_editable=True,
-        )
-        rubric_judge = Judge(
-            target_id=sample_target.id,
-            rubric_id=sample_rubric.id,
-            name="Custom Rubric Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
-            prompt_template="Rubric prompt",
-            params={"temperature": 0.0},
-            is_baseline=False,
-            is_editable=True,
-        )
-        test_db.add(accuracy_judge)
-        test_db.add(rubric_judge)
-        test_db.commit()
-
-        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/scoring-contracts")
-
-        assert response.status_code == 200
-        data = response.json()
-        accuracy_metric = next(metric for metric in data["rubrics"] if metric["group"] == "fixed")
-        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
-
-        accuracy_summary = next(summary for summary in accuracy_metric["judge_summaries"] if summary["judge_id"] == accuracy_judge.id)
-        rubric_summary = next(summary for summary in rubric_metric["judge_summaries"] if summary["judge_id"] == rubric_judge.id)
-
-        assert accuracy_summary["accuracy"] is None
-        assert accuracy_summary["reliability"] is None
-        assert rubric_summary["accuracy"] is None
-        assert rubric_summary["reliability"] is None
-
-    def test_scoring_contracts_reflect_accuracy_and_rubric_manual_overrides(
-        self,
-        test_client,
-        test_db,
-        sample_target,
-        sample_snapshot,
-        sample_annotations,
-        sample_answer_scores,
-        sample_rubric,
-    ):
-        """Saved manual label overrides should persist in rows and update metric aggregates."""
+        """The scoring-results and export routes should share the same filtered rubric dataset."""
         from src.common.database.models import AnswerScore, Judge, Annotation
-        from src.rubric.services.system_rubrics import ensure_system_rubrics
 
-        rubric_judge = Judge(
+        judge_one = Judge(
             target_id=sample_target.id,
             rubric_id=sample_rubric.id,
-            name="Tone Judge",
+            name="Tone Judge 1",
             model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
             prompt_template="Tone prompt",
             params={"temperature": 0.0},
             is_baseline=False,
             is_editable=True,
         )
-        test_db.add(rubric_judge)
+        judge_two = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Judge 2",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Tone prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(judge_one)
+        test_db.add(judge_two)
         test_db.commit()
-        test_db.refresh(rubric_judge)
+        test_db.refresh(judge_one)
+        test_db.refresh(judge_two)
 
-        overridden_answer_id = sample_annotations[0].answer_id
-        negative_control_answer_id = sample_annotations[1].answer_id
         for annotation in sample_annotations:
-            test_db.add(AnswerScore(
-                answer_id=annotation.answer_id,
-                rubric_id=sample_rubric.id,
-                judge_id=rubric_judge.id,
-                overall_label="Casual" if annotation.answer_id in {overridden_answer_id, negative_control_answer_id} else "Professional",
-                explanation="Tone score",
-            ))
+            option_value = "Professional" if annotation.label else "Casual"
             test_db.add(Annotation(
                 answer_id=annotation.answer_id,
                 rubric_id=sample_rubric.id,
-                option_value="Casual" if annotation.answer_id == negative_control_answer_id else "Professional",
+                option_value=option_value,
+            ))
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_rubric.id,
+                judge_id=judge_one.id,
+                overall_label=option_value,
+                explanation="Tone score 1",
+            ))
+            second_label = option_value
+            if annotation.answer_id == sample_annotations[0].answer_id:
+                second_label = "Casual"
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_rubric.id,
+                judge_id=judge_two.id,
+                overall_label=second_label,
+                explanation="Tone score 2",
             ))
         test_db.commit()
 
-        ensure_system_rubrics(test_db, sample_target.id)
-        accuracy_rubric = _accuracy_rubric(test_db, sample_target.id)
-
-        accuracy_override_response = test_client.put(
-            f"/api/v1/answers/{sample_annotations[8].answer_id}/label-overrides/{accuracy_rubric.id}",
-            json={"edited_value": "accurate"}
+        scoring_response = test_client.get(
+            f"/api/v1/snapshots/{sample_snapshot.id}/rubrics/{sample_rubric.id}/scoring-results",
+            params={
+                "disagreements_only": True,
+                "judge_ids": [judge_one.id, judge_two.id],
+                "page": 0,
+                "page_size": 10,
+            },
         )
-        assert accuracy_override_response.status_code == 200
-        assert accuracy_override_response.json()["edited_value"] == "Accurate"
 
-        rubric_override_response = test_client.put(
-            f"/api/v1/answers/{overridden_answer_id}/label-overrides/{sample_rubric.id}",
-            json={"edited_value": "Professional"}
+        assert scoring_response.status_code == 200
+        scoring_data = scoring_response.json()
+        assert scoring_data["total_count"] == 1
+        assert len(scoring_data["rows"]) == 1
+        row = scoring_data["rows"][0]
+        assert row["persona_id"] == sample_annotations[0].answer.question.persona_id
+        assert row["persona_title"] == sample_annotations[0].answer.question.persona.title
+        assert {judge["judge_id"] for judge in scoring_data["aligned_judges"]} == {judge_one.id, judge_two.id}
+        assert len(scoring_data["persona_options"]) == 1
+
+        export_response = test_client.get(
+            f"/api/v1/targets/snapshots/{sample_snapshot.id}/export",
+            params={
+                "rubric_id": sample_rubric.id,
+                "format": "json",
+                "disagreements_only": True,
+                "judge_ids": [judge_one.id, judge_two.id],
+            },
         )
-        assert rubric_override_response.status_code == 200
 
-        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/scoring-contracts")
-        assert response.status_code == 200
-        data = response.json()
-
-        accuracy_metric = next(metric for metric in data["rubrics"] if metric["group"] == "fixed")
-        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
-
-        accuracy_row = next(row for row in accuracy_metric["rows"] if row["answer_id"] == sample_annotations[8].answer_id)
-        rubric_row = next(row for row in rubric_metric["rows"] if row["answer_id"] == overridden_answer_id)
-
-        assert accuracy_row["aggregated_result"]["method"] == "override"
-        assert accuracy_row["aggregated_result"]["value"] == "Accurate"
-        assert accuracy_row["aggregated_result"]["baseline_value"] == "Inaccurate"
-        assert accuracy_row["aggregated_result"]["is_edited"] is True
-        assert accuracy_metric["accurate_count"] == 9
-        assert accuracy_metric["inaccurate_count"] == 1
-
-        assert rubric_row["aggregated_result"]["method"] == "override"
-        assert rubric_row["aggregated_result"]["value"] == "Professional"
-        assert rubric_row["aggregated_result"]["baseline_value"] == "Casual"
-        assert rubric_row["aggregated_result"]["is_edited"] is True
-        assert rubric_row["human_label"] == "Professional"
-        assert rubric_metric["accurate_count"] == 9
-        assert rubric_metric["inaccurate_count"] == 1
-        assert rubric_metric["edited_count"] == 1
-        assert rubric_metric["aggregated_score"] == 0.9
+        assert export_response.status_code == 200
+        export_data = export_response.json()
+        assert len(export_data) == 1
+        assert export_data[0]["answer_id"] == row["answer_id"]
+        assert export_data[0]["persona_id"] == row["persona_id"]
 
     def test_snapshot_metrics_return_rubric_oriented_series_for_fixed_and_custom_rubrics(
         self,
@@ -410,66 +396,6 @@ class TestMetricsAPI:
         assert unanswered_question.id not in missing_question_ids
         expected_missing_ids = {annotation.answer.question_id for annotation in sample_annotations[8:]}
         assert expected_missing_ids <= missing_question_ids
-
-    def test_scoring_contracts_do_not_treat_rubric_annotations_as_scoring_overrides(
-        self,
-        test_client,
-        test_db,
-        sample_target,
-        sample_snapshot,
-        sample_annotations,
-        sample_rubric,
-    ):
-        """Rubric annotations stay as judge-evaluation ground truth and do not replace the scoring aggregate."""
-        from src.common.database.models import AnswerScore, Judge, Annotation
-
-        rubric_judge = Judge(
-            target_id=sample_target.id,
-            rubric_id=sample_rubric.id,
-            name="Tone Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
-            prompt_template="Tone prompt",
-            params={"temperature": 0.0},
-            is_baseline=False,
-            is_editable=True,
-        )
-        test_db.add(rubric_judge)
-        test_db.commit()
-        test_db.refresh(rubric_judge)
-
-        overridden_answer_id = sample_annotations[0].answer_id
-        negative_control_answer_id = sample_annotations[1].answer_id
-        for annotation in sample_annotations:
-            test_db.add(AnswerScore(
-                answer_id=annotation.answer_id,
-                rubric_id=sample_rubric.id,
-                judge_id=rubric_judge.id,
-                overall_label="Casual" if annotation.answer_id in {overridden_answer_id, negative_control_answer_id} else "Professional",
-                explanation="Tone score",
-            ))
-            test_db.add(Annotation(
-                answer_id=annotation.answer_id,
-                rubric_id=sample_rubric.id,
-                option_value="Casual" if annotation.answer_id == negative_control_answer_id else "Professional",
-            ))
-        test_db.commit()
-
-        response = test_client.get(f"/api/v1/snapshots/{sample_snapshot.id}/scoring-contracts")
-        assert response.status_code == 200
-        data = response.json()
-
-        rubric_metric = next(metric for metric in data["rubrics"] if metric["group"] != "fixed" and metric["rubric_id"] == sample_rubric.id)
-        rubric_row = next(row for row in rubric_metric["rows"] if row["answer_id"] == overridden_answer_id)
-
-        assert rubric_row["aggregated_result"]["method"] == "majority"
-        assert rubric_row["aggregated_result"]["value"] == "Casual"
-        assert rubric_row["aggregated_result"]["baseline_value"] == "Casual"
-        assert rubric_row["aggregated_result"]["is_edited"] is False
-        assert rubric_row["human_label"] == "Professional"
-        assert rubric_metric["accurate_count"] == 8
-        assert rubric_metric["inaccurate_count"] == 2
-        assert rubric_metric["edited_count"] == 0
-        assert rubric_metric["aggregated_score"] == 0.8
 
     def test_qa_job_metric_status_returns_no_judge_configured_for_rubric(
         self,
