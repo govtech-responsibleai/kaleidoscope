@@ -410,10 +410,11 @@ def create_all_jobs(
     """
     Create ONE QA job per question with rubric_specs embedded.
 
-    When explicit rubric_specs are provided, they are treated as the full
-    rubric plan for the affected jobs. Existing jobs are reconciled to that
-    normalized set, and missing-score detection decides whether they need to
-    resume scoring.
+    When explicit rubric_specs are provided, they are treated as the scoring
+    plan for this run only. Existing jobs keep their stored rubric_specs so the
+    annotation UI continues to reflect the baseline judge set that originally
+    defined the job, while missing-score detection still decides whether they
+    need to resume scoring for the requested specs.
 
     Returns:
         List of QAJob records (one per question)
@@ -428,10 +429,6 @@ def create_all_jobs(
             if job:
                 if primary_judge_id is not None and job.judge_id != primary_judge_id:
                     job.judge_id = primary_judge_id
-                    db.commit()
-                    db.refresh(job)
-                if normalized_specs is not None and job.rubric_specs != normalized_specs:
-                    job.rubric_specs = normalized_specs
                     db.commit()
                     db.refresh(job)
                 next_stage = QAJobStageEnum.scoring_answers if job.answer_id else QAJobStageEnum.starting
@@ -454,10 +451,6 @@ def create_all_jobs(
         if existing_job:
             if primary_judge_id is not None and existing_job.judge_id != primary_judge_id:
                 existing_job.judge_id = primary_judge_id
-                db.commit()
-                db.refresh(existing_job)
-            if normalized_specs is not None and existing_job.rubric_specs != normalized_specs:
-                existing_job.rubric_specs = normalized_specs
                 db.commit()
                 db.refresh(existing_job)
             if existing_job.status in (JobStatusEnum.paused, JobStatusEnum.failed) or (
@@ -772,7 +765,7 @@ async def run_qajobs_phased(
         coros.append(
             _run_job_phased(
                 job.id, snapshot_id, job.question_id,
-                job.rubric_specs or rubric_specs,
+                rubric_specs or job.rubric_specs,
             )
         )
 

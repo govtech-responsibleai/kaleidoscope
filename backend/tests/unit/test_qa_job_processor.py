@@ -212,7 +212,7 @@ class TestQAJobProcessor:
         assert job.status == JobStatusEnum.completed
         assert job.stage == QAJobStageEnum.completed
 
-    def test_create_all_jobs_reconciles_existing_job_to_full_rubric_set(
+    def test_create_all_jobs_keeps_existing_job_rubric_specs_when_running_extra_judges(
         self,
         test_db,
         sample_snapshot,
@@ -220,7 +220,7 @@ class TestQAJobProcessor:
         sample_rubric,
         sample_rubric_second,
     ):
-        """Explicit annotation starts should reconcile the full rubric set onto existing jobs."""
+        """Existing jobs keep their stored rubric specs when extra judges are run later."""
         sample_qa_job.snapshot_id = sample_snapshot.id
         sample_qa_job.rubric_specs = [
             {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
@@ -244,7 +244,6 @@ class TestQAJobProcessor:
         assert sample_qa_job.rubric_specs == [
             {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
             {"rubric_id": sample_rubric.id, "judge_id": 101},
-            {"rubric_id": sample_rubric_second.id, "judge_id": 202},
         ]
 
     def test_create_all_jobs_marks_completed_job_running_only_when_full_set_has_missing_score(
@@ -344,8 +343,47 @@ class TestQAJobProcessor:
         assert sample_qa_job.rubric_specs == [
             {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
             {"rubric_id": sample_rubric.id, "judge_id": existing_empathy_judge.id},
-            {"rubric_id": sample_rubric_second.id, "judge_id": 202},
         ]
+
+    @pytest.mark.asyncio
+    @patch("src.scoring.services.qa_job_processor._run_job_phased")
+    @patch("src.scoring.services.qa_job_processor.gather_with_concurrency", new_callable=AsyncMock)
+    async def test_run_qajobs_phased_prefers_explicit_specs_over_job_specs(
+        self,
+        mock_gather_with_concurrency,
+        mock_run_job_phased,
+        test_db,
+        sample_snapshot,
+        sample_qa_job,
+    ):
+        """Ad hoc reruns should score the requested judges without mutating stored job specs."""
+        from src.scoring.services.qa_job_processor import run_qajobs_phased
+
+        sample_qa_job.snapshot_id = sample_snapshot.id
+        sample_qa_job.status = JobStatusEnum.running
+        sample_qa_job.rubric_specs = [
+            {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
+        ]
+        test_db.commit()
+
+        explicit_specs = [
+            {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": 999},
+        ]
+        mock_gather_with_concurrency.return_value = []
+
+        await run_qajobs_phased(
+            snapshot_id=sample_snapshot.id,
+            question_ids=[sample_qa_job.question_id],
+            all_jobs=[sample_qa_job],
+            rubric_specs=explicit_specs,
+        )
+
+        mock_run_job_phased.assert_called_once_with(
+            sample_qa_job.id,
+            sample_snapshot.id,
+            sample_qa_job.question_id,
+            explicit_specs,
+        )
 
     def test_uses_claim_processing_true_for_accuracy_judge(
         self, test_db, sample_snapshot, sample_question, sample_judge_claim_based

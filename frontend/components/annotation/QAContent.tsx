@@ -38,6 +38,7 @@ export default function QAContent({
   const [jobDetail, setJobDetail] = useState<QAJob | null>(job);
   const [rubricVerdictLoading, setRubricVerdictLoading] = useState(false);
   const hasLoadedJobDetailRef = useRef(false);
+  const activeJobIdRef = useRef<number | null>(job?.id ?? null);
   const isClaimBasedRubric = activeRubric?.scoring_mode === "claim_based";
   const jobId = job?.id ?? null;
   const jobStatus = jobDetail?.status ?? job?.status ?? null;
@@ -70,15 +71,12 @@ export default function QAContent({
   }, [jobId]);
 
   useEffect(() => {
-    setJobDetail(job);
-  }, [job]);
-
-  useEffect(() => {
-    if (!jobId) {
-      setJobDetail(job);
-      setRubricVerdictLoading(false);
+    if (activeJobIdRef.current !== jobId) {
+      activeJobIdRef.current = jobId;
       hasLoadedJobDetailRef.current = false;
+      setRubricVerdictLoading(false);
     }
+    setJobDetail(job);
   }, [job, jobId]);
 
   useEffect(() => {

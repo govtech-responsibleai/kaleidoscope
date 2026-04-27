@@ -707,3 +707,158 @@ class TestMetricsAPI:
 
         assert rubric_ids == [sample_qa_job.judge.rubric_id]
         assert sample_rubric.id not in rubric_ids
+
+    def test_qa_job_detail_uses_target_baselines_so_all_current_rubrics_render(
+        self,
+        test_client,
+        test_db,
+        sample_target,
+        sample_qa_job,
+        sample_answer,
+        sample_rubric,
+        sample_rubric_second,
+    ):
+        from src.common.database.models import AnswerScore, Judge
+
+        tone_baseline = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Baseline",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Tone prompt",
+            params={"temperature": 0.0},
+            is_baseline=True,
+            is_editable=False,
+        )
+        relevance_baseline = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric_second.id,
+            name="Relevance Baseline",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Relevance prompt",
+            params={"temperature": 0.0},
+            is_baseline=True,
+            is_editable=False,
+        )
+        test_db.add_all([tone_baseline, relevance_baseline])
+        test_db.commit()
+        test_db.refresh(tone_baseline)
+        test_db.refresh(relevance_baseline)
+
+        test_db.add_all([
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_qa_job.judge.rubric_id,
+                judge_id=sample_qa_job.judge_id,
+                overall_label="Accurate",
+                explanation="Accuracy verdict",
+            ),
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_rubric.id,
+                judge_id=tone_baseline.id,
+                overall_label=sample_rubric.best_option,
+                explanation="Tone verdict",
+            ),
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_rubric_second.id,
+                judge_id=relevance_baseline.id,
+                overall_label=sample_rubric_second.best_option,
+                explanation="Relevance verdict",
+            ),
+        ])
+        sample_qa_job.rubric_specs = [
+            {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
+        ]
+        test_db.commit()
+
+        response = test_client.get(f"/api/v1/qa-jobs/{sample_qa_job.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        rubric_statuses = {status["rubric_id"]: status for status in data["rubric_statuses"]}
+
+        assert set(rubric_statuses) == {
+            sample_qa_job.judge.rubric_id,
+            sample_rubric.id,
+            sample_rubric_second.id,
+        }
+        assert rubric_statuses[sample_rubric.id]["judge_id"] == tone_baseline.id
+        assert rubric_statuses[sample_rubric_second.id]["judge_id"] == relevance_baseline.id
+        assert rubric_statuses[sample_rubric_second.id]["state"] == "success"
+
+    def test_qa_job_detail_prefers_target_baseline_judge_over_ad_hoc_job_judge(
+        self,
+        test_client,
+        test_db,
+        sample_target,
+        sample_qa_job,
+        sample_answer,
+        sample_rubric,
+    ):
+        from src.common.database.models import AnswerScore, Judge
+
+        baseline_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Baseline",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Baseline prompt",
+            params={"temperature": 0.0},
+            is_baseline=True,
+            is_editable=False,
+        )
+        ad_hoc_judge = Judge(
+            target_id=sample_target.id,
+            rubric_id=sample_rubric.id,
+            name="Tone Ad Hoc",
+            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            prompt_template="Ad hoc prompt",
+            params={"temperature": 0.0},
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add_all([baseline_judge, ad_hoc_judge])
+        test_db.commit()
+        test_db.refresh(baseline_judge)
+        test_db.refresh(ad_hoc_judge)
+
+        test_db.add_all([
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_qa_job.judge.rubric_id,
+                judge_id=sample_qa_job.judge_id,
+                overall_label="Accurate",
+                explanation="Accuracy verdict",
+            ),
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_rubric.id,
+                judge_id=baseline_judge.id,
+                overall_label=sample_rubric.best_option,
+                explanation="Baseline tone verdict",
+            ),
+            AnswerScore(
+                answer_id=sample_answer.id,
+                rubric_id=sample_rubric.id,
+                judge_id=ad_hoc_judge.id,
+                overall_label="Casual",
+                explanation="Ad hoc tone verdict",
+            ),
+        ])
+        sample_qa_job.rubric_specs = [
+            {"rubric_id": sample_qa_job.judge.rubric_id, "judge_id": sample_qa_job.judge_id},
+            {"rubric_id": sample_rubric.id, "judge_id": ad_hoc_judge.id},
+        ]
+        test_db.commit()
+
+        response = test_client.get(f"/api/v1/qa-jobs/{sample_qa_job.id}")
+
+        assert response.status_code == 200
+        data = response.json()
+        metric = next(status for status in data["rubric_statuses"] if status["rubric_id"] == sample_rubric.id)
+
+        assert metric["judge_id"] == baseline_judge.id
+        assert metric["judge_name"] == "Tone Baseline"
+        assert metric["score"]["value"] == sample_rubric.best_option

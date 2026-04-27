@@ -151,6 +151,23 @@ def _build_rubric_metric_status(
     )
 
 
+def _resolve_annotation_rubric_specs(db: Session, snapshot, job) -> list[dict[str, int]]:
+    """Resolve the rubric/judge set shown on the annotation page.
+
+    Prefer the target's current baseline rubric specs so annotation continues to
+    show the canonical judge verdicts even after ad hoc judge runs. If the
+    target cannot resolve to a full baseline set, fall back to the job's stored
+    rubric specs.
+    """
+    if snapshot is None:
+        return list(job.rubric_specs or [])
+
+    try:
+        return resolve_target_rubric_specs(db, snapshot.target_id)
+    except RubricSpecResolutionError:
+        return list(job.rubric_specs or [])
+
+
 @router.post("/snapshots/{snapshot_id}/qa-jobs/start", response_model=List[QAJobResponse])
 async def start_qa_jobs(
     snapshot_id: int,
@@ -326,8 +343,9 @@ def get_qa_job(
             detail=f"QA job {job_id} not found"
         )
 
+    snapshot = SnapshotRepository.get_by_id(db, job.snapshot_id)
     rubric_statuses = []
-    for spec in (job.rubric_specs or []):
+    for spec in _resolve_annotation_rubric_specs(db, snapshot, job):
         rubric_statuses.append(
             _build_rubric_metric_status(
                 db,
