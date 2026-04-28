@@ -120,43 +120,6 @@ On startup, the registry will:
 - Extend the `EndpointType` enum so the API accepts the new type in target create/update requests
 - Call `validate_config()` when users create or update targets with this endpoint type
 
-## AIBots Extension (Government Only)
+## Available Extensions
 
-The AIBots extension (`src/extensions/aibots/`) connects to the [AIBots platform](https://aibots.gov.sg), which is restricted to government officers.
-
-### Setup
-
-1. Ensure the `src/extensions/aibots/` directory is present in your deployment
-2. Set the environment variable:
-   ```bash
-   KALEIDOSCOPE_EXTENSIONS=aibots
-   ```
-3. Create a target with:
-   ```json
-   {
-     "endpoint_type": "aibots",
-     "api_endpoint": "https://<aibots-host>/v1/api",
-     "endpoint_config": {
-       "api_key": "<your X-ATLAS-Key>"
-     }
-   }
-   ```
-
-### Optional `endpoint_config` for AIBots
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `agents` | `[]` | List of bot agent UUIDs |
-| `model` | — | LLM identifier (e.g. `azure~openai.gpt-5-mini`) |
-| `params` | — | Model parameters dict (e.g. `{"temperature": 0.0}`) |
-| `chat_timeout` | `30` | Timeout in seconds for chat creation |
-| `message_timeout` | `60` | Timeout in seconds for message send |
-
-### How it works
-
-AIBots uses a two-step flow (which is why it can't use the generic HTTP connector):
-
-1. **Create chat session** — `POST /chats` with `X-ATLAS-Key` header
-2. **Send message** — `POST /chats/{id}/messages` with the prompt
-
-The connector extracts: answer content, model, tokens, chat ID, message ID, system prompt, guardrails status, and RAG citations from the response.
+- **aibots** — GovTech AIBots platform (government use). See [`aibots/README.md`](aibots/README.md).
