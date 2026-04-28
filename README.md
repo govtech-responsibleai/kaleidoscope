@@ -107,16 +107,20 @@ Set the outputs in `.env` or your deployment environment.
 
 ## 🧑‍🤝‍🧑 Customising personas
 
-By default Kaleidoscope samples from NVIDIA's [Nemotron-Personas-Singapore](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Singapore) (~148K rows). To use a different country dataset, set `NEMOTRON_PERSONAS_DATASET` in `.env`:
+Three options to customise personas for test case generation: 
+
+1. AI personas 
+2. Upload personas
+3. Sample from NVIDIA's Nemotron Personas.
+
+By default, the platform users [Nemotron-Personas-Singapore](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Singapore) (~148K rows). To use a different country dataset, set `NEMOTRON_PERSONAS_DATASET` in `.env`:
 
 ```bash
 # .env
 NEMOTRON_PERSONAS_DATASET=nvidia/Nemotron-Personas-USA
 ```
 
-Known NVIDIA datasets: **Singapore** (default) · USA · India · Japan · Korea · France · Brazil.
-
-The value must be a valid `nvidia/Nemotron-Personas-*` HuggingFace path. Singapore and USA ship with native style templates; any other country uses a generic fallback (a warning is logged on first load). To add a template for another country, update `STYLE_TEMPLATES` in [`backend/src/query_generation/services/persona_sampler.py`](backend/src/query_generation/services/persona_sampler.py).
+The value must be a valid `nvidia/Nemotron-Personas-*` HuggingFace path. For adding style templates for other countries, see [Backend README](backend/README.md#nemotron-personas).
 
 ## 🇸🇬 WOG? Read on.
 
@@ -131,7 +135,13 @@ You then select "aibots" during Target Application set-up. Full connector refere
 
 **2. Singapore personas** — keep `NEMOTRON_PERSONAS_DATASET` at its default (`nvidia/Nemotron-Personas-Singapore`). Recommended if you need general-purpose personas for a Singapore-context evaluation.
 
+**3. Singapore-contextualised generation prompts** — the built-in LLM prompt templates (`backend/src/common/prompts/templates/`) are written for Singapore government and public-facing digital services (references to CPF, HDB, NS, `.gov.sg`, etc.). They work out of the box for WOG use cases.
+
+To adapt for a different domain, edit the Markdown files in that directory. You can also customise the evaluation/judge prompts (`accuracy_judge.md`, `checkworthy.md`, `*_rubric_judge.md`) to fit your use case.
+
 Reach out to the **AI Practice** team for setup details.
+
+Happy evaluating!
 
 ## 📄 License
 

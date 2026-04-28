@@ -63,6 +63,12 @@ class Settings(BaseSettings):
     # Extensions (comma-separated list, e.g. "aibots,custom")
     kaleidoscope_extensions: str = ""
 
+    # Nemotron persona dataset — Singapore is the default; swap via env var
+    # for other countries. Must be a valid nvidia/Nemotron-Personas-* HF path.
+    # Known datasets: Singapore, USA, India, Japan, Korea, France, Brazil.
+    # See README.md → "Customising personas" for details.
+    nemotron_personas_dataset: str = "nvidia/Nemotron-Personas-Singapore"
+
     # Generation Defaults
     default_persona_count: int = 5
     default_question_count: int = 10

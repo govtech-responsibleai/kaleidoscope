@@ -81,6 +81,12 @@ Supported providers and their required env vars are in [`src/common/llm/provider
 
 Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to automatically trace all LLM calls via LiteLLM's OTEL callback. Set `LANGFUSE_BASE_URL` for a self-hosted instance, or leave unset for Langfuse cloud.
 
+## Nemotron Personas
+
+The persona sampler loads an NVIDIA Nemotron dataset on first use (lazy, cached to `~/.cache/huggingface/`). The dataset is controlled by `NEMOTRON_PERSONAS_DATASET` — see the root README for usage.
+
+Singapore and USA ship with native style templates that match their dataset schemas. Any other dataset falls back to a generic style sentence, and a warning is logged on first load naming the dataset. To add a style template for another country, update `STYLE_TEMPLATES` and `TEMPLATE_REQUIRED_COLUMNS` in [`src/query_generation/services/persona_sampler.py`](src/query_generation/services/persona_sampler.py).
+
 ## Tests
 
 ```bash
