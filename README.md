@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src=".github/kaleidoscope-logo-text-1.png" alt="Kaleidoscope" width="80%"/>
+<img src=".github/kaleidoscope-logo-text-2.png" alt="Kaleidoscope"/>
 
 Automated evaluation platform for AI-powered applications. Generate diverse test inputs and score the responses with LLM judges evaluated for reliability.
 
@@ -103,21 +103,33 @@ cd backend && uv run python scripts/generate_secret.py
 
 Set the outputs in `.env` or your deployment environment.
 
-> **Nemotron dataset**: The first call to sample Nemotron personas downloads NVIDIA's [Nemotron-Personas-Singapore](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Singapore) dataset (~148K rows) and caches it to `~/.cache/huggingface/`. Expect time and disk on first run — subsequent calls are instant.
+> **Nemotron dataset**: The first call to sample personas downloads the configured NVIDIA Nemotron dataset and caches it to `~/.cache/huggingface/`. Expect time and disk on first run — subsequent calls are instant. See [Customising personas](#customising-personas) to change the dataset.
+
+## 🧑‍🤝‍🧑 Customising personas
+
+By default Kaleidoscope samples from NVIDIA's [Nemotron-Personas-Singapore](https://huggingface.co/datasets/nvidia/Nemotron-Personas-Singapore) (~148K rows). To use a different country dataset, set `NEMOTRON_PERSONAS_DATASET` in `.env`:
+
+```bash
+# .env
+NEMOTRON_PERSONAS_DATASET=nvidia/Nemotron-Personas-USA
+```
+
+Known NVIDIA datasets: **Singapore** (default) · USA · India · Japan · Korea · France · Brazil.
+
+The value must be a valid `nvidia/Nemotron-Personas-*` HuggingFace path. Singapore and USA ship with native style templates; any other country uses a generic fallback (a warning is logged on first load). To add a template for another country, update `STYLE_TEMPLATES` in [`backend/src/query_generation/services/persona_sampler.py`](backend/src/query_generation/services/persona_sampler.py).
 
 ## 🇸🇬 WOG? Read on.
 
-Kaleidoscope supports [AIBots](https://aibots.gov.sg). AIBots access requires government credentials.
+For Whole-of-Government (WOG) deployments there are two optional add-ons — both independent, pick what you need:
 
-**Enable the extension:**
+**1. WOG providers** — enable [AIBots](https://aibots.gov.sg) and other WOG-internal connectors:
 ```bash
 # .env
 KALEIDOSCOPE_EXTENSIONS=aibots
 ```
+You then select "aibots" during Target Application set-up. Full connector reference: [`backend/src/extensions/aibots/README.md`](backend/src/extensions/aibots/README.md)
 
-You now select "aibots" during Target Application set-up. More connectors coming soon!
-
-Full connector reference: [`backend/src/extensions/aibots/README.md`](backend/src/extensions/aibots/README.md)
+**2. Singapore personas** — keep `NEMOTRON_PERSONAS_DATASET` at its default (`nvidia/Nemotron-Personas-Singapore`). Recommended if you need general-purpose personas for a Singapore-context evaluation.
 
 Reach out to the **AI Practice** team for setup details.
 
