@@ -396,11 +396,11 @@ export default function GenerateEvalsModal({
                   </linearGradient>
                 </defs>
               </svg>
-            <Box display="flex" gap={3} mt={2} alignItems="flex-start">
+            <Box display="flex" gap={3} mt={2} alignItems="stretch">
               <Card
                 sx={{
                   width: 250,
-                  height: selectedMode === "generate" ? "auto" : "20vh",
+                  minHeight: "21vh",
                   cursor: "pointer",
                   transition: "all 0.2s",
                   boxShadow: "none",
@@ -416,7 +416,7 @@ export default function GenerateEvalsModal({
                 }}
                 onClick={() => setSelectedMode("generate")}
               >
-                <CardContent sx={{ textAlign: "center", py: 4, height: "20vh" }}>
+                <CardContent sx={{ textAlign: "center", py: 4 }}>
                   <Box className="card-icon" sx={{ color: "primary.main", mb: 2, display: "flex", justifyContent: "center" }}><IconSparkles size={48} stroke={1.8} /></Box>
                   <Typography variant="h6" fontWeight={600} gutterBottom>
                     Generate from Personas
@@ -449,7 +449,7 @@ export default function GenerateEvalsModal({
               <Card
                 sx={{
                   width: 250,
-                  height: selectedMode === "upload" ? "auto" : "20vh",
+                  minHeight: "21vh",
                   cursor: "pointer",
                   transition: "all 0.2s",
                   boxShadow: "none",
