@@ -36,6 +36,7 @@ import {
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
 import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
 import { usePolling } from "@/hooks/usePolling";
+import { TESTIDS } from "@/tests/e2e/fixtures/testids";
 
 interface QAJobControlProps {
   targetId: number;
@@ -760,6 +761,7 @@ export default function QAJobControl({
           variant="contained"
           color="primary"
           size="small"
+          data-testid={TESTIDS.QA_JOB_CONTROL_BUTTON}
           onClick={handleControlClick}
           disabled={
             controlState === "disabled" ||

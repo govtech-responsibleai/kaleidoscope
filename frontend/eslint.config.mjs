@@ -15,6 +15,14 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     ".claude/**",
   ]),
+  // Playwright fixtures use a `use` parameter that triggers react-hooks/rules-of-hooks
+  // false positives. Test files are not React component or hook contexts.
+  {
+    files: ["tests/**/*.ts", "tests/**/*.tsx"],
+    rules: {
+      "react-hooks/rules-of-hooks": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

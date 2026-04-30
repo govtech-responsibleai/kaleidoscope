@@ -38,6 +38,7 @@ import { metricsApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
 import LabelCell, { type LabelCellOption } from "./LabelCell";
 import { QAFilter, JudgeFilter } from "./filters";
+import { TESTIDS } from "@/tests/e2e/fixtures/testids";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import {
@@ -310,7 +311,7 @@ export default function ResultsTable({
   }
 
   return (
-    <Box sx={tableContainerSx}>
+    <Box data-testid={TESTIDS.RESULTS_TABLE} sx={tableContainerSx}>
       <Box sx={{ px: 2, pt: 2, pb: 1 }}>
         <Stack direction="row" spacing={2} alignItems="center">
           <Typography variant="subtitle1" fontWeight={700} sx={{ display: "flex", alignItems: "center", gap: 0.75 }}>
@@ -430,7 +431,11 @@ export default function ResultsTable({
                     <React.Fragment key={result.answer_id}>
                       <TableRow hover sx={getTableBodyRowSx(theme)}>
                         <TableCell>
-                          <IconButton size="small" onClick={() => toggleRow(result.answer_id)}>
+                          <IconButton
+                            size="small"
+                            data-testid={TESTIDS.RESULTS_TABLE_ROW_TOGGLE}
+                            onClick={() => toggleRow(result.answer_id)}
+                          >
                             {isExpanded ? <IconChevronUp {...compactActionIconProps} /> : <IconChevronDown {...compactActionIconProps} />}
                           </IconButton>
                         </TableCell>

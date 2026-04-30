@@ -30,12 +30,14 @@ interface SnapshotScoreChartProps {
   data: SnapshotScoreSeriesPoint[];
   loading: boolean;
   title?: string;
+  "data-testid"?: string;
 }
 
 export default function SnapshotScoreChart({
   data,
   loading,
   title,
+  "data-testid": testId,
 }: SnapshotScoreChartProps) {
   const theme = useTheme();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -207,6 +209,7 @@ export default function SnapshotScoreChart({
 
   return (
     <Card
+      data-testid={testId}
       variant="outlined"
       sx={{
         width: "100%",

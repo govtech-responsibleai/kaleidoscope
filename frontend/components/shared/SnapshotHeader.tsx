@@ -12,6 +12,7 @@ import {
 } from "@mui/material";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { Snapshot } from "@/lib/types";
+import { TESTIDS } from "@/tests/e2e/fixtures/testids";
 import CreateSnapshotDialog from "./CreateSnapshotDialog";
 import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
 import { snapshotApi } from "@/lib/api";
@@ -95,6 +96,7 @@ export default function SnapshotHeader({
               onChange={handleSnapshotChange}
               displayEmpty
               disabled={loading}
+              inputProps={{ "data-testid": TESTIDS.SNAPSHOT_SELECT }}
               renderValue={(value) => {
                 if (!value) return <em>No snapshots yet</em>;
                 const snapshot = snapshots.find(s => s.id.toString() === value);

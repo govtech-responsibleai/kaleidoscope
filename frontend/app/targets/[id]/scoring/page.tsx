@@ -44,6 +44,7 @@ import {
 } from "@/lib/api";
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
+import { TESTIDS } from "@/tests/e2e/fixtures/testids";
 
 type SourceGroup = "fixed" | "preset" | "custom";
 
@@ -745,6 +746,7 @@ function JudgeStrip({
   const sectionColor = groupColors[section.sourceGroup];
   return (
     <Box
+      data-testid={TESTIDS.JUDGE_LIST}
       sx={{
         bgcolor: "grey.100",
         borderRadius: 1.5,
@@ -766,6 +768,7 @@ function JudgeStrip({
         <Tooltip title={`Add judge for ${section.title}`}>
           <IconButton
             size="small"
+            data-testid={TESTIDS.JUDGE_ADD_BUTTON}
             onClick={() => onAddJudge(dialogConfig)}
             sx={{
               border: "1px solid",

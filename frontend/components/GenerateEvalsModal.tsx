@@ -36,6 +36,7 @@ import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaGenerationPanel from "@/components/questions/PersonaGenerationPanel";
 import { actionIconProps } from "@/lib/styles";
+import { TESTIDS } from "@/tests/e2e/fixtures/testids";
 
 const GENERATE_FLOW_STEPS = [
   { number: 1, eyebrow: "Step 1", title: "Select Personas" },
@@ -398,6 +399,7 @@ export default function GenerateEvalsModal({
               </svg>
             <Box display="flex" gap={3} mt={2} alignItems="stretch">
               <Card
+                data-testid={TESTIDS.GENERATE_EVALS_CARD_GENERATE}
                 sx={{
                   width: 250,
                   minHeight: "21vh",
@@ -447,6 +449,7 @@ export default function GenerateEvalsModal({
                 </Collapse>
               </Card>
               <Card
+                data-testid={TESTIDS.GENERATE_EVALS_CARD_UPLOAD}
                 sx={{
                   width: 250,
                   minHeight: "21vh",
@@ -634,6 +637,7 @@ export default function GenerateEvalsModal({
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
                 helperText={availableModels.length === 0 ? "No valid providers configured yet." : undefined}
+                inputProps={{ "data-testid": TESTIDS.GENERATION_MODEL_SELECTOR }}
               >
                 {availableModels.length === 0 ? (
                   <MenuItem value="" disabled>No valid models available</MenuItem>
