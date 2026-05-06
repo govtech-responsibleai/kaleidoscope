@@ -90,6 +90,13 @@ cd frontend && npm run dev         # frontend locally with hot reload
 Docker reference: [DOCKER.md](DOCKER.md)  
 Subsystem docs: [Backend](backend/README.md) | [Frontend](frontend/README.md)
 
+### Testing
+
+```bash
+cd backend && uv run pytest tests/        # backend (unit + integration)
+cd frontend && npm run test:ui            # frontend (Playwright, no backend needed)
+```
+
 ## 🚀 Deployment
 
 Configure your images in [`docker-compose.yml`](docker-compose.yml) and the [`backend/Dockerfile`](backend/Dockerfile) / [`frontend/Dockerfile`](frontend/Dockerfile).
