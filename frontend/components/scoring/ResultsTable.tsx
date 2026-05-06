@@ -38,7 +38,7 @@ import { metricsApi } from "@/lib/api";
 import ResultsTableExpandedRow from "./ResultsTableExpandedRow";
 import LabelCell, { type LabelCellOption } from "./LabelCell";
 import { QAFilter, JudgeFilter } from "./filters";
-import { TESTIDS } from "@/tests/e2e/fixtures/testids";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import {

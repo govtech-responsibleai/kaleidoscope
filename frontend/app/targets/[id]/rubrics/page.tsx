@@ -44,7 +44,7 @@ import { groupColors } from "@/lib/theme";
 import { JobStatus, PremadeRubricTemplate, TargetRubricResponse, RubricOption } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/styles";
-import { TESTIDS } from "@/tests/e2e/fixtures/testids";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 export default function RubricsPage() {
   const params = useParams();

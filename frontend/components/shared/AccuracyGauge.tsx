@@ -1,7 +1,7 @@
 "use client";
 
 import { Box, Typography, useTheme } from "@mui/material";
-import { TESTIDS } from "@/tests/e2e/fixtures/testids";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 interface AccuracyGaugeProps {
   value: number | null; // 0 to 1, or null for no data

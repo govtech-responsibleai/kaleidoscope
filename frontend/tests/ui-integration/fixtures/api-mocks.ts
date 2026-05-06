@@ -30,8 +30,13 @@ export async function setupApiMocks(page: Page, overrides: Overrides = {}) {
       });
     }
 
-    // Unmatched — return empty 200 so the app doesn't throw
-    return route.fulfill({ status: 200, contentType: "application/json", body: "null" });
+    return route.fulfill({
+      status: 500,
+      contentType: "application/json",
+      body: JSON.stringify({
+        detail: `[TEST] Unhandled API route: ${method} ${path}`,
+      }),
+    });
   });
 }
 

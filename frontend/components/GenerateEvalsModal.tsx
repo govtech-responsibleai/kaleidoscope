@@ -36,7 +36,7 @@ import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaGenerationPanel from "@/components/questions/PersonaGenerationPanel";
 import { actionIconProps } from "@/lib/styles";
-import { TESTIDS } from "@/tests/e2e/fixtures/testids";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 const GENERATE_FLOW_STEPS = [
   { number: 1, eyebrow: "Step 1", title: "Select Personas" },

@@ -34,7 +34,7 @@ import SnapshotScoreChart, {
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { actionIconProps, statIconProps } from "@/lib/styles";
-import { TESTIDS } from "@/tests/e2e/fixtures/testids";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 type RubricSeriesDefinition = {
   key: string;

@@ -44,7 +44,7 @@ import {
 } from "@/lib/api";
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
-import { TESTIDS } from "@/tests/e2e/fixtures/testids";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 type SourceGroup = "fixed" | "preset" | "custom";
 

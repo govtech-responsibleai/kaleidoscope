@@ -12,7 +12,7 @@ import {
 } from "@mui/material";
 import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { Snapshot } from "@/lib/types";
-import { TESTIDS } from "@/tests/e2e/fixtures/testids";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 import CreateSnapshotDialog from "./CreateSnapshotDialog";
 import ConfirmDeleteDialog from "./ConfirmDeleteDialog";
 import { snapshotApi } from "@/lib/api";
