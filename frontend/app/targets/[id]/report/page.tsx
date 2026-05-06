@@ -34,6 +34,7 @@ import SnapshotScoreChart, {
 import html2canvas from "html2canvas";
 import jsPDF from "jspdf";
 import { actionIconProps, statIconProps } from "@/lib/styles";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 type RubricSeriesDefinition = {
   key: string;
@@ -344,24 +345,28 @@ export default function TargetReport() {
           }}
         >
           <SummaryCard
+            testId={TESTIDS.SUMMARY_CARD("approved-personas")}
             icon={<IconUser {...statIconProps} />}
             label="Approved Personas"
             value={approvedPersonas}
             helper="Personas available for evaluation design"
           />
           <SummaryCard
+            testId={TESTIDS.SUMMARY_CARD("approved-questions")}
             icon={<IconMessageQuestion {...statIconProps} />}
             label="Approved Questions"
             value={approvedQuestions}
             helper="Approved evaluation prompts in rotation"
           />
           <SummaryCard
+            testId={TESTIDS.SUMMARY_CARD("snapshots")}
             icon={<IconScreenshot {...statIconProps} />}
             label="Snapshots"
             value={snapshots.length}
             helper="Snapshots included in cross-run comparison"
           />
           <SummaryCard
+            testId={TESTIDS.SUMMARY_CARD("judges")}
             icon={<IconRobotFace {...statIconProps} />}
             label="Judges"
             value={judgeCount}
@@ -417,6 +422,7 @@ export default function TargetReport() {
                 <SnapshotScoreChart
                   data={chartData}
                   loading={metricsLoading}
+                  data-testid={TESTIDS.SNAPSHOT_SCORE_CHART}
                 />
               </Stack>
             </CardContent>
@@ -428,18 +434,20 @@ export default function TargetReport() {
 }
 
 function SummaryCard({
+  testId,
   icon,
   label,
   value,
   helper,
 }: {
+  testId?: string;
   icon: React.ReactNode;
   label: string;
   value: number;
   helper: string;
 }) {
   return (
-    <Card variant="outlined" sx={detailCardSx}>
+    <Card data-testid={testId} variant="outlined" sx={detailCardSx}>
       <CardContent sx={{ p: 2.5 }}>
         <Stack spacing={1.5}>
           <Stack direction="row" spacing={1.25} alignItems="center">

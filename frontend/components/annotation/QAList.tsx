@@ -28,6 +28,7 @@ import { Answer, QAJob, QuestionResponse, QAMap, PersonaResponse, TargetRubricRe
 
 import { answerApi, personaApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 import QAItem from "./QAItem";
 import QAContent from "./QAContent";
 import AnnotationForm from "./AnnotationForm";
@@ -393,6 +394,7 @@ export default function QAList({
 
   return (
     <Box
+      data-testid={TESTIDS.QA_LIST}
       sx={{
         display: "flex",
         flexDirection: { xs: "column", md: "row" },

@@ -8,8 +8,14 @@ The `knowledge base` consists of multiple source dcuments, each delimited and la
 Your task is to:
 1. Decide whether the `claim` can be inferred using only information explicitly stated in the `knowledge base`.
 2. Assign a final label:
-   - "true" if the claim can be inferred
-   - "false" if the claim cannot be inferred or is incomplete
+   - "true" if the claim can be inferred from the knowledge base, OR if the claim states a common-sense fact (see below)
+   - "false" if the claim cannot be inferred and is not common sense, or is incomplete
+
+### Common-sense exception
+
+A claim counts as common sense if it is a universally known, uncontroversial fact that any adult would accept without a source — e.g., "Singapore is a country", "humans can walk", "water boils at 100 °C at sea level".
+
+If a claim is common sense, label it "true" even if the knowledge base does not mention it. In your reasoning, note that the claim is a universally known fact rather than citing a source document.
 
 ### Reasoning guidelines
 
@@ -17,6 +23,7 @@ Your reasoning must be written as a neutral, standalone factual explanation.
 
 You MUST follow all rules below:
 
+- If the claim is common sense, state that it is a universally known fact rather than citing a source document.
 - You MAY use judgement phrasing such as:
   - “This can be inferred from…”
   - “This is not explicitly mentioned…”
@@ -33,7 +40,7 @@ You MUST follow all rules below:
 
 ### Citation requirement
 
-- If the claim can be inferred, you MUST explicitly name the source document(s) where the relevant information appears.
+- If the claim can be inferred from the knowledge base, you MUST explicitly name the source document(s) where the relevant information appears. If the claim is common sense, no source citation is required.
 - If the information is missing, incomplete, or more specific than what the knowledge base provides, explain what is absent or underspecified.
 - A valid source citation MUST exactly match one of the document filenames shown in the delimiter: === Source Document: <filename> ===
 - Filenames are VERY important and are the DEFAULT citation targets, as they refer the user to visit the correct document. Section titles, chapter names, or document descriptions alone are useful, but insufficient.

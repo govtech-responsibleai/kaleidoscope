@@ -44,6 +44,7 @@ import { groupColors } from "@/lib/theme";
 import { JobStatus, PremadeRubricTemplate, TargetRubricResponse, RubricOption } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/styles";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 export default function RubricsPage() {
   const params = useParams();
@@ -375,7 +376,7 @@ export default function RubricsPage() {
     Custom: "Rubrics you define. Full control over criteria and options.",
   };
 
-  const renderGroupHeader = (title: string, count: number, onAdd: (() => void) | null, accent?: string) => (
+  const renderGroupHeader = (title: string, count: number, onAdd: (() => void) | null, accent?: string, addTestId?: string) => (
     <Box>
       <Stack direction="row" alignItems="center" gap={1.5}>
         <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: accent ?? "primary.main", flexShrink: 0 }} />
@@ -392,6 +393,7 @@ export default function RubricsPage() {
           <Tooltip title={`Add ${title.toLowerCase()} rubric`} arrow>
             <IconButton
               size="small"
+              data-testid={addTestId}
               onClick={onAdd}
               sx={{
                 border: "1px solid",
@@ -473,7 +475,7 @@ export default function RubricsPage() {
 
       {/* PRESET group */}
       <Box sx={groupSectionSx("preset")}>
-        <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, openPremadeDialog, groupColors.preset.border)}</Box>
+        <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, openPremadeDialog, groupColors.preset.border, TESTIDS.RUBRIC_PRESET_ADD)}</Box>
         {premadeRubrics.length === 0 ? (
           renderEmptyState("No preset rubrics added yet. Click + to browse templates.")
         ) : (
@@ -517,7 +519,7 @@ export default function RubricsPage() {
 
       {/* CUSTOM group */}
       <Box sx={groupSectionSx("custom")}>
-        <Box sx={{ mb: 2 }}>{renderGroupHeader("Custom", customRubrics.length, addRubric, groupColors.custom.border)}</Box>
+        <Box sx={{ mb: 2 }}>{renderGroupHeader("Custom", customRubrics.length, addRubric, groupColors.custom.border, TESTIDS.RUBRIC_CUSTOM_ADD)}</Box>
         {loading ? (
           <CircularProgress size={24} />
         ) : customRubrics.length === 0 ? (
@@ -731,7 +733,7 @@ export default function RubricsPage() {
         </DialogActions>
       </Dialog>
 
-      <Dialog open={premadeDialogOpen} onClose={() => setPremadeDialogOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog data-testid={TESTIDS.PRESET_RUBRIC_DIALOG} open={premadeDialogOpen} onClose={() => setPremadeDialogOpen(false)} maxWidth="sm" fullWidth>
         <DialogTitle>Add Preset Rubric</DialogTitle>
         <DialogContent>
           {premadeLoading ? (
@@ -749,6 +751,7 @@ export default function RubricsPage() {
                 return (
                   <Card
                     key={template.name}
+                    data-testid={TESTIDS.PRESET_RUBRIC_CARD(templateKey)}
                     variant="outlined"
                     sx={{ flex: "1 1 180px", maxWidth: 220, position: "relative" }}
                   >

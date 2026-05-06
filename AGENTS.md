@@ -132,6 +132,7 @@ npm install
 npm run dev
 npm run lint
 npm run build
+npm run test:ui            # Playwright UI integration tests
 ```
 
 ### Full stack
@@ -173,6 +174,13 @@ See [`.env.example`](.env.example) for the full list with descriptions.
 - Don't make tests too granular — test meaningful behaviours, not every internal function call. Strike a balance between coverage and maintainability.
 - Unit tests: `backend/tests/unit/` — mock LLM calls with `@patch`
 - Integration tests: `backend/tests/integration/` — in-memory SQLite + FastAPI `TestClient`
+
+### Frontend — Testing
+- UI integration tests: `frontend/tests/ui-integration/` — Playwright, all API calls mocked (no backend needed)
+- Fixtures in `fixtures/`: `api-mocks.ts` (route dispatcher), `auth.ts` (authedPage fixture), `data.ts` (typed canned responses), `job-mocks.ts` (polled-job state machines)
+- Test IDs: centralized in `fixtures/testids.ts` — components import from here
+- Unmatched API routes return 500 (strict mode) — if a component makes a new API call, add it to `defaultResponse()` in `api-mocks.ts`
+- Run: `cd frontend && npm run test:ui`
 
 ### Frontend
 - No `fetch()` calls — use `frontend/lib/api.ts`

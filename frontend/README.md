@@ -94,6 +94,19 @@ Browse available icons at [tabler.io/icons](https://tabler.io/icons).
 
 All API calls go through `lib/api.ts` (Axios). Never call `fetch()` directly.
 
+## Testing
+
+UI integration tests using Playwright. All API calls mocked — no backend needed.
+
+```bash
+npm run test:ui            # headless
+npm run test:ui:open       # interactive UI
+```
+
+Tests live in `tests/ui-integration/`. Fixtures in `fixtures/`, specs in `specs/`.
+
+Unmatched API routes return 500 — if your component calls a new endpoint, add it to `defaultResponse()` in `fixtures/api-mocks.ts`.
+
 ## Troubleshooting
 
 **Cannot connect to backend** — check `NEXT_PUBLIC_API_URL` in `.env.local`; verify backend is running on port 8000.

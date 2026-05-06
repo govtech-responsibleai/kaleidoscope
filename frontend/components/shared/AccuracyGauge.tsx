@@ -1,6 +1,7 @@
 "use client";
 
 import { Box, Typography, useTheme } from "@mui/material";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 interface AccuracyGaugeProps {
   value: number | null; // 0 to 1, or null for no data
@@ -40,6 +41,7 @@ export default function ScoreGauge({
 
   return (
     <Box
+      data-testid={TESTIDS.SCORE_GAUGE}
       sx={{
         position: "relative",
         width: "100%",
