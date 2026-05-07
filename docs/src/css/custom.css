@@ -1,0 +1,377 @@
+:root {
+  --ifm-color-primary: #7c3aed;
+  --ifm-color-primary-dark: #6d28d9;
+  --ifm-color-primary-darker: #5b21b6;
+  --ifm-color-primary-darkest: #4c1d95;
+  --ifm-color-primary-light: #8b5cf6;
+  --ifm-color-primary-lighter: #a78bfa;
+  --ifm-color-primary-lightest: #c4b5fd;
+  --ifm-code-font-size: 95%;
+  --ifm-font-family-base: 'Inter', system-ui, -apple-system, sans-serif;
+  --docusaurus-highlighted-code-line-bg: rgba(124, 58, 237, 0.1);
+
+  /* Narrower sidebars */
+  --doc-sidebar-width: 220px !important;
+
+  /* Smaller base font for density */
+  --ifm-font-size-base: 14px;
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #a78bfa;
+  --ifm-color-primary-dark: #8b5cf6;
+  --ifm-color-primary-darker: #7c3aed;
+  --ifm-color-primary-darkest: #6d28d9;
+  --ifm-color-primary-light: #c4b5fd;
+  --ifm-color-primary-lighter: #ddd6fe;
+  --ifm-color-primary-lightest: #ede9fe;
+  --ifm-background-color: #0f0d1a;
+  --ifm-background-surface-color: #1a1730;
+  --ifm-font-color-base: #e8e4f0;
+  --ifm-color-emphasis-300: #3d3558;
+  --ifm-color-emphasis-200: #2d2845;
+  --ifm-color-emphasis-100: #1f1b35;
+  --ifm-heading-color: #f5f3ff;
+  --ifm-navbar-background-color: #0f0d1a;
+  --ifm-footer-background-color: #0a0816;
+  --ifm-color-content: #e8e4f0;
+  --ifm-color-content-secondary: #b8b0cc;
+  --docusaurus-highlighted-code-line-bg: rgba(167, 139, 250, 0.15);
+  --ifm-footer-background-color: #1a1730;
+  --ifm-footer-color: #e8e4f0;
+  --ifm-footer-title-color: #f5f3ff;
+  --ifm-footer-link-color: #b8b0cc;
+  --ifm-footer-link-hover-color: var(--ifm-color-primary-light);
+}
+
+[data-theme='dark'] .main-wrapper,
+[data-theme='dark'] .docMainContainer_TBSr,
+[data-theme='dark'] .theme-doc-markdown {
+  background-color: var(--ifm-background-color);
+  color: var(--ifm-font-color-base);
+}
+
+[data-theme='dark'] .navbar-lockup-name {
+  background: linear-gradient(90deg, #c4b5fd, #e879a8);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.markdown h1:first-child {
+  --ifm-h1-font-size: 2.4rem;
+}
+
+/* Center content padding */
+.theme-doc-markdown {
+  padding: 0 8rem;
+}
+
+/* Narrower TOC (right sidebar) */
+.col[class*="col--3"] {
+  max-width: 200px;
+  flex: 0 0 200px;
+}
+
+/* Sidebar text tighter */
+.menu__link {
+  font-size: 0.84rem;
+  padding: 0.3rem 0.6rem;
+  margin-right: 0.75rem;
+  border-radius: 0.375rem;
+}
+
+/* Sidebar icon alignment */
+.menu__link svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 0.4rem;
+  opacity: 0.7;
+  flex-shrink: 0;
+}
+
+/* Category label with icon */
+.menu__list-item-collapsible .menu__link svg {
+  width: 16px;
+  height: 16px;
+  margin-right: 0.4rem;
+  opacity: 0.7;
+}
+
+/* ===== Navbar logo lockup ===== */
+.navbar-lockup {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none !important;
+  color: inherit !important;
+}
+
+.navbar-lockup-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+}
+
+.navbar-lockup-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  line-height: 1.1;
+}
+
+.navbar-lockup-project {
+  font-size: 8px;
+  font-weight: 400;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #1d2766;
+  line-height: 1;
+  margin-bottom: 2px;
+}
+
+[data-theme='dark'] .navbar-lockup-project {
+  color: #c4b5fd;
+}
+
+.navbar-lockup-name {
+  font-size: 15px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  background: linear-gradient(90deg, #1d2766 0%, #ba2fa2 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.navbar-lockup-divider {
+  width: 1px;
+  height: 24px;
+  background: currentColor;
+  opacity: 0.2;
+}
+
+.navbar-lockup-govtech {
+  height: 28px;
+  width: auto;
+}
+
+.navbar-lockup-govtech--dark {
+  display: none;
+}
+
+[data-theme='dark'] .navbar-lockup-govtech--light {
+  display: none;
+}
+
+[data-theme='dark'] .navbar-lockup-govtech--dark {
+  display: block;
+}
+
+/* ===== GitHub icon link ===== */
+.header-github-link::before {
+  content: '';
+  width: 24px;
+  height: 24px;
+  display: flex;
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E")
+    no-repeat;
+}
+
+[data-theme='dark'] .header-github-link::before {
+  background: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath fill='white' d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E")
+    no-repeat;
+}
+
+.header-github-link .navbar__item--label,
+.header-github-link .navbar__link {
+  font-size: 0;
+}
+
+/* ===== CTA button ===== */
+.navbar-cta-button {
+  background-color: var(--ifm-color-primary) !important;
+  color: #fff !important;
+  border-radius: 6px;
+  padding: 0.4rem 1rem !important;
+  font-weight: 600;
+  font-size: 0.85rem;
+  text-decoration: none !important;
+  transition: background-color 0.2s ease;
+  white-space: nowrap;
+}
+
+.navbar-cta-button {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+}
+
+.navbar-cta-button::after {
+  display: none !important;
+}
+
+.navbar-cta-button:hover {
+  background-color: var(--ifm-color-primary-dark) !important;
+  color: #fff !important;
+}
+
+[data-theme='dark'] .navbar-cta-button {
+  color: #1a1a2e !important;
+}
+
+[data-theme='dark'] .navbar-cta-button:hover {
+  background-color: var(--ifm-color-primary-light) !important;
+}
+
+/* Wider search bar */
+.DocSearch-Button {
+  width: 240px !important;
+}
+
+/* Dark mode toggle visibility + spacing */
+[data-theme='dark'] .colorModeToggle_DEke button svg {
+  color: #fff;
+}
+
+.navbar__items--right > div:last-child {
+  margin-left: 12px;
+}
+
+/* Dark mode hamburger visibility */
+[data-theme='dark'] .navbar__toggle svg {
+  color: #fff;
+}
+
+/* Hide footer on desktop */
+.footer {
+  display: none;
+}
+
+@media (max-width: 996px) {
+  .footer {
+    display: block;
+  }
+}
+
+/* ===== Mobile responsive ===== */
+@media (max-width: 996px) {
+  /* Center logo lockup between hamburger and search */
+  .navbar__inner {
+    position: relative;
+  }
+
+  .navbar__items .navbar__item:has(.navbar-lockup) {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  /* Logo lockup: compact in top navbar */
+  .navbar-lockup {
+    gap: 6px;
+  }
+
+  .navbar-lockup-icon {
+    width: 24px;
+    height: 24px;
+  }
+
+  .navbar-lockup-text {
+    display: flex;
+  }
+
+  .navbar-lockup-divider {
+    height: 18px;
+  }
+
+  .navbar-lockup-govtech {
+    height: 20px;
+  }
+
+  /* Search: icon only in top navbar */
+  .DocSearch-Button {
+    width: auto !important;
+    padding: 0 8px !important;
+  }
+
+  .DocSearch-Button .DocSearch-Button-Placeholder,
+  .DocSearch-Button .DocSearch-Button-Keys {
+    display: none;
+  }
+
+  /* Keep logo lockup visible in top navbar */
+  .navbar__items .navbar__item:has(.navbar-lockup) {
+    display: flex !important;
+  }
+
+  /* --- Sidebar fixes --- */
+
+  /* Sidebar header: constrain height (no flex expansion) */
+  .navbar-sidebar__brand {
+    flex: 0 0 auto !important;
+    height: var(--ifm-navbar-height);
+  }
+
+  /* Hide logo lockup inside sidebar */
+  .navbar-sidebar .navbar-lockup {
+    display: none !important;
+  }
+
+  /* Sidebar: flex column, full height */
+  .navbar-sidebar {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+
+  /* Items container: flex column, grow to fill, no sliding */
+  .navbar-sidebar__items {
+    transform: none !important;
+    flex-direction: column !important;
+    flex: 1;
+    overflow-y: auto;
+  }
+
+  .navbar-sidebar__items > .navbar-sidebar__item {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* Secondary panel (doc nav): grows to fill space */
+  .navbar-sidebar__items > .navbar-sidebar__item:last-child {
+    flex: 1;
+  }
+
+  /* Hide primary panel (nav links) from sidebar — they live in the footer now */
+  .navbar-sidebar__items > .navbar-sidebar__item:first-child {
+    display: none !important;
+  }
+
+  /* Hide CTA button from top navbar on mobile */
+  .navbar-cta-button {
+    display: none !important;
+  }
+
+  /* Hide "Back to main menu" */
+  .navbar-sidebar__back {
+    display: none;
+  }
+
+  /* Remove content padding */
+  .theme-doc-markdown {
+    padding: 0 !important;
+  }
+}
+
+@media (max-width: 576px) {
+  .navbar-lockup-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .navbar-lockup-govtech {
+    height: 18px;
+  }
+}
