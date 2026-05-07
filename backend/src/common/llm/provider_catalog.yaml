@@ -79,8 +79,7 @@ providers:
     common_models:
       - bedrock/anthropic.claude-sonnet-4-6
       - bedrock/anthropic.claude-opus-4-7
-    embedding_models:
-      - bedrock/amazon.titan-embed-text-v2:0
+    embedding_models: []
 
   - key: openrouter
     display_name: OpenRouter
@@ -110,11 +109,12 @@ providers:
         label: API Key
         env_var: FIREWORKS_AI_API_KEY
         required: true
-    default_model: fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct
+    default_model: fireworks/qwen3p6-plus
     common_models:
-      - fireworks/accounts/fireworks/models/llama-v3p1-8b-instruct
-      - fireworks/accounts/fireworks/models/deepseek-r1
-      - fireworks/accounts/fireworks/models/qwen3-235b-a22b
+      - fireworks/qwen3p6-plus
+      - fireworks/minimax-m2p7
+      - fireworks/kimi-k2p6
+      - fireworks/deepseek-ai/deepseek-v4-pro
     embedding_models: []
 
 services:
