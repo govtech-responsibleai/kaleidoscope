@@ -503,7 +503,8 @@ body {
   .feat-wrapper { grid-row: auto; display: flex; flex-direction: column; gap: 8px; }
   .feat-card { min-height: 200px; }
   .dest-cards { grid-template-columns: 1fr; gap: 16px; padding: 2vh 0; margin-bottom: 2vh; }
-  .dest-btn { min-height: 44px; padding: 12px 18px; }
+  .dest-btns { flex-direction: column; }
+  .dest-btn { min-height: 44px; padding: 12px 18px; white-space: normal; justify-content: center; }
   .site-footer { flex-direction: column; gap: 8px; padding: 16px 20px; text-align: center; }
   @supports (padding: env(safe-area-inset-left)) {
     .page { padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right)); }
