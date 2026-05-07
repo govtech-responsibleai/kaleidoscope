@@ -105,7 +105,6 @@ const config: Config = {
           title: 'Docs',
           items: [
             { label: 'Getting Started', to: '/docs/getting-started/quickstart' },
-            { label: 'How It Works', to: '/docs/how-it-works' },
             { label: 'Configuration', to: '/docs/configuration/connect-your-target' },
           ],
         },

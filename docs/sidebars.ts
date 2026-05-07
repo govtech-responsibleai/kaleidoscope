@@ -23,7 +23,6 @@ const sidebars: SidebarsConfig = {
         'configuration/defining-rubrics',
         'configuration/creating-evaluation-set',
         'configuration/scoring-and-judges',
-        'configuration/annotations-and-reliability',
         'configuration/error-analysis',
       ],
     },
