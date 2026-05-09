@@ -51,12 +51,6 @@
   color: var(--ifm-font-color-base);
 }
 
-[data-theme='dark'] .navbar-lockup-name {
-  background: linear-gradient(90deg, #c4b5fd, #e879a8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
 
 .markdown h1:first-child {
   --ifm-h1-font-size: 2.4rem;
@@ -102,70 +96,23 @@
 .navbar-lockup {
   display: flex;
   align-items: center;
-  gap: 10px;
   text-decoration: none !important;
-  color: inherit !important;
 }
 
-.navbar-lockup-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-}
-
-.navbar-lockup-text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  line-height: 1.1;
-}
-
-.navbar-lockup-project {
-  font-size: 8px;
-  font-weight: 400;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: #1d2766;
-  line-height: 1;
-  margin-bottom: 2px;
-}
-
-[data-theme='dark'] .navbar-lockup-project {
-  color: #c4b5fd;
-}
-
-.navbar-lockup-name {
-  font-size: 15px;
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  line-height: 1;
-  background: linear-gradient(90deg, #1d2766 0%, #ba2fa2 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.navbar-lockup-divider {
-  width: 1px;
-  height: 24px;
-  background: currentColor;
-  opacity: 0.2;
-}
-
-.navbar-lockup-govtech {
-  height: 28px;
+.navbar-lockup-logo {
+  height: 32px;
   width: auto;
 }
 
-.navbar-lockup-govtech--dark {
+.navbar-lockup-logo--dark {
   display: none;
 }
 
-[data-theme='dark'] .navbar-lockup-govtech--light {
+[data-theme='dark'] .navbar-lockup-logo--light {
   display: none;
 }
 
-[data-theme='dark'] .navbar-lockup-govtech--dark {
+[data-theme='dark'] .navbar-lockup-logo--dark {
   display: block;
 }
 
@@ -269,25 +216,8 @@
   }
 
   /* Logo lockup: compact in top navbar */
-  .navbar-lockup {
-    gap: 6px;
-  }
-
-  .navbar-lockup-icon {
-    width: 24px;
-    height: 24px;
-  }
-
-  .navbar-lockup-text {
-    display: flex;
-  }
-
-  .navbar-lockup-divider {
-    height: 18px;
-  }
-
-  .navbar-lockup-govtech {
-    height: 20px;
+  .navbar-lockup-logo {
+    height: 28px;
   }
 
   /* Search: icon only in top navbar */
@@ -366,12 +296,7 @@
 }
 
 @media (max-width: 576px) {
-  .navbar-lockup-icon {
-    width: 22px;
-    height: 22px;
-  }
-
-  .navbar-lockup-govtech {
-    height: 18px;
+  .navbar-lockup-logo {
+    height: 24px;
   }
 }

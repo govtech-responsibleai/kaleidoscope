@@ -8,8 +8,7 @@ const TYPE_SPEED = 42;
 const HOLD = 5450;
 
 export default function Home() {
-  const logoSrc = useBaseUrl('/img/kaleidoscope-logo.png');
-  const govtechLogoSrc = useBaseUrl('/img/govtech-logo.png');
+  const logoSrc = useBaseUrl('/img/kaleidoscope-logo-text-2.png');
   const docsUrl = useBaseUrl('/docs/getting-started/quickstart');
 
   const typeTextRef = useRef<HTMLSpanElement>(null);
@@ -116,6 +115,7 @@ export default function Home() {
       <Head>
         <title>Project Kaleidoscope</title>
         <meta name="description" content="Automated evaluation platform for AI-powered applications" />
+        <link rel="icon" href="/kaleidoscope/img/favicon-color.ico" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700;900&display=swap" rel="stylesheet" />
@@ -125,25 +125,15 @@ export default function Home() {
 
       <main className="page">
         <div className="logo-lockup">
-          <div className="logo-left">
-            <img src={logoSrc} alt="Kaleidoscope icon" className="logo-icon" width="40" height="40" />
-            <div className="logo-text">
-              <span className="logo-project">Project</span>
-              <span className="logo-name">Kaleidoscope</span>
-            </div>
-          </div>
-          <div className="logo-divider"></div>
-          <div className="logo-govtech">
-            <img src={govtechLogoSrc} alt="Powered by GovTech Singapore" width="160" height="40" />
-          </div>
+          <img src={logoSrc} alt="Project Kaleidoscope — Powered by GovTech Singapore" className="logo-combined" />
         </div>
 
         <div className="content">
           <div className="hero-row">
             <div className="feature-text">
-              <h1>Understand your AI.</h1>
+              <h1>AI evaluation, human aligned.</h1>
               <div className="feature-divider"></div>
-              <p className="feature-subhead">An evaluation platform for AI-powered applications.</p>
+              <p className="feature-subhead">Build automated evals that stay grounded in human judgement.</p>
             </div>
 
             <div className="feature-cards">
@@ -353,7 +343,7 @@ export default function Home() {
       </main>
 
       <footer className="site-footer">
-        <p>&copy; 2026 Project Kaleidoscope &middot; GovTech Singapore &middot; Responsible AI</p>
+        <p>&copy; 2026 Project Kaleidoscope &middot; GovTech Singapore &middot; AI Practice</p>
       </footer>
     </>
   );

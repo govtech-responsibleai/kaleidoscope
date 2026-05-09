@@ -5,7 +5,7 @@ import type * as Preset from '@docusaurus/preset-classic';
 const config: Config = {
   title: 'Kaleidoscope',
   tagline: 'Automated evaluation platform for AI-powered applications',
-  favicon: 'img/favicon.png',
+  favicon: 'img/favicon.ico',
 
   // future: {
   //   v4: true,
@@ -60,14 +60,8 @@ const config: Config = {
           type: 'html',
           position: 'left',
           value: `<a href="/kaleidoscope/" class="navbar-lockup">
-            <img src="/kaleidoscope/img/kaleidoscope-logo.png" alt="Kaleidoscope" class="navbar-lockup-icon" />
-            <div class="navbar-lockup-text">
-              <span class="navbar-lockup-project">Project</span>
-              <span class="navbar-lockup-name">Kaleidoscope</span>
-            </div>
-            <div class="navbar-lockup-divider"></div>
-            <img src="/kaleidoscope/img/govtech-logo.png" alt="GovTech Singapore" class="navbar-lockup-govtech navbar-lockup-govtech--light" />
-            <img src="/kaleidoscope/img/govtech-logo-white.png" alt="GovTech Singapore" class="navbar-lockup-govtech navbar-lockup-govtech--dark" />
+            <img src="/kaleidoscope/img/kaleidoscope-logo-text-2.png" alt="Project Kaleidoscope — Powered by GovTech Singapore" class="navbar-lockup-logo navbar-lockup-logo--light" />
+            <img src="/kaleidoscope/img/kaleidoscope-logo-text-2-light.png" alt="Project Kaleidoscope — Powered by GovTech Singapore" class="navbar-lockup-logo navbar-lockup-logo--dark" />
           </a>`,
         },
         {

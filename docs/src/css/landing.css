@@ -58,17 +58,7 @@ body {
   padding: 3vh 0;
   flex-shrink: 0;
 }
-.logo-left { display: flex; align-items: center; gap: 14px; }
-.logo-icon { width: 48px; height: 48px; }
-.logo-text { display: flex; flex-direction: column; justify-content: center; height: 48px; }
-.logo-project { font-size: 11px; font-weight: 400; letter-spacing: 0.18em; text-transform: uppercase; color: #1d2766; line-height: 1; margin-bottom: 2px; }
-.logo-name {
-  font-size: 27px; font-weight: 400; letter-spacing: -0.01em; line-height: 1;
-  background: linear-gradient(90deg, #1d2766 0%, #ba2fa2 100%);
-  -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
-}
-.logo-divider { width: 1px; height: 38px; background: var(--border); }
-.logo-govtech img { height: 48px; width: auto; display: block; }
+.logo-combined { height: 48px; width: auto; display: block; }
 
 .content {
   display: flex; flex-direction: column;
@@ -79,11 +69,11 @@ body {
 
 .hero-row {
   display: grid;
-  grid-template-columns: minmax(200px, 300px) 1fr;
+  grid-template-columns: minmax(200px, 320px) 1fr;
   gap: 5vh;
   align-items: stretch;
   flex: 1; min-height: 0;
-  padding: 4vh 0 2vh;
+  padding: 2vh 0 2vh;
 }
 
 .feature-text {
@@ -92,7 +82,7 @@ body {
 }
 .feature-text h1 {
   font-size: clamp(2rem, 3vw, 3rem);
-  font-weight: 900; line-height: 1.05; letter-spacing: -0.03em;
+  font-weight: 900; line-height: 1.15; letter-spacing: -0.03em;
   background: linear-gradient(135deg, #1d2766 0%, #ba2fa2 100%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }
@@ -107,7 +97,7 @@ body {
 .feature-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  grid-template-rows: minmax(0, 320px) auto;
+  grid-template-rows: minmax(0, min(320px, 30vh)) auto;
   gap: 24px;
   align-content: center;
 }
@@ -458,11 +448,11 @@ body {
 .site-footer {
   position: relative; z-index: 1;
   border-top: 1px solid var(--border);
-  padding: 0 48px; height: 5vh;
+  padding: 0 48px; padding-top: 8px; padding-bottom: 8px;
   display: flex; align-items: center; justify-content: center; gap: 48px;
   flex-shrink: 0;
 }
-.site-footer p { font-size: 13px; color: var(--subtle); }
+.site-footer p { font-size: 14px; color: var(--subtle); }
 .site-footer a { color: var(--subtle); text-decoration: none; }
 
 @supports (padding: env(safe-area-inset-left)) {
@@ -498,7 +488,7 @@ body {
   .logo-lockup { flex-wrap: wrap; gap: 12px; padding: 3vh 0; }
   .logo-divider { display: none; }
   .hero-row { gap: 24px; padding: 2vh 0; }
-  .feature-text h1 { font-size: 2rem; }
+  .feature-text h1 { font-size: 3.2rem; }
   .feature-cards { grid-template-columns: 1fr; grid-template-rows: auto; gap: 20px; }
   .feat-wrapper { grid-row: auto; display: flex; flex-direction: column; gap: 8px; }
   .feat-card { min-height: 200px; }
