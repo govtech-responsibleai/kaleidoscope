@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Lato } from "next/font/google";
+import { Lato, JetBrains_Mono } from "next/font/google";
 import { AppRouterCacheProvider } from "@mui/material-nextjs/v14-appRouter";
 import { ThemeProvider } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -9,6 +9,7 @@ import AuthCheck from "@/app/login/AuthCheck";
 import "./globals.css";
 
 const lato = Lato({ subsets: ["latin"], variable: "--font-lato", display: "swap", weight: ["400", "700"] });
+const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap", weight: ["400", "500"] });
 
 export const metadata: Metadata = {
   title: "Kaleidoscope - LLM Evaluation Platform",
@@ -24,7 +25,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={lato.variable}>
+    <html lang="en" className={`${lato.variable} ${jetbrainsMono.variable}`}>
       <body>
         <AppRouterCacheProvider>
           <ThemeProvider theme={theme}>

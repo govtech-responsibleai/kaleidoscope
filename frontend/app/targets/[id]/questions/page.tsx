@@ -458,7 +458,7 @@ export default function QuestionsPage() {
     return null;
   }
 
-  const hasQuestions = approvedQuestions.length > 0;
+  const hasQuestions = approvedQuestions.length > 0 || reviewQuestions.length > 0 || !!jobStatus;
   const maxPage = Math.max(0, Math.ceil(filteredQuestions.length / rowsPerPage) - 1);
   const currentPage = Math.min(page, maxPage);
 

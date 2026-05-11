@@ -3,10 +3,13 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
 import {
+  IconCheck,
   IconChevronDown,
   IconCircleCheck,
   IconCircleCheckFilled,
+  IconCopy,
   IconDeviceFloppy,
+  IconDotsVertical,
   IconHelpCircle,
   IconPlus,
   IconTrash,
@@ -33,6 +36,8 @@ import {
   Card,
   CardActionArea,
   CardContent,
+  Menu,
+  MenuItem,
 } from "@mui/material";
 import {
   IconChecklist,
@@ -43,6 +48,7 @@ import { metricsApi, qaJobApi, snapshotApi, targetRubricApi } from "@/lib/api";
 import { groupColors } from "@/lib/theme";
 import { JobStatus, PremadeRubricTemplate, TargetRubricResponse, RubricOption } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
+import PromptEditorDynamic from "@/components/shared/PromptEditorDynamic";
 import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/styles";
 import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
@@ -63,6 +69,10 @@ export default function RubricsPage() {
   const [addingPremade, setAddingPremade] = useState<string | null>(null);
   const [rubricUsageById, setRubricUsageById] = useState<Record<number, boolean>>({});
   const [rubricRunningById, setRubricRunningById] = useState<Record<number, boolean>>({});
+  const [promptViewRubric, setPromptViewRubric] = useState<TargetRubricResponse | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
+  const [menuRubric, setMenuRubric] = useState<TargetRubricResponse | null>(null);
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -460,6 +470,13 @@ export default function RubricsPage() {
           <Accordion key={rubric.id} variant="outlined" disableGutters>
             <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
               <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
+              <IconButton
+                component="div"
+                size="small"
+                onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuRubric(rubric); }}
+              >
+                <IconDotsVertical {...compactActionIconProps} />
+              </IconButton>
             </AccordionSummary>
             <AccordionDetails sx={{ pt: 0 }}>
               <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
@@ -488,21 +505,13 @@ export default function RubricsPage() {
                     <Chip label="Jobs running" size="small" color="error" variant="outlined" />
                   )}
                 </Box>
-                <Tooltip
-                  title={rubricHasRunningJobs(rubric) ? "Wait for related evaluations to finish before deleting this rubric." : "Remove preset rubric"}
-                  arrow
+                <IconButton
+                  component="div"
+                  size="small"
+                  onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuRubric(rubric); }}
                 >
-                  <span>
-                    <IconButton
-                      component="div"
-                      size="small"
-                      disabled={rubricHasRunningJobs(rubric)}
-                      onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
-                    >
-                      <IconTrash {...compactActionIconProps} />
-                    </IconButton>
-                  </span>
-                </Tooltip>
+                  <IconDotsVertical {...compactActionIconProps} />
+                </IconButton>
               </AccordionSummary>
               <AccordionDetails sx={{ pt: 0 }}>
                 <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
@@ -561,21 +570,13 @@ export default function RubricsPage() {
                     {dirty && !draft && <Chip label="Unsaved" size="small" color="warning" variant="outlined" />}
                     {hasRunningJobs && <Chip label="Jobs running" size="small" color="error" variant="outlined" />}
                   </Box>
-                  <Tooltip
-                    title={hasRunningJobs ? "Wait for related evaluations to finish before deleting this rubric." : "Delete rubric"}
-                    arrow
+                  <IconButton
+                    component="div"
+                    size="small"
+                    onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuRubric(rubric); }}
                   >
-                    <span>
-                      <IconButton
-                        component="div"
-                        size="small"
-                        disabled={hasRunningJobs}
-                        onClick={(e) => { e.stopPropagation(); setRubricToDelete(rubric); }}
-                      >
-                        <IconTrash {...compactActionIconProps} />
-                      </IconButton>
-                    </span>
-                  </Tooltip>
+                    <IconDotsVertical {...compactActionIconProps} />
+                  </IconButton>
                 </AccordionSummary>
                 <AccordionDetails sx={{ pt: 0 }}>
                   <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
@@ -796,6 +797,84 @@ export default function RubricsPage() {
             </Box>
           )}
         </DialogContent>
+      </Dialog>
+
+      <Menu
+        anchorEl={menuAnchor}
+        open={Boolean(menuAnchor)}
+        onClose={() => { setMenuAnchor(null); setMenuRubric(null); }}
+      >
+        <MenuItem
+          disabled={menuRubric ? (isDraft(menuRubric.id) || !menuRubric.judge_prompt) : true}
+          onClick={() => { setPromptViewRubric(menuRubric); setMenuAnchor(null); setMenuRubric(null); }}
+        >
+          View judge prompt
+        </MenuItem>
+        {menuRubric?.group !== "fixed" && (
+          <MenuItem
+            disabled={menuRubric ? rubricHasRunningJobs(menuRubric) : false}
+            onClick={() => { setRubricToDelete(menuRubric); setMenuAnchor(null); setMenuRubric(null); }}
+          >
+            {menuRubric?.group === "preset" ? "Remove" : "Delete"}
+          </MenuItem>
+        )}
+      </Menu>
+
+      <Dialog open={!!promptViewRubric} onClose={() => setPromptViewRubric(null)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ display: "flex", alignItems: "center" }}>
+          <Box sx={{ flex: 1 }}>{promptViewRubric?.name} — Judge Prompt</Box>
+          <Tooltip
+            title={promptViewRubric?.scoring_mode === "claim_based"
+              ? "Claim-level: evaluates individual claims extracted from the answer separately."
+              : "Response-level: evaluates the entire answer holistically in a single pass."}
+            arrow
+          >
+            <Chip
+              label={promptViewRubric?.scoring_mode === "claim_based" ? "Claim-level" : "Response-level"}
+              size="small"
+              variant="outlined"
+              icon={<IconHelpCircle size={14} />}
+              sx={{
+                px: 1,
+                ...(promptViewRubric?.scoring_mode === "claim_based"
+                  ? { borderColor: "warning.main", color: "warning.dark" }
+                  : { borderColor: "primary.main", color: "primary.main" }),
+              }}
+            />
+          </Tooltip>
+        </DialogTitle>
+        <DialogContent>
+          {promptViewRubric?.judge_prompt ? (
+            <Box sx={{ height: 400, "& .cm-editor": { pointerEvents: "auto" } }}>
+              <PromptEditorDynamic
+                value={promptViewRubric.judge_prompt}
+                onChange={() => {}}
+                disabled
+              />
+            </Box>
+          ) : (
+            <Alert severity="info" variant="outlined">
+              No judge prompt stored. A fallback template will be used at evaluation time.
+              Try re-saving the rubric to regenerate.
+            </Alert>
+          )}
+        </DialogContent>
+        <DialogActions>
+          {promptViewRubric?.judge_prompt && (
+            <Button
+              startIcon={copied ? <IconCheck {...statusIconProps} /> : <IconCopy {...statusIconProps} />}
+              color={copied ? "success" : "primary"}
+              onClick={async () => {
+                await navigator.clipboard.writeText(promptViewRubric.judge_prompt!);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }}
+            >
+              {copied ? "Copied!" : "Copy prompt"}
+            </Button>
+          )}
+          <Button onClick={() => { setPromptViewRubric(null); setCopied(false); }}>Close</Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );

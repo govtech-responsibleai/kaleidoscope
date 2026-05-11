@@ -115,6 +115,7 @@ function defaultResponse(method: string, path: string): unknown {
 
   // Judges
   if (method === "GET" && path === "/judges/available-models") return [data.judgeModelOption];
+  if (method === "GET" && pathMatches(path, "/judges/by-rubric/{rubricId}/baseline")) return data.judge;
   if (method === "GET" && pathMatches(path, "/judges/by-rubric/{rubricId}")) return [data.judge];
   if (method === "POST" && path === "/judges") return data.judge;
   if (method === "POST" && path === "/judges/seed") return [data.judge];

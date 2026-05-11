@@ -19,7 +19,7 @@ The results table lets you filter and explore scored responses to isolate failur
 | **Persona** | Any approved persona | Do certain user types trip up the target? |
 | **Label** | Any rubric option | Show only failures, or only successes |
 
-Enable the **Disagreements only** filter to surface responses where your judges gave different verdicts. These are high-signal cases worth investigating: the rubric definition may be ambiguous, the response may be genuinely borderline, or one judge model may be better suited to this rubric than another.
+Enable the **Disagreements only** filter to surface responses where the selected visible judges gave different non-empty verdicts. These are high-signal cases worth investigating: the rubric definition may be ambiguous, the response may be genuinely borderline, or one judge model may be better suited to this rubric than another.
 
 ![Disagreements view](/img/screenshots/disagreement_full.png)
 

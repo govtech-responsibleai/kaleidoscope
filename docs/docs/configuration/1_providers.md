@@ -69,7 +69,7 @@ providers:
       - openai/text-embedding-3-small
 ```
 
-Models listed under `common_models` appear in dropdowns throughout the UI once the provider's credentials are configured.
+The provider's `default_model` appears first in dropdowns and registered-model lists once credentials are configured. Additional models listed under `common_models` appear after the default model, with duplicates removed.
 
 ## Managing Credentials in the UI
 

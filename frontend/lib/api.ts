@@ -87,6 +87,7 @@ const api = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  paramsSerializer: { indexes: null },
 });
 
 export function getApiErrorMessage(error: unknown, fallback: string): string {

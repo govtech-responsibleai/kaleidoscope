@@ -14,6 +14,7 @@ import {
   MenuItem,
   Typography,
 } from "@mui/material";
+import { IconCode, IconArrowLeft } from "@tabler/icons-react";
 import {
   JudgeConfig,
   JudgeCreate,
@@ -22,6 +23,7 @@ import {
 } from "@/lib/types";
 import { getApiErrorMessage, judgeApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
+import PromptEditor from "@/components/shared/PromptEditorDynamic";
 
 const resolveTemperatureValue = (value: unknown): number | null => {
   if (typeof value === "number" && !isNaN(value)) {
@@ -68,6 +70,7 @@ export default function CreateJudgeDialog({
   const [availableModels, setAvailableModels] = useState<JudgeModelOption[]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
   const promptEditedRef = useRef(false);
   const previousModeRef = useRef<CreateJudgeDialogProps["mode"] | null>(null);
 
@@ -76,9 +79,7 @@ export default function CreateJudgeDialog({
     const loadModels = async () => {
       try {
         const { data } = await judgeApi.listAvailableModels();
-        if (!isMounted) {
-          return;
-        }
+        if (!isMounted) return;
         setAvailableModels(data);
         setModelsError(null);
       } catch (err) {
@@ -87,42 +88,29 @@ export default function CreateJudgeDialog({
           setModelsError(getApiErrorMessage(err, "Unable to load available models."));
         }
       } finally {
-        if (isMounted) {
-          setModelsLoading(false);
-        }
+        if (isMounted) setModelsLoading(false);
       }
     };
     loadModels();
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, []);
 
   useEffect(() => {
     let isMounted = true;
-
     const fetchBaselinePrompt = async () => {
       if (!rubricId) {
-        if (isMounted) {
-          setBaselinePromptTemplate("");
-        }
+        if (isMounted) setBaselinePromptTemplate("");
         return;
       }
       try {
         const { data } = await judgeApi.getBaseline(rubricId);
-        if (isMounted) {
-          setBaselinePromptTemplate(data.prompt_template || "");
-        }
+        if (isMounted) setBaselinePromptTemplate(data.prompt_template || "");
       } catch (err) {
         console.error("Failed to load baseline judge prompt:", err);
       }
     };
-
     fetchBaselinePrompt();
-
-    return () => {
-      isMounted = false;
-    };
+    return () => { isMounted = false; };
   }, [rubricId]);
 
   useEffect(() => {
@@ -139,6 +127,7 @@ export default function CreateJudgeDialog({
         setTemperature(tempValue.toString());
         setPromptTemplate(judge.prompt_template || "");
         promptEditedRef.current = true;
+        setShowPromptEditor(!!judge.prompt_template);
       } else if (mode === "duplicate" && judge) {
         const existingParams = judge.params || {};
         setName(`${judge.name} (Copy)`);
@@ -151,11 +140,13 @@ export default function CreateJudgeDialog({
         setTemperature(tempValue.toString());
         setPromptTemplate(judge.prompt_template || "");
         promptEditedRef.current = true;
+        setShowPromptEditor(!!judge.prompt_template);
       } else {
         setName("Custom Judge");
         setModelName(availableModels[0]?.value || "");
         setTemperature("1.0");
         setParams({});
+        setShowPromptEditor(false);
         if (previousModeRef.current !== "create") {
           promptEditedRef.current = false;
         }
@@ -166,20 +157,14 @@ export default function CreateJudgeDialog({
       setError(null);
     } else {
       promptEditedRef.current = false;
+      setShowPromptEditor(false);
       setParams({});
     }
-
     previousModeRef.current = mode;
   }, [open, mode, judge, baselinePromptTemplate, availableModels, defaultPromptTemplate]);
 
   useEffect(() => {
-    if (
-      open &&
-      mode === "create" &&
-      !judge &&
-      !modelName &&
-      availableModels.length > 0
-    ) {
+    if (open && mode === "create" && !judge && !modelName && availableModels.length > 0) {
       setModelName(availableModels[0].value);
     }
   }, [availableModels, modelName, open, mode, judge]);
@@ -190,16 +175,8 @@ export default function CreateJudgeDialog({
   };
 
   const handleSubmit = async () => {
-    if (!name.trim()) {
-      setError("Judge name is required");
-      return;
-    }
-
-    if (!modelName.trim()) {
-      setError("Model name is required");
-      return;
-    }
-
+    if (!name.trim()) { setError("Judge name is required"); return; }
+    if (!modelName.trim()) { setError("Model name is required"); return; }
     const temp = parseFloat(temperature);
     if (isNaN(temp) || temp < 0 || temp > 2) {
       setError("Temperature must be between 0 and 2");
@@ -245,9 +222,7 @@ export default function CreateJudgeDialog({
   };
 
   const handleClose = () => {
-    if (!loading) {
-      onClose();
-    }
+    if (!loading) onClose();
   };
 
   const getDialogTitle = () => {
@@ -263,110 +238,247 @@ export default function CreateJudgeDialog({
     }
   };
 
+  const promptPreviewLines = promptTemplate
+    ? promptTemplate.split("\n").slice(0, 3).join("\n")
+    : "";
+
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
+    <Dialog
+      open={open}
+      onClose={handleClose}
+      maxWidth={showPromptEditor ? "lg" : "sm"}
+      fullWidth
+      sx={{
+        "& .MuiDialog-paper": {
+          transition: "max-width 0.3s ease-in-out",
+          ...(showPromptEditor && { height: "80vh" }),
+        },
+      }}
+    >
       <DialogTitle>{getDialogTitle()}</DialogTitle>
-      <DialogContent>
-        <Box sx={{ display: "flex", flexDirection: "column", gap: 2, mt: 1 }}>
-          {error && (
-            <Alert severity="error" onClose={() => setError(null)}>
-              {error}
-            </Alert>
-          )}
-
-          <TextField
-            label="Judge Name"
-            required
-            fullWidth
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            disabled={loading}
-            placeholder="e.g., Custom Judge 1"
-          />
-
-          <TextField
-            select
-            label="Model Name"
-            required
-            fullWidth
-            value={modelName}
-            onChange={(e) => setModelName(e.target.value)}
-            disabled={loading || modelsLoading || availableModels.length === 0}
-            slotProps={{
-              select: {
-                renderValue: (value) => {
-                  const strValue = value as string;
-                  const model = availableModels.find((m) => m.value === strValue);
-                  const icon = getModelIcon(strValue, model?.logo_path);
-                  return (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                      {icon && (
-                        <Box
-                          component="img"
-                          src={icon}
-                          alt=""
-                          sx={{ width: 16, height: 16 }}
-                        />
-                      )}
-                      {model?.label || strValue}
-                    </Box>
-                  );
-                },
-              },
+      <DialogContent sx={{ ...(showPromptEditor && { overflow: "hidden", display: "flex", flexDirection: "column" }) }}>
+        <Box
+          sx={{
+            display: "flex",
+            gap: 3,
+            mt: 1,
+            flexDirection: showPromptEditor ? "row" : "column",
+            ...(showPromptEditor && { flex: 1, minHeight: 0 }),
+          }}
+        >
+          {/* Left / main column: config fields */}
+          <Box
+            sx={{
+              display: "flex",
+              flexDirection: "column",
+              gap: 2,
+              flex: showPromptEditor ? "0 0 300px" : "1 1 auto",
+              minWidth: 0,
+              ...(showPromptEditor && { overflowY: "auto" }),
             }}
           >
-            {availableModels.length === 0 ? (
-              <MenuItem value="" disabled>
-                {modelsLoading
-                  ? "Loading models..."
-                  : modelsError || "No models available"}
-              </MenuItem>
-            ) : (
-              availableModels.map((model) => (
-                <MenuItem key={model.value} value={model.value} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                  {getModelIcon(model.value, model.logo_path) && (
-                    <Box
-                      component="img"
-                      src={getModelIcon(model.value, model.logo_path)!}
-                      alt=""
-                      sx={{ width: 16, height: 16 }}
-                    />
-                  )}
-                  {model.label}
-                </MenuItem>
-              ))
+            {error && (
+              <Alert severity="error" onClose={() => setError(null)}>
+                {error}
+              </Alert>
             )}
-          </TextField>
 
-          <TextField
-            label="Prompt Template"
-            required
-            fullWidth
-            multiline
-            rows={6}
-            value={promptTemplate}
-            onChange={(e) => handlePromptTemplateChange(e.target.value)}
-            disabled={loading}
-            placeholder="Optional custom prompt template for this judge"
-            helperText="Defaults to the same template used by the primary judge—feel free to extend or edit."
-          />
+            <TextField
+              label="Judge Name"
+              required
+              fullWidth
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              disabled={loading}
+              placeholder="e.g., Custom Judge 1"
+            />
 
-          <Typography variant="h6" sx={{ mt: 2 }}>
-            Custom Parameters
-          </Typography>
+            <TextField
+              select
+              label="Model Name"
+              required
+              fullWidth
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              disabled={loading || modelsLoading || availableModels.length === 0}
+              slotProps={{
+                select: {
+                  renderValue: (value) => {
+                    const strValue = value as string;
+                    const model = availableModels.find((m) => m.value === strValue);
+                    const icon = getModelIcon(strValue, model?.logo_path);
+                    return (
+                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                        {icon && (
+                          <Box
+                            component="img"
+                            src={icon}
+                            alt=""
+                            sx={{ width: 16, height: 16 }}
+                          />
+                        )}
+                        {model?.label || strValue}
+                      </Box>
+                    );
+                  },
+                },
+              }}
+            >
+              {availableModels.length === 0 ? (
+                <MenuItem value="" disabled>
+                  {modelsLoading
+                    ? "Loading models..."
+                    : modelsError || "No models available"}
+                </MenuItem>
+              ) : (
+                availableModels.map((model) => (
+                  <MenuItem key={model.value} value={model.value} sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    {getModelIcon(model.value, model.logo_path) && (
+                      <Box
+                        component="img"
+                        src={getModelIcon(model.value, model.logo_path)!}
+                        alt=""
+                        sx={{ width: 16, height: 16 }}
+                      />
+                    )}
+                    {model.label}
+                  </MenuItem>
+                ))
+              )}
+            </TextField>
 
-          <TextField
-            label="Temperature"
-            required
-            fullWidth
-            type="number"
-            inputProps={{ min: 0, max: 2, step: 0.1 }}
-            value={temperature}
-            onChange={(e) => setTemperature(e.target.value)}
-            disabled={loading}
-            helperText="Value between 0 and 2"
-          />
-          
+            {/* Prompt preview box */}
+            <Box sx={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <Typography
+                component="label"
+                sx={{ fontSize: "0.9rem", fontWeight: 600, mb: "2px" }}
+              >
+                Prompt Template
+              </Typography>
+              <Box
+                sx={{
+                  position: "relative",
+                  borderRadius: "5px",
+                  border: "1px solid",
+                  borderColor: "divider",
+                  backgroundColor: "#fafbff",
+                  overflow: "hidden",
+                }}
+              >
+                <Box
+                  sx={{
+                    px: 1.5,
+                    py: 1.5,
+                    fontFamily: "var(--font-jetbrains-mono), monospace",
+                    fontSize: "12px",
+                    lineHeight: 1.6,
+                    color: "text.secondary",
+                    whiteSpace: "pre-wrap",
+                    maxHeight: "4.8em",
+                    overflow: "hidden",
+                  }}
+                >
+                  {promptPreviewLines || "No prompt template configured"}
+                </Box>
+                {/* Fade overlay */}
+                <Box
+                  sx={{
+                    position: "absolute",
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    height: "24px",
+                    background: "linear-gradient(transparent, #fafbff)",
+                    pointerEvents: "none",
+                  }}
+                />
+                {/* Customize button */}
+                <Box
+                  sx={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    px: 1,
+                    py: 0.5,
+                    borderTop: "1px solid",
+                    borderColor: "divider",
+                    backgroundColor: "#f5f6fc",
+                  }}
+                >
+                  <Button
+                    size="small"
+                    onClick={() => setShowPromptEditor(true)}
+                    disabled={showPromptEditor}
+                    startIcon={<IconCode size={14} />}
+                    sx={{
+                      textTransform: "none",
+                      fontSize: "0.75rem",
+                      fontWeight: 500,
+                      color: showPromptEditor ? "text.disabled" : "text.secondary",
+                      "&:hover": {
+                        color: "primary.main",
+                      },
+                    }}
+                  >
+                    Customize prompt
+                  </Button>
+                </Box>
+              </Box>
+            </Box>
+
+            <TextField
+              label="Temperature"
+              required
+              fullWidth
+              type="number"
+              inputProps={{ min: 0, max: 2, step: 0.1 }}
+              value={temperature}
+              onChange={(e) => setTemperature(e.target.value)}
+              disabled={loading}
+              helperText="Value between 0 and 2"
+            />
+          </Box>
+
+          {/* Right column: full prompt editor */}
+          {showPromptEditor && (
+            <Box
+              sx={{
+                flex: "1 1 auto",
+                minWidth: 0,
+                minHeight: 0,
+                display: "flex",
+                flexDirection: "column",
+                overflow: "hidden",
+                animation: "slideInRight 0.25s ease-out",
+                "@keyframes slideInRight": {
+                  from: { opacity: 0, transform: "translateX(12px)" },
+                  to: { opacity: 1, transform: "translateX(0)" },
+                },
+              }}
+            >
+              <Box sx={{ display: "flex", alignItems: "center", mb: 1 }}>
+                <Button
+                  size="small"
+                  onClick={() => setShowPromptEditor(false)}
+                  startIcon={<IconArrowLeft size={16} />}
+                  sx={{
+                    minWidth: "auto",
+                    textTransform: "none",
+                    fontSize: "0.8rem",
+                    color: "text.secondary",
+                    "&:hover": { color: "text.primary" },
+                  }}
+                >
+                  Back
+                </Button>
+              </Box>
+              <PromptEditor
+                value={promptTemplate}
+                onChange={handlePromptTemplateChange}
+                disabled={loading}
+                placeholder="Enter your custom prompt template here..."
+              />
+            </Box>
+          )}
         </Box>
       </DialogContent>
       <DialogActions>

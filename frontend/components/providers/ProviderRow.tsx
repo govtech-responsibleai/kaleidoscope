@@ -248,20 +248,23 @@ export default function ProviderRow({
                 To use additional models, add them to <code>provider_catalog.yaml</code> and restart.
               </Typography>
             )}
-            {provider && provider.common_models.length > 0 && (
-              <>
-                <Typography variant="caption" color="text.disabled" sx={{ display: "block", mb: 0.5, letterSpacing: "0.06em", textTransform: "uppercase", fontSize: "0.6rem" }}>
-                  Registered models
-                </Typography>
-                <Stack spacing={0.25}>
-                  {provider.common_models.map((model) => (
-                    <Typography key={model} variant="body2" color="text.secondary" sx={{ fontFamily: "monospace", fontSize: "0.78rem" }}>
-                      {model}
-                    </Typography>
-                  ))}
-                </Stack>
-              </>
-            )}
+            {provider && (provider.default_model || provider.common_models.length > 0) && (() => {
+              const allModels = [...new Set([provider.default_model, ...provider.common_models])];
+              return (
+                <>
+                  <Typography variant="caption" color="text.disabled" sx={{ display: "block", mb: 0.5, letterSpacing: "0.06em", textTransform: "uppercase", fontSize: "0.6rem" }}>
+                    Registered models
+                  </Typography>
+                  <Stack spacing={0.25}>
+                    {allModels.map((model) => (
+                      <Typography key={model} variant="body2" color="text.secondary" sx={{ fontFamily: "monospace", fontSize: "0.78rem" }}>
+                        {model}
+                      </Typography>
+                    ))}
+                  </Stack>
+                </>
+              );
+            })()}
           </Box>
         )}
 
