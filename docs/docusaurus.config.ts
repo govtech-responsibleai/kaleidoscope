@@ -18,6 +18,7 @@ const config: Config = {
   projectName: 'kaleidoscope',
 
   onBrokenLinks: 'throw',
+  trailingSlash: true,
 
   headTags: [
     {
@@ -58,9 +59,9 @@ const config: Config = {
       respectPrefersColorScheme: false,
     },
     algolia: {
-      appId: 'YOUR_APP_ID',
-      apiKey: 'YOUR_SEARCH_API_KEY',
-      indexName: 'kaleidoscope',
+      appId: 'C371UDORVB',
+      apiKey: 'd13336baa469fbe00dfd7d60db59ceba',
+      indexName: 'kaleidoscope_docs_pages',
       contextualSearch: true,
       searchPagePath: false,
     },
@@ -81,7 +82,7 @@ const config: Config = {
           label: 'Docs',
         },
         {
-          href: '#',
+          href: 'https://blog.ai.gov.sg/building-an-automated-evals-workflow-that-works-and-open-sourcing-it/',
           label: 'Blog',
           position: 'right',
         },
