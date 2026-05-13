@@ -113,8 +113,11 @@ export default function Home() {
   return (
     <>
       <Head>
-        <title>Project Kaleidoscope</title>
-        <meta name="description" content="Automated evaluation platform for AI-powered applications" />
+        <title>Kaleidoscope - AI evaluation, human aligned</title>
+        <meta name="description" content="A structured workflow for realistic and scalable contextual AI evaluations." />
+        <meta property="og:description" content="A structured workflow for realistic and scalable contextual AI evaluations." />
+        <meta name="twitter:title" content="Kaleidoscope - AI evaluation, human aligned" />
+        <meta name="twitter:description" content="A structured workflow for realistic and scalable contextual AI evaluations." />
         <link rel="icon" href="/kaleidoscope/img/favicon-color.ico" />
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />

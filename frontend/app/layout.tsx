@@ -12,10 +12,28 @@ const lato = Lato({ subsets: ["latin"], variable: "--font-lato", display: "swap"
 const jetbrainsMono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains-mono", display: "swap", weight: ["400", "500"] });
 
 export const metadata: Metadata = {
-  title: "Kaleidoscope - LLM Evaluation Platform",
-  description: "Evaluate your LLM applications with ease",
+  title: "Kaleidoscope - AI evaluation, human aligned",
+  description: "A structured workflow for realistic and scalable contextual AI evaluations.",
   icons: {
     icon: "/icon.png",
+  },
+  openGraph: {
+    title: "Kaleidoscope - AI evaluation, human aligned",
+    description: "A structured workflow for realistic and scalable contextual AI evaluations.",
+    images: [
+      {
+        url: "/kaleidoscope-preview.png",
+        width: 1755,
+        height: 242,
+        alt: "Project Kaleidoscope powered by GovTech Singapore",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Kaleidoscope - AI evaluation, human aligned",
+    description: "A structured workflow for realistic and scalable contextual AI evaluations.",
+    images: ["/kaleidoscope-preview.png"],
   },
 };
 

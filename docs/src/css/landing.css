@@ -82,7 +82,8 @@ body {
 }
 .feature-text h1 {
   font-size: clamp(2rem, 3vw, 3rem);
-  font-weight: 900; line-height: 1.15; letter-spacing: -0.03em;
+  font-weight: 900; line-height: 1.22; letter-spacing: -0.03em;
+  padding-bottom: 0.08em;
   background: linear-gradient(135deg, #1d2766 0%, #ba2fa2 100%);
   -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
 }

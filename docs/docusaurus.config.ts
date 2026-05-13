@@ -3,8 +3,8 @@ import type {Config} from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 
 const config: Config = {
-  title: 'Kaleidoscope',
-  tagline: 'Automated evaluation platform for AI-powered applications',
+  title: 'Kaleidoscope - AI evaluation, human aligned',
+  tagline: 'A structured workflow for realistic and scalable contextual AI evaluations.',
   favicon: 'img/favicon.ico',
 
   // future: {
@@ -53,7 +53,7 @@ const config: Config = {
   ],
 
   themeConfig: {
-    image: 'img/social-card.png',
+    image: 'img/kaleidoscope-preview.png',
     colorMode: {
       defaultMode: 'light',
       respectPrefersColorScheme: false,
