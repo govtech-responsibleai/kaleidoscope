@@ -15,6 +15,11 @@ Generate questions in a **natural, clear, informal style**. These are how most u
 - What's the policy on compassionate leave for family emergencies?
 - When was catered lunch mentioned in the meeting?
 
+{% if language %}
+## Output Language
+Write every question's "text" field in **{{ language }}**, as a real user of that language would naturally type it. Keep the "type" and "scope" field values exactly as specified in English ("typical"/"edge", "in_kb"/"out_kb").
+
+{% endif %}
 ## System Context
 - Target: {{target_name}}
 - Purpose: {{purpose}}

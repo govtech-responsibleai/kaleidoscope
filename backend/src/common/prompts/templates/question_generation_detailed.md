@@ -10,6 +10,11 @@ Generate questions in a **professional, well-structured style**. These are compl
 - I've been on hospitalisation leave for two weeks and I'm not sure how this affects my annual leave balance. Can you clarify whether hospitalisation leave is deducted separately?
 - I recently transferred from MOE to MOM and I'm unclear about whether my previous service years carry over for the purposes of calculating my retirement benefits.
 
+{% if language %}
+## Output Language
+Write every question's "text" field in **{{ language }}**, as a real user of that language would naturally type it. Keep the "type" and "scope" field values exactly as specified in English ("typical"/"edge", "in_kb"/"out_kb").
+
+{% endif %}
 ## System Context
 - Target: {{target_name}}
 - Purpose: {{purpose}}

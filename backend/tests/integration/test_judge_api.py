@@ -103,6 +103,56 @@ class TestJudgeAPI:
         )
         assert get_deleted.status_code == 404
 
+    def test_judge_language_params_round_trip(
+        self, auth_client, auth_headers, sample_target, sample_rubric
+    ):
+        """Language configuration stored in judge.params persists through create and update."""
+        # Create a judge with language configuration in params.
+        create_response = auth_client.post(
+            "/api/v1/judges",
+            json={
+                "target_id": sample_target.id,
+                "rubric_id": sample_rubric.id,
+                "name": "Multilingual Judge",
+                "model_name": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+                "prompt_template": "Test prompt template",
+                "params": {
+                    "temperature": 0.0,
+                    "language": "Malay",
+                    "language_aware": True,
+                    "language_output": False,
+                },
+            },
+            headers=auth_headers,
+        )
+
+        assert create_response.status_code == 201
+        judge = create_response.json()
+        assert judge["params"]["language"] == "Malay"
+        assert judge["params"]["language_aware"] is True
+        assert judge["params"]["language_output"] is False
+        judge_id = judge["id"]
+
+        # Update the language configuration (independent toggles).
+        update_response = auth_client.put(
+            f"/api/v1/judges/{judge_id}",
+            json={
+                "params": {
+                    "temperature": 0.0,
+                    "language": "Tamil",
+                    "language_aware": True,
+                    "language_output": True,
+                },
+            },
+            headers=auth_headers,
+        )
+
+        assert update_response.status_code == 200
+        updated = update_response.json()
+        assert updated["params"]["language"] == "Tamil"
+        assert updated["params"]["language_aware"] is True
+        assert updated["params"]["language_output"] is True
+
     def test_create_judge_requires_rubric_id(self, auth_client, auth_headers, sample_target):
         response = auth_client.post(
             "/api/v1/judges",

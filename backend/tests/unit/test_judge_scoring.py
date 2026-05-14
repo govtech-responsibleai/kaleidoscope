@@ -3,6 +3,7 @@ Unit tests for AnswerJudge service.
 """
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 
 from src.scoring.services.judge_scoring import AnswerJudge
@@ -527,3 +528,110 @@ class TestAnswerJudgeErrors:
         prompt = mock_llm_instance.generate_structured_async.call_args.kwargs["prompt"]
         assert "## Rubric:" in prompt
         assert sample_rubric.name in prompt
+
+
+@pytest.mark.unit
+class TestJudgeLanguageDirectives:
+    """Unit tests for _apply_language_directives()."""
+
+    @staticmethod
+    def _judge_with_params(params):
+        scorer = AnswerJudge.__new__(AnswerJudge)
+        scorer.judge = SimpleNamespace(params=params)
+        return scorer
+
+    def test_no_language_returns_prompt_unchanged(self):
+        scorer = self._judge_with_params({})
+        assert scorer._apply_language_directives("PROMPT") == "PROMPT"
+
+    def test_none_params_returns_prompt_unchanged(self):
+        scorer = self._judge_with_params(None)
+        assert scorer._apply_language_directives("PROMPT") == "PROMPT"
+
+    def test_blank_language_returns_prompt_unchanged(self):
+        scorer = self._judge_with_params({"language": "   ", "language_aware": True})
+        assert scorer._apply_language_directives("PROMPT") == "PROMPT"
+
+    def test_language_set_but_no_toggles_returns_unchanged(self):
+        scorer = self._judge_with_params({"language": "Malay"})
+        assert scorer._apply_language_directives("PROMPT") == "PROMPT"
+
+    def test_content_aware_appends_only_aware_directive(self):
+        scorer = self._judge_with_params({"language": "Malay", "language_aware": True})
+        result = scorer._apply_language_directives("PROMPT")
+        assert result.startswith("PROMPT")
+        assert "## Language Instructions" in result
+        assert "written in Malay" in result
+        assert "Write your reasoning" not in result
+
+    def test_output_language_appends_only_output_directive(self):
+        scorer = self._judge_with_params({"language": "Tamil", "language_output": True})
+        result = scorer._apply_language_directives("PROMPT")
+        assert "Write your reasoning and explanation in Tamil" in result
+        assert "do not translate the labels" in result
+        assert "do not penalise" not in result
+
+    def test_both_toggles_append_both_directives(self):
+        scorer = self._judge_with_params(
+            {"language": "Chinese", "language_aware": True, "language_output": True}
+        )
+        result = scorer._apply_language_directives("PROMPT")
+        assert "written in Chinese" in result
+        assert "Write your reasoning and explanation in Chinese" in result
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_response_level_appends_language_directives_to_prompt(
+        self, mock_llm_class, test_db, sample_qa_job, sample_judge_response_level, sample_rubric
+    ):
+        """Judge language params are appended to the rendered response-level prompt."""
+        sample_judge_response_level.params = {
+            "language": "Malay",
+            "language_aware": True,
+            "language_output": True,
+        }
+        sample_qa_job.judge_id = sample_judge_response_level.id
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            RubricJudgmentResult(chosen_option=sample_rubric.best_option, explanation="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        await scorer.score()
+
+        prompt = mock_llm_instance.generate_structured_async.call_args.kwargs["prompt"]
+        assert "## Language Instructions" in prompt
+        assert "written in Malay" in prompt
+        assert "Write your reasoning and explanation in Malay" in prompt
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_claim_level_appends_language_directives_to_prompt(
+        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+    ):
+        """Judge language params are appended to each rendered claim-level prompt."""
+        sample_qa_job.judge.params = {
+            "language": "Tamil",
+            "language_aware": True,
+            "language_output": True,
+        }
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            ClaimJudgmentResult(label=True, reasoning="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        await scorer.score()
+
+        prompt = mock_llm_instance.generate_structured_async.call_args_list[0].kwargs["prompt"]
+        assert "## Language Instructions" in prompt
+        assert "written in Tamil" in prompt
+        assert "Write your reasoning and explanation in Tamil" in prompt

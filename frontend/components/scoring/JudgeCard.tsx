@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Chip,
   CircularProgress,
   IconButton,
   Menu,
@@ -169,6 +170,14 @@ export default function JudgeCard({
     onDelete();
   };
 
+  // Language configuration stored in judge.params (see CreateJudgeDialog).
+  const judgeLanguage =
+    typeof judge.params?.language === "string" ? judge.params.language.trim() : "";
+  const languageAware = judgeLanguage !== "" && judge.params?.language_aware === true;
+  const languageOutput = judgeLanguage !== "" && judge.params?.language_output === true;
+  const showLanguageChips = judgeLanguage !== "" && (languageAware || languageOutput);
+  const languageChipSx: SxProps<Theme> = { height: 18, fontSize: 10 };
+
   return (
     <Card variant="outlined" sx={{ height: "100%", borderColor: "divider", ...cardSx }}>
       <CardContent>
@@ -190,6 +199,17 @@ export default function JudgeCard({
                 {judge.model_label || judge.model_name}
               </Typography>
             </Stack>
+            {showLanguageChips && (
+              <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ mt: 0.5 }}>
+                <Chip size="small" variant="outlined" label={`Lang: ${judgeLanguage}`} sx={languageChipSx} />
+                {languageAware && (
+                  <Chip size="small" variant="outlined" label="content-aware" sx={languageChipSx} />
+                )}
+                {languageOutput && (
+                  <Chip size="small" variant="outlined" label="explains in language" sx={languageChipSx} />
+                )}
+              </Stack>
+            )}
           </Box>
           {!judge.is_baseline && judge.is_editable && (
             <IconButton size="small" onClick={handleMenuOpen}>

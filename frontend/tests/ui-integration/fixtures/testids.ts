@@ -29,6 +29,15 @@ export const TESTIDS = {
 
   // GenerateEvalsModal — configure_questions step
   GENERATION_MODEL_SELECTOR: "generation-model-selector",
+  GENERATION_LANGUAGE_SELECTOR: "generation-language-selector",
+
+  // Questions page
+  QUESTION_LANGUAGE_BADGE: "question-language-badge",
+
+  // CreateJudgeDialog — language section
+  JUDGE_LANGUAGE_SELECTOR: "judge-language-selector",
+  JUDGE_LANGUAGE_AWARE_TOGGLE: "judge-language-aware-toggle",
+  JUDGE_LANGUAGE_OUTPUT_TOGGLE: "judge-language-output-toggle",
 
   // Rubrics page
   RUBRIC_CUSTOM_ADD: "rubric-custom-add",

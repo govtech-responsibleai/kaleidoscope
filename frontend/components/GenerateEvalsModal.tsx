@@ -35,6 +35,7 @@ import { getSourceChip } from "@/lib/theme";
 import { usePersonaGeneration } from "@/hooks/usePersonaGeneration";
 import { usePersonaEdit } from "@/hooks/usePersonaEdit";
 import PersonaGenerationPanel from "@/components/questions/PersonaGenerationPanel";
+import LanguageSelect from "@/components/shared/LanguageSelect";
 import { actionIconProps } from "@/lib/styles";
 import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
@@ -92,6 +93,7 @@ export default function GenerateEvalsModal({
   // Generation config
   const [numQuestions, setNumQuestions] = useState(30);
   const [inputStyle, setInputStyle] = useState<InputStyle>(InputStyle.BRIEF);
+  const [languages, setLanguages] = useState<string[]>(["English"]);
   const [availableModels, setAvailableModels] = useState<ProviderModelOption[]>([]);
   const [selectedModel, setSelectedModel] = useState("");
   const [personaModel, setPersonaModel] = useState("");
@@ -165,9 +167,12 @@ export default function GenerateEvalsModal({
       return;
     }
 
-    if (numQuestions < allSelectedIds.length) {
+    const languageCount = languages.length || 1;
+    if (numQuestions < allSelectedIds.length * languageCount) {
       setError(
-        `You selected ${allSelectedIds.length} personas but requested ${numQuestions} questions. Use at least ${allSelectedIds.length} questions or select fewer personas.`
+        languageCount > 1
+          ? `You selected ${allSelectedIds.length} personas across ${languageCount} languages but requested ${numQuestions} questions. Use at least ${allSelectedIds.length * languageCount} questions, or reduce personas/languages.`
+          : `You selected ${allSelectedIds.length} personas but requested ${numQuestions} questions. Use at least ${allSelectedIds.length} questions or select fewer personas.`
       );
       return;
     }
@@ -191,6 +196,7 @@ export default function GenerateEvalsModal({
         persona_ids: allSelectedIds,
         input_style: inputStyle,
         model_used: selectedModel || undefined,
+        languages: languages.length > 0 ? languages : undefined,
       });
 
       if (onJobLaunched) {
@@ -266,6 +272,7 @@ export default function GenerateEvalsModal({
       setSelectedExistingIds([]);
       setNumQuestions(30);
       setInputStyle(InputStyle.BRIEF);
+      setLanguages(["English"]);
       setAvailableModels([]);
       setSelectedModel("");
       setPersonaModel("");
@@ -281,9 +288,13 @@ export default function GenerateEvalsModal({
     step === "generate_personas" ? 0 : step === "configure_questions" ? 1 : -1;
   const newSelectedCount = personaGen.personas.length - rejectedPersonaIds.size;
   const selectedPersonaCount = step === "select_personas" ? selectedExistingIds.length : newSelectedCount;
-  const hasInsufficientQuestions = selectedPersonaCount > 0 && numQuestions < selectedPersonaCount;
+  const languageCount = languages.length || 1;
+  const minRequiredQuestions = selectedPersonaCount * languageCount;
+  const hasInsufficientQuestions = selectedPersonaCount > 0 && numQuestions < minRequiredQuestions;
   const countValidationMessage = hasInsufficientQuestions
-    ? `You selected ${selectedPersonaCount} persona${selectedPersonaCount !== 1 ? "s" : ""} but requested ${numQuestions} question${numQuestions !== 1 ? "s" : ""}. Use at least ${selectedPersonaCount} question${selectedPersonaCount !== 1 ? "s" : ""} or select fewer personas.`
+    ? languageCount > 1
+      ? `You selected ${selectedPersonaCount} persona${selectedPersonaCount !== 1 ? "s" : ""} across ${languageCount} languages but requested ${numQuestions} question${numQuestions !== 1 ? "s" : ""}. Use at least ${minRequiredQuestions} questions (one per persona per language), or reduce personas/languages.`
+      : `You selected ${selectedPersonaCount} persona${selectedPersonaCount !== 1 ? "s" : ""} but requested ${numQuestions} question${numQuestions !== 1 ? "s" : ""}. Use at least ${selectedPersonaCount} question${selectedPersonaCount !== 1 ? "s" : ""} or select fewer personas.`
     : null;
 
   return (
@@ -608,6 +619,7 @@ export default function GenerateEvalsModal({
               display="flex"
               gap={2}
               alignItems="flex-start"
+              flexWrap="wrap"
               sx={{
                 width: "100%",
                 p: 2.5,
@@ -661,6 +673,15 @@ export default function GenerateEvalsModal({
                 <MenuItem value={InputStyle.REGULAR}>Regular</MenuItem>
                 <MenuItem value={InputStyle.DETAILED}>Detailed</MenuItem>
               </TextField>
+              <LanguageSelect
+                multiple
+                label="Languages"
+                value={languages}
+                onChange={setLanguages}
+                helperText="Questions are split evenly across these"
+                sx={{ minWidth: 220, flex: 1 }}
+                testId={TESTIDS.GENERATION_LANGUAGE_SELECTOR}
+              />
             </Box>
           </Box>
         )}
@@ -753,7 +774,7 @@ export default function GenerateEvalsModal({
               <Typography variant="subtitle2" fontWeight={600} sx={{ mb: 2 }}>
                 Generation Settings
               </Typography>
-              <Box display="flex" gap={2} alignItems="center">
+              <Box display="flex" gap={2} alignItems="flex-start" flexWrap="wrap">
                 <TextField
                   label="Number of questions"
                   type="number"
@@ -797,6 +818,15 @@ export default function GenerateEvalsModal({
                   <MenuItem value={InputStyle.REGULAR}>Regular</MenuItem>
                   <MenuItem value={InputStyle.DETAILED}>Detailed</MenuItem>
                 </TextField>
+                <LanguageSelect
+                  multiple
+                  label="Languages"
+                  value={languages}
+                  onChange={setLanguages}
+                  helperText="Questions are split evenly across these"
+                  sx={{ minWidth: 220, flex: 1 }}
+                  testId={TESTIDS.GENERATION_LANGUAGE_SELECTOR}
+                />
               </Box>
             </Box>
           </>
