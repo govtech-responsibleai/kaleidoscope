@@ -66,6 +66,7 @@ class QuestionResponse(QuestionBase):
     persona_id: Optional[int] = Field(None, description="Persona ID (null for uploaded questions without persona)")
     target_id: int
     orig_id: Optional[str] = Field(None, description="Original ID from user file (for uploaded questions)")
+    language: Optional[str] = Field(None, description="Language the question text is written in (null = English)")
     status: Status
     created_at: datetime
     updated_at: datetime

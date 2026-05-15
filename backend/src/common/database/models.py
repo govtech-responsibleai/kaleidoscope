@@ -278,6 +278,7 @@ class Question(Base):
     type = Column(Enum(QuestionTypeEnum), nullable=True, index=True)  # typical or edge; nullable for uploaded questions
     scope = Column(Enum(QuestionScopeEnum), nullable=True, index=True)  # in_kb or out_kb; nullable for uploaded questions
     input_style = Column(Enum(InputStyleEnum), nullable=True)  # brief, regular, detailed
+    language = Column(String, nullable=True)  # Language the question text is written in; NULL = English
     status = Column(Enum(StatusEnum), default=StatusEnum.pending, nullable=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)

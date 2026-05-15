@@ -117,6 +117,7 @@ Thumbs.db
 
 # === Playwright ===
 frontend/test-results/
+/test-results/
 frontend/playwright-report/
 frontend/.playwright/
 

@@ -32,7 +32,7 @@ def _make_llm_result(n=2):
     return result, metadata
 
 
-def _make_generator(test_db, sample_job, sample_target, count_requested=None):
+def _make_generator(test_db, sample_job, sample_target, count_requested=None, languages=None):
     with patch.object(QuestionGenerator, '__init__', lambda self, *a, **kw: None):
         gen = QuestionGenerator.__new__(QuestionGenerator)
         gen.db = test_db
@@ -44,6 +44,7 @@ def _make_generator(test_db, sample_job, sample_target, count_requested=None):
         gen.persona_ids = None
         gen.sample_questions = []
         gen.input_style = "regular"
+        gen.languages = languages or [None]
         gen.cost_tracker = MagicMock()
         gen.cost_tracker.get_summary.return_value = {
             "prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0,
@@ -300,6 +301,123 @@ class TestQuestionGenerator:
         mock_jr.update_status.assert_called()
         call_args = mock_jr.update_status.call_args
         assert call_args[1]["status"] == JobStatusEnum.failed or call_args[0][2] == JobStatusEnum.failed
+
+
+@pytest.mark.unit
+class TestQuestionGeneratorLanguages:
+    """Unit tests for multi-language question generation."""
+
+    def test_split_count_across_languages_even(self):
+        """An evenly divisible total is split equally across languages."""
+        assert QuestionGenerator._split_count_across_languages(30, 3) == [10, 10, 10]
+
+    def test_split_count_across_languages_uneven(self):
+        """A non-divisible total hands the remainder to the earliest languages."""
+        assert QuestionGenerator._split_count_across_languages(10, 3) == [4, 3, 3]
+        assert sum(QuestionGenerator._split_count_across_languages(10, 3)) == 10
+
+    def test_split_count_across_languages_single(self):
+        """A single language (or none) receives the whole count."""
+        assert QuestionGenerator._split_count_across_languages(30, 1) == [30]
+
+    def test_render_prompt_passes_language(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """_render_prompt forwards the language into the template render call."""
+        gen = _make_generator(test_db, sample_job, sample_target)
+        with patch(
+            "src.query_generation.services.question_generator.render_template"
+        ) as mock_render:
+            mock_render.return_value = "rendered prompt"
+            gen._render_prompt(
+                sample_personas[0],
+                [],
+                None,
+                "",
+                question_type=QuestionType.typical,
+                question_scope=QuestionScope.out_kb,
+                num_questions=3,
+                language="Malay",
+            )
+        assert mock_render.call_args.kwargs["language"] == "Malay"
+
+    def test_save_questions_tags_language(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """_save_questions stamps each question row with the given language."""
+        gen = _make_generator(test_db, sample_job, sample_target)
+        questions = [
+            QuestionBase(text="Q?", type=QuestionType.typical, scope=QuestionScope.out_kb)
+        ]
+        with patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr:
+            mock_qr.create_many.return_value = []
+            gen._save_questions(questions, sample_personas[0].id, "Chinese")
+
+        saved = mock_qr.create_many.call_args[0][1]
+        assert saved[0]["language"] == "Chinese"
+
+    def test_generate_multi_language_tags_questions(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """generate() splits the count across languages and tags each batch."""
+        gen = _make_generator(
+            test_db,
+            sample_job,
+            sample_target,
+            count_requested=4,
+            languages=["English", "Chinese"],
+        )
+        gen._save_questions = MagicMock(return_value=[])
+        gen.llm_client.generate_structured.return_value = _make_llm_result(2)
+
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ):
+            mock_kb.get_compiled_text.return_value = ""
+            mock_persona.get_approved_by_target.return_value = [sample_personas[0]]
+            mock_qr.get_approved_by_target.return_value = []
+
+            result = gen.generate()
+
+        # No KB + 1 persona => one bucket per language => one LLM call per language.
+        assert gen.llm_client.generate_structured.call_count == 2
+        languages_used = [call.args[2] for call in gen._save_questions.call_args_list]
+        assert languages_used == ["English", "Chinese"]
+        assert len(result) == 4
+
+    def test_generate_single_language_default_unchanged(
+        self, test_db, sample_job, sample_target, sample_personas
+    ):
+        """The default (English-only) path tags questions with None."""
+        gen = _make_generator(test_db, sample_job, sample_target, count_requested=2)
+        gen._save_questions = MagicMock(return_value=[])
+        gen.llm_client.generate_structured.return_value = _make_llm_result(2)
+
+        with patch(
+            "src.query_generation.services.question_generator.KBDocumentRepository"
+        ) as mock_kb, patch(
+            "src.query_generation.services.question_generator.PersonaRepository"
+        ) as mock_persona, patch(
+            "src.query_generation.services.question_generator.QuestionRepository"
+        ) as mock_qr, patch(
+            "src.query_generation.services.question_generator.JobRepository"
+        ):
+            mock_kb.get_compiled_text.return_value = ""
+            mock_persona.get_approved_by_target.return_value = [sample_personas[0]]
+            mock_qr.get_approved_by_target.return_value = []
+
+            gen.generate()
+
+        languages_used = [call.args[2] for call in gen._save_questions.call_args_list]
+        assert languages_used == [None]
 
 
 @pytest.mark.unit

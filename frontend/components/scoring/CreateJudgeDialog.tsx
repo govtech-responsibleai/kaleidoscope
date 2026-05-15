@@ -9,6 +9,8 @@ import {
   Button,
   TextField,
   Box,
+  Checkbox,
+  FormControlLabel,
   CircularProgress,
   Alert,
   MenuItem,
@@ -24,6 +26,8 @@ import {
 import { getApiErrorMessage, judgeApi } from "@/lib/api";
 import { getModelIcon } from "@/lib/modelIcons";
 import PromptEditor from "@/components/shared/PromptEditorDynamic";
+import LanguageSelect from "@/components/shared/LanguageSelect";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 const resolveTemperatureValue = (value: unknown): number | null => {
   if (typeof value === "number" && !isNaN(value)) {
@@ -65,6 +69,9 @@ export default function CreateJudgeDialog({
   const [promptTemplate, setPromptTemplate] = useState("");
   const [baselinePromptTemplate, setBaselinePromptTemplate] = useState("");
   const [params, setParams] = useState<Record<string, unknown>>({});
+  const [judgeLanguage, setJudgeLanguage] = useState("");
+  const [languageAware, setLanguageAware] = useState(false);
+  const [languageOutput, setLanguageOutput] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [availableModels, setAvailableModels] = useState<JudgeModelOption[]>([]);
@@ -120,6 +127,11 @@ export default function CreateJudgeDialog({
         setName(judge.name);
         setModelName(judge.model_name);
         setParams(existingParams);
+        setJudgeLanguage(
+          typeof existingParams.language === "string" ? existingParams.language : ""
+        );
+        setLanguageAware(!!existingParams.language_aware);
+        setLanguageOutput(!!existingParams.language_output);
         const tempValue =
           resolveTemperatureValue(judge.temperature) ??
           resolveTemperatureValue(existingParams?.temperature) ??
@@ -133,6 +145,11 @@ export default function CreateJudgeDialog({
         setName(`${judge.name} (Copy)`);
         setModelName(judge.model_name);
         setParams(existingParams);
+        setJudgeLanguage(
+          typeof existingParams.language === "string" ? existingParams.language : ""
+        );
+        setLanguageAware(!!existingParams.language_aware);
+        setLanguageOutput(!!existingParams.language_output);
         const tempValue =
           resolveTemperatureValue(judge.temperature) ??
           resolveTemperatureValue(existingParams?.temperature) ??
@@ -146,6 +163,9 @@ export default function CreateJudgeDialog({
         setModelName(availableModels[0]?.value || "");
         setTemperature("1.0");
         setParams({});
+        setJudgeLanguage("");
+        setLanguageAware(false);
+        setLanguageOutput(false);
         setShowPromptEditor(false);
         if (previousModeRef.current !== "create") {
           promptEditedRef.current = false;
@@ -159,6 +179,9 @@ export default function CreateJudgeDialog({
       promptEditedRef.current = false;
       setShowPromptEditor(false);
       setParams({});
+      setJudgeLanguage("");
+      setLanguageAware(false);
+      setLanguageOutput(false);
     }
     previousModeRef.current = mode;
   }, [open, mode, judge, baselinePromptTemplate, availableModels, defaultPromptTemplate]);
@@ -187,7 +210,14 @@ export default function CreateJudgeDialog({
     setError(null);
 
     try {
-      const updatedParams = { ...(params || {}), temperature: temp };
+      const trimmedLanguage = judgeLanguage.trim();
+      const updatedParams = {
+        ...(params || {}),
+        temperature: temp,
+        language: trimmedLanguage || null,
+        language_aware: !!trimmedLanguage && languageAware,
+        language_output: !!trimmedLanguage && languageOutput,
+      };
       const selectedModel = availableModels.find((m) => m.value === modelName);
       const modelLabel = selectedModel?.label || modelName;
 
@@ -436,6 +466,65 @@ export default function CreateJudgeDialog({
               disabled={loading}
               helperText="Value between 0 and 2"
             />
+
+            {/* Language settings — optional, two independent toggles */}
+            <Box sx={{ display: "flex", flexDirection: "column", gap: 1 }}>
+              <Typography
+                component="label"
+                sx={{ fontSize: "0.9rem", fontWeight: 600 }}
+              >
+                Language (optional)
+              </Typography>
+              <LanguageSelect
+                value={judgeLanguage}
+                onChange={setJudgeLanguage}
+                allowEmpty
+                emptyLabel="Not set"
+                label="Judge language"
+                disabled={loading}
+                testId={TESTIDS.JUDGE_LANGUAGE_SELECTOR}
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={languageAware}
+                    onChange={(e) => setLanguageAware(e.target.checked)}
+                    disabled={loading || !judgeLanguage}
+                    inputProps={
+                      {
+                        "data-testid": TESTIDS.JUDGE_LANGUAGE_AWARE_TOGGLE,
+                      } as React.InputHTMLAttributes<HTMLInputElement>
+                    }
+                  />
+                }
+                label={
+                  <Typography variant="body2">
+                    Tell the judge the question &amp; answer are in this language
+                  </Typography>
+                }
+              />
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    size="small"
+                    checked={languageOutput}
+                    onChange={(e) => setLanguageOutput(e.target.checked)}
+                    disabled={loading || !judgeLanguage}
+                    inputProps={
+                      {
+                        "data-testid": TESTIDS.JUDGE_LANGUAGE_OUTPUT_TOGGLE,
+                      } as React.InputHTMLAttributes<HTMLInputElement>
+                    }
+                  />
+                }
+                label={
+                  <Typography variant="body2">
+                    Have the judge write its explanations in this language
+                  </Typography>
+                }
+              />
+            </Box>
           </Box>
 
           {/* Right column: full prompt editor */}
