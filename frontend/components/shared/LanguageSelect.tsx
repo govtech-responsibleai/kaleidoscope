@@ -179,7 +179,7 @@ export default function LanguageSelect(props: LanguageSelectProps) {
           inputProps={testId ? { "data-testid": testId } : undefined}
         >
           {options.map((lang) => (
-            <MenuItem key={lang} value={lang}>
+            <MenuItem key={lang} value={lang} sx={{ pr: 3 }}>
               <Checkbox checked={value.includes(lang)} size="small" />
               {lang}
             </MenuItem>
@@ -235,7 +235,7 @@ export default function LanguageSelect(props: LanguageSelectProps) {
       >
         {allowEmpty && <MenuItem value={EMPTY_VALUE}>{emptyLabel}</MenuItem>}
         {options.map((lang) => (
-          <MenuItem key={lang} value={lang}>
+          <MenuItem key={lang} value={lang} sx={{ pr: 3 }}>
             {lang}
           </MenuItem>
         ))}
