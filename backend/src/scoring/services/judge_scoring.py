@@ -28,6 +28,13 @@ from src.rubric.services.system_rubrics import negative_option_for_rubric
 
 logger = logging.getLogger(__name__)
 
+ENGLISH_OUTPUT_DIRECTIVE = (
+    "\n\n## Output Language\n"
+    "Write your reasoning and explanation in English, even if the question, "
+    "answer, or knowledge base is in another language. Keep any verdict or "
+    "option label exactly as specified above.\n"
+)
+
 
 class AnswerJudge:
     """Service for scoring answers using LLM judges."""
@@ -143,45 +150,22 @@ class AnswerJudge:
             if raise_on_error:
                 raise
 
-    def _apply_language_directives(self, prompt: str) -> str:
+    def _apply_english_output_directive(self, prompt: str) -> str:
         """
-        Append language instructions to a rendered judge prompt.
+        Append a fixed "respond in English" directive to a rendered judge prompt.
 
-        Reads ``language``, ``language_aware`` and ``language_output`` from the
-        judge's params. When a language is set and at least one toggle is on, a
-        short ``## Language Instructions`` block is appended. Applied post-render
-        so it works uniformly for fixed, preset, and LLM-generated custom prompts
-        without touching any judge template or the rubric augmenter.
+        Applied post-render so it covers fixed, preset, and LLM-generated custom
+        judge prompts uniformly without touching any template. The directive is
+        unconditional: even when the question, answer, or knowledge base is in
+        another language, the judge's reasoning stays in English.
 
         Args:
             prompt: The fully rendered judge prompt
 
         Returns:
-            The prompt, with a language instructions block appended when configured
+            The prompt with the English-output directive appended
         """
-        params = self.judge.params or {}
-        language = params.get("language")
-        if not language or not str(language).strip():
-            return prompt
-        language = str(language).strip()
-
-        aware = bool(params.get("language_aware"))
-        output = bool(params.get("language_output"))
-        if not aware and not output:
-            return prompt
-
-        directives = ["", "## Language Instructions"]
-        if aware:
-            directives.append(
-                f"- The question and answer are written in {language}. Evaluate them "
-                f"fairly on their merits; do not penalise the response for not being in English."
-            )
-        if output:
-            directives.append(
-                f"- Write your reasoning and explanation in {language}. Keep any verdict "
-                f"or option label exactly as specified above — do not translate the labels."
-            )
-        return prompt + "\n".join(directives) + "\n"
+        return prompt + ENGLISH_OUTPUT_DIRECTIVE
 
     def _resolved_rubric_id(self) -> int | None:
         if self.rubric is None:
@@ -264,7 +248,7 @@ class AnswerJudge:
                 kb_documents=kb_text,
                 **self.judge.params
             )
-            prompt = self._apply_language_directives(prompt)
+            prompt = self._apply_english_output_directive(prompt)
 
             task = self._score_single_claim(claim, prompt)
             tasks.append((claim, task))
@@ -415,7 +399,7 @@ class AnswerJudge:
                 rubric_options=self.rubric.options,
             )
 
-        prompt = self._apply_language_directives(prompt)
+        prompt = self._apply_english_output_directive(prompt)
 
         # Call LLM
         try:
