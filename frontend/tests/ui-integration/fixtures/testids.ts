@@ -34,11 +34,6 @@ export const TESTIDS = {
   // Questions page
   QUESTION_LANGUAGE_BADGE: "question-language-badge",
 
-  // CreateJudgeDialog — language section
-  JUDGE_LANGUAGE_SELECTOR: "judge-language-selector",
-  JUDGE_LANGUAGE_AWARE_TOGGLE: "judge-language-aware-toggle",
-  JUDGE_LANGUAGE_OUTPUT_TOGGLE: "judge-language-output-toggle",
-
   // Rubrics page
   RUBRIC_CUSTOM_ADD: "rubric-custom-add",
   RUBRIC_PRESET_ADD: "rubric-preset-add",

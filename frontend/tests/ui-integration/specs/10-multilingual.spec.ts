@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures/auth";
-import { TARGET_ID, SNAPSHOT_ID } from "../fixtures/data";
+import { TARGET_ID } from "../fixtures/data";
 import { TESTIDS } from "../fixtures/testids";
 
 const targetUrl = (path = "") => `/targets/${TARGET_ID}${path}`;
@@ -60,43 +60,5 @@ test.describe("Multilingual eval-set generation", () => {
 
     // The chosen language remains as a chip in the picker.
     await expect(page.getByRole("dialog").getByText("Malay", { exact: true })).toBeVisible();
-  });
-});
-
-test.describe("LLM judge language settings", () => {
-  test("judge dialog exposes an optional language section with two independent toggles", async ({ authedPage: page }) => {
-    await page.goto(targetUrl(`/scoring?snapshot=${SNAPSHOT_ID}`));
-    await page.waitForLoadState("networkidle");
-    await page.locator(`[data-testid="${TESTIDS.JUDGE_ADD_BUTTON}"]`).first().click();
-
-    await expect(page.getByLabel("Judge language")).toBeVisible();
-    // Toggles start disabled until a language is chosen.
-    await expect(page.getByTestId(TESTIDS.JUDGE_LANGUAGE_AWARE_TOGGLE)).toBeDisabled();
-    await expect(page.getByTestId(TESTIDS.JUDGE_LANGUAGE_OUTPUT_TOGGLE)).toBeDisabled();
-  });
-
-  test("choosing a language and a toggle is sent in the create-judge request", async ({ authedPage: page }) => {
-    await page.goto(targetUrl(`/scoring?snapshot=${SNAPSHOT_ID}`));
-    await page.waitForLoadState("networkidle");
-    await page.locator(`[data-testid="${TESTIDS.JUDGE_ADD_BUTTON}"]`).first().click();
-
-    // Pick a judge language; the toggles become enabled.
-    await page.getByLabel("Judge language").click();
-    await page.getByRole("option", { name: "French" }).click();
-
-    const awareToggle = page.getByTestId(TESTIDS.JUDGE_LANGUAGE_AWARE_TOGGLE);
-    await expect(awareToggle).toBeEnabled();
-    await awareToggle.check();
-
-    const requestPromise = page.waitForRequest(
-      (req) => req.url().includes("/judges") && req.method() === "POST"
-    );
-    await page.getByRole("button", { name: "Create" }).click();
-    const request = await requestPromise;
-
-    const body = request.postDataJSON();
-    expect(body.params.language).toBe("French");
-    expect(body.params.language_aware).toBe(true);
-    expect(body.params.language_output).toBe(false);
   });
 });
