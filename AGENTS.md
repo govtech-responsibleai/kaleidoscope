@@ -191,6 +191,12 @@ See [`.env.example`](.env.example) for the full list with descriptions.
 
 ---
 
+## Documentation
+
+When a new feature is added or existing behaviour changes, update the relevant docs in `docs/docs/` and any affected READMEs (`backend/README.md`, `frontend/README.md`, root `README.md`) before marking work complete. New features require a new section or page; changed behaviour requires updating existing content. Docs live alongside code — not as a follow-up task.
+
+---
+
 ## Git Rules
 
 - Never push directly to `main`

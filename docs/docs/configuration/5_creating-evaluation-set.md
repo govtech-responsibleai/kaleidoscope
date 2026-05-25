@@ -53,9 +53,10 @@ Once you have approved personas, generate test inputs from their perspectives. F
 
 | Setting | Options | Effect |
 |---------|---------|--------|
-| **Count** | Any number | Total number of inputs to generate (distributed across personas) |
+| **Count** | Any number | Total number of inputs to generate (distributed across personas and languages) |
 | **Input style** | Brief / Regular / Detailed | How much context the LLM prompt includes when generating |
 | **Model** | Any configured model | Which LLM generates the inputs |
+| **Languages** | Any selection (default: English) | Which languages to generate inputs in; the total count is split evenly across selected languages |
 
 
 <div style={{maxWidth: '80%', margin: '0 auto'}}>
@@ -91,9 +92,17 @@ When no knowledge base is present:
 These ratios are configurable in [`backend/src/common/config.py`](https://github.com/govtech-responsibleai/kaleidoscope/blob/main/backend/src/common/config.py).
 :::
 
+### Setting Languages
+
+You may generate test inputs in various languages. When more than one language is selected, the total input count is divided evenly across all selected languages first. The [Distribution Logic](#distribution-logic) above then runs independently for each language, and each generated input is tagged with its language.
+
+:::warning
+Make sure your target accepts inputs in the languages you select — Kaleidoscope will send the generated inputs as-is. Judges always produce their reasoning in English (see [Scoring and Validation](./6_scoring-and-judges.md)), with the assumption that the judge model can comprehend the source language. You can swap in a different model using [Custom Judges](./6_scoring-and-judges.md#custom-judges) if needed.
+:::
+
 ### Uploading Inputs
 
-If you already have test inputs, you can upload them directly (CSV, JSON, or Excel) instead of generating. Uploaded inputs are marked with source "uploaded" and can optionally be assigned to existing personas by title.
+If you already have test inputs, you can upload them directly (CSV, JSON, or Excel) instead of generating. Uploaded inputs are marked with source "uploaded" and can optionally be assigned to existing personas by title. The language setting only applies to generated inputs — uploaded inputs are stored without language metadata.
 
 ### Reviewing Inputs
 

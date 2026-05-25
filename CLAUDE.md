@@ -49,6 +49,10 @@ For tasks with 3+ steps or architectural decisions, enter plan mode (`EnterPlanM
 
 Never mark a task complete without proving it works. Run tests, check logs, or demonstrate the behaviour.
 
+### Update Docs With Every Feature
+
+When adding a new feature or changing existing behaviour, update `docs/docs/` and any affected READMEs (`backend/README.md`, `frontend/README.md`, root `README.md`) before marking done. New features need a new section or page; changed behaviour needs updated content. Docs are part of the deliverable, not a follow-up.
+
 ### ⚠️ Critical Rules
 - Ask before acting — never assume
 - Plans: concise — user must approve, not read essays

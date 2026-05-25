@@ -421,6 +421,46 @@ class TestQuestionGeneratorLanguages:
 
 
 @pytest.mark.unit
+class TestQuestionGenerationPromptTemplates:
+    """Verify the language directive in question-generation prompt templates."""
+
+    _VARS = dict(
+        target_name="Test Bot",
+        purpose="Testing",
+        target_users="Testers",
+        agency="Test Agency",
+        persona={"title": "Tester", "info": "A test persona", "style": "formal", "use_case": "testing"},
+        question_type="typical",
+        question_scope="out_kb",
+        kb_text=None,
+        web_text="",
+        sample_questions=[],
+        approved_questions=None,
+        batch_questions=None,
+        num_questions=3,
+    )
+
+    @pytest.mark.parametrize("style", ["brief", "regular", "detailed"])
+    def test_language_directive_present_when_set(self, style):
+        """When language is set, the output-language block appears in the rendered prompt."""
+        from src.common.prompts import render_template
+        prompt = render_template(
+            f"question_generation_{style}.md", **self._VARS, language="French"
+        )
+        assert "## Output Language" in prompt
+        assert "French" in prompt
+
+    @pytest.mark.parametrize("style", ["brief", "regular", "detailed"])
+    def test_language_directive_absent_when_none(self, style):
+        """When language is None (English default), the output-language block is omitted."""
+        from src.common.prompts import render_template
+        prompt = render_template(
+            f"question_generation_{style}.md", **self._VARS, language=None
+        )
+        assert "## Output Language" not in prompt
+
+
+@pytest.mark.unit
 class TestQuestionSimilarity:
     """Unit tests for question similarity functions."""
 

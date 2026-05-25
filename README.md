@@ -37,7 +37,7 @@ A default admin user (`dev` / `dev`) is created on first startup. Add more users
 
 <img src=".github/screenshots/question-generation-1.gif" width="90%"/>
 
-**Generate diverse evaluation questions** — create user personas with Singapore contextualisation and generate realistic questions across types (typical/edge) and scopes (in-KB/out-of-KB).
+**Generate diverse evaluation questions** — create user personas with Singapore contextualisation and generate realistic questions across types (typical/edge), scopes (in-KB/out-of-KB), and languages.
 
 <img src=".github/screenshots/annotations.png" alt="annotationsp" width="90%"/>
 
