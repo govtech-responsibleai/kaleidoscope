@@ -43,7 +43,8 @@ class QuestionGenerator:
         job_id: int,
         persona_ids: Optional[List[int]] = None,
         sample_questions: Optional[List[str]] = None,
-        input_style: Optional[str] = None
+        input_style: Optional[str] = None,
+        languages: Optional[List[str]] = None
     ):
         """
         Initialize question generator.
@@ -54,12 +55,17 @@ class QuestionGenerator:
             persona_ids: Optional list of persona IDs to generate for (overrides job config)
             sample_questions: Optional list of example questions
             input_style: Input style (brief, regular, detailed). Defaults to regular.
+            languages: Optional list of languages to split the question set across.
+                The total count_requested is divided evenly across these languages.
+                Defaults to English-only (a single ``None`` sentinel).
         """
         self.db = db
         self.job_id = job_id
         self.persona_ids = persona_ids  # Store for later use
         self.sample_questions = sample_questions or []
         self.input_style = input_style or "regular"
+        # None sentinel = English (no language directive added to the prompt)
+        self.languages = languages or [None]
         self.cost_tracker = CostTracker(job_id=job_id)
 
         # Load job
@@ -147,66 +153,84 @@ class QuestionGenerator:
                 self.db,
                 self.target.id
             )
-            allocations = self._allocate_question_counts(
-                personas=personas,
-                ratios=ratios,
-                num_questions=self.job.count_requested
+
+            # Split the total requested count evenly across the requested languages,
+            # then run the existing per-(persona,type,scope) allocation per language.
+            language_counts = self._split_count_across_languages(
+                self.job.count_requested, len(self.languages)
             )
 
-            # Generate questions for each allocated persona/type/scope bucket
-            for persona, question_type, question_scope, num_questions in allocations:
-                logger.debug(
-                    f"Generating {num_questions} {question_type.value}/{question_scope.value} questions "
-                    f"for persona {persona.id}: {persona.title}"
+            for language, lang_count in zip(self.languages, language_counts):
+                if lang_count <= 0:
+                    continue
+
+                logger.info(
+                    "Generating %s questions for language '%s'",
+                    lang_count,
+                    language or "English",
                 )
 
-                prompt = self._render_prompt(
-                    persona,
-                    approved_questions,
-                    kb_text,
-                    web_text,
-                    question_type=question_type,
-                    question_scope=question_scope,
-                    num_questions=num_questions,
-                    batch_questions=batch_questions_text,
+                allocations = self._allocate_question_counts(
+                    personas=personas,
+                    ratios=ratios,
+                    num_questions=lang_count
                 )
 
-                question_list, metadata = self.llm_client.generate_structured(
-                    prompt=prompt,
-                    response_model=QuestionListOutput,
-                    temperature=0.8,
-                    max_tokens=4000,
-                    metadata={
-                        "generation_name": "question-generation",
-                        "tags": ["question-generation"],
-                    }
-                )
-
-                self.cost_tracker.add_call(metadata)
-
-                actual_count = len(question_list.questions)
-                if actual_count < num_questions:
-                    logger.warning(
-                        "LLM under-generated questions for persona %s %s/%s: "
-                        "expected %s, got %s",
-                        persona.id,
-                        question_type.value,
-                        question_scope.value,
-                        num_questions,
-                        actual_count,
+                # Generate questions for each allocated persona/type/scope bucket
+                for persona, question_type, question_scope, num_questions in allocations:
+                    logger.debug(
+                        f"Generating {num_questions} {question_type.value}/{question_scope.value} questions "
+                        f"for persona {persona.id}: {persona.title} (language: {language or 'English'})"
                     )
-                    questions_to_save = question_list.questions
-                else:
-                    questions_to_save = question_list.questions[:num_questions]
 
-                logger.debug(
-                    f"Generated {len(questions_to_save)} {question_type.value}/{question_scope.value} "
-                    f"questions for persona {persona.id}"
-                )
+                    prompt = self._render_prompt(
+                        persona,
+                        approved_questions,
+                        kb_text,
+                        web_text,
+                        question_type=question_type,
+                        question_scope=question_scope,
+                        num_questions=num_questions,
+                        language=language,
+                        batch_questions=batch_questions_text,
+                    )
 
-                self._save_questions(questions_to_save, persona.id)
-                all_questions_data.extend([q.model_dump() for q in questions_to_save])
-                batch_questions_text.extend([q.text for q in questions_to_save])
+                    question_list, metadata = self.llm_client.generate_structured(
+                        prompt=prompt,
+                        response_model=QuestionListOutput,
+                        temperature=0.8,
+                        max_tokens=4000,
+                        metadata={
+                            "generation_name": "question-generation",
+                            "tags": ["question-generation"],
+                        }
+                    )
+
+                    self.cost_tracker.add_call(metadata)
+
+                    actual_count = len(question_list.questions)
+                    if actual_count < num_questions:
+                        logger.warning(
+                            "LLM under-generated questions for persona %s %s/%s: "
+                            "expected %s, got %s",
+                            persona.id,
+                            question_type.value,
+                            question_scope.value,
+                            num_questions,
+                            actual_count,
+                        )
+                        questions_to_save = question_list.questions
+                    else:
+                        questions_to_save = question_list.questions[:num_questions]
+
+                    logger.debug(
+                        f"Generated {len(questions_to_save)} {question_type.value}/{question_scope.value} "
+                        f"questions for persona {persona.id}"
+                    )
+
+                    self._save_questions(questions_to_save, persona.id, language)
+                    all_questions_data.extend([q.model_dump() for q in questions_to_save])
+                    batch_questions_text.extend([q.text for q in questions_to_save])
 
             # Update job status
             self._update_job_status(JobStatusEnum.completed)
@@ -220,6 +244,26 @@ class QuestionGenerator:
             self._update_job_status(JobStatusEnum.failed)
             raise
 
+    @staticmethod
+    def _split_count_across_languages(total: int, num_languages: int) -> List[int]:
+        """
+        Split a total question count evenly across N languages.
+
+        Uses a largest-remainder rule: every language gets the base count, and
+        the leftover is handed out one-per-language to the earliest languages.
+
+        Args:
+            total: Total number of questions to generate across all languages
+            num_languages: Number of languages to split across (>= 1)
+
+        Returns:
+            List of per-language counts, length == num_languages, summing to total
+        """
+        if num_languages <= 1:
+            return [total]
+        base, remainder = divmod(total, num_languages)
+        return [base + (1 if i < remainder else 0) for i in range(num_languages)]
+
     def _render_prompt(
         self,
         persona: Any,
@@ -229,6 +273,7 @@ class QuestionGenerator:
         question_type: QuestionType,
         question_scope: QuestionScope,
         num_questions: int,
+        language: Optional[str] = None,
         batch_questions: Optional[List[str]] = None,
     ) -> str:
         """
@@ -242,6 +287,7 @@ class QuestionGenerator:
             question_type: Type of questions
             question_scope: Scope of questions
             num_questions: Number of questions to request for this persona/type/scope bucket
+            language: Language to generate the questions in (None = English, no directive)
             batch_questions: Questions already generated in this batch (to avoid overlap)
 
         Returns:
@@ -272,6 +318,7 @@ class QuestionGenerator:
             approved_questions=approved_questions_text if approved_questions_text else None,
             batch_questions=batch_questions if batch_questions else None,
             num_questions=num_questions,
+            language=language,
         )
 
         return prompt
@@ -332,13 +379,19 @@ class QuestionGenerator:
 
         return results
 
-    def _save_questions(self, questions: List[QuestionBase], persona_id: int) -> List[Any]:
+    def _save_questions(
+        self,
+        questions: List[QuestionBase],
+        persona_id: int,
+        language: Optional[str] = None,
+    ) -> List[Any]:
         """
         Save generated questions to database.
 
         Args:
             questions: List of QuestionBase Pydantic models
             persona_id: Persona ID
+            language: Language the questions were generated in (None = English)
 
         Returns:
             List of saved Question objects
@@ -355,6 +408,7 @@ class QuestionGenerator:
                 "type": question.type.value if hasattr(question.type, 'value') else question.type,
                 "scope": question.scope.value if hasattr(question.scope, 'value') else question.scope,
                 "input_style": self.input_style,
+                "language": language,
                 "status": "pending"
             })
 
@@ -393,7 +447,8 @@ def generate_questions_for_job(
     job_id: int,
     persona_ids: Optional[List[int]] = None,
     sample_questions: Optional[List[str]] = None,
-    input_style: Optional[str] = None
+    input_style: Optional[str] = None,
+    languages: Optional[List[str]] = None
 ) -> List[Dict[str, Any]]:
     """
     Generate questions for a job (convenience function).
@@ -404,6 +459,8 @@ def generate_questions_for_job(
         persona_ids: Optional list of persona IDs to generate for (overrides job config)
         sample_questions: Optional list of example questions
         input_style: Input style (brief, regular, detailed). Defaults to regular.
+        languages: Optional list of languages to split the question set across.
+            Defaults to English-only.
 
     Returns:
         List of generated question dictionaries
@@ -413,7 +470,8 @@ def generate_questions_for_job(
         job_id,
         persona_ids=persona_ids,
         sample_questions=sample_questions,
-        input_style=input_style
+        input_style=input_style,
+        languages=languages
     )
     return generator.generate()
 

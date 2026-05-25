@@ -527,3 +527,58 @@ class TestAnswerJudgeErrors:
         prompt = mock_llm_instance.generate_structured_async.call_args.kwargs["prompt"]
         assert "## Rubric:" in prompt
         assert sample_rubric.name in prompt
+
+
+@pytest.mark.unit
+class TestJudgeEnglishOutputDirective:
+    """Unit tests for _apply_english_output_directive() — always-English judge output."""
+
+    def test_appends_english_directive_to_prompt(self):
+        scorer = AnswerJudge.__new__(AnswerJudge)
+        result = scorer._apply_english_output_directive("PROMPT")
+        assert result.startswith("PROMPT")
+        assert "## Output Language" in result
+        assert "Write your reasoning and explanation in English" in result
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_response_level_appends_english_directive_to_prompt(
+        self, mock_llm_class, test_db, sample_qa_job, sample_judge_response_level, sample_rubric
+    ):
+        """Every response-level judge prompt ends with the English output directive."""
+        sample_qa_job.judge_id = sample_judge_response_level.id
+        test_db.commit()
+
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            RubricJudgmentResult(chosen_option=sample_rubric.best_option, explanation="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        await scorer.score()
+
+        prompt = mock_llm_instance.generate_structured_async.call_args.kwargs["prompt"]
+        assert "## Output Language" in prompt
+        assert "Write your reasoning and explanation in English" in prompt
+
+    @pytest.mark.asyncio
+    @patch('src.scoring.services.judge_scoring.LLMClient')
+    async def test_claim_level_appends_english_directive_to_prompt(
+        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+    ):
+        """Every claim-level judge prompt ends with the English output directive."""
+        mock_llm_instance = MagicMock()
+        mock_llm_instance.generate_structured_async = AsyncMock(return_value=(
+            ClaimJudgmentResult(label=True, reasoning="OK"),
+            {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
+        ))
+        mock_llm_class.return_value = mock_llm_instance
+
+        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        await scorer.score()
+
+        prompt = mock_llm_instance.generate_structured_async.call_args_list[0].kwargs["prompt"]
+        assert "## Output Language" in prompt
+        assert "Write your reasoning and explanation in English" in prompt

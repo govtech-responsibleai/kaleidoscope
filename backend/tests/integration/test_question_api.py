@@ -182,6 +182,44 @@ class TestQuestionGenerationAPI:
         assert job_response.status_code == 200
         assert job_response.json()["id"] == job_id
 
+    def test_question_generation_with_languages(
+        self, test_client, sample_target, sample_personas
+    ):
+        """A question generation job can request multiple languages."""
+        gen_response = test_client.post(
+            "/api/v1/jobs/questions",
+            json={
+                "target_id": sample_target.id,
+                "count_requested": 6,
+                "model_used": "gpt-4o-mini",
+                "persona_ids": [sample_personas[0].id],
+                "languages": ["English", "Malay", "Tamil"],
+            },
+        )
+
+        assert gen_response.status_code == 201
+        job_data = gen_response.json()
+        assert job_data["type"] == "question_generation"
+        assert job_data["status"] == "running"
+
+    def test_question_generation_insufficient_count_for_languages(
+        self, test_client, sample_target, sample_personas
+    ):
+        """Total count must cover at least one question per persona per language."""
+        response = test_client.post(
+            "/api/v1/jobs/questions",
+            json={
+                "target_id": sample_target.id,
+                "count_requested": 3,
+                "model_used": "gpt-4o-mini",
+                "persona_ids": [p.id for p in sample_personas[:2]],
+                "languages": ["English", "Malay"],
+            },
+        )
+
+        assert response.status_code == 400
+        assert "per persona per language" in response.json()["detail"].lower()
+
 
 class TestQuestionUploadAPI:
     """Integration tests for question file upload endpoint."""

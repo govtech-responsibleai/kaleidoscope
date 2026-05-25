@@ -42,6 +42,7 @@ import {
   IconUsers,
 } from "@tabler/icons-react";
 import { TableHeaderFilter, type FilterOption } from "@/components/shared";
+import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 import { useParams } from "next/navigation";
 import { targetApi, questionApi, personaApi, jobApi } from "@/lib/api";
 import { TargetResponse, QuestionResponse, PersonaResponse, JobStatus, QuestionType, QuestionScope, Status, formatQuestionScope, formatQuestionType } from "@/lib/types";
@@ -894,6 +895,15 @@ export default function QuestionsPage() {
                                             : { borderColor: "grey.300", color: "text.secondary" }),
                                         }}
                                       />
+                                      {newQ.language && (
+                                        <Chip
+                                          label={newQ.language}
+                                          size="small"
+                                          variant="outlined"
+                                          data-testid={TESTIDS.QUESTION_LANGUAGE_BADGE}
+                                          sx={{ ...compactChipSx, borderColor: "grey.300", color: "text.secondary" }}
+                                        />
+                                      )}
                                     </Box>
                                   </>
                                 )}
@@ -1095,6 +1105,7 @@ export default function QuestionsPage() {
                           allSelectedLabel="All Scopes"
                         />
                       </TableCell>
+                      <TableCell sx={{ width: 120, ...tableHeaderCellSx }}>Language</TableCell>
                       <TableCell sx={{ width: 50, py: 1.5 }} />
                     </TableRow>
                   </TableHead>
@@ -1144,6 +1155,19 @@ export default function QuestionsPage() {
                                 : { borderColor: "grey.300", color: "text.secondary" }),
                             }}
                           />
+                        </TableCell>
+                        <TableCell>
+                          {question.language ? (
+                            <Chip
+                              label={question.language}
+                              size="small"
+                              variant="outlined"
+                              data-testid={TESTIDS.QUESTION_LANGUAGE_BADGE}
+                              sx={{ ...compactChipSx, borderColor: "grey.300", color: "text.secondary" }}
+                            />
+                          ) : (
+                            <Typography variant="body2" color="text.disabled">—</Typography>
+                          )}
                         </TableCell>
                         <TableCell>
                           <IconButton

@@ -49,6 +49,8 @@ From these personas, it generates a diverse set of test inputs with controlled v
 
 ![Question generation](/img/screenshots/question-generation-1.gif)
 
+You can also select multiple **languages** — inputs are split evenly across your selection, so a single generation run can cover multiple user languages.
+
 → [Creating an Evaluation Set](../configuration/5_creating-evaluation-set.md)
 
 ## Step 4: Score with Reliable Judges

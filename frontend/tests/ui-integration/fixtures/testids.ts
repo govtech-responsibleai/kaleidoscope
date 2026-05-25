@@ -29,6 +29,10 @@ export const TESTIDS = {
 
   // GenerateEvalsModal — configure_questions step
   GENERATION_MODEL_SELECTOR: "generation-model-selector",
+  GENERATION_LANGUAGE_SELECTOR: "generation-language-selector",
+
+  // Questions page
+  QUESTION_LANGUAGE_BADGE: "question-language-badge",
 
   // Rubrics page
   RUBRIC_CUSTOM_ADD: "rubric-custom-add",

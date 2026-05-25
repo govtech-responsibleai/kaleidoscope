@@ -28,6 +28,13 @@ from src.rubric.services.system_rubrics import negative_option_for_rubric
 
 logger = logging.getLogger(__name__)
 
+ENGLISH_OUTPUT_DIRECTIVE = (
+    "\n\n## Output Language\n"
+    "Write your reasoning and explanation in English, even if the question, "
+    "answer, or knowledge base is in another language. Keep any verdict or "
+    "option label exactly as specified above.\n"
+)
+
 
 class AnswerJudge:
     """Service for scoring answers using LLM judges."""
@@ -143,6 +150,23 @@ class AnswerJudge:
             if raise_on_error:
                 raise
 
+    def _apply_english_output_directive(self, prompt: str) -> str:
+        """
+        Append a fixed "respond in English" directive to a rendered judge prompt.
+
+        Applied post-render so it covers fixed, preset, and LLM-generated custom
+        judge prompts uniformly without touching any template. The directive is
+        unconditional: even when the question, answer, or knowledge base is in
+        another language, the judge's reasoning stays in English.
+
+        Args:
+            prompt: The fully rendered judge prompt
+
+        Returns:
+            The prompt with the English-output directive appended
+        """
+        return prompt + ENGLISH_OUTPUT_DIRECTIVE
+
     def _resolved_rubric_id(self) -> int | None:
         if self.rubric is None:
             raise ValueError("Rubric is required for scoring")
@@ -224,6 +248,7 @@ class AnswerJudge:
                 kb_documents=kb_text,
                 **self.judge.params
             )
+            prompt = self._apply_english_output_directive(prompt)
 
             task = self._score_single_claim(claim, prompt)
             tasks.append((claim, task))
@@ -373,6 +398,8 @@ class AnswerJudge:
                 rubric_criteria=self.rubric.criteria,
                 rubric_options=self.rubric.options,
             )
+
+        prompt = self._apply_english_output_directive(prompt)
 
         # Call LLM
         try:

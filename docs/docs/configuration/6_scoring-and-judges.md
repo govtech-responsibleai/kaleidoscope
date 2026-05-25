@@ -33,6 +33,10 @@ For rubrics using claim-based scoring, each response is decomposed into atomic f
 
 Judges evaluate each response (or claim) and produce a verdict. For response-level rubrics, each judge picks one option. For claim-based rubrics, each checkworthy claim is scored independently and results are aggregated.
 
+:::note
+Judge reasoning is always written in English, regardless of the language the input was generated in. This keeps scores readable across multilingual evaluation sets.
+:::
+
 ### Job Status
 
 | Stage | Description |

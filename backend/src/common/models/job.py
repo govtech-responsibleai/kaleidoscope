@@ -28,6 +28,7 @@ class JobCreate(BaseModel):
     model_used: Optional[str] = Field(None, description="LLM model to use. If not specified, uses the configured default model.")
     persona_ids: Optional[List[int]] = Field(None, description="List of persona IDs (for question generation only). If not provided, generates for all approved personas.")
     input_style: Optional[str] = Field(None, description="Input style for question generation (brief, regular, detailed). Defaults to regular.")
+    languages: Optional[List[str]] = Field(None, description="Languages to split the question set across (for question generation only). Defaults to English. The count_requested total is divided evenly across these languages.")
     sample_personas: Optional[List[str]] = Field(None, description="Optional list of example persona descriptions (for persona generation only)")
     sample_questions: Optional[List[str]] = Field(None, description="Optional list of example questions (for question generation only)")
 

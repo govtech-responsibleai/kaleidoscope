@@ -72,7 +72,8 @@ def run_question_generation_background(
     job_id: int,
     persona_ids: Optional[List[int]] = None,
     sample_questions: Optional[List[str]] = None,
-    input_style: Optional[str] = None
+    input_style: Optional[str] = None,
+    languages: Optional[List[str]] = None
 ):
     """
     Background task for running question generation asynchronously.
@@ -82,6 +83,7 @@ def run_question_generation_background(
         persona_ids: Optional list of persona IDs to generate for
         sample_questions: Optional list of example questions
         input_style: Optional input_style level (casual, regular, formal)
+        languages: Optional list of languages to split the question set across
     """
     # Create a new database session for the background task
     from src.common.database.connection import SessionLocal
@@ -93,7 +95,8 @@ def run_question_generation_background(
             job_id,
             persona_ids=persona_ids,
             sample_questions=sample_questions,
-            input_style=input_style
+            input_style=input_style,
+            languages=languages
         )
         logger.info(f"Background task completed question generation for job {job_id}")
     except Exception as e:
@@ -205,6 +208,15 @@ def create_question_generation_job_for_target(
     resolved_count_requested = job_request.count_requested or settings.default_question_count
     resolved_model = _resolve_job_model(db, target, job_request.model_used)
 
+    # Normalize requested languages: strip blanks, dedupe (preserve order).
+    # Empty/omitted -> None, which the generator treats as English-only.
+    resolved_languages: Optional[List[str]] = None
+    if job_request.languages:
+        resolved_languages = list(
+            dict.fromkeys(lang.strip() for lang in job_request.languages if lang and lang.strip())
+        ) or None
+    num_languages = len(resolved_languages) if resolved_languages else 1
+
     selected_persona_ids: Optional[List[int]] = None
 
     # Validate persona IDs if provided
@@ -233,13 +245,24 @@ def create_question_generation_job_for_target(
             )
         selected_persona_count = len(approved_personas)
 
-    if resolved_count_requested < selected_persona_count:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=(
+    # Each language gets an even slice of the total, and each slice needs at least
+    # one question per persona, so the total must cover personas x languages.
+    min_required = selected_persona_count * num_languages
+    if resolved_count_requested < min_required:
+        if num_languages > 1:
+            detail = (
+                f"Question generation requires at least one question per persona per language: "
+                f"requested {resolved_count_requested} for {selected_persona_count} personas "
+                f"x {num_languages} languages (need at least {min_required})"
+            )
+        else:
+            detail = (
                 f"Question generation requires at least one question per persona: "
                 f"requested {resolved_count_requested} for {selected_persona_count} personas"
             )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail
         )
 
     # Create job
@@ -259,7 +282,8 @@ def create_question_generation_job_for_target(
         job.id,
         selected_persona_ids,
         job_request.sample_questions,
-        job_request.input_style
+        job_request.input_style,
+        resolved_languages
     )
 
     logger.info(f"Created question generation job {job.id}, running in background")

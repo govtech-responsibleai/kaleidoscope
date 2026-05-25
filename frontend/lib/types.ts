@@ -270,6 +270,7 @@ export interface QuestionResponse extends QuestionBase {
   job_id: number | null;
   persona_id: number | null;
   target_id: number;
+  language?: string | null;
   status: Status;
   created_at: string;
   updated_at: string;
@@ -308,6 +309,7 @@ export interface JobCreate {
   model_used?: string;
   persona_ids?: number[];
   input_style?: InputStyle;
+  languages?: string[];
 }
 
 export interface JobResponse {

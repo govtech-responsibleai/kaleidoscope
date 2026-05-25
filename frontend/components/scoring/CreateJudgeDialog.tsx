@@ -187,7 +187,10 @@ export default function CreateJudgeDialog({
     setError(null);
 
     try {
-      const updatedParams = { ...(params || {}), temperature: temp };
+      const updatedParams = {
+        ...(params || {}),
+        temperature: temp,
+      };
       const selectedModel = availableModels.find((m) => m.value === modelName);
       const modelLabel = selectedModel?.label || modelName;
 
