@@ -79,6 +79,7 @@ function defaultResponse(method: string, path: string): unknown {
   // Rubrics
   if (method === "GET" && pathMatches(path, "/targets/{id}/rubrics")) return [data.accuracyRubric];
   if (method === "POST" && pathMatches(path, "/targets/{id}/rubrics")) return { ...data.accuracyRubric, id: 999, name: "Completeness", group: "preset" };
+  if (method === "PUT" && pathMatches(path, "/targets/{id}/rubrics/{id}")) return data.customRubricWithPrompt;
   if (method === "GET" && pathMatches(path, "/targets/{id}/premade-rubrics")) return [data.premadeTemplate];
 
   // Snapshots

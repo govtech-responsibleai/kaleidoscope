@@ -82,6 +82,44 @@ export const accuracyRubric: TargetRubricResponse = {
   updated_at: NOW,
 };
 
+export const CUSTOM_RUBRIC_ID = 101;
+
+export const customRubricWithPrompt: TargetRubricResponse = {
+  id: CUSTOM_RUBRIC_ID,
+  target_id: TARGET_ID,
+  name: "Tone of Voice",
+  criteria: "Is the tone appropriate?",
+  options: [
+    { option: "Professional", description: "Formal and clear" },
+    { option: "Casual", description: "Informal tone" },
+  ],
+  best_option: "Professional",
+  position: 1,
+  judge_prompt: "Evaluate the tone of the response.\n\nOptions:\n- Professional\n- Casual",
+  group: "custom",
+  scoring_mode: "response_level",
+  created_at: NOW,
+  updated_at: NOW,
+};
+
+export const customRubricNoPrompt: TargetRubricResponse = {
+  id: 102,
+  target_id: TARGET_ID,
+  name: "Clarity",
+  criteria: "Is it clear?",
+  options: [
+    { option: "Clear", description: "Easy to understand" },
+    { option: "Unclear", description: "Hard to understand" },
+  ],
+  best_option: "Clear",
+  position: 2,
+  judge_prompt: null,
+  group: "custom",
+  scoring_mode: "response_level",
+  created_at: NOW,
+  updated_at: NOW,
+};
+
 export const premadeTemplate: PremadeRubricTemplate = {
   name: "Completeness",
   criteria: "Does the answer cover all aspects of the question?",

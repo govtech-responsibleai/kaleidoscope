@@ -6,6 +6,7 @@ import {
   IconCheck,
   IconCircleCheck,
   IconCircleCheckFilled,
+  IconCode,
   IconCopy,
   IconCut,
   IconDeviceFloppy,
@@ -60,6 +61,7 @@ export default function RubricsPage() {
   const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
   const [rubricToDelete, setRubricToDelete] = useState<TargetRubricResponse | null>(null);
   const [pendingSaveRubric, setPendingSaveRubric] = useState<TargetRubricResponse | null>(null);
+  const [pendingPromptSaveRubric, setPendingPromptSaveRubric] = useState<TargetRubricResponse | null>(null);
   const [premadeTemplates, setPremadeTemplates] = useState<PremadeRubricTemplate[]>([]);
   const [addingPremade, setAddingPremade] = useState<string | null>(null);
   const [rubricUsageById, setRubricUsageById] = useState<Record<number, boolean>>({});
@@ -67,6 +69,9 @@ export default function RubricsPage() {
   const [promptViewRubric, setPromptViewRubric] = useState<TargetRubricResponse | null>(null);
   const [editingRubricId, setEditingRubricId] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [editedPrompt, setEditedPrompt] = useState("");
+  const [promptSaving, setPromptSaving] = useState(false);
+  const [promptError, setPromptError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +143,13 @@ export default function RubricsPage() {
       cancelled = true;
     };
   }, [targetId]);
+
+  useEffect(() => {
+    setEditedPrompt(promptViewRubric?.judge_prompt ?? "");
+    setPromptError(null);
+  }, [promptViewRubric?.id, promptViewRubric?.judge_prompt]);
+
+  const isPromptDirty = editedPrompt !== (promptViewRubric?.judge_prompt ?? "");
 
   const isPremade = (rubric: TargetRubricResponse) => rubric.group === "preset";
   const isDraft = (rubricId: number) => rubricId < 0;
@@ -256,6 +268,23 @@ export default function RubricsPage() {
     }
   };
 
+  const savePrompt = async () => {
+    if (!promptViewRubric) return;
+    setPromptSaving(true);
+    setPromptError(null);
+    try {
+      const res = await targetRubricApi.update(targetId, promptViewRubric.id, { judge_prompt: editedPrompt });
+      setRubrics((prev) => prev.map((r) => r.id === res.data.id ? res.data : r));
+      setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+      setPromptViewRubric(null);
+      setCopied(false);
+    } catch {
+      setPromptError("Failed to save judge prompt.");
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
   const rubricHasBoundData = (rubric: TargetRubricResponse) =>
     !isDraft(rubric.id) && Boolean(rubricUsageById[rubric.id]);
 
@@ -287,6 +316,19 @@ export default function RubricsPage() {
       return;
     }
     void saveRubric(rubric);
+  };
+
+  const handlePromptSave = () => {
+    if (!promptViewRubric) return;
+    if (rubricHasRunningJobs(promptViewRubric)) {
+      setPromptError("Wait for related evaluations to finish before editing this rubric.");
+      return;
+    }
+    if (rubricHasBoundData(promptViewRubric)) {
+      setPendingPromptSaveRubric(promptViewRubric);
+      return;
+    }
+    void savePrompt();
   };
 
   const handleCancelEdit = (rubricId: number) => {
@@ -337,6 +379,10 @@ export default function RubricsPage() {
   const totalRubricCount = rubrics.length;
   const destructiveRubricDescription =
     "This deletes all data related to this rubric, including annotations, overrides, judge outputs, and derived scoring state. Create a new rubric instead if you need to preserve the existing data.";
+  const pendingDestructiveSaveRubric = pendingSaveRubric ?? pendingPromptSaveRubric;
+  const destructiveSaveInFlight = pendingSaveRubric
+    ? saving.has(pendingSaveRubric.id)
+    : promptSaving;
 
   const iconBoxSx = {
     alignItems: "center",
@@ -631,43 +677,30 @@ export default function RubricsPage() {
 
           <Divider sx={{ my: 2 }} />
 
-          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 1 }}>
-            Judge Prompt
-          </Typography>
-          {draft || !rubric.judge_prompt ? (
-            <Box sx={{ p: 1.5, bgcolor: "grey.50", borderRadius: 1, border: "1px solid", borderColor: "grey.200" }}>
-              <Typography variant="caption" color="text.disabled" fontStyle="italic">
-                Prompt generates after you save
-              </Typography>
-            </Box>
-          ) : (
-            <Box sx={{ position: "relative" }}>
-              <Box sx={{
-                maxHeight: "4.5em",
-                overflow: "hidden",
-                p: 1.5,
-                bgcolor: "grey.50",
-                borderRadius: 1,
-                border: "1px solid",
-                borderColor: "grey.200",
-                fontFamily: "monospace",
-                fontSize: 12,
-                whiteSpace: "pre-wrap",
-                lineHeight: 1.5,
-              }}>
-                {rubric.judge_prompt}
+          <Box sx={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <Typography component="label" sx={{ fontSize: "0.9rem", fontWeight: 600, mb: "2px" }}>
+              Prompt Template
+            </Typography>
+            <Box sx={{ position: "relative", borderRadius: "5px", border: "1px solid", borderColor: "divider", backgroundColor: "#fafbff", overflow: "hidden" }}>
+              <Box sx={{ px: 1.5, py: 1.5, fontFamily: "var(--font-jetbrains-mono), monospace", fontSize: "12px", lineHeight: 1.6, color: "text.secondary", whiteSpace: "pre-wrap", maxHeight: "4.8em", overflow: "hidden" }}>
+                {rubric.judge_prompt
+                  ? rubric.judge_prompt.split("\n").slice(0, 3).join("\n")
+                  : "No prompt template configured"}
               </Box>
-              <Box sx={{
-                position: "absolute", bottom: 0, left: 0, right: 0, height: "2em",
-                background: "linear-gradient(to bottom, transparent, rgba(255,255,255,0.95))",
-                borderRadius: "0 0 4px 4px",
-                pointerEvents: "none",
-              }} />
-              <Button size="small" variant="outlined" sx={{ mt: 1 }} onClick={() => setPromptViewRubric(rubric)}>
-                View judge prompt
-              </Button>
+              <Box sx={{ position: "absolute", bottom: 24, left: 0, right: 0, height: "24px", background: "linear-gradient(transparent, #fafbff)", pointerEvents: "none" }} />
+              <Box sx={{ display: "flex", justifyContent: "flex-end", px: 1, py: 0.5, borderTop: "1px solid", borderColor: "divider", backgroundColor: "#f5f6fc" }}>
+                <Button
+                  size="small"
+                  startIcon={<IconCode size={14} />}
+                  disabled={draft || !rubric.judge_prompt}
+                  onClick={() => setPromptViewRubric(rubric)}
+                  sx={{ textTransform: "none", fontSize: "0.75rem", fontWeight: 500, color: "text.secondary", "&:hover": { color: "primary.main" } }}
+                >
+                  Customize prompt
+                </Button>
+              </Box>
             </Box>
-          )}
+          </Box>
 
           {(saveError || (dirty && errors.length > 0)) && (
             <Box sx={{ mt: 1.5 }}>
@@ -711,7 +744,7 @@ export default function RubricsPage() {
           }}
         >
           <Box sx={{ flex: { md: "0 0 58%" }, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
-            <Typography variant="caption" fontWeight={700} sx={{ textTransform: "uppercase", letterSpacing: 0.8, color: "text.secondary", display: "block", mb: 2 }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2 }}>
               Active Criteria
             </Typography>
             {rubrics.length === 0 ? (
@@ -735,7 +768,7 @@ export default function RubricsPage() {
 
           <Box sx={{ display: "flex", flex: 1, flexDirection: "column", gap: 3, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
             <Box>
-              <Typography variant="caption" fontWeight={700} sx={{ textTransform: "uppercase", letterSpacing: 0.8, color: "text.secondary", display: "block", mb: 1.5 }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
                 Presets
               </Typography>
               <Box data-testid={TESTIDS.PRESET_RUBRIC_DIALOG}>
@@ -798,7 +831,7 @@ export default function RubricsPage() {
             </Box>
 
             <Box>
-              <Typography variant="caption" fontWeight={700} sx={{ textTransform: "uppercase", letterSpacing: 0.8, color: "text.secondary", display: "block", mb: 1.5 }}>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
                 Custom
               </Typography>
               <Button
@@ -826,42 +859,72 @@ export default function RubricsPage() {
         description={rubricToDelete && rubricHasBoundData(rubricToDelete) ? destructiveRubricDescription : undefined}
       />
 
-      <Dialog open={pendingSaveRubric !== null} onClose={() => setPendingSaveRubric(null)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={pendingDestructiveSaveRubric !== null}
+        onClose={() => {
+          setPendingSaveRubric(null);
+          setPendingPromptSaveRubric(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Save Rubric and Reset Related Data</DialogTitle>
         <DialogContent>
           <Alert severity="error" sx={{ mb: 2 }}>
             Saving this rubric will delete all data related to it.
           </Alert>
           <Typography variant="body1">
-            Save changes to <strong>{pendingSaveRubric?.name || "this rubric"}</strong>?
+            Save changes to <strong>{pendingDestructiveSaveRubric?.name || "this rubric"}</strong>?
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
             {destructiveRubricDescription}
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setPendingSaveRubric(null)}>Cancel</Button>
+          <Button
+            onClick={() => {
+              setPendingSaveRubric(null);
+              setPendingPromptSaveRubric(null);
+            }}
+          >
+            Cancel
+          </Button>
           <Button
             color="error"
             variant="contained"
-            disabled={!pendingSaveRubric || saving.has(pendingSaveRubric.id)}
+            disabled={!pendingDestructiveSaveRubric || destructiveSaveInFlight}
             startIcon={
-              pendingSaveRubric && saving.has(pendingSaveRubric.id)
+              destructiveSaveInFlight
                 ? <CircularProgress size={16} color="inherit" />
                 : <IconDeviceFloppy {...actionIconProps} />
             }
             onClick={async () => {
-              if (!pendingSaveRubric) return;
-              await saveRubric(pendingSaveRubric);
-              setPendingSaveRubric(null);
+              if (pendingSaveRubric) {
+                await saveRubric(pendingSaveRubric);
+                setPendingSaveRubric(null);
+                return;
+              }
+              if (pendingPromptSaveRubric) {
+                await savePrompt();
+                setPendingPromptSaveRubric(null);
+              }
             }}
           >
-            {pendingSaveRubric && saving.has(pendingSaveRubric.id) ? "Saving..." : "Save"}
+            {destructiveSaveInFlight ? "Saving..." : "Save"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog open={!!promptViewRubric} onClose={() => setPromptViewRubric(null)} maxWidth="md" fullWidth>
+      <Dialog
+        open={!!promptViewRubric}
+        onClose={() => {
+          if (isPromptDirty && !window.confirm("You have unsaved changes. Discard them?")) return;
+          setPromptViewRubric(null);
+          setCopied(false);
+        }}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle sx={{ display: "flex", alignItems: "center" }}>
           <Box sx={{ flex: 1 }}>{promptViewRubric?.name}: Judge Prompt</Box>
           <Tooltip
@@ -885,36 +948,46 @@ export default function RubricsPage() {
           </Tooltip>
         </DialogTitle>
         <DialogContent>
-          {promptViewRubric?.judge_prompt ? (
-            <Box sx={{ height: 400, "& .cm-editor": { pointerEvents: "auto" } }}>
-              <PromptEditorDynamic
-                value={promptViewRubric.judge_prompt}
-                onChange={() => {}}
-                disabled
-              />
-            </Box>
-          ) : (
-            <Alert severity="info" variant="outlined">
-              No judge prompt stored. A fallback template will be used at evaluation time.
-              Try re-saving the rubric to regenerate.
-            </Alert>
-          )}
+          {promptError && <Alert severity="error" sx={{ mb: 2 }}>{promptError}</Alert>}
+          <Box sx={{ height: 400, "& .cm-editor": { pointerEvents: "auto" } }}>
+            <PromptEditorDynamic
+              value={editedPrompt}
+              onChange={(val) => setEditedPrompt(val)}
+              disabled={promptSaving}
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
-          {promptViewRubric?.judge_prompt && (
-            <Button
-              startIcon={copied ? <IconCheck {...statusIconProps} /> : <IconCopy {...statusIconProps} />}
-              color={copied ? "success" : "primary"}
-              onClick={async () => {
-                await navigator.clipboard.writeText(promptViewRubric.judge_prompt!);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-            >
-              {copied ? "Copied!" : "Copy prompt"}
-            </Button>
-          )}
-          <Button onClick={() => { setPromptViewRubric(null); setCopied(false); }}>Close</Button>
+          <Button
+            startIcon={copied ? <IconCheck {...statusIconProps} /> : <IconCopy {...statusIconProps} />}
+            color={copied ? "success" : "primary"}
+            disabled={promptSaving}
+            onClick={async () => {
+              await navigator.clipboard.writeText(editedPrompt);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+          >
+            {copied ? "Copied!" : "Copy prompt"}
+          </Button>
+          <Box sx={{ flex: 1 }} />
+          <Button
+            disabled={promptSaving}
+            onClick={() => {
+              if (isPromptDirty && !window.confirm("You have unsaved changes. Discard them?")) return;
+              setPromptViewRubric(null);
+              setCopied(false);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            disabled={!isPromptDirty || promptSaving}
+            onClick={handlePromptSave}
+          >
+            Save
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

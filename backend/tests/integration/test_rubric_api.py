@@ -459,3 +459,20 @@ class TestRubricValidation:
 
     # Rubric job start tests removed — /rubric-qa-jobs/start endpoint was
     # removed in the single-QAJob-per-question architecture.
+
+
+class TestJudgePromptSave:
+    """Tests for saving judge_prompt directly via PUT."""
+
+    @patch("src.rubric.api.routes.rubrics.generate_judge_prompt")
+    def test_put_only_judge_prompt_does_not_call_augmenter(
+        self, mock_generate, test_client, sample_target, sample_rubric,
+    ):
+        """PUT with only judge_prompt should persist directly without regeneration."""
+        resp = test_client.put(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
+            json={"judge_prompt": "Manually set prompt"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["judge_prompt"] == "Manually set prompt"
+        mock_generate.assert_not_called()

@@ -859,6 +859,7 @@ export interface TargetRubricUpdate {
   criteria?: string;
   options?: RubricOption[];
   best_option?: string | null;
+  judge_prompt?: string;
 }
 
 export interface TargetRubricResponse {
