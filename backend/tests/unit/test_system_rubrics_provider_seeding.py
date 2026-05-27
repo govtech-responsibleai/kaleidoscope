@@ -4,7 +4,7 @@ from src.rubric.services.system_rubrics import ensure_judges, ensure_system_rubr
 
 
 class TestSystemRubricProviderSeeding:
-    def test_fixed_rubric_prefers_recommended_provider_then_falls_back(self, test_db, test_user, provider_settings):
+    def test_accuracy_preset_prefers_recommended_provider_then_falls_back(self, test_db, test_user, provider_settings):
         target = Target(name="Target", user_id=test_user.id)
         test_db.add(target)
         test_db.commit()
@@ -18,7 +18,7 @@ class TestSystemRubricProviderSeeding:
             accuracy_rubric = TargetRubricRepository.get_by_target(
                 test_db,
                 target.id,
-                group="fixed",
+                group="preset",
                 name="Accuracy",
             )[0]
 

@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   IconCheck,
-  IconChecklist,
   IconCircleCheck,
   IconCircleCheckFilled,
   IconCopy,
@@ -33,7 +32,6 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { alpha } from "@mui/material/styles";
 import { metricsApi, qaJobApi, snapshotApi, targetRubricApi } from "@/lib/api";
 import { JobStatus, PremadeRubricTemplate, RubricOption, TargetRubricResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
@@ -43,18 +41,13 @@ import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 type TablerIcon = typeof IconCircleCheck;
 
-const PRESET_ICON_CONFIG: Record<string, { Icon: TablerIcon; color: string; bg: string }> = {
-  accuracy:  { Icon: IconCircleCheck,    color: "#2e7d32", bg: "rgba(46, 125, 50, 0.1)"  },
-  empathy:   { Icon: IconHeartHandshake, color: "#c62828", bg: "rgba(198, 40, 40, 0.08)" },
-  verbosity: { Icon: IconCut,            color: "#e65100", bg: "rgba(230, 81, 0, 0.1)"   },
+const PRESET_ICONS: Record<string, TablerIcon> = {
+  empathy: IconHeartHandshake,
+  verbosity: IconCut,
 };
-const FALLBACK_ICON: { Icon: TablerIcon; color: string; bg: string } = {
-  Icon: IconChecklist, color: "#546e7a", bg: "rgba(84, 110, 122, 0.1)",
-};
-const CUSTOM_ICON: { Icon: TablerIcon; color: string; bg: string } = {
-  Icon: IconPencil, color: "#1d2766", bg: "rgba(29, 39, 102, 0.1)",
-};
-const getPresetIcon = (name: string) => PRESET_ICON_CONFIG[name.trim().toLowerCase()] ?? FALLBACK_ICON;
+
+const getPresetIcon = (name: string) =>
+  PRESET_ICONS[name.trim().toLowerCase()] ?? IconCircleCheck;
 
 export default function RubricsPage() {
   const params = useParams();
@@ -185,7 +178,7 @@ export default function RubricsPage() {
       setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
       setPremadeTemplates((prev) => prev.filter((item) => item.name !== template.name));
     } catch {
-      // silently fail — sidebar stays intact for retry
+      // Keep the sidebar intact for retry.
     } finally {
       setAddingPremade(null);
     }
@@ -345,32 +338,61 @@ export default function RubricsPage() {
   const destructiveRubricDescription =
     "This deletes all data related to this rubric, including annotations, overrides, judge outputs, and derived scoring state. Create a new rubric instead if you need to preserve the existing data.";
 
-  const iconBoxSx = (color: string, bg: string) => ({
-    width: 32, height: 32, borderRadius: 1, bgcolor: bg,
-    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-    color,
-  });
+  const iconBoxSx = {
+    alignItems: "center",
+    bgcolor: "action.hover",
+    borderRadius: 1.5,
+    color: "text.secondary",
+    display: "flex",
+    flexShrink: 0,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  } as const;
+
+  const rubricRowSx = {
+    alignItems: "center",
+    bgcolor: "background.paper",
+    border: "1px solid",
+    borderColor: "divider",
+    borderRadius: "10px",
+    display: "flex",
+    gap: 1.5,
+    mb: 1,
+    px: 1.5,
+    py: 1.25,
+    transition: "border-color 0.15s, box-shadow 0.15s, background-color 0.15s",
+    "&:hover": {
+      borderColor: "grey.300",
+      bgcolor: "rgba(29, 39, 102, 0.015)",
+    },
+  };
+
+  const presetSidebarRowSx = {
+    alignItems: "center",
+    display: "flex",
+    gap: 1.5,
+    px: 0.5,
+    py: 0.75,
+  } as const;
 
   const renderPresetRow = (rubric: TargetRubricResponse) => {
-    const { Icon, color, bg } = getPresetIcon(rubric.name);
     const hasRunning = rubricHasRunningJobs(rubric);
+    const PresetIcon = getPresetIcon(rubric.name);
     return (
       <Box
         key={rubric.id}
         sx={{
-          display: "flex", alignItems: "center", gap: 1.5,
-          px: 1.5, py: 1.25,
-          border: "1px solid", borderColor: "grey.100", borderRadius: 1.5,
-          bgcolor: "background.paper", mb: 0.75,
+          ...rubricRowSx,
         }}
       >
-        <Box sx={iconBoxSx(color, bg)}>
-          <Icon size={18} stroke={1.8} color={color} />
+        <Box sx={iconBoxSx}>
+          <PresetIcon size={18} stroke={1.8} />
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
             <Typography variant="body2" fontWeight={600}>{rubric.name}</Typography>
-            <Chip label="Preset" size="small" variant="outlined" sx={{ height: 18, fontSize: 10, borderColor: "grey.300", color: "text.secondary" }} />
+            <Chip label="Preset" size="small" variant="outlined" sx={{ height: 20, fontSize: 10, borderColor: "grey.300", color: "text.secondary" }} />
             {hasRunning && <Typography variant="caption" color="text.disabled" fontStyle="italic">running</Typography>}
           </Box>
           <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -398,22 +420,18 @@ export default function RubricsPage() {
     const draft = isDraft(rubric.id);
     const hasRunning = rubricHasRunningJobs(rubric);
     const isSaving = saving.has(rubric.id);
-    const { Icon, color, bg } = CUSTOM_ICON;
     return (
       <Box
         key={rubric.id}
         sx={{
-          display: "flex", alignItems: "center", gap: 1.5,
-          px: 1.5, py: 1.25,
-          border: "1px solid",
-          borderColor: draft ? "primary.light" : "grey.100",
+          ...rubricRowSx,
+          borderColor: draft ? "primary.light" : "divider",
           borderStyle: draft ? "dashed" : "solid",
-          borderRadius: 1.5,
-          bgcolor: "background.paper", mb: 0.75,
+          boxShadow: draft ? "0 0 0 3px rgba(72,97,182,0.08)" : "none",
         }}
       >
-        <Box sx={iconBoxSx(color, bg)}>
-          {isSaving ? <CircularProgress size={16} /> : <Icon size={18} stroke={1.8} color={color} />}
+        <Box sx={iconBoxSx}>
+          {isSaving ? <CircularProgress size={16} /> : <IconPencil size={18} stroke={1.8} />}
         </Box>
         <Box sx={{ flex: 1, minWidth: 0 }}>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
@@ -462,20 +480,22 @@ export default function RubricsPage() {
     const isSaving = saving.has(rubric.id);
     const saveError = saveErrors[rubric.id];
     const hasRunning = rubricHasRunningJobs(rubric);
-    const { Icon, color, bg } = CUSTOM_ICON;
     return (
       <Box
         key={rubric.id}
         sx={{
-          border: "1px solid", borderColor: "primary.light",
-          borderRadius: 1.5, mb: 0.75,
-          bgcolor: "background.paper", overflow: "hidden",
+          bgcolor: "background.paper",
+          border: "1px solid",
+          borderColor: "primary.light",
+          borderRadius: "10px",
+          boxShadow: "0 0 0 3px rgba(72,97,182,0.08)",
+          mb: 1,
+          overflow: "hidden",
         }}
       >
-        {/* Header row */}
-        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, px: 1.5, py: 1.25, borderBottom: "1px solid", borderColor: "grey.100" }}>
-          <Box sx={iconBoxSx(color, bg)}>
-            {isSaving ? <CircularProgress size={16} /> : <Icon size={18} stroke={1.8} color={color} />}
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, px: 1.5, py: 1.25, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Box sx={iconBoxSx}>
+            {isSaving ? <CircularProgress size={16} /> : <IconPencil size={18} stroke={1.8} />}
           </Box>
           <TextField
             value={rubric.name}
@@ -520,7 +540,6 @@ export default function RubricsPage() {
           </Tooltip>
         </Box>
 
-        {/* Edit body */}
         <Box sx={{ px: 2, py: 1.5 }}>
           <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
             Criteria
@@ -538,8 +557,8 @@ export default function RubricsPage() {
 
           <Divider sx={{ mb: 2 }} />
 
-          <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
-            <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Box sx={{ display: { xs: "none", sm: "grid" }, gridTemplateColumns: "110px 140px minmax(0, 1fr) 32px", gap: 1.5, mb: 1, alignItems: "center" }}>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
               <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
                 <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
                   <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
@@ -547,29 +566,48 @@ export default function RubricsPage() {
                 </Box>
               </Tooltip>
             </Box>
-            <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ width: 140, flexShrink: 0 }}>Label</Typography>
-            <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>Description</Typography>
-            <Box sx={{ width: 32, flexShrink: 0 }} />
+            <Typography variant="caption" fontWeight={600} color="text.secondary">Label</Typography>
+            <Typography variant="caption" fontWeight={600} color="text.secondary">Description</Typography>
+            <Box />
           </Box>
 
           {rubric.options.map((opt, i) => {
             const isPositive = rubric.best_option === opt.option && opt.option !== "";
             return (
-              <Box key={i} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
+              <Box
+                key={i}
+                sx={{
+                  alignItems: { xs: "stretch", sm: "center" },
+                  display: "grid",
+                  gap: 1.5,
+                  gridTemplateColumns: { xs: "1fr 32px", sm: "110px 140px minmax(0, 1fr) 32px" },
+                  mb: 1.5,
+                }}
+              >
                 <Box
-                  sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
+                  sx={{
+                    alignItems: "center",
+                    cursor: opt.option ? "pointer" : "default",
+                    display: "flex",
+                    gap: 1,
+                    gridColumn: { xs: "1 / 3", sm: "auto" },
+                    justifyContent: { xs: "flex-start", sm: "center" },
+                  }}
                   onClick={() => { if (opt.option) setBestOption(rubric.id, opt.option); }}
                 >
                   {isPositive
-                    ? <IconCircleCheckFilled size={24} stroke={1.8} color="#2e7d32" />
+                    ? <IconCircleCheckFilled size={24} stroke={1.8} color="var(--mui-palette-success-main)" />
                     : <IconCircleCheck size={24} stroke={1.8} color="currentColor" />
                   }
+                  <Typography variant="caption" color="text.secondary" sx={{ display: { xs: "block", sm: "none" } }}>
+                    Ideal outcome
+                  </Typography>
                 </Box>
                 <TextField
                   placeholder="Option"
                   value={opt.option}
                   size="small"
-                  sx={{ width: 140, flexShrink: 0 }}
+                  sx={{ minWidth: 0 }}
                   onChange={(e) => updateOptionField(rubric.id, i, "option", e.target.value)}
                 />
                 <TextField
@@ -580,7 +618,7 @@ export default function RubricsPage() {
                   multiline
                   onChange={(e) => updateOptionField(rubric.id, i, "description", e.target.value)}
                 />
-                <IconButton size="small" onClick={() => removeOption(rubric.id, i)}>
+                <IconButton size="small" onClick={() => removeOption(rubric.id, i)} sx={{ alignSelf: { xs: "center", sm: "center" } }}>
                   <IconTrash {...compactActionIconProps} />
                 </IconButton>
               </Box>
@@ -650,26 +688,34 @@ export default function RubricsPage() {
 
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>Rubric Library</Typography>
-      <Alert severity="info" variant="outlined" sx={{ mb: 3 }}>
-        <strong>{totalRubricCount} rubric{totalRubricCount !== 1 ? "s" : ""} defined.</strong>{" "}
-        Rubrics defined here are used by annotators and LLM judges to score responses.
-        Your score = % of times judges pick the ideal outcome.
-      </Alert>
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" fontWeight={700}>
+          Rubric Library
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
+          {totalRubricCount} rubric{totalRubricCount !== 1 ? "s" : ""} defined. Rubrics are used by annotators and LLM judges to score responses.
+        </Typography>
+      </Box>
 
       {loading ? (
         <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
           <CircularProgress size={24} />
         </Box>
       ) : (
-        <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "minmax(0, 1fr) 360px", xl: "minmax(0, 1fr) 420px" }, gap: 4, alignItems: "start" }}>
-          {/* Main panel */}
-          <Box>
+        <Box
+          sx={{
+            alignItems: "flex-start",
+            display: "flex",
+            flexDirection: { xs: "column", md: "row" },
+            gap: 4,
+          }}
+        >
+          <Box sx={{ flex: { md: "0 0 58%" }, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
             <Typography variant="caption" fontWeight={700} sx={{ textTransform: "uppercase", letterSpacing: 0.8, color: "text.secondary", display: "block", mb: 2 }}>
-              Active Criteria · {totalRubricCount}
+              Active Criteria
             </Typography>
             {rubrics.length === 0 ? (
-              <Box sx={{ border: "2px dashed", borderColor: "grey.200", borderRadius: 2, p: 4, textAlign: "center" }}>
+              <Box sx={{ border: "1px dashed", borderColor: "grey.300", borderRadius: "10px", p: 4, textAlign: "center" }}>
                 <Typography variant="body2" color="text.secondary">
                   No rubrics yet. Add a preset from the right or create a custom criterion.
                 </Typography>
@@ -681,21 +727,24 @@ export default function RubricsPage() {
             )}
           </Box>
 
-          {/* Sidebar */}
-          <Box sx={{ display: "flex", flexDirection: "column", gap: 3 }}>
-            {/* Presets section */}
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{ display: { xs: "none", md: "block" } }}
+          />
+
+          <Box sx={{ display: "flex", flex: 1, flexDirection: "column", gap: 3, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
             <Box>
               <Typography variant="caption" fontWeight={700} sx={{ textTransform: "uppercase", letterSpacing: 0.8, color: "text.secondary", display: "block", mb: 1.5 }}>
                 Presets
               </Typography>
               <Box data-testid={TESTIDS.PRESET_RUBRIC_DIALOG}>
-                {/* Already-added presets */}
                 {rubrics.filter(isPremade).map((rubric) => {
-                  const { Icon, color, bg } = getPresetIcon(rubric.name);
+                  const PresetIcon = getPresetIcon(rubric.name);
                   return (
-                    <Box key={`added-${rubric.id}`} sx={{ display: "flex", alignItems: "center", gap: 1.5, py: 0.75, opacity: 0.5 }}>
-                      <Box sx={iconBoxSx(color, bg)}>
-                        <Icon size={18} stroke={1.8} color={color} />
+                    <Box key={`added-${rubric.id}`} sx={{ ...presetSidebarRowSx, opacity: 0.5 }}>
+                      <Box sx={iconBoxSx}>
+                        <PresetIcon size={18} stroke={1.8} />
                       </Box>
                       <Typography variant="body2" fontWeight={500} sx={{ flex: 1, minWidth: 0 }} noWrap>{rubric.name}</Typography>
                       <Chip label="Added" size="small" sx={{ height: 18, fontSize: 10, bgcolor: "grey.100", color: "text.secondary" }} />
@@ -713,26 +762,25 @@ export default function RubricsPage() {
                   </Typography>
                 )}
 
-                {/* Available presets */}
                 {premadeTemplates.map((template) => {
                   const slug = template.name.trim().toLowerCase();
-                  const { Icon, color, bg } = getPresetIcon(template.name);
                   const isAdding = addingPremade === template.name;
+                  const PresetIcon = getPresetIcon(template.name);
                   return (
                     <Box
                       key={template.name}
                       data-testid={TESTIDS.PRESET_RUBRIC_CARD(slug)}
                       onClick={() => { if (!addingPremade) void addPremadeRubric(template); }}
                       sx={{
-                        display: "flex", alignItems: "center", gap: 1.5, py: 0.75,
+                        ...presetSidebarRowSx,
                         cursor: addingPremade ? "default" : "pointer",
-                        borderRadius: 1, px: 0.5,
-                        "&:hover": addingPremade ? {} : { bgcolor: alpha("#1d2766", 0.04) },
+                        borderRadius: 1,
+                        "&:hover": addingPremade ? {} : { bgcolor: "rgba(29, 39, 102, 0.04)" },
                         opacity: addingPremade && !isAdding ? 0.5 : 1,
                       }}
                     >
-                      <Box sx={iconBoxSx(color, bg)}>
-                        {isAdding ? <CircularProgress size={16} /> : <Icon size={18} stroke={1.8} color={color} />}
+                      <Box sx={iconBoxSx}>
+                        {isAdding ? <CircularProgress size={16} /> : <PresetIcon size={18} stroke={1.8} />}
                       </Box>
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography variant="body2" fontWeight={600} noWrap>{template.name}</Typography>
@@ -749,7 +797,6 @@ export default function RubricsPage() {
               </Box>
             </Box>
 
-            {/* Custom section */}
             <Box>
               <Typography variant="caption" fontWeight={700} sx={{ textTransform: "uppercase", letterSpacing: 0.8, color: "text.secondary", display: "block", mb: 1.5 }}>
                 Custom
@@ -816,7 +863,7 @@ export default function RubricsPage() {
 
       <Dialog open={!!promptViewRubric} onClose={() => setPromptViewRubric(null)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center" }}>
-          <Box sx={{ flex: 1 }}>{promptViewRubric?.name} — Judge Prompt</Box>
+          <Box sx={{ flex: 1 }}>{promptViewRubric?.name}: Judge Prompt</Box>
           <Tooltip
             title={promptViewRubric?.scoring_mode === "claim_based"
               ? "Claim-level: evaluates individual claims extracted from the answer separately."

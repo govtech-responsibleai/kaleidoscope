@@ -13,7 +13,7 @@ from src.common.services.export_service import ExportService, ExportFormat
 
 def _accuracy_rubric_id(test_db, target_id: int) -> int:
     return TargetRubricRepository.get_by_target(
-        test_db, target_id, group="fixed", name="Accuracy"
+        test_db, target_id, group="preset", name="Accuracy"
     )[0].id
 
 

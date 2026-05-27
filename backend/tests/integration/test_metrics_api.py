@@ -11,7 +11,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_by
 
 def _accuracy_rubric(test_db, target_id: int):
     return TargetRubricRepository.get_by_target(
-        test_db, target_id, group="fixed", name="Accuracy"
+        test_db, target_id, group="preset", name="Accuracy"
     )[0]
 
 class TestMetricsAPI:
@@ -279,7 +279,7 @@ class TestMetricsAPI:
         assert export_data[0]["answer_id"] == row["answer_id"]
         assert export_data[0]["persona_id"] == row["persona_id"]
 
-    def test_snapshot_metrics_return_rubric_oriented_series_for_fixed_and_custom_rubrics(
+    def test_snapshot_metrics_return_rubric_oriented_series_for_preset_and_custom_rubrics(
         self,
         test_client,
         test_db,

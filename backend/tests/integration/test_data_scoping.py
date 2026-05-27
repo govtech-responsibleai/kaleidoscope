@@ -139,7 +139,7 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
             {"option": "Inaccurate", "description": "Incorrect"},
         ],
         best_option="Accurate",
-        group="fixed",
+        group="preset",
         scoring_mode="claim_based",
         position=0,
     )
@@ -152,7 +152,7 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
             {"option": "Inaccurate", "description": "Incorrect"},
         ],
         best_option="Accurate",
-        group="fixed",
+        group="preset",
         scoring_mode="claim_based",
         position=0,
     )

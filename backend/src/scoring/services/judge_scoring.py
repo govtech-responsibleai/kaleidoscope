@@ -154,7 +154,7 @@ class AnswerJudge:
         """
         Append a fixed "respond in English" directive to a rendered judge prompt.
 
-        Applied post-render so it covers fixed, preset, and LLM-generated custom
+        Applied post-render so it covers preset, and LLM-generated custom
         judge prompts uniformly without touching any template. The directive is
         unconditional: even when the question, answer, or knowledge base is in
         another language, the judge's reasoning stays in English.

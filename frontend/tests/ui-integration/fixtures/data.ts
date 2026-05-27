@@ -76,8 +76,8 @@ export const accuracyRubric: TargetRubricResponse = {
   best_option: "correct",
   position: 0,
   judge_prompt: null,
-  group: "fixed",
-  scoring_mode: "response_level",
+  group: "preset",
+  scoring_mode: "claim_based",
   created_at: NOW,
   updated_at: NOW,
 };
@@ -234,7 +234,7 @@ export const scoringResultsResponse: ScoringResultsResponse = {
   created_at: NOW,
   rubric_id: RUBRIC_ID,
   rubric_name: "Accuracy",
-  group: "fixed",
+  group: "preset",
   aggregated_score: 0.8,
   total_answers: 5,
   accurate_count: 4,
@@ -284,7 +284,7 @@ export const snapshotMetricsResponse: SnapshotMetricsResponse = {
     {
       rubric_id: RUBRIC_ID,
       rubric_name: "Accuracy",
-      group: "fixed",
+      group: "preset",
       snapshots: [
         {
           snapshot_id: SNAPSHOT_ID,

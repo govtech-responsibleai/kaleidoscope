@@ -609,8 +609,9 @@ export default function QAList({
         {/* Rubric tabs — shared across both panels */}
         <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap alignItems="center" sx={{ px: 2, py: 1, borderBottom: 1, borderColor: criteriaOpen ? "transparent" : "divider", transition: "border-color 0.3s" }}>
           {orderedRubrics.map((rubric, index) => {
-            const accent = groupColors[rubric.group].border;
-            const hoverBg = groupColors[rubric.group].bg;
+            const color = groupColors[rubric.group as keyof typeof groupColors] ?? groupColors.preset;
+            const accent = color.border;
+            const hoverBg = color.bg;
             return (
               <Chip
                 key={rubric.id}

@@ -23,7 +23,7 @@ class TestRubric:
     @staticmethod
     def _accuracy_rubric(test_db, target_id: int):
         return TargetRubricRepository.get_by_target(
-            test_db, target_id, group="fixed", name="Accuracy"
+            test_db, target_id, group="preset", name="Accuracy"
         )[0]
 
     def test_create_rubric(self, test_client, sample_target):
@@ -78,7 +78,7 @@ class TestRubric:
         names = {r["name"] for r in rubrics}
         assert names == {"Tone of Voice", "Response Relevance"}
 
-    def test_list_rubrics_does_not_create_fixed_accuracy_for_bare_target(self, test_client, test_db, sample_target):
+    def test_list_rubrics_does_not_bootstrap_accuracy_for_bare_target(self, test_client, test_db, sample_target):
         before_count = test_db.query(TargetRubric).filter_by(target_id=sample_target.id).count()
         assert before_count == 0
 
@@ -89,28 +89,28 @@ class TestRubric:
         after_count = test_db.query(TargetRubric).filter_by(target_id=sample_target.id).count()
         assert after_count == 0
 
-    def test_fixed_accuracy_cannot_be_updated(self, test_client, test_db, sample_target):
+    def test_accuracy_rubric_cannot_be_updated(self, test_client, test_db, sample_target):
         ensure_system_rubrics(test_db, sample_target.id)
-        fixed = self._accuracy_rubric(test_db, sample_target.id)
+        accuracy = self._accuracy_rubric(test_db, sample_target.id)
         rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
-        listed_fixed = next(r for r in rubrics if r["id"] == fixed.id)
+        listed = next(r for r in rubrics if r["id"] == accuracy.id)
 
         resp = test_client.put(
-            f"/api/v1/targets/{sample_target.id}/rubrics/{listed_fixed['id']}",
+            f"/api/v1/targets/{sample_target.id}/rubrics/{listed['id']}",
             json={"name": "Changed Accuracy"},
         )
         assert resp.status_code == 400
 
-    def test_fixed_accuracy_cannot_be_deleted(self, test_client, test_db, sample_target):
+    def test_accuracy_rubric_can_be_deleted(self, test_client, test_db, sample_target):
         ensure_system_rubrics(test_db, sample_target.id)
-        fixed = self._accuracy_rubric(test_db, sample_target.id)
+        accuracy = self._accuracy_rubric(test_db, sample_target.id)
         rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
-        listed_fixed = next(r for r in rubrics if r["id"] == fixed.id)
+        listed = next(r for r in rubrics if r["id"] == accuracy.id)
 
         resp = test_client.delete(
-            f"/api/v1/targets/{sample_target.id}/rubrics/{listed_fixed['id']}",
+            f"/api/v1/targets/{sample_target.id}/rubrics/{listed['id']}",
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 204
 
     def test_preset_rubric_cannot_be_updated(self, test_client, test_db, sample_target):
         """Preset (Empathy) rubric update -> 400."""
@@ -254,7 +254,7 @@ class TestRubric:
         assert custom_rubric_prompt_path(sample_rubric.id).read_text(encoding="utf-8") == updated_prompt
 
     def test_delete_rubric(self, test_client, sample_target, sample_rubric):
-        """DELETE removes the custom rubric but preserves backend-owned fixed/preset rubrics."""
+        """DELETE removes the custom rubric but preserves backend-owned preset rubrics."""
         resp = test_client.delete(
             f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
         )

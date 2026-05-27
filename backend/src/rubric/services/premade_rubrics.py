@@ -16,6 +16,19 @@ from typing import Optional
 
 
 PREMADE_RUBRIC_TEMPLATES: dict[str, dict] = {
+    "accuracy": {
+        "name": "Accuracy",
+        "criteria": "Are the claims in the response supported by the provided context, or do they contain hallucinations?",
+        "options": [
+            {"option": "Accurate", "description": "All claims are supported by the provided context."},
+            {"option": "Inaccurate", "description": "One or more claims are unsupported or hallucinated."},
+        ],
+        "best_option": "Accurate",
+        "judge_prompt_path": "accuracy_judge.md",
+        "scoring_mode": "claim_based",
+        "recommended_model_provider": "gemini",
+        "recommended_model_name": "gemini/gemini-3.1-flash-lite-preview",
+    },
     "empathy": {
         "name": "Empathy",
         "criteria": "Does the response demonstrate empathy and emotional awareness appropriate to the user's situation?",

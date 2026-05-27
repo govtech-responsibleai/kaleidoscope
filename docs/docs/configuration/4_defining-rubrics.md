@@ -29,20 +29,12 @@ Every rubric has:
 Claim-based scoring gives finer-grained results but costs more tokens (one judge call per claim).
 
 :::note
-Currently, scoring mode is not configurable in the UI. The built-in Accuracy rubric uses claim-based scoring. All other rubrics (preset and custom) use response-level scoring by default.
+Currently, scoring mode is not configurable in the UI. The Accuracy preset uses claim-based scoring; all other rubrics use response-level scoring by default.
 :::
 
 ## Rubric Types
 
-Kaleidoscope organises rubrics into three groups:
-
-### Fixed Rubrics
-
-Always present on every target. Fixed rubrics cannot be deleted or edited on the frontend.
-
-| Rubric | Criteria | Scoring Mode |
-|--------|----------|--------------|
-| **Accuracy** | Are the claims in the response supported by the provided context, or do they contain hallucinations? | Claim-based |
+Kaleidoscope organises rubrics into two groups:
 
 ### Preset Rubrics
 
@@ -50,6 +42,7 @@ Built-in templates you can optionally add to a target. These presets come with s
 
 | Rubric | Criteria | Scoring Mode |
 |--------|----------|--------------|
+| **Accuracy** | Are the claims in the response supported by the provided context, or do they contain hallucinations? | Claim-based |
 | **Empathy** | Does the response demonstrate empathy and emotional awareness appropriate to the user's situation? | Response-level |
 | **Verbosity** | Is the response appropriately concise, or does it include unnecessary repetition, filler, or excessive detail? | Response-level |
 

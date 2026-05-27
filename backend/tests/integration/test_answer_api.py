@@ -19,7 +19,7 @@ def _accuracy_override_path(test_db, sample_answer) -> str:
     accuracy_rubric = TargetRubricRepository.get_by_target(
         test_db,
         sample_answer.snapshot.target_id,
-        group="fixed",
+        group="preset",
         name="Accuracy",
     )[0]
     return f"/api/v1/answers/{sample_answer.id}/label-overrides/{accuracy_rubric.id}"

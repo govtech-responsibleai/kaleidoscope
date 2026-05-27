@@ -459,10 +459,10 @@ export default function ConnectorConfigFields({
         sx={{
           flex: "0 0 35%",
           "& .MuiOutlinedInput-notchedOutline": {
-            borderColor: alpha(groupColors.fixed.border, 0.32),
+            borderColor: alpha("#5C6BC0", 0.32),
           },
           "&:hover .MuiOutlinedInput-notchedOutline": {
-            borderColor: alpha(groupColors.fixed.border, 0.48),
+            borderColor: alpha("#5C6BC0", 0.48),
           },
         }}
       >
@@ -493,10 +493,10 @@ export default function ConnectorConfigFields({
         sx={{
           flex: "1 1 65%",
           "& .MuiOutlinedInput-notchedOutline": {
-            borderColor: alpha(groupColors.fixed.border, 0.32),
+            borderColor: alpha("#5C6BC0", 0.32),
           },
           "&:hover .MuiOutlinedInput-notchedOutline": {
-            borderColor: alpha(groupColors.fixed.border, 0.48),
+            borderColor: alpha("#5C6BC0", 0.48),
           },
         }}
       />
@@ -607,8 +607,8 @@ export default function ConnectorConfigFields({
                 disabled={disabled || showManagedAuthEditor}
                 variant="outlined"
                 sx={{
-                  borderColor: alpha(groupColors.fixed.border, 0.48),
-                  color: groupColors.fixed.border,
+                  borderColor: alpha("#5C6BC0", 0.48),
+                  color: "#5C6BC0",
                 }}
               >
                 Add Auth
@@ -641,8 +641,8 @@ export default function ConnectorConfigFields({
               disabled={disabled || showManagedAuthEditor}
               variant="outlined"
               sx={{
-                borderColor: alpha(groupColors.fixed.border, 0.48),
-                color: groupColors.fixed.border,
+                borderColor: alpha("#5C6BC0", 0.48),
+                color: "#5C6BC0",
               }}
             >
               Add Auth

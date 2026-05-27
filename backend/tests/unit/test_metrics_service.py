@@ -29,7 +29,7 @@ class TestMetricsService:
     @staticmethod
     def _accuracy_rubric_id(test_db, target_id: int) -> int:
         return TargetRubricRepository.get_by_target(
-            test_db, target_id, group="fixed", name="Accuracy"
+            test_db, target_id, group="preset", name="Accuracy"
         )[0].id
 
     def test_calculate_judge_alignment(
@@ -207,7 +207,7 @@ class TestMetricsService:
         sample_snapshot,
         sample_judge_claim_based,
     ):
-        """Metrics service should read the existing fixed rubric instead of calling the invariant repair helper."""
+        """Metrics service should read the existing preset rubric instead of calling the invariant repair helper."""
         service = MetricsService(test_db)
 
         with patch(

@@ -304,11 +304,9 @@ export default function AnnotationForm({
                   pl: 1.5,
                   borderLeft: activeRubricId === rubric.id ? "3px solid" : "3px solid transparent",
                   borderColor: activeRubricId === rubric.id
-                    ? rubric.group === "fixed"
-                      ? groupColors.fixed.border
-                      : rubric.group === "preset"
-                        ? groupColors.preset.border
-                        : groupColors.custom.border
+                    ? rubric.group === "preset"
+                      ? groupColors.preset.border
+                      : groupColors.custom.border
                     : "transparent",
                   transition: "border-color 0.2s",
                 }}
