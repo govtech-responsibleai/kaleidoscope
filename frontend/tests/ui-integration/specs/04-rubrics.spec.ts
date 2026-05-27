@@ -14,16 +14,13 @@ test.describe("Rubrics page", () => {
     await expect(page.getByPlaceholder("Untitled rubric")).toBeVisible();
   });
 
-  test("clicking preset add opens dialog; selecting a card adds a preset row", async ({ authedPage: page }) => {
+  test("clicking preset card in sidebar adds a preset row to the main list", async ({ authedPage: page }) => {
     await page.goto(targetUrl("/rubrics"));
     await page.waitForLoadState("networkidle");
 
-    await page.locator(`[data-testid="${TESTIDS.RUBRIC_PRESET_ADD}"]`).click();
-    await expect(page.locator(`[data-testid="${TESTIDS.PRESET_RUBRIC_DIALOG}"]`)).toBeVisible();
-
+    // Sidebar preset list is always visible — click card directly
     await page.locator(`[data-testid="${TESTIDS.PRESET_RUBRIC_CARD("completeness")}"]`).click();
 
-    await expect(page.locator(`[data-testid="${TESTIDS.PRESET_RUBRIC_DIALOG}"]`)).not.toBeVisible();
     await expect(page.getByText("Completeness").first()).toBeVisible();
   });
 });

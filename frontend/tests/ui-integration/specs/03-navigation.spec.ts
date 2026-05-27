@@ -14,13 +14,13 @@ test.describe("Target navigation", () => {
     await expect(page.getByText("Targets", { exact: true })).toBeVisible();
   });
 
-  test("rubrics page shows fixed accuracy rubric", async ({ authedPage: page }) => {
+  test("rubrics page shows accuracy rubric under preset", async ({ authedPage: page }) => {
     await page.goto(targetUrl("/rubrics"));
     await page.waitForLoadState("networkidle");
-    // Fixed group heading
-    await expect(page.getByText("Fixed")).toBeVisible();
-    // Accuracy rubric row
-    await expect(page.getByText("Accuracy")).toBeVisible();
+    // "Preset" chip appears on preset rows (use .first() since multiple rows may have the badge)
+    await expect(page.getByText("Preset").first()).toBeVisible();
+    // Accuracy rubric row (appears in both main list and sidebar; use first())
+    await expect(page.getByText("Accuracy").first()).toBeVisible();
   });
 
   test("annotations page shows snapshot and QA list", async ({ authedPage: page }) => {

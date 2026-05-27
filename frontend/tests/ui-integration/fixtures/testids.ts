@@ -36,7 +36,6 @@ export const TESTIDS = {
 
   // Rubrics page
   RUBRIC_CUSTOM_ADD: "rubric-custom-add",
-  RUBRIC_PRESET_ADD: "rubric-preset-add",
   PRESET_RUBRIC_DIALOG: "preset-rubric-dialog",
   PRESET_RUBRIC_CARD: (slug: string) => `preset-rubric-card-${slug}`,
 } as const;

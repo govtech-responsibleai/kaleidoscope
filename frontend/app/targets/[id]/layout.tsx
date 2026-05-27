@@ -6,6 +6,7 @@ import {
   Typography,
   CircularProgress,
 } from "@mui/material";
+import Link from "next/link";
 import { useParams } from "next/navigation";
 import { targetApi } from "@/lib/api";
 import { TargetResponse, TargetStats } from "@/lib/types";
@@ -63,9 +64,9 @@ export default function TargetLayout({ children }: TargetLayoutProps) {
     <Box>
       <Box sx={{ mb: 3 }}>
         <Typography variant="subtitle2" fontWeight={400}>
-          <Box component="span" sx={{ color: "text.secondary" }}>Targets</Box>
+          <Box component={Link} href="/targets" sx={{ color: "text.secondary", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>Targets</Box>
           <Box component="span" sx={{ color: "text.secondary", mx: 2 }}>/</Box>
-          {target.name}
+          <Box component={Link} href={`/targets/${targetId}`} sx={{ color: "text.primary", textDecoration: "none", "&:hover": { textDecoration: "underline" } }}>{target.name}</Box>
         </Typography>
       </Box>
 
