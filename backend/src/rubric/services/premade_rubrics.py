@@ -27,7 +27,7 @@ PREMADE_RUBRIC_TEMPLATES: dict[str, dict] = {
         "judge_prompt_path": "accuracy_judge.md",
         "scoring_mode": "claim_based",
         "recommended_model_provider": "gemini",
-        "recommended_model_name": "gemini/gemini-3.1-flash-lite-preview",
+        "recommended_model_name": "gemini/gemini-3.1-flash-lite",
     },
     "empathy": {
         "name": "Empathy",
@@ -51,7 +51,7 @@ PREMADE_RUBRIC_TEMPLATES: dict[str, dict] = {
         "best_option": "Concise",
         "judge_prompt_path": "verbosity_rubric_judge.md",
         "recommended_model_provider": "gemini",
-        "recommended_model_name": "gemini/gemini-3.1-flash-lite-preview",
+        "recommended_model_name": "gemini/gemini-3.1-flash-lite",
     },
 }
 

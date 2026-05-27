@@ -23,7 +23,7 @@ class TestProviderService:
         gemini = next(provider for provider in response.providers if provider.key == "gemini")
         assert gemini.source == "personal_override"
         assert gemini.is_valid is True
-        assert any(model.value == "gemini/gemini-3.1-flash-lite-preview" for model in response.valid_models)
+        assert any(model.value == "gemini/gemini-3.1-flash-lite" for model in response.valid_models)
 
     def test_build_provider_setup_response_includes_openrouter_description(self, test_db, test_user, provider_settings):
         with provider_settings():

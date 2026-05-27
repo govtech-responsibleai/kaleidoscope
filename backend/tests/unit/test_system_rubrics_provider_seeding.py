@@ -32,5 +32,5 @@ class TestSystemRubricProviderSeeding:
 
         assert len(judges) == 2
         assert judges[0].name == "Judge 1 (Recommended)"
-        assert judges[0].model_name == "gemini/gemini-3.1-flash-lite-preview"
+        assert judges[0].model_name == "gemini/gemini-3.1-flash-lite"
         assert judges[1].model_name == "openai/gpt-5.4-nano"

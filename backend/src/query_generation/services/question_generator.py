@@ -488,7 +488,7 @@ def get_question_embedding(
 
     Args:
         text: Question text to embed
-        model: Embedding model to use (default: Gemini text-embedding-004)
+        model: Embedding model to use (default: Gemini gemini-embedding-001)
 
     Returns:
         Embedding vector as a list of floats
@@ -549,7 +549,7 @@ def find_similar_questions_batch(
         query_texts: List of (question_id, text) tuples for queries
         candidate_texts: List of (question_id, text) tuples to compare against
         threshold: Minimum similarity threshold (0-1)
-        model: Embedding model to use (default: Gemini text-embedding-004)
+        model: Embedding model to use (default: Gemini gemini-embedding-001)
 
     Returns:
         Dictionary mapping query_question_id to list of (candidate_id, similarity_score) tuples,
@@ -643,7 +643,7 @@ def find_similar_questions(
         query_text: The query question text
         candidate_texts: List of (question_id, text) tuples to compare against
         threshold: Minimum similarity threshold (0-1)
-        model: Embedding model to use (default: Gemini text-embedding-004)
+        model: Embedding model to use (default: Gemini gemini-embedding-001)
 
     Returns:
         List of (question_id, similarity_score) tuples, sorted by score descending

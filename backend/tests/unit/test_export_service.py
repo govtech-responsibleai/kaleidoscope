@@ -151,7 +151,7 @@ class TestExportService:
             target_id=sample_target.id,
             rubric_id=sample_rubric.id,
             name="Tone Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Tone prompt",
             params={"temperature": 0.0},
             is_baseline=False,

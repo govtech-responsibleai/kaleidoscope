@@ -290,7 +290,7 @@ class TestTargetAPI:
                 target_id=target_id,
                 rubric_id=empathy_rubric.id,
                 name="Empathy Baseline",
-                model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+                model_name="gemini/gemini-3.1-flash-lite",
                 prompt_template="Score empathy",
                 params={},
                 is_baseline=True,

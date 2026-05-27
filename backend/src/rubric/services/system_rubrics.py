@@ -39,7 +39,7 @@ DEFAULT_PRESET_KEYS = ["accuracy"]
 
 
 AVAILABLE_MODELS = [
-    {"value": "litellm_proxy/gemini-3.1-flash-lite-preview-global", "label": "Gemini 3.1 Flash Lite"},
+    {"value": "gemini/gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
     {"value": "litellm_proxy/gemini-3-flash-preview", "label": "Gemini 3.1 Flash"},
     {"value": "litellm_proxy/gemini-3.1-pro-preview-global", "label": "Gemini 3.1 Pro"},
     {"value": "azure/gpt-5-nano-2025-08-07", "label": "GPT-5 nano"},
@@ -61,21 +61,21 @@ def _require_model(value: str) -> str:
 
 
 EMPATHY_MODELS = [
-    "litellm_proxy/gemini-3-flash-preview",
+    "gemini/gemini-3-flash-preview",
     "azure/gpt-5-mini-2025-08-07",
-    "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+    "gemini/gemini-3.1-flash-lite",
 ]
 
 VERBOSITY_MODELS = [
-    "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+    "gemini/gemini-3.1-flash-lite",
     "azure/gpt-5-mini-2025-08-07",
-    "litellm_proxy/gemini-3-flash-preview",
+    "gemini/gemini-3-flash-preview",
 ]
 
 DEFAULT_RUBRIC_MODELS = [
-    "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+    "gemini/gemini-3.1-flash-lite",
     "azure/gpt-5-mini-2025-08-07",
-    "litellm_proxy/gemini-3-flash-preview",
+    "gemini/gemini-3-flash-preview",
 ]
 
 JUDGE_NAMES = ["Judge 1 (Recommended)", "Judge 2", "Judge 3"]
