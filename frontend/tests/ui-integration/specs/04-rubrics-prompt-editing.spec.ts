@@ -1,6 +1,6 @@
 import { test as base, type Page, expect } from "@playwright/test";
 import { setupApiMocks } from "../fixtures/api-mocks";
-import { TARGET_ID, completedQAJob, customRubricWithPrompt, snapshotMetricsResponse } from "../fixtures/data";
+import { TARGET_ID, customRubricWithPrompt, snapshotMetricsResponse } from "../fixtures/data";
 
 const targetUrl = (path = "") => `/targets/${TARGET_ID}${path}`;
 
@@ -20,8 +20,8 @@ const test = base.extend<{ authedPage: Page }>({
   },
 });
 
-test.describe("Rubrics prompt editing", () => {
-  test("edit text and save persists new prompt", async ({ page }) => {
+test.describe("Rubrics prompt editing (buffered field)", () => {
+  test("edit prompt → Done → dirty dot visible → row Save persists", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("token", "fake-token-12345");
       localStorage.setItem("username", "testuser");
@@ -36,30 +36,61 @@ test.describe("Rubrics prompt editing", () => {
       },
     });
 
+    const metricsLoaded = page.waitForResponse((response) => (
+      response.url().includes(`/targets/${TARGET_ID}/snapshot-metrics`) && response.status() === 200
+    ));
+    await page.goto(targetUrl("/rubrics"));
+    await metricsLoaded;
+    await page.waitForLoadState("networkidle");
+
+    await page.getByRole("button", { name: "Edit" }).first().click();
+    await page.getByText("Customize prompt").click();
+
+    // Edit prompt in the editor
+    const editor = page.locator(".cm-editor .cm-content");
+    await editor.fill("Modified prompt text");
+
+    // Click Done — should buffer and close dialog
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page.locator("[role=dialog]")).not.toBeVisible();
+
+    // Row Save should be enabled (prompt change made it dirty)
+    const rowSave = page.getByRole("button", { name: "Save" });
+    await expect(rowSave).toBeEnabled();
+    const updateRequest = page.waitForRequest((request) => (
+      request.method() === "PUT"
+      && request.url().includes(`/targets/${TARGET_ID}/rubrics/${customRubricWithPrompt.id}`)
+      && request.postDataJSON().judge_prompt === "Modified prompt text"
+    ));
+    await rowSave.click();
+    await updateRequest;
+
+    // After save, row should collapse (editing ends)
+    await expect(rowSave).not.toBeVisible();
+  });
+
+  test("edit prompt → Done → row Cancel reverts prompt", async ({ authedPage: page }) => {
     await page.goto(targetUrl("/rubrics"));
     await page.waitForLoadState("networkidle");
 
     await page.getByRole("button", { name: "Edit" }).first().click();
-
     await page.getByText("Customize prompt").click();
-    await expect(page.getByText("Tone of Voice: Judge Prompt")).toBeVisible();
 
-    const editor = page.locator(".cm-editor");
-    await expect(editor).toBeVisible();
+    const editor = page.locator(".cm-editor .cm-content");
+    await editor.fill("Some edits");
 
-    await editor.locator(".cm-content").fill("Modified prompt text");
+    await page.getByRole("button", { name: "Done" }).click();
+    await expect(page.getByText("Modified")).toBeVisible();
 
-    const saveBtn = page.locator("[role=dialog]").getByRole("button", { name: "Save" });
-    await expect(saveBtn).toBeEnabled();
-    await saveBtn.click();
+    // Cancel the rubric row edit
+    await page.getByRole("button", { name: "Cancel" }).first().click();
 
-    await expect(page.getByText("Tone of Voice: Judge Prompt")).not.toBeVisible();
-
-    await page.getByText("Customize prompt").click();
-    await expect(page.locator(".cm-editor")).toContainText("Modified prompt text");
+    // Re-expand — prompt should be reverted (no Modified badge)
+    await page.getByRole("button", { name: "Edit" }).first().click();
+    await expect(page.getByText("Modified")).not.toBeVisible();
   });
 
-  test("saving prompt for a used rubric shows reset-data warning", async ({ page }) => {
+  test("used rubric → edit prompt → row Save shows reset-data warning", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("token", "fake-token-12345");
       localStorage.setItem("username", "testuser");
@@ -106,92 +137,11 @@ test.describe("Rubrics prompt editing", () => {
     await page.getByRole("button", { name: "Edit" }).first().click();
     await page.getByText("Customize prompt").click();
 
-    const editor = page.locator(".cm-editor .cm-content");
-    await editor.fill("Modified prompt text");
-
-    await page.locator("[role=dialog]").getByRole("button", { name: "Save" }).click();
-
-    await expect(page.getByText("Save Rubric and Reset Related Data")).toBeVisible();
-    await expect(page.getByText("Saving this rubric will delete all data related to it.")).toBeVisible();
-  });
-
-  test("saving prompt for a rubric with running jobs shows wait error", async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem("token", "fake-token-12345");
-      localStorage.setItem("username", "testuser");
-      localStorage.setItem("is_admin", "false");
-    });
-    await setupApiMocks(page, {
-      [`GET /targets/${TARGET_ID}/rubrics`]: {
-        body: [customRubricWithPrompt],
-      },
-      "GET /snapshots/{id}/qa-jobs": {
-        body: [
-          {
-            ...completedQAJob,
-            status: "running",
-            rubric_specs: [{ rubric_id: customRubricWithPrompt.id, judge_id: completedQAJob.judge_id }],
-          },
-        ],
-      },
-    });
-
-    await page.goto(targetUrl("/rubrics"));
-    await page.waitForLoadState("networkidle");
-
-    await page.getByRole("button", { name: "Edit" }).first().click();
-    await page.getByText("Customize prompt").click();
-
     await page.locator(".cm-editor .cm-content").fill("Modified prompt text");
-    await page.locator("[role=dialog]").getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Done" }).click();
 
-    await expect(page.getByText("Wait for related evaluations to finish before editing this rubric.")).toBeVisible();
-  });
-
-  test("copy prompt uses unsaved editor content", async ({ authedPage: page }) => {
-    await page.addInitScript(() => {
-      Object.defineProperty(navigator, "clipboard", {
-        value: {
-          writeText: async (text: string) => {
-            (window as unknown as { copiedPromptText: string }).copiedPromptText = text;
-          },
-        },
-      });
-    });
-
-    await page.goto(targetUrl("/rubrics"));
-    await page.waitForLoadState("networkidle");
-
-    await page.getByRole("button", { name: "Edit" }).first().click();
-    await page.getByText("Customize prompt").click();
-
-    await page.locator(".cm-editor .cm-content").fill("Unsaved prompt text");
-    await page.locator("[role=dialog]").getByRole("button", { name: "Copy prompt" }).click();
-
-    await expect.poll(() => page.evaluate(() => (
-      window as unknown as { copiedPromptText?: string }
-    ).copiedPromptText)).toBe("Unsaved prompt text");
-  });
-
-  test("cancel with dirty changes shows confirm dialog", async ({ authedPage: page }) => {
-    await page.goto(targetUrl("/rubrics"));
-    await page.waitForLoadState("networkidle");
-
-    await page.getByRole("button", { name: "Edit" }).first().click();
-    await page.getByText("Customize prompt").click();
-
-    const editor = page.locator(".cm-editor .cm-content");
-    await editor.fill("Some edits");
-
-    let dialogFired = false;
-    page.on("dialog", (dialog) => {
-      dialogFired = true;
-      dialog.dismiss();
-    });
-
-    await page.locator("[role=dialog]").getByRole("button", { name: "Cancel" }).click();
-
-    expect(dialogFired).toBe(true);
-    await expect(page.getByText("Tone of Voice: Judge Prompt")).toBeVisible();
+    // Row Save should trigger the warning
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByText("Save Rubric and Reset Related Data")).toBeVisible();
   });
 });

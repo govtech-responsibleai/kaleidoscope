@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   IconCheck,
@@ -33,7 +33,7 @@ import {
   Tooltip,
   Typography,
 } from "@mui/material";
-import { metricsApi, qaJobApi, snapshotApi, targetRubricApi } from "@/lib/api";
+import { annotationApi, metricsApi, qaJobApi, snapshotApi, targetRubricApi } from "@/lib/api";
 import { JobStatus, PremadeRubricTemplate, RubricOption, TargetRubricResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import PromptEditorDynamic from "@/components/shared/PromptEditorDynamic";
@@ -61,23 +61,25 @@ export default function RubricsPage() {
   const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
   const [rubricToDelete, setRubricToDelete] = useState<TargetRubricResponse | null>(null);
   const [pendingSaveRubric, setPendingSaveRubric] = useState<TargetRubricResponse | null>(null);
-  const [pendingPromptSaveRubric, setPendingPromptSaveRubric] = useState<TargetRubricResponse | null>(null);
+  const [promptManuallyEditedIds, setPromptManuallyEditedIds] = useState<Set<number>>(new Set());
   const [premadeTemplates, setPremadeTemplates] = useState<PremadeRubricTemplate[]>([]);
   const [addingPremade, setAddingPremade] = useState<string | null>(null);
   const [rubricUsageById, setRubricUsageById] = useState<Record<number, boolean>>({});
   const [rubricRunningById, setRubricRunningById] = useState<Record<number, boolean>>({});
+  const rubricUsageByIdRef = useRef<Record<number, boolean>>({});
+  const rubricRunningByIdRef = useRef<Record<number, boolean>>({});
   const [promptViewRubric, setPromptViewRubric] = useState<TargetRubricResponse | null>(null);
   const [editingRubricId, setEditingRubricId] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [editedPrompt, setEditedPrompt] = useState("");
-  const [promptSaving, setPromptSaving] = useState(false);
-  const [promptError, setPromptError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     const loadPageData = async () => {
       setLoading(true);
+      rubricUsageByIdRef.current = {};
+      rubricRunningByIdRef.current = {};
       try {
         const [rubricsRes, snapshotsRes, metricsRes, premadeRes] = await Promise.all([
           targetRubricApi.list(targetId),
@@ -111,6 +113,7 @@ export default function RubricsPage() {
             usageById[metric.rubric_id] = true;
           }
         });
+        rubricUsageByIdRef.current = { ...usageById };
 
         const qaJobResponses = await Promise.all(
           snapshotsRes.data.map((snapshot) => qaJobApi.list(snapshot.id).catch(() => ({ data: [] })))
@@ -128,7 +131,26 @@ export default function RubricsPage() {
             });
           });
         });
+        rubricUsageByIdRef.current = { ...usageById };
+        rubricRunningByIdRef.current = { ...runningById };
 
+        const annotationResponses = await Promise.all(
+          snapshotsRes.data.map((snapshot) => annotationApi.listBySnapshot(snapshot.id).catch(() => ({
+            data: { answers: [], total_answers: 0, total_annotations: 0 },
+          })))
+        );
+        if (cancelled) return;
+
+        annotationResponses.forEach((response) => {
+          (response.data.answers ?? []).forEach((answerGroup) => {
+            answerGroup.annotations.forEach((annotation) => {
+              usageById[annotation.rubric_id] = true;
+            });
+          });
+        });
+
+        rubricUsageByIdRef.current = { ...usageById };
+        rubricRunningByIdRef.current = { ...runningById };
         setRubricUsageById(usageById);
         setRubricRunningById(runningById);
       } finally {
@@ -145,11 +167,11 @@ export default function RubricsPage() {
   }, [targetId]);
 
   useEffect(() => {
-    setEditedPrompt(promptViewRubric?.judge_prompt ?? "");
-    setPromptError(null);
-  }, [promptViewRubric?.id, promptViewRubric?.judge_prompt]);
-
-  const isPromptDirty = editedPrompt !== (promptViewRubric?.judge_prompt ?? "");
+    if (promptViewRubric) {
+      const rubric = rubrics.find((r) => r.id === promptViewRubric.id);
+      setEditedPrompt(rubric?.judge_prompt ?? "");
+    }
+  }, [promptViewRubric, rubrics]);
 
   const isPremade = (rubric: TargetRubricResponse) => rubric.group === "preset";
   const isDraft = (rubricId: number) => rubricId < 0;
@@ -161,7 +183,13 @@ export default function RubricsPage() {
     return rubric.name !== saved.name
       || rubric.criteria !== saved.criteria
       || rubric.best_option !== saved.best_option
-      || JSON.stringify(rubric.options) !== JSON.stringify(saved.options);
+      || JSON.stringify(rubric.options) !== JSON.stringify(saved.options)
+      || (rubric.judge_prompt ?? "") !== (saved.judge_prompt ?? "");
+  };
+
+  const isPromptModified = (rubric: TargetRubricResponse) => {
+    const saved = savedRubrics[rubric.id];
+    return (rubric.judge_prompt ?? "") !== (saved?.judge_prompt ?? "");
   };
 
   const addRubric = () => {
@@ -251,14 +279,37 @@ export default function RubricsPage() {
         setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
         setEditingRubricId(null);
       } else {
-        const res = await targetRubricApi.update(targetId, rubric.id, {
-          name: rubric.name,
-          criteria: rubric.criteria,
-          options: rubric.options,
-          best_option: rubric.best_option,
-        });
-        setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
-        setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+        const saved = savedRubrics[rubric.id];
+        const contentChanged = saved && (
+          rubric.name !== saved.name
+          || rubric.criteria !== saved.criteria
+          || rubric.best_option !== saved.best_option
+          || JSON.stringify(rubric.options) !== JSON.stringify(saved.options)
+        );
+        const promptChanged = (rubric.judge_prompt ?? "") !== (saved?.judge_prompt ?? "");
+        const promptManuallyEdited = promptManuallyEditedIds.has(rubric.id);
+
+        if (contentChanged) {
+          const res = await targetRubricApi.update(targetId, rubric.id, {
+            name: rubric.name,
+            criteria: rubric.criteria,
+            options: rubric.options,
+            best_option: rubric.best_option,
+          });
+          if (promptManuallyEdited && promptChanged) {
+            const res2 = await targetRubricApi.update(targetId, rubric.id, { judge_prompt: rubric.judge_prompt! });
+            setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res2.data : r)));
+            setSavedRubrics((prev) => ({ ...prev, [res2.data.id]: res2.data }));
+          } else {
+            setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+            setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+          }
+        } else if (promptChanged) {
+          const res = await targetRubricApi.update(targetId, rubric.id, { judge_prompt: rubric.judge_prompt! });
+          setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+          setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+        }
+        setPromptManuallyEditedIds((prev) => { const next = new Set(prev); next.delete(rubric.id); return next; });
         setEditingRubricId(null);
       }
     } catch {
@@ -268,28 +319,12 @@ export default function RubricsPage() {
     }
   };
 
-  const savePrompt = async () => {
-    if (!promptViewRubric) return;
-    setPromptSaving(true);
-    setPromptError(null);
-    try {
-      const res = await targetRubricApi.update(targetId, promptViewRubric.id, { judge_prompt: editedPrompt });
-      setRubrics((prev) => prev.map((r) => r.id === res.data.id ? res.data : r));
-      setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
-      setPromptViewRubric(null);
-      setCopied(false);
-    } catch {
-      setPromptError("Failed to save judge prompt.");
-    } finally {
-      setPromptSaving(false);
-    }
-  };
 
   const rubricHasBoundData = (rubric: TargetRubricResponse) =>
-    !isDraft(rubric.id) && Boolean(rubricUsageById[rubric.id]);
+    !isDraft(rubric.id) && Boolean(rubricUsageById[rubric.id] || rubricUsageByIdRef.current[rubric.id]);
 
   const rubricHasRunningJobs = (rubric: TargetRubricResponse) =>
-    !isDraft(rubric.id) && Boolean(rubricRunningById[rubric.id]);
+    !isDraft(rubric.id) && Boolean(rubricRunningById[rubric.id] || rubricRunningByIdRef.current[rubric.id]);
 
   const semanticEditTouchesPersistedData = (rubric: TargetRubricResponse) => {
     if (isDraft(rubric.id)) return false;
@@ -300,6 +335,7 @@ export default function RubricsPage() {
       || rubric.criteria !== saved.criteria
       || rubric.best_option !== saved.best_option
       || JSON.stringify(rubric.options) !== JSON.stringify(saved.options)
+      || (rubric.judge_prompt ?? "") !== (saved.judge_prompt ?? "")
     );
   };
 
@@ -316,19 +352,6 @@ export default function RubricsPage() {
       return;
     }
     void saveRubric(rubric);
-  };
-
-  const handlePromptSave = () => {
-    if (!promptViewRubric) return;
-    if (rubricHasRunningJobs(promptViewRubric)) {
-      setPromptError("Wait for related evaluations to finish before editing this rubric.");
-      return;
-    }
-    if (rubricHasBoundData(promptViewRubric)) {
-      setPendingPromptSaveRubric(promptViewRubric);
-      return;
-    }
-    void savePrompt();
   };
 
   const handleCancelEdit = (rubricId: number) => {
@@ -379,10 +402,8 @@ export default function RubricsPage() {
   const totalRubricCount = rubrics.length;
   const destructiveRubricDescription =
     "This deletes all data related to this rubric, including annotations, overrides, judge outputs, and derived scoring state. Create a new rubric instead if you need to preserve the existing data.";
-  const pendingDestructiveSaveRubric = pendingSaveRubric ?? pendingPromptSaveRubric;
-  const destructiveSaveInFlight = pendingSaveRubric
-    ? saving.has(pendingSaveRubric.id)
-    : promptSaving;
+  const pendingDestructiveSaveRubric = pendingSaveRubric;
+  const destructiveSaveInFlight = pendingSaveRubric ? saving.has(pendingSaveRubric.id) : false;
 
   const iconBoxSx = {
     alignItems: "center",
@@ -678,9 +699,14 @@ export default function RubricsPage() {
           <Divider sx={{ my: 2 }} />
 
           <Box sx={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-            <Typography component="label" sx={{ fontSize: "0.9rem", fontWeight: 600, mb: "2px" }}>
-              Prompt Template
-            </Typography>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: "2px" }}>
+              <Typography component="label" sx={{ fontSize: "0.9rem", fontWeight: 600 }}>
+                Prompt Template
+              </Typography>
+              {isPromptModified(rubric) && (
+                <Chip label="Modified" size="small" color="warning" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+              )}
+            </Box>
             <Box sx={{ position: "relative", borderRadius: "5px", border: "1px solid", borderColor: "divider", backgroundColor: "#fafbff", overflow: "hidden" }}>
               <Box sx={{ px: 1.5, py: 1.5, fontFamily: "var(--font-jetbrains-mono), monospace", fontSize: "12px", lineHeight: 1.6, color: "text.secondary", whiteSpace: "pre-wrap", maxHeight: "4.8em", overflow: "hidden" }}>
                 {rubric.judge_prompt
@@ -863,7 +889,6 @@ export default function RubricsPage() {
         open={pendingDestructiveSaveRubric !== null}
         onClose={() => {
           setPendingSaveRubric(null);
-          setPendingPromptSaveRubric(null);
         }}
         maxWidth="sm"
         fullWidth
@@ -881,12 +906,7 @@ export default function RubricsPage() {
           </Typography>
         </DialogContent>
         <DialogActions>
-          <Button
-            onClick={() => {
-              setPendingSaveRubric(null);
-              setPendingPromptSaveRubric(null);
-            }}
-          >
+          <Button onClick={() => setPendingSaveRubric(null)}>
             Cancel
           </Button>
           <Button
@@ -902,11 +922,6 @@ export default function RubricsPage() {
               if (pendingSaveRubric) {
                 await saveRubric(pendingSaveRubric);
                 setPendingSaveRubric(null);
-                return;
-              }
-              if (pendingPromptSaveRubric) {
-                await savePrompt();
-                setPendingPromptSaveRubric(null);
               }
             }}
           >
@@ -918,7 +933,14 @@ export default function RubricsPage() {
       <Dialog
         open={!!promptViewRubric}
         onClose={() => {
-          if (isPromptDirty && !window.confirm("You have unsaved changes. Discard them?")) return;
+          if (promptViewRubric) {
+            const currentText = editedPrompt;
+            const rubric = rubrics.find((r) => r.id === promptViewRubric.id);
+            if (currentText !== (rubric?.judge_prompt ?? "")) {
+              updateField(promptViewRubric.id, { judge_prompt: currentText });
+              setPromptManuallyEditedIds((prev) => new Set(prev).add(promptViewRubric.id));
+            }
+          }
           setPromptViewRubric(null);
           setCopied(false);
         }}
@@ -948,12 +970,10 @@ export default function RubricsPage() {
           </Tooltip>
         </DialogTitle>
         <DialogContent>
-          {promptError && <Alert severity="error" sx={{ mb: 2 }}>{promptError}</Alert>}
           <Box sx={{ height: 400, "& .cm-editor": { pointerEvents: "auto" } }}>
             <PromptEditorDynamic
               value={editedPrompt}
               onChange={(val) => setEditedPrompt(val)}
-              disabled={promptSaving}
             />
           </Box>
         </DialogContent>
@@ -961,7 +981,6 @@ export default function RubricsPage() {
           <Button
             startIcon={copied ? <IconCheck {...statusIconProps} /> : <IconCopy {...statusIconProps} />}
             color={copied ? "success" : "primary"}
-            disabled={promptSaving}
             onClick={async () => {
               await navigator.clipboard.writeText(editedPrompt);
               setCopied(true);
@@ -972,21 +991,20 @@ export default function RubricsPage() {
           </Button>
           <Box sx={{ flex: 1 }} />
           <Button
-            disabled={promptSaving}
+            variant="contained"
             onClick={() => {
-              if (isPromptDirty && !window.confirm("You have unsaved changes. Discard them?")) return;
+              if (promptViewRubric) {
+                const rubric = rubrics.find((r) => r.id === promptViewRubric.id);
+                if (editedPrompt !== (rubric?.judge_prompt ?? "")) {
+                  updateField(promptViewRubric.id, { judge_prompt: editedPrompt });
+                  setPromptManuallyEditedIds((prev) => new Set(prev).add(promptViewRubric.id));
+                }
+              }
               setPromptViewRubric(null);
               setCopied(false);
             }}
           >
-            Cancel
-          </Button>
-          <Button
-            variant="contained"
-            disabled={!isPromptDirty || promptSaving}
-            onClick={handlePromptSave}
-          >
-            Save
+            Done
           </Button>
         </DialogActions>
       </Dialog>

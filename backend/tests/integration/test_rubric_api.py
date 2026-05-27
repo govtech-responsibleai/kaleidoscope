@@ -476,3 +476,30 @@ class TestJudgePromptSave:
         assert resp.status_code == 200
         assert resp.json()["judge_prompt"] == "Manually set prompt"
         mock_generate.assert_not_called()
+
+    @patch("src.rubric.api.routes.rubrics.generate_judge_prompt")
+    def test_put_judge_prompt_deletes_stale_scores(
+        self, mock_generate, test_client, test_db, sample_target, sample_rubric,
+        sample_answer, sample_judge_claim_based,
+    ):
+        """Changing the judge prompt purges scores produced by the old prompt."""
+        score = AnswerScore(
+            answer_id=sample_answer.id,
+            rubric_id=sample_rubric.id,
+            judge_id=sample_judge_claim_based.id,
+            overall_label="Professional",
+            explanation="Scored with the old prompt",
+        )
+        test_db.add(score)
+        test_db.commit()
+
+        resp = test_client.put(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
+            json={"judge_prompt": "Updated prompt text"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["judge_prompt"] == "Updated prompt text"
+        mock_generate.assert_not_called()
+        test_db.expire_all()
+        assert test_db.query(AnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 0

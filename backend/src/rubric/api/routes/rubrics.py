@@ -241,6 +241,11 @@ def update_rubric(
             if deleted:
                 logger.info("Rubric %s options changed; purged %s stale scores", rubric_id, deleted)
 
+    if "judge_prompt" in data and data["judge_prompt"] != existing_rubric.judge_prompt:
+        deleted = AnswerScoreRepository.delete_scores_by_rubric(db, rubric_id)
+        if deleted:
+            logger.info("Rubric %s judge prompt changed; purged %s stale scores", rubric_id, deleted)
+
     content_changed = any(key in data for key in ("name", "criteria", "options", "best_option"))
     if content_changed and existing_rubric.group == RUBRIC_GROUP_CUSTOM:
         name = data.get("name", existing_rubric.name)

@@ -840,6 +840,17 @@ export interface AnswerAnnotation {
   updated_at: string;
 }
 
+export interface AnnotationAnswerGroup {
+  answer_id: number;
+  annotations: AnswerAnnotation[];
+}
+
+export interface AnnotationListResponse {
+  answers: AnnotationAnswerGroup[];
+  total_answers: number;
+  total_annotations: number;
+}
+
 // Rubric types
 export interface RubricOption {
   option: string;
