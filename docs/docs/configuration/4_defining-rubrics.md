@@ -53,3 +53,18 @@ Rubrics you define in natural language. The criteria you define is fed into the 
 ![Rubrics](/img/screenshots/rubrics_custom.png)
 
 When you add or update a rubric, Kaleidoscope automatically creates baseline judges for it using your configured providers. See [Scoring and Judges](./6_scoring-and-judges.md) for details.
+
+## Customizing the Judge Prompt
+
+Each rubric has an editable **judge prompt template** that baseline judges use when scoring responses. To edit it, open the rubric on the rubrics page and click **Customize prompt**.
+
+The editor lets you:
+
+- Rewrite the prompt to emphasize different aspects of the criteria
+- Save changes or cancel to discard them
+
+:::warning
+Saving a new prompt on a rubric that already has scoring data (annotations, judge outputs, or overrides) will reset all that data. Kaleidoscope shows a confirmation warning before proceeding.
+:::
+
+Baseline judges stay in sync with the rubric's prompt template — changing it here affects all baseline judges for that rubric. To experiment with a completely independent prompt on a specific model, create a [Custom Judge](./6_scoring-and-judges.md#custom-judges) instead.
