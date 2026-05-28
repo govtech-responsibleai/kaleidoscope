@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 title: Environment Variables
 ---
 
@@ -24,11 +24,14 @@ When running with Docker, use `db` as the host (the container name). For local d
 ```bash
 JWT_SECRET_KEY=dev-jwt-secret
 ADMIN_API_KEY=dev-admin-key
+SEED_ADMIN_USERNAME=admin
+SEED_ADMIN_PASSWORD=change-me
+GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
+ALLOWED_EMAIL_DOMAINS=gov.sg,tech.gov.sg
 ```
 
-`JWT_SECRET_KEY` is used for signing auth tokens and encrypting stored credentials. `ADMIN_API_KEY` is required to create user accounts via the API.
-
-For local development, the defaults (`dev-jwt-secret` / `dev-admin-key`) work out of the box and you can sign in with `dev` / `dev`.
+`JWT_SECRET_KEY` signs auth tokens and encrypts stored credentials. `ADMIN_API_KEY` protects the admin API. `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD` can create the first admin user on startup. Google Sign-In is optional and requires both backend and frontend client ID variables plus `ALLOWED_EMAIL_DOMAINS`.
 
 For production, generate strong random values:
 
@@ -36,18 +39,23 @@ For production, generate strong random values:
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-### Creating the first admin account
+For full setup, including first login, Google Sign-In, creating users, and demo target seeding, see [Authentication](./2_authentication.md).
 
-When deploying for the first time, create an admin account using your `ADMIN_API_KEY`:
+## Demo Target Seed
 
 ```bash
-curl -X POST http://localhost:8000/api/v1/auth/admin/create-user \
-  -H "Content-Type: application/json" \
-  -H "X-Admin-Key: your-admin-key" \
-  -d '{"username": "admin", "password": "your-password", "is_admin": true}'
+DEMO_TARGET_NAME=Demo Chatbot
+DEMO_TARGET_AGENCY=GovTech Singapore
+DEMO_TARGET_PURPOSE=A short description of what this demo chatbot helps users do.
+DEMO_TARGET_TARGET_USERS=Describe the intended users for this demo chatbot.
+DEMO_TARGET_ENDPOINT=https://example.com/chat
+DEMO_TARGET_RESPONSE_PATH=answer
+DEMO_TARGET_RETRIEVED_CONTEXT_PATH=sources
+DEMO_TARGET_BODY_TEMPLATE={"question":"{{prompt}}"}
+DEMO_TARGET_HEADERS={"Content-Type":"application/json","X-API-Key":"<secret-from-private-env>"}
 ```
 
-Once signed in as an admin, you can create additional users from the UI.
+These variables configure the optional starter target created for new Google-auth users. They only apply when `DEMO_TARGET_ENDPOINT` is set. See [Authentication](./2_authentication.md#initial-demo-target-for-google-users) for details.
 
 ## LLM Provider Keys
 

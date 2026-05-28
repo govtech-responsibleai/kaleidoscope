@@ -130,7 +130,8 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     const hasToken = typeof window !== "undefined" && !!localStorage.getItem("token");
-    const isAuthEndpoint = error.config?.url?.includes("/auth/login");
+    const requestUrl = error.config?.url || "";
+    const isAuthEndpoint = requestUrl.includes("/auth/login") || requestUrl.includes("/auth/google");
     if (error.response?.status === 401 && hasToken && !isAuthEndpoint) {
       localStorage.removeItem("token");
       localStorage.removeItem("username");
@@ -160,6 +161,19 @@ export const authApi = {
     );
     localStorage.setItem("token", response.data.access_token);
     localStorage.setItem("username", username);
+    localStorage.setItem("is_admin", String(response.data.is_admin));
+    return response.data;
+  },
+
+  googleLogin: async (credential: string) => {
+    const response = await api.post<{
+      access_token: string;
+      token_type: string;
+      is_admin: boolean;
+      username: string;
+    }>("/auth/google", { credential });
+    localStorage.setItem("token", response.data.access_token);
+    localStorage.setItem("username", response.data.username);
     localStorage.setItem("is_admin", String(response.data.is_admin));
     return response.data;
   },

@@ -131,6 +131,9 @@ openspec/*
 .beads/
 .codex/
 
+# Runtime data stores
+data/
+
 # Backend migrations (local test helpers only)
 backend/src/common/database/migrations/*
 !backend/src/common/database/migrations/.gitkeep

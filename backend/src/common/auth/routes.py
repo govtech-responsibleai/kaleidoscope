@@ -4,6 +4,8 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
 from fastapi.security import OAuth2PasswordRequestForm
+from google.auth.transport.requests import Request as GoogleRequest
+from google.oauth2.id_token import verify_oauth2_token
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -12,6 +14,7 @@ from src.common.database.connection import get_db
 from src.common.database.repositories.user_repo import UserRepository
 from src.common.auth.utils import verify_password, create_access_token, hash_password
 from src.common.auth.dependencies import require_admin
+from src.common.auth.demo_target_seed import seed_demo_target
 
 router = APIRouter()
 settings = get_settings()
@@ -32,6 +35,11 @@ class CreateUserRequest(BaseModel):
     is_admin: bool = False
 
 
+class GoogleLoginRequest(BaseModel):
+    """Request model for Google Sign-In."""
+    credential: str
+
+
 class CreateUserResponse(BaseModel):
     """Response model for user creation."""
     message: str
@@ -47,6 +55,19 @@ class UserResponse(BaseModel):
     created_at: str
     target_count: int
 
+
+def _allowed_domains() -> set[str]:
+    """Return configured allowed email domains, normalized for exact matching."""
+    return {
+        domain.strip().lower()
+        for domain in settings.allowed_email_domains.split(",")
+        if domain.strip()
+    }
+
+
+def _email_domain(email: str) -> str:
+    """Extract a lower-case email domain."""
+    return email.rsplit("@", 1)[-1].lower() if "@" in email else ""
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -71,6 +92,69 @@ def login(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User account is disabled",
+        )
+
+    access_token = create_access_token(user.id)
+    return TokenResponse(
+        access_token=access_token,
+        is_admin=user.is_admin,
+        username=user.username,
+    )
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(
+    request: GoogleLoginRequest,
+    db: Session = Depends(get_db),
+):
+    """Login or register with a verified Google ID token."""
+    allowed_domains = _allowed_domains()
+    if not allowed_domains:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access is restricted to authorised email domains.",
+        )
+    if not settings.google_client_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Google Sign-In is not configured.",
+        )
+
+    try:
+        claims = verify_oauth2_token(
+            request.credential,
+            GoogleRequest(),
+            settings.google_client_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google token",
+        ) from exc
+
+    email = str(claims.get("email", "")).strip().lower()
+    if not email or claims.get("email_verified") is False:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid Google token",
+        )
+
+    domain = _email_domain(email)
+    if domain not in allowed_domains:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access is restricted to authorised email domains.",
+        )
+
+    user = UserRepository.get_by_username(db, email)
+    if not user:
+        user = UserRepository.create(db, email, None, is_admin=False)
+        seed_demo_target(db, int(user.id))  # type: ignore[arg-type]
 
     if not user.is_active:
         raise HTTPException(

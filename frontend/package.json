@@ -20,6 +20,7 @@
     "@lezer/highlight": "^1.2.3",
     "@mui/material": "^7.3.5",
     "@mui/material-nextjs": "^7.3.5",
+    "@react-oauth/google": "^0.13.5",
     "@tabler/icons-react": "^3.41.1",
     "axios": "^1.13.1",
     "codemirror": "^6.0.2",
