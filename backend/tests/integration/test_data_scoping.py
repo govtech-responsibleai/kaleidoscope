@@ -139,7 +139,7 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
             {"option": "Inaccurate", "description": "Incorrect"},
         ],
         best_option="Accurate",
-        group="fixed",
+        group="preset",
         scoring_mode="claim_based",
         position=0,
     )
@@ -152,7 +152,7 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
             {"option": "Inaccurate", "description": "Incorrect"},
         ],
         best_option="Accurate",
-        group="fixed",
+        group="preset",
         scoring_mode="claim_based",
         position=0,
     )
@@ -177,7 +177,7 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
 
     judge_a = Judge(
         name="User A Judge",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         prompt_template="Test template",
         params={},
         target_id=targets_for_users["user_a"].id,
@@ -188,7 +188,7 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
     )
     judge_b = Judge(
         name="User B Judge",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         prompt_template="Test template",
         params={},
         target_id=targets_for_users["user_b"].id,
@@ -199,7 +199,7 @@ def judges_for_users(test_db, user_a, user_b, targets_for_users):
     )
     baseline_judge = Judge(
         name="Baseline Judge",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         prompt_template="Baseline template",
         params={},
         target_id=targets_for_users["user_a"].id,

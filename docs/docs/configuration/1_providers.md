@@ -22,7 +22,7 @@ If a shared key is already configured for a provider, users see it as "Managed" 
 
 | Provider | Environment Variable(s) | Default Model |
 |----------|------------------------|---------------|
-| **Gemini** | `GEMINI_API_KEY` | `gemini/gemini-3.1-flash-lite-preview` |
+| **Gemini** | `GEMINI_API_KEY` | `gemini/gemini-3.1-flash-lite` |
 | **OpenAI** | `OPENAI_API_KEY` | `openai/gpt-5.4-nano` |
 | **Azure OpenAI** | `AZURE_API_KEY`, `AZURE_API_BASE` | `azure/gpt-5.4-nano` |
 | **Anthropic** | `ANTHROPIC_API_KEY` | `anthropic/claude-haiku-4-5` |

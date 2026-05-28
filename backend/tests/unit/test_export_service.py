@@ -13,7 +13,7 @@ from src.common.services.export_service import ExportService, ExportFormat
 
 def _accuracy_rubric_id(test_db, target_id: int) -> int:
     return TargetRubricRepository.get_by_target(
-        test_db, target_id, group="fixed", name="Accuracy"
+        test_db, target_id, group="preset", name="Accuracy"
     )[0].id
 
 
@@ -151,7 +151,7 @@ class TestExportService:
             target_id=sample_target.id,
             rubric_id=sample_rubric.id,
             name="Tone Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Tone prompt",
             params={"temperature": 0.0},
             is_baseline=False,

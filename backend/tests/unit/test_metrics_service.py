@@ -29,7 +29,7 @@ class TestMetricsService:
     @staticmethod
     def _accuracy_rubric_id(test_db, target_id: int) -> int:
         return TargetRubricRepository.get_by_target(
-            test_db, target_id, group="fixed", name="Accuracy"
+            test_db, target_id, group="preset", name="Accuracy"
         )[0].id
 
     def test_calculate_judge_alignment(
@@ -207,7 +207,7 @@ class TestMetricsService:
         sample_snapshot,
         sample_judge_claim_based,
     ):
-        """Metrics service should read the existing fixed rubric instead of calling the invariant repair helper."""
+        """Metrics service should read the existing preset rubric instead of calling the invariant repair helper."""
         service = MetricsService(test_db)
 
         with patch(
@@ -313,7 +313,7 @@ class TestMetricsService:
             target_id=sample_target.id,
             rubric_id=sample_judge_claim_based.rubric_id,
             name="Judge 2",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Second accuracy judge",
             params={"temperature": 0.0},
             is_baseline=False,
@@ -355,7 +355,7 @@ class TestMetricsService:
             target_id=sample_target.id,
             rubric_id=sample_judge_claim_based.rubric_id,
             name="Unrun Accuracy Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Accuracy prompt",
             params={"temperature": 0.0},
             is_baseline=False,
@@ -414,7 +414,7 @@ class TestMetricsService:
             target_id=sample_target.id,
             rubric_id=sample_rubric.id,
             name="Tone Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Tone prompt",
             params={"temperature": 0.0},
             is_baseline=False,
@@ -469,7 +469,7 @@ class TestMetricsService:
             target_id=sample_target.id,
             rubric_id=sample_rubric.id,
             name="Tone Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Tone prompt",
             params={"temperature": 0.0},
             is_baseline=False,

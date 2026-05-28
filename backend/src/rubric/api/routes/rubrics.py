@@ -33,7 +33,6 @@ from src.rubric.services.rubric_specs import (
 )
 from src.rubric.services.system_rubrics import (
     RUBRIC_GROUP_CUSTOM,
-    RUBRIC_GROUP_FIXED,
     RUBRIC_GROUP_PRESET,
     build_preset_definition,
     ensure_judges,
@@ -211,7 +210,7 @@ def update_rubric(
         editable_fields = {"name", "criteria", "options", "best_option", "judge_prompt", "group"}
         changed = rubric_update.model_dump(exclude_unset=True)
         if any(key in changed for key in editable_fields):
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fixed and preset rubrics cannot be edited")
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Preset rubrics cannot be edited")
 
     data = rubric_update.model_dump(exclude_unset=True)
 
@@ -241,6 +240,11 @@ def update_rubric(
             deleted = AnswerScoreRepository.delete_scores_by_rubric(db, rubric_id)
             if deleted:
                 logger.info("Rubric %s options changed; purged %s stale scores", rubric_id, deleted)
+
+    if "judge_prompt" in data and data["judge_prompt"] != existing_rubric.judge_prompt:
+        deleted = AnswerScoreRepository.delete_scores_by_rubric(db, rubric_id)
+        if deleted:
+            logger.info("Rubric %s judge prompt changed; purged %s stale scores", rubric_id, deleted)
 
     content_changed = any(key in data for key in ("name", "criteria", "options", "best_option"))
     if content_changed and existing_rubric.group == RUBRIC_GROUP_CUSTOM:
@@ -279,8 +283,6 @@ def delete_rubric(
     existing_rubric = TargetRubricRepository.get_by_id(db, rubric_id)
     if not existing_rubric or existing_rubric.target_id != target_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Rubric {rubric_id} not found")
-    if existing_rubric.group == RUBRIC_GROUP_FIXED:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Fixed rubrics cannot be deleted")
     if existing_rubric.group == RUBRIC_GROUP_CUSTOM:
         delete_custom_rubric_prompt(int(existing_rubric.id))
     success = TargetRubricRepository.delete(db, rubric_id)

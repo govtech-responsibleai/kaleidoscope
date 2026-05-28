@@ -264,7 +264,7 @@ class TestQAJobProcessor:
             target_id=sample_snapshot.target_id,
             rubric_id=sample_rubric.id,
             name="Empathy Judge",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Empathy prompt",
             params={},
             is_baseline=False,
@@ -977,7 +977,7 @@ class TestQAJobPipelineResume:
         # Create judge B
         judge_b = Judge(
             name="Judge B",
-            model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+            model_name="gemini/gemini-3.1-flash-lite",
             prompt_template="Template B",
             params={},
             rubric_id=sample_judge_claim_based.rubric_id,

@@ -1,56 +1,54 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   IconCheck,
-  IconChevronDown,
   IconCircleCheck,
   IconCircleCheckFilled,
+  IconCode,
   IconCopy,
+  IconCut,
   IconDeviceFloppy,
-  IconDotsVertical,
+  IconHeartHandshake,
   IconHelpCircle,
+  IconPencil,
   IconPlus,
   IconTrash,
+  IconX,
 } from "@tabler/icons-react";
 import {
-  Box,
-  Typography,
-  TextField,
-  Divider,
-  Button,
-  IconButton,
-  CircularProgress,
-  Tooltip,
-  Chip,
-  Stack,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   Alert,
+  Box,
+  Button,
+  Chip,
+  CircularProgress,
   Dialog,
   DialogActions,
-  DialogTitle,
   DialogContent,
-  Card,
-  CardActionArea,
-  CardContent,
-  Menu,
-  MenuItem,
+  DialogTitle,
+  Divider,
+  IconButton,
+  TextField,
+  Tooltip,
+  Typography,
 } from "@mui/material";
-import {
-  IconChecklist,
-  IconHeartHandshake,
-  IconCut,
-} from "@tabler/icons-react";
-import { metricsApi, qaJobApi, snapshotApi, targetRubricApi } from "@/lib/api";
-import { groupColors } from "@/lib/theme";
-import { JobStatus, PremadeRubricTemplate, TargetRubricResponse, RubricOption } from "@/lib/types";
+import { annotationApi, metricsApi, qaJobApi, snapshotApi, targetRubricApi } from "@/lib/api";
+import { JobStatus, PremadeRubricTemplate, RubricOption, TargetRubricResponse } from "@/lib/types";
 import ConfirmDeleteDialog from "@/components/shared/ConfirmDeleteDialog";
 import PromptEditorDynamic from "@/components/shared/PromptEditorDynamic";
 import { actionIconProps, compactActionIconProps, statusIconProps } from "@/lib/styles";
 import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
+
+type TablerIcon = typeof IconCircleCheck;
+
+const PRESET_ICONS: Record<string, TablerIcon> = {
+  empathy: IconHeartHandshake,
+  verbosity: IconCut,
+};
+
+const getPresetIcon = (name: string) =>
+  PRESET_ICONS[name.trim().toLowerCase()] ?? IconCircleCheck;
 
 export default function RubricsPage() {
   const params = useParams();
@@ -63,27 +61,31 @@ export default function RubricsPage() {
   const [saveErrors, setSaveErrors] = useState<Record<number, string>>({});
   const [rubricToDelete, setRubricToDelete] = useState<TargetRubricResponse | null>(null);
   const [pendingSaveRubric, setPendingSaveRubric] = useState<TargetRubricResponse | null>(null);
-  const [premadeDialogOpen, setPremadeDialogOpen] = useState(false);
+  const [promptManuallyEditedIds, setPromptManuallyEditedIds] = useState<Set<number>>(new Set());
   const [premadeTemplates, setPremadeTemplates] = useState<PremadeRubricTemplate[]>([]);
-  const [premadeLoading, setPremadeLoading] = useState(false);
   const [addingPremade, setAddingPremade] = useState<string | null>(null);
   const [rubricUsageById, setRubricUsageById] = useState<Record<number, boolean>>({});
   const [rubricRunningById, setRubricRunningById] = useState<Record<number, boolean>>({});
+  const rubricUsageByIdRef = useRef<Record<number, boolean>>({});
+  const rubricRunningByIdRef = useRef<Record<number, boolean>>({});
   const [promptViewRubric, setPromptViewRubric] = useState<TargetRubricResponse | null>(null);
-  const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null);
-  const [menuRubric, setMenuRubric] = useState<TargetRubricResponse | null>(null);
+  const [editingRubricId, setEditingRubricId] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
+  const [editedPrompt, setEditedPrompt] = useState("");
 
   useEffect(() => {
     let cancelled = false;
 
     const loadPageData = async () => {
       setLoading(true);
+      rubricUsageByIdRef.current = {};
+      rubricRunningByIdRef.current = {};
       try {
-        const [rubricsRes, snapshotsRes, metricsRes] = await Promise.all([
+        const [rubricsRes, snapshotsRes, metricsRes, premadeRes] = await Promise.all([
           targetRubricApi.list(targetId),
           snapshotApi.list(targetId),
           metricsApi.getSnapshotMetrics(targetId),
+          targetRubricApi.listPremade(targetId).catch(() => ({ data: [] as PremadeRubricTemplate[] })),
         ]);
         if (cancelled) return;
 
@@ -91,6 +93,7 @@ export default function RubricsPage() {
         const saved: Record<number, TargetRubricResponse> = {};
         rubricsRes.data.forEach((r) => { saved[r.id] = r; });
         setSavedRubrics(saved);
+        setPremadeTemplates(premadeRes.data);
 
         const usageById: Record<number, boolean> = {};
         const runningById: Record<number, boolean> = {};
@@ -110,6 +113,7 @@ export default function RubricsPage() {
             usageById[metric.rubric_id] = true;
           }
         });
+        rubricUsageByIdRef.current = { ...usageById };
 
         const qaJobResponses = await Promise.all(
           snapshotsRes.data.map((snapshot) => qaJobApi.list(snapshot.id).catch(() => ({ data: [] })))
@@ -127,7 +131,26 @@ export default function RubricsPage() {
             });
           });
         });
+        rubricUsageByIdRef.current = { ...usageById };
+        rubricRunningByIdRef.current = { ...runningById };
 
+        const annotationResponses = await Promise.all(
+          snapshotsRes.data.map((snapshot) => annotationApi.listBySnapshot(snapshot.id).catch(() => ({
+            data: { answers: [], total_answers: 0, total_annotations: 0 },
+          })))
+        );
+        if (cancelled) return;
+
+        annotationResponses.forEach((response) => {
+          (response.data.answers ?? []).forEach((answerGroup) => {
+            answerGroup.annotations.forEach((annotation) => {
+              usageById[annotation.rubric_id] = true;
+            });
+          });
+        });
+
+        rubricUsageByIdRef.current = { ...usageById };
+        rubricRunningByIdRef.current = { ...runningById };
         setRubricUsageById(usageById);
         setRubricRunningById(runningById);
       } finally {
@@ -143,7 +166,13 @@ export default function RubricsPage() {
     };
   }, [targetId]);
 
-  const isFixed = (rubric: TargetRubricResponse) => rubric.group === "fixed";
+  useEffect(() => {
+    if (promptViewRubric) {
+      const rubric = rubrics.find((r) => r.id === promptViewRubric.id);
+      setEditedPrompt(rubric?.judge_prompt ?? "");
+    }
+  }, [promptViewRubric, rubrics]);
+
   const isPremade = (rubric: TargetRubricResponse) => rubric.group === "preset";
   const isDraft = (rubricId: number) => rubricId < 0;
 
@@ -154,7 +183,13 @@ export default function RubricsPage() {
     return rubric.name !== saved.name
       || rubric.criteria !== saved.criteria
       || rubric.best_option !== saved.best_option
-      || JSON.stringify(rubric.options) !== JSON.stringify(saved.options);
+      || JSON.stringify(rubric.options) !== JSON.stringify(saved.options)
+      || (rubric.judge_prompt ?? "") !== (saved.judge_prompt ?? "");
+  };
+
+  const isPromptModified = (rubric: TargetRubricResponse) => {
+    const saved = savedRubrics[rubric.id];
+    return (rubric.judge_prompt ?? "") !== (saved?.judge_prompt ?? "");
   };
 
   const addRubric = () => {
@@ -166,19 +201,7 @@ export default function RubricsPage() {
       created_at: "", updated_at: "",
     };
     setRubrics((prev) => [...prev, placeholder]);
-  };
-
-  const openPremadeDialog = async () => {
-    setPremadeDialogOpen(true);
-    setPremadeLoading(true);
-    try {
-      const res = await targetRubricApi.listPremade(targetId);
-      setPremadeTemplates(res.data);
-    } catch {
-      setPremadeTemplates([]);
-    } finally {
-      setPremadeLoading(false);
-    }
+    setEditingRubricId(tempId);
   };
 
   const addPremadeRubric = async (template: PremadeRubricTemplate) => {
@@ -194,9 +217,8 @@ export default function RubricsPage() {
       setRubrics((prev) => [...prev, res.data]);
       setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
       setPremadeTemplates((prev) => prev.filter((item) => item.name !== template.name));
-      setPremadeDialogOpen(false);
     } catch {
-      // Keep existing page-level error handling simple for now.
+      // Keep the sidebar intact for retry.
     } finally {
       setAddingPremade(null);
     }
@@ -233,7 +255,7 @@ export default function RubricsPage() {
       return {
         ...r,
         options: updated,
-        best_option: r.best_option === removed.option ? null : r.best_option,
+        best_option: r.best_option === removed?.option ? null : r.best_option,
       };
     }));
   };
@@ -255,15 +277,40 @@ export default function RubricsPage() {
         });
         setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
         setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+        setEditingRubricId(null);
       } else {
-        const res = await targetRubricApi.update(targetId, rubric.id, {
-          name: rubric.name,
-          criteria: rubric.criteria,
-          options: rubric.options,
-          best_option: rubric.best_option,
-        });
-        setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
-        setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+        const saved = savedRubrics[rubric.id];
+        const contentChanged = saved && (
+          rubric.name !== saved.name
+          || rubric.criteria !== saved.criteria
+          || rubric.best_option !== saved.best_option
+          || JSON.stringify(rubric.options) !== JSON.stringify(saved.options)
+        );
+        const promptChanged = (rubric.judge_prompt ?? "") !== (saved?.judge_prompt ?? "");
+        const promptManuallyEdited = promptManuallyEditedIds.has(rubric.id);
+
+        if (contentChanged) {
+          const res = await targetRubricApi.update(targetId, rubric.id, {
+            name: rubric.name,
+            criteria: rubric.criteria,
+            options: rubric.options,
+            best_option: rubric.best_option,
+          });
+          if (promptManuallyEdited && promptChanged) {
+            const res2 = await targetRubricApi.update(targetId, rubric.id, { judge_prompt: rubric.judge_prompt! });
+            setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res2.data : r)));
+            setSavedRubrics((prev) => ({ ...prev, [res2.data.id]: res2.data }));
+          } else {
+            setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+            setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+          }
+        } else if (promptChanged) {
+          const res = await targetRubricApi.update(targetId, rubric.id, { judge_prompt: rubric.judge_prompt! });
+          setRubrics((prev) => prev.map((r) => (r.id === rubric.id ? res.data : r)));
+          setSavedRubrics((prev) => ({ ...prev, [res.data.id]: res.data }));
+        }
+        setPromptManuallyEditedIds((prev) => { const next = new Set(prev); next.delete(rubric.id); return next; });
+        setEditingRubricId(null);
       }
     } catch {
       setSaveErrors((prev) => ({ ...prev, [rubric.id]: "Failed to save rubric. Please try again." }));
@@ -272,25 +319,23 @@ export default function RubricsPage() {
     }
   };
 
+
   const rubricHasBoundData = (rubric: TargetRubricResponse) =>
-    !isDraft(rubric.id) && Boolean(rubricUsageById[rubric.id]);
+    !isDraft(rubric.id) && Boolean(rubricUsageById[rubric.id] || rubricUsageByIdRef.current[rubric.id]);
 
   const rubricHasRunningJobs = (rubric: TargetRubricResponse) =>
-    !isDraft(rubric.id) && Boolean(rubricRunningById[rubric.id]);
+    !isDraft(rubric.id) && Boolean(rubricRunningById[rubric.id] || rubricRunningByIdRef.current[rubric.id]);
 
   const semanticEditTouchesPersistedData = (rubric: TargetRubricResponse) => {
-    if (isDraft(rubric.id)) {
-      return false;
-    }
+    if (isDraft(rubric.id)) return false;
     const saved = savedRubrics[rubric.id];
-    if (!saved) {
-      return false;
-    }
+    if (!saved) return false;
     return (
       rubric.name !== saved.name
       || rubric.criteria !== saved.criteria
       || rubric.best_option !== saved.best_option
       || JSON.stringify(rubric.options) !== JSON.stringify(saved.options)
+      || (rubric.judge_prompt ?? "") !== (saved.judge_prompt ?? "")
     );
   };
 
@@ -307,6 +352,18 @@ export default function RubricsPage() {
       return;
     }
     void saveRubric(rubric);
+  };
+
+  const handleCancelEdit = (rubricId: number) => {
+    if (isDraft(rubricId)) {
+      setRubrics((prev) => prev.filter((r) => r.id !== rubricId));
+    } else {
+      const saved = savedRubrics[rubricId];
+      if (saved) {
+        setRubrics((prev) => prev.map((r) => (r.id === rubricId ? saved : r)));
+      }
+    }
+    setEditingRubricId(null);
   };
 
   const getRubricErrors = (rubric: TargetRubricResponse): string[] => {
@@ -336,355 +393,487 @@ export default function RubricsPage() {
         await targetRubricApi.delete(targetId, rubricToDelete.id);
       }
       setRubrics((prev) => prev.filter((r) => r.id !== rubricToDelete.id));
+      if (editingRubricId === rubricToDelete.id) setEditingRubricId(null);
     } catch {
       setSaveErrors((prev) => ({ ...prev, [rubricToDelete.id]: "Failed to delete rubric. Please try again." }));
     }
   };
 
-  const fixedRubrics = rubrics.filter((r) => isFixed(r));
-  const premadeRubrics = rubrics.filter((r) => isPremade(r));
-  const customRubrics = rubrics.filter((r) => r.group === "custom");
-  const totalRubricCount = fixedRubrics.length + premadeRubrics.length + customRubrics.length;
-  const premadeIconMap: Record<string, ReactNode> = {
-    empathy: <IconHeartHandshake size={36} stroke={1.8} color="currentColor" />,
-    verbosity: <IconCut size={36} stroke={1.8} color="currentColor" />,
-  };
-  const defaultPremadeIcon = <IconChecklist size={36} stroke={1.8} color="currentColor" />;
-
-  const renderOptionsReadonly = (options: RubricOption[], bestOption: string | null) => (
-    <>
-      <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
-        <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
-            <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
-              <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
-              <IconHelpCircle size={14} stroke={2} color="currentColor" />
-            </Box>
-          </Tooltip>
-        </Box>
-        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ width: 140, flexShrink: 0 }}>Label</Typography>
-        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>Description</Typography>
-      </Box>
-      {options.map(({ option, description }) => (
-        <Box key={option} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
-          <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            {option === bestOption
-              ? <IconCircleCheckFilled size={24} stroke={1.8} color="#2e7d32" />
-              : <IconCircleCheck size={24} stroke={1.8} color="currentColor" />
-            }
-          </Box>
-          <TextField value={option} disabled size="small" sx={{ width: 140, flexShrink: 0 }} />
-          <TextField value={description} disabled size="small" fullWidth multiline />
-        </Box>
-      ))}
-    </>
-  );
-
-  const groupSubtitles: Record<string, string> = {
-    Fixed:  "Built-in rubrics applied to every evaluation. Cannot be removed.",
-    Preset: "Curated rubric templates. Add from the library and customise.",
-    Custom: "Rubrics you define. Full control over criteria and options.",
-  };
-
-  const renderGroupHeader = (title: string, count: number, onAdd: (() => void) | null, accent?: string, addTestId?: string) => (
-    <Box>
-      <Stack direction="row" alignItems="center" gap={1.5}>
-        <Box sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: accent ?? "primary.main", flexShrink: 0 }} />
-        <Typography
-          variant="subtitle2"
-          fontWeight={700}
-          sx={{ textTransform: "uppercase", letterSpacing: 0.6 }}
-        >
-          {title}
-        </Typography>
-        <Chip label={count} size="small" sx={{ height: 18, fontSize: "0.65rem", "& .MuiChip-label": { px: 0.75 }, ...(accent ? { bgcolor: accent, color: "#fff" } : {}) }} />
-        <Box sx={{ flex: 1 }} />
-        {onAdd && (
-          <Tooltip title={`Add ${title.toLowerCase()} rubric`} arrow>
-            <IconButton
-              size="small"
-              data-testid={addTestId}
-              onClick={onAdd}
-              sx={{
-                border: "1px solid",
-                borderColor: accent ?? "primary.main",
-                color: accent ?? "primary.main",
-                "&:hover": { bgcolor: accent ?? "primary.main", color: "#fff" },
-              }}
-            >
-              <IconPlus {...compactActionIconProps} />
-            </IconButton>
-          </Tooltip>
-        )}
-      </Stack>
-      {groupSubtitles[title] && (
-        <Typography variant="caption" color="text.secondary" sx={{ display: "block", mt: 0.5, ml: 2.5 }}>
-          {groupSubtitles[title]}
-        </Typography>
-      )}
-    </Box>
-  );
-
-  const renderEmptyState = (message: string) => (
-    <Typography variant="body2" color="text.secondary" sx={{ py: 2, px: 1, fontStyle: "italic" }}>
-      {message}
-    </Typography>
-  );
-
-  const summarySx = {
-    minHeight: 48,
-    flexDirection: "row-reverse",
-    "& .MuiAccordionSummary-expandIconWrapper": { mr: 1 },
-    "& .MuiAccordionSummary-content": { alignItems: "center" },
-  };
-
-  const groupTint: Record<keyof typeof groupColors, string> = {
-    fixed:  "rgba(92, 107, 192, 0.06)",
-    preset: "rgba(38, 166, 154, 0.06)",
-    custom: "rgba(255, 167, 38, 0.06)",
-  };
-
-  const groupSectionSx = (group: keyof typeof groupColors) => ({
-    bgcolor: groupTint[group],
-    borderRadius: 2,
-    p: 2,
-    mb: 3,
-  });
-
+  const totalRubricCount = rubrics.length;
   const destructiveRubricDescription =
     "This deletes all data related to this rubric, including annotations, overrides, judge outputs, and derived scoring state. Create a new rubric instead if you need to preserve the existing data.";
+  const pendingDestructiveSaveRubric = pendingSaveRubric;
+  const destructiveSaveInFlight = pendingSaveRubric ? saving.has(pendingSaveRubric.id) : false;
+
+  const iconBoxSx = {
+    alignItems: "center",
+    bgcolor: "action.hover",
+    borderRadius: 1.5,
+    color: "text.secondary",
+    display: "flex",
+    flexShrink: 0,
+    height: 32,
+    justifyContent: "center",
+    width: 32,
+  } as const;
+
+  const rubricRowSx = {
+    alignItems: "center",
+    bgcolor: "background.paper",
+    border: "1px solid",
+    borderColor: "divider",
+    borderRadius: "10px",
+    display: "flex",
+    gap: 1.5,
+    mb: 1,
+    px: 1.5,
+    py: 1.25,
+    transition: "border-color 0.15s, box-shadow 0.15s, background-color 0.15s",
+    "&:hover": {
+      borderColor: "grey.300",
+      bgcolor: "rgba(29, 39, 102, 0.015)",
+    },
+  };
+
+  const presetSidebarRowSx = {
+    alignItems: "center",
+    display: "flex",
+    gap: 1.5,
+    px: 0.5,
+    py: 0.75,
+  } as const;
+
+  const renderPresetRow = (rubric: TargetRubricResponse) => {
+    const hasRunning = rubricHasRunningJobs(rubric);
+    const PresetIcon = getPresetIcon(rubric.name);
+    return (
+      <Box
+        key={rubric.id}
+        sx={{
+          ...rubricRowSx,
+        }}
+      >
+        <Box sx={iconBoxSx}>
+          <PresetIcon size={18} stroke={1.8} />
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1, flexWrap: "wrap" }}>
+            <Typography variant="body2" fontWeight={600}>{rubric.name}</Typography>
+            <Chip label="Preset" size="small" variant="outlined" sx={{ height: 20, fontSize: 10, borderColor: "grey.300", color: "text.secondary" }} />
+            {hasRunning && <Typography variant="caption" color="text.disabled" fontStyle="italic">running</Typography>}
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {rubric.criteria}
+          </Typography>
+        </Box>
+        <Tooltip title={hasRunning ? "Wait for related evaluations to finish before removing this rubric." : "Remove preset"}>
+          <span>
+            <IconButton
+              size="small"
+              disabled={hasRunning}
+              onClick={() => setRubricToDelete(rubric)}
+              sx={{ color: "text.secondary", opacity: 0.45, "&:hover": { opacity: 1, color: "error.main" } }}
+            >
+              <IconTrash {...compactActionIconProps} />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
+    );
+  };
+
+  const renderCustomCollapsedRow = (rubric: TargetRubricResponse) => {
+    const dirty = isDirty(rubric);
+    const draft = isDraft(rubric.id);
+    const hasRunning = rubricHasRunningJobs(rubric);
+    const isSaving = saving.has(rubric.id);
+    return (
+      <Box
+        key={rubric.id}
+        sx={{
+          ...rubricRowSx,
+          borderColor: draft ? "primary.light" : "divider",
+          borderStyle: draft ? "dashed" : "solid",
+          boxShadow: draft ? "0 0 0 3px rgba(72,97,182,0.08)" : "none",
+        }}
+      >
+        <Box sx={iconBoxSx}>
+          {isSaving ? <CircularProgress size={16} /> : <IconPencil size={18} stroke={1.8} />}
+        </Box>
+        <Box sx={{ flex: 1, minWidth: 0 }}>
+          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+            {dirty && !draft && (
+              <Box sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: "warning.main", flexShrink: 0 }} aria-label="Unsaved changes" />
+            )}
+            <Typography variant="body2" fontWeight={600} color={rubric.name ? "text.primary" : "text.disabled"} noWrap>
+              {rubric.name || "Untitled rubric"}
+            </Typography>
+            {isSaving && <Typography variant="caption" color="text.disabled" fontStyle="italic">Saving…</Typography>}
+            {hasRunning && !isSaving && <Typography variant="caption" color="text.disabled" fontStyle="italic">running</Typography>}
+          </Box>
+          <Typography variant="caption" color="text.secondary" sx={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {rubric.criteria || "No criteria set"}
+          </Typography>
+        </Box>
+        <Tooltip title="Edit">
+          <IconButton
+            size="small"
+            onClick={() => setEditingRubricId(rubric.id)}
+            sx={{ color: "text.secondary", opacity: 0.45, "&:hover": { opacity: 1 } }}
+          >
+            <IconPencil {...compactActionIconProps} />
+          </IconButton>
+        </Tooltip>
+        <Tooltip title={hasRunning ? "Wait for related evaluations to finish before deleting this rubric." : "Delete"}>
+          <span>
+            <IconButton
+              size="small"
+              disabled={hasRunning}
+              onClick={() => setRubricToDelete(rubric)}
+              sx={{ color: "text.secondary", opacity: 0.45, "&:hover": { opacity: 1, color: "error.main" } }}
+            >
+              <IconTrash {...compactActionIconProps} />
+            </IconButton>
+          </span>
+        </Tooltip>
+      </Box>
+    );
+  };
+
+  const renderCustomEditingRow = (rubric: TargetRubricResponse) => {
+    const draft = isDraft(rubric.id);
+    const dirty = isDirty(rubric);
+    const errors = getRubricErrors(rubric);
+    const isSaving = saving.has(rubric.id);
+    const saveError = saveErrors[rubric.id];
+    const hasRunning = rubricHasRunningJobs(rubric);
+    return (
+      <Box
+        key={rubric.id}
+        sx={{
+          bgcolor: "background.paper",
+          border: "1px solid",
+          borderColor: "primary.light",
+          borderRadius: "10px",
+          boxShadow: "0 0 0 3px rgba(72,97,182,0.08)",
+          mb: 1,
+          overflow: "hidden",
+        }}
+      >
+        <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, px: 1.5, py: 1.25, borderBottom: "1px solid", borderColor: "divider" }}>
+          <Box sx={iconBoxSx}>
+            {isSaving ? <CircularProgress size={16} /> : <IconPencil size={18} stroke={1.8} />}
+          </Box>
+          <TextField
+            value={rubric.name}
+            placeholder="Untitled rubric"
+            variant="standard"
+            size="small"
+            onChange={(e) => updateField(rubric.id, { name: e.target.value })}
+            slotProps={{ input: { style: { fontWeight: 600, fontSize: "0.95rem" } } }}
+            sx={{
+              flex: 1,
+              "& .MuiInput-underline:before": { borderBottom: "none" },
+              "& .MuiInput-underline:hover:before": { borderBottom: "1px solid rgba(0,0,0,0.3) !important" },
+            }}
+          />
+          <Button
+            size="small"
+            variant="text"
+            startIcon={<IconX size={16} stroke={2} />}
+            onClick={() => handleCancelEdit(rubric.id)}
+            disabled={isSaving}
+            sx={{ flexShrink: 0, color: "text.secondary" }}
+          >
+            Cancel
+          </Button>
+          <Tooltip title={
+            hasRunning
+              ? "Wait for related evaluations to finish before editing this rubric."
+              : errors.length > 0 ? errors.join(", ") : ""
+          }>
+            <span>
+              <Button
+                variant="contained"
+                size="small"
+                startIcon={isSaving ? <CircularProgress size={14} color="inherit" /> : <IconDeviceFloppy {...statusIconProps} />}
+                disabled={errors.length > 0 || isSaving || hasRunning || !dirty}
+                onClick={() => handleSave(rubric)}
+                sx={{ flexShrink: 0 }}
+              >
+                {isSaving ? "Saving…" : "Save"}
+              </Button>
+            </span>
+          </Tooltip>
+        </Box>
+
+        <Box sx={{ px: 2, py: 1.5 }}>
+          <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
+            Criteria
+          </Typography>
+          <TextField
+            value={rubric.criteria}
+            placeholder="Describe your evaluation criteria"
+            fullWidth
+            multiline
+            minRows={3}
+            size="small"
+            onChange={(e) => updateField(rubric.id, { criteria: e.target.value })}
+            sx={{ mb: 2 }}
+          />
+
+          <Divider sx={{ mb: 2 }} />
+
+          <Box sx={{ display: { xs: "none", sm: "grid" }, gridTemplateColumns: "110px 140px minmax(0, 1fr) 32px", gap: 1.5, mb: 1, alignItems: "center" }}>
+            <Box sx={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
+                <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
+                  <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
+                  <IconHelpCircle size={14} stroke={2} color="currentColor" />
+                </Box>
+              </Tooltip>
+            </Box>
+            <Typography variant="caption" fontWeight={600} color="text.secondary">Label</Typography>
+            <Typography variant="caption" fontWeight={600} color="text.secondary">Description</Typography>
+            <Box />
+          </Box>
+
+          {rubric.options.map((opt, i) => {
+            const isPositive = rubric.best_option === opt.option && opt.option !== "";
+            return (
+              <Box
+                key={i}
+                sx={{
+                  alignItems: { xs: "stretch", sm: "center" },
+                  display: "grid",
+                  gap: 1.5,
+                  gridTemplateColumns: { xs: "1fr 32px", sm: "110px 140px minmax(0, 1fr) 32px" },
+                  mb: 1.5,
+                }}
+              >
+                <Box
+                  sx={{
+                    alignItems: "center",
+                    cursor: opt.option ? "pointer" : "default",
+                    display: "flex",
+                    gap: 1,
+                    gridColumn: { xs: "1 / 3", sm: "auto" },
+                    justifyContent: { xs: "flex-start", sm: "center" },
+                  }}
+                  onClick={() => { if (opt.option) setBestOption(rubric.id, opt.option); }}
+                >
+                  {isPositive
+                    ? <IconCircleCheckFilled size={24} stroke={1.8} color="var(--mui-palette-success-main)" />
+                    : <IconCircleCheck size={24} stroke={1.8} color="currentColor" />
+                  }
+                  <Typography variant="caption" color="text.secondary" sx={{ display: { xs: "block", sm: "none" } }}>
+                    Ideal outcome
+                  </Typography>
+                </Box>
+                <TextField
+                  placeholder="Option"
+                  value={opt.option}
+                  size="small"
+                  sx={{ minWidth: 0 }}
+                  onChange={(e) => updateOptionField(rubric.id, i, "option", e.target.value)}
+                />
+                <TextField
+                  placeholder="Description"
+                  value={opt.description}
+                  size="small"
+                  fullWidth
+                  multiline
+                  onChange={(e) => updateOptionField(rubric.id, i, "description", e.target.value)}
+                />
+                <IconButton size="small" onClick={() => removeOption(rubric.id, i)} sx={{ alignSelf: { xs: "center", sm: "center" } }}>
+                  <IconTrash {...compactActionIconProps} />
+                </IconButton>
+              </Box>
+            );
+          })}
+
+          <Button startIcon={<IconPlus {...actionIconProps} />} size="small" sx={{ mt: 0.5 }} onClick={() => addOption(rubric.id)}>
+            Add Option
+          </Button>
+
+          <Divider sx={{ my: 2 }} />
+
+          <Box sx={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: "2px" }}>
+              <Typography component="label" sx={{ fontSize: "0.9rem", fontWeight: 600 }}>
+                Prompt Template
+              </Typography>
+              {isPromptModified(rubric) && (
+                <Chip label="Modified" size="small" color="warning" variant="outlined" sx={{ height: 18, fontSize: 10 }} />
+              )}
+            </Box>
+            <Box sx={{ position: "relative", borderRadius: "5px", border: "1px solid", borderColor: "divider", backgroundColor: "#fafbff", overflow: "hidden" }}>
+              <Box sx={{ px: 1.5, py: 1.5, fontFamily: "var(--font-jetbrains-mono), monospace", fontSize: "12px", lineHeight: 1.6, color: "text.secondary", whiteSpace: "pre-wrap", maxHeight: "4.8em", overflow: "hidden" }}>
+                {rubric.judge_prompt
+                  ? rubric.judge_prompt.split("\n").slice(0, 3).join("\n")
+                  : "No prompt template configured"}
+              </Box>
+              <Box sx={{ position: "absolute", bottom: 24, left: 0, right: 0, height: "24px", background: "linear-gradient(transparent, #fafbff)", pointerEvents: "none" }} />
+              <Box sx={{ display: "flex", justifyContent: "flex-end", px: 1, py: 0.5, borderTop: "1px solid", borderColor: "divider", backgroundColor: "#f5f6fc" }}>
+                <Button
+                  size="small"
+                  startIcon={<IconCode size={14} />}
+                  disabled={draft || !rubric.judge_prompt}
+                  onClick={() => setPromptViewRubric(rubric)}
+                  sx={{ textTransform: "none", fontSize: "0.75rem", fontWeight: 500, color: "text.secondary", "&:hover": { color: "primary.main" } }}
+                >
+                  Customize prompt
+                </Button>
+              </Box>
+            </Box>
+          </Box>
+
+          {(saveError || (dirty && errors.length > 0)) && (
+            <Box sx={{ mt: 1.5 }}>
+              {saveError && <Typography variant="caption" color="error" sx={{ display: "block" }}>{saveError}</Typography>}
+              {dirty && errors.length > 0 && <Typography variant="caption" color="error" sx={{ display: "block" }}>{errors.join(", ")}</Typography>}
+            </Box>
+          )}
+        </Box>
+      </Box>
+    );
+  };
+
+  const renderCriterionRow = (rubric: TargetRubricResponse) => {
+    if (isPremade(rubric)) return renderPresetRow(rubric);
+    if (editingRubricId === rubric.id) return renderCustomEditingRow(rubric);
+    return renderCustomCollapsedRow(rubric);
+  };
 
   return (
     <Box>
-      <Typography variant="h5" fontWeight={700} sx={{ mb: 2 }}>Rubric Library</Typography>
-      <Alert severity="info" variant="outlined" sx={{ mb: 3 }}>
-        <strong>{totalRubricCount} rubric{totalRubricCount !== 1 ? "s" : ""} defined.</strong>{" "}
-        Rubrics defined here are used by annotators and LLM judges to score responses.
-        Your score = % of times judges pick the ideal outcome.
-      </Alert>
-
-      {/* FIXED group */}
-      <Box sx={groupSectionSx("fixed")}>
-        <Box sx={{ mb: 2 }}>{renderGroupHeader("Fixed", fixedRubrics.length, null, groupColors.fixed.border)}</Box>
-        {fixedRubrics.map((rubric) => (
-          <Accordion key={rubric.id} variant="outlined" disableGutters>
-            <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
-              <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
-              <IconButton
-                component="div"
-                size="small"
-                onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuRubric(rubric); }}
-              >
-                <IconDotsVertical {...compactActionIconProps} />
-              </IconButton>
-            </AccordionSummary>
-            <AccordionDetails sx={{ pt: 0 }}>
-              <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                Criteria
-              </Typography>
-              <TextField value={rubric.criteria} fullWidth disabled multiline size="small" sx={{ mb: 2 }} />
-              <Divider sx={{ mb: 2 }} />
-              {renderOptionsReadonly(rubric.options, rubric.best_option)}
-            </AccordionDetails>
-          </Accordion>
-        ))}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h5" fontWeight={700}>
+          Rubric Library
+        </Typography>
+        <Typography variant="caption" color="text.secondary" sx={{ fontStyle: "italic" }}>
+          {totalRubricCount} rubric{totalRubricCount !== 1 ? "s" : ""} defined. Rubrics are used by annotators and LLM judges to score responses.
+        </Typography>
       </Box>
 
-      {/* PRESET group */}
-      <Box sx={groupSectionSx("preset")}>
-        <Box sx={{ mb: 2 }}>{renderGroupHeader("Preset", premadeRubrics.length, openPremadeDialog, groupColors.preset.border, TESTIDS.RUBRIC_PRESET_ADD)}</Box>
-        {premadeRubrics.length === 0 ? (
-          renderEmptyState("No preset rubrics added yet. Click + to browse templates.")
-        ) : (
-          premadeRubrics.map((rubric) => (
-            <Accordion key={rubric.id} variant="outlined" disableGutters sx={{ mb: 1 }}>
-              <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
-                <Box sx={{ display: "flex", alignItems: "center", gap: 2, flex: 1 }}>
-                  <Typography fontWeight={600} sx={{ flex: 1 }}>{rubric.name}</Typography>
-                  {rubricHasRunningJobs(rubric) && (
-                    <Chip label="Jobs running" size="small" color="error" variant="outlined" />
-                  )}
-                </Box>
-                <IconButton
-                  component="div"
-                  size="small"
-                  onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuRubric(rubric); }}
-                >
-                  <IconDotsVertical {...compactActionIconProps} />
-                </IconButton>
-              </AccordionSummary>
-              <AccordionDetails sx={{ pt: 0 }}>
-                <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                  Criteria
-                </Typography>
-                <TextField value={rubric.criteria} fullWidth disabled multiline size="small" sx={{ mb: 2 }} />
-                <Divider sx={{ mb: 2 }} />
-                {renderOptionsReadonly(rubric.options, rubric.best_option)}
-              </AccordionDetails>
-            </Accordion>
-          ))
-        )}
-      </Box>
-
-      {/* CUSTOM group */}
-      <Box sx={groupSectionSx("custom")}>
-        <Box sx={{ mb: 2 }}>{renderGroupHeader("Custom", customRubrics.length, addRubric, groupColors.custom.border, TESTIDS.RUBRIC_CUSTOM_ADD)}</Box>
-        {loading ? (
+      {loading ? (
+        <Box sx={{ display: "flex", justifyContent: "center", py: 4 }}>
           <CircularProgress size={24} />
-        ) : customRubrics.length === 0 ? (
-          renderEmptyState("No custom rubrics yet. Click + to add one.")
-        ) : (
-          customRubrics.map((rubric) => {
-            const draft = isDraft(rubric.id);
-            const dirty = isDirty(rubric);
-            const errors = getRubricErrors(rubric);
-            const isSaving = saving.has(rubric.id);
-            const saveError = saveErrors[rubric.id];
-            const hasRunningJobs = rubricHasRunningJobs(rubric);
-            return (
-              <Accordion
-                key={rubric.id}
-                variant="outlined"
-                disableGutters
-                defaultExpanded={draft}
-                sx={{ mb: 1, ...(draft && { borderStyle: "dashed" }) }}
-              >
-                <AccordionSummary expandIcon={<IconChevronDown {...actionIconProps} />} sx={summarySx}>
-                  <Box sx={{ display: "flex", alignItems: "center", gap: 1, flex: 1 }}>
-                    <TextField
-                      value={rubric.name}
-                      placeholder="Untitled rubric"
-                      variant="standard"
-                      size="small"
-                      onClick={(e) => e.stopPropagation()}
-                      onChange={(e) => updateField(rubric.id, { name: e.target.value })}
-                      slotProps={{
-                        input: { style: { fontWeight: 600, fontSize: "1rem" } },
-                      }}
-                      sx={{
-                        flexGrow: 1,
-                        "& .MuiInput-underline:before": { borderBottom: "none" },
-                        "& .MuiInput-underline:hover:before": { borderBottom: "1px solid rgba(0,0,0,0.3) !important" },
-                      }}
-                    />
-                    {dirty && !draft && <Chip label="Unsaved" size="small" color="warning" variant="outlined" />}
-                    {hasRunningJobs && <Chip label="Jobs running" size="small" color="error" variant="outlined" />}
-                  </Box>
-                  <IconButton
-                    component="div"
-                    size="small"
-                    onClick={(e) => { e.stopPropagation(); setMenuAnchor(e.currentTarget); setMenuRubric(rubric); }}
-                  >
-                    <IconDotsVertical {...compactActionIconProps} />
-                  </IconButton>
-                </AccordionSummary>
-                <AccordionDetails sx={{ pt: 0 }}>
-                  <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ display: "block", mb: 0.5 }}>
-                    Criteria
+        </Box>
+      ) : (
+        <Box
+          sx={{
+            alignItems: "flex-start",
+            display: "flex",
+            flexDirection: { xs: "column", md: "row" },
+            gap: 4,
+          }}
+        >
+          <Box sx={{ flex: { md: "0 0 58%" }, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
+            <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 2 }}>
+              Active Criteria
+            </Typography>
+            {rubrics.length === 0 ? (
+              <Box sx={{ border: "1px dashed", borderColor: "grey.300", borderRadius: "10px", p: 4, textAlign: "center" }}>
+                <Typography variant="body2" color="text.secondary">
+                  No rubrics yet. Add a preset from the right or create a custom criterion.
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ "& > *:last-child": { mb: 0 } }}>
+                {rubrics.map((rubric) => renderCriterionRow(rubric))}
+              </Box>
+            )}
+          </Box>
+
+          <Divider
+            orientation="vertical"
+            flexItem
+            sx={{ display: { xs: "none", md: "block" } }}
+          />
+
+          <Box sx={{ display: "flex", flex: 1, flexDirection: "column", gap: 3, minWidth: 0, width: { xs: "100%", md: "auto" } }}>
+            <Box>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+                Presets
+              </Typography>
+              <Box data-testid={TESTIDS.PRESET_RUBRIC_DIALOG}>
+                {rubrics.filter(isPremade).map((rubric) => {
+                  const PresetIcon = getPresetIcon(rubric.name);
+                  return (
+                    <Box key={`added-${rubric.id}`} sx={{ ...presetSidebarRowSx, opacity: 0.5 }}>
+                      <Box sx={iconBoxSx}>
+                        <PresetIcon size={18} stroke={1.8} />
+                      </Box>
+                      <Typography variant="body2" fontWeight={500} sx={{ flex: 1, minWidth: 0 }} noWrap>{rubric.name}</Typography>
+                      <Chip label="Added" size="small" sx={{ height: 18, fontSize: 10, bgcolor: "grey.100", color: "text.secondary" }} />
+                    </Box>
+                  );
+                })}
+
+                {/* Empty states */}
+                {premadeTemplates.length === 0 && rubrics.filter(isPremade).length === 0 && (
+                  <Typography variant="caption" color="text.secondary" fontStyle="italic">No preset rubrics available.</Typography>
+                )}
+                {premadeTemplates.length === 0 && rubrics.filter(isPremade).length > 0 && (
+                  <Typography variant="caption" color="text.secondary" fontStyle="italic" sx={{ display: "block", mt: 0.5 }}>
+                    All preset rubrics have already been added to this target.
                   </Typography>
-                  <TextField
-                    value={rubric.criteria}
-                    placeholder="Describe your evaluation criteria"
-                    fullWidth
-                    multiline
-                    minRows={3}
-                    size="small"
-                    onChange={(e) => updateField(rubric.id, { criteria: e.target.value })}
-                    sx={{ mb: 2 }}
-                  />
+                )}
 
-                  <Divider sx={{ mb: 2 }} />
-
-                  <Box sx={{ display: "flex", gap: 1.5, mb: 1, alignItems: "center" }}>
-                    <Box sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Tooltip title="The positive option is the ideal outcome. Scores measure how often judges choose this option." placement="top" arrow>
-                        <Box sx={{ display: "flex", alignItems: "center", gap: 0.5, cursor: "help" }}>
-                          <Typography variant="caption" fontWeight={600} color="text.secondary">Ideal outcome</Typography>
-                          <IconHelpCircle size={14} stroke={2} color="currentColor" />
-                        </Box>
-                      </Tooltip>
-                    </Box>
-                    <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ width: 140, flexShrink: 0 }}>Label</Typography>
-                    <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ flex: 1 }}>Description</Typography>
-                    <Box sx={{ width: 32, flexShrink: 0 }} />
-                  </Box>
-
-                  {rubric.options.map((opt, i) => {
-                    const isPositive = rubric.best_option === opt.option && opt.option !== "";
-                    return (
-                      <Box key={i} sx={{ display: "flex", gap: 1.5, mb: 1.5, alignItems: "center" }}>
-                        <Box
-                          sx={{ width: 100, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer" }}
-                          onClick={() => { if (opt.option) setBestOption(rubric.id, opt.option); }}
-                        >
-                          {isPositive
-                            ? <IconCircleCheckFilled size={24} stroke={1.8} color="#2e7d32" />
-                            : <IconCircleCheck size={24} stroke={1.8} color="currentColor" />
-                          }
-                        </Box>
-                        <TextField
-                          placeholder="Option"
-                          value={opt.option}
-                          size="small"
-                          sx={{ width: 140, flexShrink: 0 }}
-                          onChange={(e) => updateOptionField(rubric.id, i, "option", e.target.value)}
-                        />
-                        <TextField
-                          placeholder="Description"
-                          value={opt.description}
-                          size="small"
-                          fullWidth
-                          multiline
-                          onChange={(e) => updateOptionField(rubric.id, i, "description", e.target.value)}
-                        />
-                        <IconButton size="small" onClick={() => removeOption(rubric.id, i)}>
-                          <IconTrash {...compactActionIconProps} />
-                        </IconButton>
+                {premadeTemplates.map((template) => {
+                  const slug = template.name.trim().toLowerCase();
+                  const isAdding = addingPremade === template.name;
+                  const PresetIcon = getPresetIcon(template.name);
+                  return (
+                    <Box
+                      key={template.name}
+                      data-testid={TESTIDS.PRESET_RUBRIC_CARD(slug)}
+                      onClick={() => { if (!addingPremade) void addPremadeRubric(template); }}
+                      sx={{
+                        ...presetSidebarRowSx,
+                        cursor: addingPremade ? "default" : "pointer",
+                        borderRadius: 1,
+                        "&:hover": addingPremade ? {} : { bgcolor: "rgba(29, 39, 102, 0.04)" },
+                        opacity: addingPremade && !isAdding ? 0.5 : 1,
+                      }}
+                    >
+                      <Box sx={iconBoxSx}>
+                        {isAdding ? <CircularProgress size={16} /> : <PresetIcon size={18} stroke={1.8} />}
                       </Box>
-                    );
-                  })}
-
-                  <Button startIcon={<IconPlus {...actionIconProps} />} size="small" sx={{ mt: 0.5 }} onClick={() => addOption(rubric.id)}>
-                    Add Option
-                  </Button>
-
-                  {(dirty || saveError) && (
-                    <Box sx={{ mt: 2, display: "flex", alignItems: "center", gap: 1.5 }}>
-                      <Box sx={{ flex: 1, display: "flex", alignItems: "center", gap: 1 }}>
-                        {dirty && errors.length > 0 && (
-                          <Typography variant="caption" color="error">
-                            {errors.join(", ")}
-                          </Typography>
-                        )}
-                        {saveError && (
-                          <Typography variant="caption" color="error">
-                            {saveError}
-                          </Typography>
-                        )}
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="body2" fontWeight={600} noWrap>{template.name}</Typography>
+                        <Typography variant="caption" color="text.secondary" noWrap sx={{ display: "block" }}>
+                          {template.criteria.length > 60 ? `${template.criteria.substring(0, 60)}…` : template.criteria}
+                        </Typography>
                       </Box>
-                      {dirty && (
-                        <Tooltip title={hasRunningJobs ? "Wait for related evaluations to finish before editing this rubric." : (errors.length > 0 ? errors.join(", ") : "")}>
-                          <span>
-                            <Button
-                              variant="contained"
-                              size="small"
-                              startIcon={isSaving ? <CircularProgress size={16} color="inherit" /> : <IconDeviceFloppy {...statusIconProps} />}
-                              disabled={errors.length > 0 || isSaving || hasRunningJobs}
-                              onClick={() => handleSave(rubric)}
-                            >
-                              {isSaving ? "Generating judge prompt..." : "Save"}
-                            </Button>
-                          </span>
-                        </Tooltip>
-                      )}
+                      <IconButton size="small" color="primary" disabled={!!addingPremade} sx={{ flexShrink: 0 }}>
+                        <IconPlus size={16} stroke={2} />
+                      </IconButton>
                     </Box>
-                  )}
-                </AccordionDetails>
-              </Accordion>
-            );
-          })
-        )}
-      </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+
+            <Box>
+              <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1.5 }}>
+                Custom
+              </Typography>
+              <Button
+                data-testid={TESTIDS.RUBRIC_CUSTOM_ADD}
+                variant="outlined"
+                startIcon={<IconPlus {...actionIconProps} />}
+                fullWidth
+                onClick={addRubric}
+                sx={{ justifyContent: "flex-start" }}
+              >
+                Create custom criterion
+              </Button>
+            </Box>
+          </Box>
+        </Box>
+      )}
 
       <ConfirmDeleteDialog
         open={rubricToDelete !== null}
@@ -696,15 +885,21 @@ export default function RubricsPage() {
         description={rubricToDelete && rubricHasBoundData(rubricToDelete) ? destructiveRubricDescription : undefined}
       />
 
-      <Dialog open={pendingSaveRubric !== null} onClose={() => setPendingSaveRubric(null)} maxWidth="sm" fullWidth>
+      <Dialog
+        open={pendingDestructiveSaveRubric !== null}
+        onClose={() => {
+          setPendingSaveRubric(null);
+        }}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>Save Rubric and Reset Related Data</DialogTitle>
         <DialogContent>
           <Alert severity="error" sx={{ mb: 2 }}>
             Saving this rubric will delete all data related to it.
           </Alert>
           <Typography variant="body1">
-            Save changes to{" "}
-            <strong>{pendingSaveRubric?.name || "this rubric"}</strong>?
+            Save changes to <strong>{pendingDestructiveSaveRubric?.name || "this rubric"}</strong>?
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 2 }}>
             {destructiveRubricDescription}
@@ -717,112 +912,43 @@ export default function RubricsPage() {
           <Button
             color="error"
             variant="contained"
-            disabled={!pendingSaveRubric || saving.has(pendingSaveRubric.id)}
+            disabled={!pendingDestructiveSaveRubric || destructiveSaveInFlight}
             startIcon={
-              pendingSaveRubric && saving.has(pendingSaveRubric.id)
+              destructiveSaveInFlight
                 ? <CircularProgress size={16} color="inherit" />
                 : <IconDeviceFloppy {...actionIconProps} />
             }
             onClick={async () => {
-              if (!pendingSaveRubric) return;
-              await saveRubric(pendingSaveRubric);
-              setPendingSaveRubric(null);
+              if (pendingSaveRubric) {
+                await saveRubric(pendingSaveRubric);
+                setPendingSaveRubric(null);
+              }
             }}
           >
-            {pendingSaveRubric && saving.has(pendingSaveRubric.id) ? "Saving..." : "Save"}
+            {destructiveSaveInFlight ? "Saving..." : "Save"}
           </Button>
         </DialogActions>
       </Dialog>
 
-      <Dialog data-testid={TESTIDS.PRESET_RUBRIC_DIALOG} open={premadeDialogOpen} onClose={() => setPremadeDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Add Preset Rubric</DialogTitle>
-        <DialogContent>
-          {premadeLoading ? (
-            <Box sx={{ display: "flex", justifyContent: "center", py: 3 }}>
-              <CircularProgress size={24} />
-            </Box>
-          ) : premadeTemplates.length === 0 ? (
-            <Typography color="text.secondary" sx={{ py: 2 }}>
-              All preset rubrics have already been added to this target.
-            </Typography>
-          ) : (
-            <Box sx={{ display: "flex", gap: 2, flexWrap: "wrap", pt: 1, justifyContent: "center" }}>
-              {premadeTemplates.map((template) => {
-                const templateKey = template.name.trim().toLowerCase();
-                return (
-                  <Card
-                    key={template.name}
-                    data-testid={TESTIDS.PRESET_RUBRIC_CARD(templateKey)}
-                    variant="outlined"
-                    sx={{ flex: "1 1 180px", maxWidth: 220, position: "relative" }}
-                  >
-                    <CardActionArea
-                      onClick={() => addPremadeRubric(template)}
-                      disabled={addingPremade !== null}
-                      sx={{ p: 2, textAlign: "center" }}
-                    >
-                      {addingPremade === template.name && (
-                        <Box sx={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
-                          <CircularProgress size={24} />
-                        </Box>
-                      )}
-                      <CardContent sx={{ p: 0, "&:last-child": { pb: 0 } }}>
-                        <Box sx={{ mb: 1, color: "text.secondary", opacity: addingPremade === template.name ? 0.3 : 1 }}>
-                          {premadeIconMap[templateKey] ?? defaultPremadeIcon}
-                        </Box>
-                        <Typography
-                          fontWeight={600}
-                          sx={{ mb: 0.5, opacity: addingPremade === template.name ? 0.3 : 1 }}
-                        >
-                          {template.name}
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          color="text.secondary"
-                          sx={{
-                            display: "-webkit-box",
-                            WebkitLineClamp: 3,
-                            WebkitBoxOrient: "vertical",
-                            overflow: "hidden",
-                            opacity: addingPremade === template.name ? 0.3 : 1,
-                          }}
-                        >
-                          {template.criteria}
-                        </Typography>
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
-                );
-              })}
-            </Box>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      <Menu
-        anchorEl={menuAnchor}
-        open={Boolean(menuAnchor)}
-        onClose={() => { setMenuAnchor(null); setMenuRubric(null); }}
+      <Dialog
+        open={!!promptViewRubric}
+        onClose={() => {
+          if (promptViewRubric) {
+            const currentText = editedPrompt;
+            const rubric = rubrics.find((r) => r.id === promptViewRubric.id);
+            if (currentText !== (rubric?.judge_prompt ?? "")) {
+              updateField(promptViewRubric.id, { judge_prompt: currentText });
+              setPromptManuallyEditedIds((prev) => new Set(prev).add(promptViewRubric.id));
+            }
+          }
+          setPromptViewRubric(null);
+          setCopied(false);
+        }}
+        maxWidth="md"
+        fullWidth
       >
-        <MenuItem
-          disabled={menuRubric ? (isDraft(menuRubric.id) || !menuRubric.judge_prompt) : true}
-          onClick={() => { setPromptViewRubric(menuRubric); setMenuAnchor(null); setMenuRubric(null); }}
-        >
-          View judge prompt
-        </MenuItem>
-        {menuRubric?.group !== "fixed" && (
-          <MenuItem
-            disabled={menuRubric ? rubricHasRunningJobs(menuRubric) : false}
-            onClick={() => { setRubricToDelete(menuRubric); setMenuAnchor(null); setMenuRubric(null); }}
-          >
-            {menuRubric?.group === "preset" ? "Remove" : "Delete"}
-          </MenuItem>
-        )}
-      </Menu>
-
-      <Dialog open={!!promptViewRubric} onClose={() => setPromptViewRubric(null)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: "flex", alignItems: "center" }}>
-          <Box sx={{ flex: 1 }}>{promptViewRubric?.name} — Judge Prompt</Box>
+          <Box sx={{ flex: 1 }}>{promptViewRubric?.name}: Judge Prompt</Box>
           <Tooltip
             title={promptViewRubric?.scoring_mode === "claim_based"
               ? "Claim-level: evaluates individual claims extracted from the answer separately."
@@ -844,36 +970,42 @@ export default function RubricsPage() {
           </Tooltip>
         </DialogTitle>
         <DialogContent>
-          {promptViewRubric?.judge_prompt ? (
-            <Box sx={{ height: 400, "& .cm-editor": { pointerEvents: "auto" } }}>
-              <PromptEditorDynamic
-                value={promptViewRubric.judge_prompt}
-                onChange={() => {}}
-                disabled
-              />
-            </Box>
-          ) : (
-            <Alert severity="info" variant="outlined">
-              No judge prompt stored. A fallback template will be used at evaluation time.
-              Try re-saving the rubric to regenerate.
-            </Alert>
-          )}
+          <Box sx={{ height: 400, "& .cm-editor": { pointerEvents: "auto" } }}>
+            <PromptEditorDynamic
+              value={editedPrompt}
+              onChange={(val) => setEditedPrompt(val)}
+            />
+          </Box>
         </DialogContent>
         <DialogActions>
-          {promptViewRubric?.judge_prompt && (
-            <Button
-              startIcon={copied ? <IconCheck {...statusIconProps} /> : <IconCopy {...statusIconProps} />}
-              color={copied ? "success" : "primary"}
-              onClick={async () => {
-                await navigator.clipboard.writeText(promptViewRubric.judge_prompt!);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-            >
-              {copied ? "Copied!" : "Copy prompt"}
-            </Button>
-          )}
-          <Button onClick={() => { setPromptViewRubric(null); setCopied(false); }}>Close</Button>
+          <Button
+            startIcon={copied ? <IconCheck {...statusIconProps} /> : <IconCopy {...statusIconProps} />}
+            color={copied ? "success" : "primary"}
+            onClick={async () => {
+              await navigator.clipboard.writeText(editedPrompt);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }}
+          >
+            {copied ? "Copied!" : "Copy prompt"}
+          </Button>
+          <Box sx={{ flex: 1 }} />
+          <Button
+            variant="contained"
+            onClick={() => {
+              if (promptViewRubric) {
+                const rubric = rubrics.find((r) => r.id === promptViewRubric.id);
+                if (editedPrompt !== (rubric?.judge_prompt ?? "")) {
+                  updateField(promptViewRubric.id, { judge_prompt: editedPrompt });
+                  setPromptManuallyEditedIds((prev) => new Set(prev).add(promptViewRubric.id));
+                }
+              }
+              setPromptViewRubric(null);
+              setCopied(false);
+            }}
+          >
+            Done
+          </Button>
         </DialogActions>
       </Dialog>
     </Box>

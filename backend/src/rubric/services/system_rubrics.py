@@ -14,7 +14,6 @@ from src.common.database.repositories.judge_repo import JudgeRepository
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.repositories.target_repo import TargetRepository
 from src.common.llm.provider_service import _model_label, get_valid_model_options, list_resolved_providers
-from src.rubric.services.fixed_rubrics import get_fixed_template, list_fixed_templates
 from src.rubric.services.premade_rubrics import get_premade_template, list_premade_templates
 from src.rubric.services.prompt_files import load_prompt_template_text
 
@@ -22,7 +21,6 @@ logger = logging.getLogger(__name__)
 
 
 class RubricGroup(str, Enum):
-    fixed = "fixed"
     preset = "preset"
     custom = "custom"
 
@@ -33,13 +31,15 @@ class ScoringMode(str, Enum):
 
 
 # String aliases kept for callers that compare against raw DB values
-RUBRIC_GROUP_FIXED = RubricGroup.fixed.value
 RUBRIC_GROUP_PRESET = RubricGroup.preset.value
 RUBRIC_GROUP_CUSTOM = RubricGroup.custom.value
 
+# Preset template keys to auto-seed on target creation
+DEFAULT_PRESET_KEYS = ["accuracy"]
+
 
 AVAILABLE_MODELS = [
-    {"value": "litellm_proxy/gemini-3.1-flash-lite-preview-global", "label": "Gemini 3.1 Flash Lite"},
+    {"value": "gemini/gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
     {"value": "litellm_proxy/gemini-3-flash-preview", "label": "Gemini 3.1 Flash"},
     {"value": "litellm_proxy/gemini-3.1-pro-preview-global", "label": "Gemini 3.1 Pro"},
     {"value": "azure/gpt-5-nano-2025-08-07", "label": "GPT-5 nano"},
@@ -61,21 +61,21 @@ def _require_model(value: str) -> str:
 
 
 EMPATHY_MODELS = [
-    "litellm_proxy/gemini-3-flash-preview",
+    "gemini/gemini-3-flash-preview",
     "azure/gpt-5-mini-2025-08-07",
-    "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+    "gemini/gemini-3.1-flash-lite",
 ]
 
 VERBOSITY_MODELS = [
-    "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+    "gemini/gemini-3.1-flash-lite",
     "azure/gpt-5-mini-2025-08-07",
-    "litellm_proxy/gemini-3-flash-preview",
+    "gemini/gemini-3-flash-preview",
 ]
 
 DEFAULT_RUBRIC_MODELS = [
-    "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+    "gemini/gemini-3.1-flash-lite",
     "azure/gpt-5-mini-2025-08-07",
-    "litellm_proxy/gemini-3-flash-preview",
+    "gemini/gemini-3-flash-preview",
 ]
 
 JUDGE_NAMES = ["Judge 1 (Recommended)", "Judge 2", "Judge 3"]
@@ -116,11 +116,7 @@ def _select_seed_models(db: Session, rubric: TargetRubric) -> list[str]:
 
     recommended_provider: str | None = None
     recommended_model_name: str | None = None
-    if rubric.group == RUBRIC_GROUP_FIXED:
-        fixed_template = get_fixed_template(str(rubric.name)) or {}
-        recommended_provider = fixed_template.get("recommended_model_provider")
-        recommended_model_name = fixed_template.get("recommended_model_name")
-    elif rubric.group == RUBRIC_GROUP_PRESET:
+    if rubric.group == RUBRIC_GROUP_PRESET:
         preset_template = get_premade_template(str(rubric.name).strip().lower()) or get_premade_template(str(rubric.name))
         if preset_template:
             recommended_provider = preset_template.get("recommended_model_provider")
@@ -152,12 +148,8 @@ def reserved_preset_names() -> set[str]:
     return {template["name"] for template in list_premade_templates()}
 
 
-def reserved_fixed_names() -> set[str]:
-    return {template["name"] for template in list_fixed_templates()}
-
-
 def reserved_system_names() -> set[str]:
-    return {*reserved_fixed_names(), *reserved_preset_names()}
+    return reserved_preset_names()
 
 
 def _name_matches(name: str, reserved_name: str) -> bool:
@@ -230,9 +222,9 @@ def canonicalize_rubric_option_value(
 
 
 def accuracy_label_from_bool(label: bool, rubric: TargetRubric | dict | None = None) -> str:
-    resolved_rubric = rubric or get_fixed_template("accuracy")
+    resolved_rubric = rubric or get_premade_template("accuracy")
     if resolved_rubric is None:
-        raise RuntimeError("Missing fixed rubric template for accuracy")
+        raise RuntimeError("Missing rubric template for accuracy")
     return best_option_for_rubric(resolved_rubric) if label else negative_option_for_rubric(resolved_rubric)
 
 
@@ -251,74 +243,38 @@ def build_preset_definition(name: str) -> dict | None:
         "best_option": full["best_option"],
         "judge_prompt": load_prompt_template_text(judge_prompt_path) if judge_prompt_path else full.get("judge_prompt"),
         "group": RubricGroup.preset.value,
-        "scoring_mode": ScoringMode.response_level.value,
-    }
-
-
-def build_fixed_definition(name: str) -> dict | None:
-    full = get_fixed_template(name.lower()) or get_fixed_template(name)
-    if not full:
-        return None
-    judge_prompt_path = full.get("judge_prompt_path")
-    return {
-        "name": full["name"],
-        "criteria": full["criteria"],
-        "options": full["options"],
-        "best_option": full["best_option"],
-        "judge_prompt": load_prompt_template_text(judge_prompt_path) if judge_prompt_path else full.get("judge_prompt"),
-        "group": RubricGroup.fixed.value,
-        "scoring_mode": full["scoring_mode"],
+        "scoring_mode": full.get("scoring_mode", ScoringMode.response_level.value),
     }
 
 
 def ensure_system_rubrics(db: Session, target_id: int) -> None:
-    """Bootstrap built-in rubrics for one newly created target."""
-    for position, template in enumerate(list_fixed_templates()):
+    """Bootstrap default preset rubrics for a newly created target."""
+    for position, key in enumerate(DEFAULT_PRESET_KEYS):
+        definition = build_preset_definition(key)
+        if definition is None:
+            continue
         existing = next(
             iter(
                 TargetRubricRepository.get_by_target(
                     db,
                     target_id,
-                    group=RUBRIC_GROUP_FIXED,
-                    name=template["name"],
+                    name=definition["name"],
                 )
             ),
             None,
         )
-        definition = build_fixed_definition(template["name"])
-        if definition is None:
-            continue
         if existing:
-            changed = False
-            if existing.position != position:
-                existing.position = position
-                changed = True
-            for key, value in definition.items():
-                if getattr(existing, key) != value:
-                    setattr(existing, key, value)
-                    changed = True
-            if changed:
-                db.commit()
-                db.refresh(existing)
             continue
-
-        fixed_rubric = TargetRubric(
+        rubric = TargetRubric(
             target_id=target_id,
             position=position,
             **definition,
         )
-        db.add(fixed_rubric)
+        db.add(rubric)
         try:
             db.commit()
         except IntegrityError:
             db.rollback()
-            if not TargetRubricRepository.get_by_target(
-                db,
-                target_id,
-                group=RUBRIC_GROUP_FIXED,
-                name=template["name"],
-            ):
-                raise
 
 
 def ensure_judges(db: Session, rubric_id: int) -> None:
@@ -338,7 +294,7 @@ def ensure_judges(db: Session, rubric_id: int) -> None:
     if rubric is None:
         return
 
-    if rubric.group in {RUBRIC_GROUP_FIXED, RUBRIC_GROUP_PRESET, RUBRIC_GROUP_CUSTOM}:
+    if rubric.group in {RUBRIC_GROUP_PRESET, RUBRIC_GROUP_CUSTOM}:
         models = _select_seed_models(db, rubric)
     else:
         models = []
@@ -374,7 +330,7 @@ def ensure_system_judges(db: Session, target_id: int) -> None:
     """
     Upsert judges for a target's built-in system rubrics.
 
-    Delegates to ensure_judges() for each fixed/preset rubric on the target.
+    Delegates to ensure_judges() for each preset rubric on the target.
     Safe to run as part of target creation bootstrap.
 
     Args:
@@ -385,7 +341,7 @@ def ensure_system_judges(db: Session, target_id: int) -> None:
         db.query(TargetRubric)
         .filter(
             TargetRubric.target_id == target_id,
-            TargetRubric.group.in_([RUBRIC_GROUP_FIXED, RUBRIC_GROUP_PRESET]),
+            TargetRubric.group == RUBRIC_GROUP_PRESET,
         )
         .all()
     )

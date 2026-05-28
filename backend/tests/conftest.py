@@ -68,9 +68,9 @@ def get_test_password_hash(password: str) -> str:
 
 def get_accuracy_rubric(db, target_id: int) -> TargetRubric:
     """Return the built-in Accuracy rubric for a target."""
-    rubrics = TargetRubricRepository.get_by_target(db, target_id, group="fixed", name="Accuracy")
+    rubrics = TargetRubricRepository.get_by_target(db, target_id, group="preset", name="Accuracy")
     if len(rubrics) != 1:
-        raise AssertionError(f"Expected exactly one fixed Accuracy rubric for target {target_id}")
+        raise AssertionError(f"Expected exactly one preset Accuracy rubric for target {target_id}")
     return rubrics[0]
 
 
@@ -114,10 +114,10 @@ def mock_provider_resolution(request):
 
     default_runtime = ProviderRuntimeConfig(
         provider_key="gemini",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         litellm_kwargs={},
     )
-    default_model = "litellm_proxy/gemini-3.1-flash-lite-preview-global"
+    default_model = "gemini/gemini-3.1-flash-lite"
 
     patch_targets = [
         ("src.query_generation.services.persona_generator.resolve_model_runtime_config_for_target", default_runtime),
@@ -152,7 +152,7 @@ def with_provider_bypass():
 
     default_runtime = ProviderRuntimeConfig(
         provider_key="gemini",
-        model_name="gemini/gemini-3.1-flash-lite-preview",
+        model_name="gemini/gemini-3.1-flash-lite",
         litellm_kwargs={},
     )
     gemini_provider = get_provider_entry("gemini")
@@ -550,14 +550,14 @@ def sample_qa_job(test_db, sample_snapshot, sample_question, sample_answer):
     """Create a sample QA job for testing."""
     from src.rubric.services.system_rubrics import ensure_system_rubrics
 
-    # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
+    # Create the preset Accuracy rubric for the target (scoring_mode='claim_based')
     ensure_system_rubrics(test_db, sample_snapshot.target_id)
     accuracy_rubric = get_accuracy_rubric(test_db, sample_snapshot.target_id)
 
     # Create a judge bound to the accuracy rubric
     judge = Judge(
         name="Test Judge",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         prompt_template="Test template",
         params={},
         rubric_id=accuracy_rubric.id,
@@ -612,14 +612,14 @@ def sample_qa_job_no_answer(test_db, sample_target, sample_job, sample_personas)
     test_db.commit()
     test_db.refresh(question)
 
-    # Create the fixed Accuracy rubric for the target (scoring_mode='claim_based')
+    # Create the preset Accuracy rubric for the target (scoring_mode='claim_based')
     ensure_system_rubrics(test_db, sample_target.id)
     accuracy_rubric = get_accuracy_rubric(test_db, sample_target.id)
 
     # Create judge bound to the accuracy rubric
     judge = Judge(
         name="Error Test Judge",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         prompt_template="Test template",
         params={},
         rubric_id=accuracy_rubric.id,
@@ -662,7 +662,7 @@ def sample_judge_claim_based(test_db, sample_target):
 
     judge = Judge(
         name="Claim-Based Judge",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         prompt_template="Test prompt template",
         params={"temperature": 0.7},
         rubric_id=accuracy_rubric.id,
@@ -680,7 +680,7 @@ def sample_judge_response_level(test_db, sample_rubric):
     """Create a rubric-bound response-level judge for testing."""
     judge = Judge(
         name="Response-Level Judge",
-        model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+        model_name="gemini/gemini-3.1-flash-lite",
         prompt_template="Test prompt template",
         params={"temperature": 0.5},
         rubric_id=sample_rubric.id,

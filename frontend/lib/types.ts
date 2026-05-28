@@ -572,7 +572,7 @@ export interface QARubricScore {
 export interface QARubricStatus {
   rubric_id: number;
   rubric_name: string;
-  group: "fixed" | "preset" | "custom";
+  group: "preset" | "custom";
   state: RubricVerdictState;
   message: string;
   judge_id: number | null;
@@ -650,7 +650,7 @@ export interface AnswerLabelOverrideCreate {
 export interface ResultRow {
   rubric_id: number;
   rubric_name: string;
-  group: "fixed" | "preset" | "custom";
+  group: "preset" | "custom";
   question_id: number;
   question_text: string | null;
   question_type: string | null;
@@ -728,7 +728,7 @@ export interface ScoringRowResult {
 export interface ScoringContract extends SnapshotMetric {
   rubric_id: number;
   rubric_name: string;
-  group: "fixed" | "preset" | "custom";
+  group: "preset" | "custom";
   best_option?: string | null;
   judge_summaries: JudgeScoreSummary[];
   rows: ScoringRowResult[];
@@ -789,7 +789,7 @@ export interface ScoringResultsResponse extends ScoringContract {
 export interface MetricsByRubric {
   rubric_id: number;
   rubric_name: string;
-  group: "fixed" | "preset" | "custom";
+  group: "preset" | "custom";
   snapshots: SnapshotMetric[];
 }
 
@@ -840,6 +840,17 @@ export interface AnswerAnnotation {
   updated_at: string;
 }
 
+export interface AnnotationAnswerGroup {
+  answer_id: number;
+  annotations: AnswerAnnotation[];
+}
+
+export interface AnnotationListResponse {
+  answers: AnnotationAnswerGroup[];
+  total_answers: number;
+  total_annotations: number;
+}
+
 // Rubric types
 export interface RubricOption {
   option: string;
@@ -851,7 +862,7 @@ export interface TargetRubricCreate {
   criteria: string;
   options: RubricOption[];
   best_option?: string | null;
-  group?: "fixed" | "preset" | "custom";
+  group?: "preset" | "custom";
 }
 
 export interface TargetRubricUpdate {
@@ -859,6 +870,7 @@ export interface TargetRubricUpdate {
   criteria?: string;
   options?: RubricOption[];
   best_option?: string | null;
+  judge_prompt?: string;
 }
 
 export interface TargetRubricResponse {
@@ -870,7 +882,7 @@ export interface TargetRubricResponse {
   best_option: string | null;
   position: number;
   judge_prompt: string | null;
-  group: "fixed" | "preset" | "custom";
+  group: "preset" | "custom";
   scoring_mode: "claim_based" | "response_level";
   created_at: string;
   updated_at: string;

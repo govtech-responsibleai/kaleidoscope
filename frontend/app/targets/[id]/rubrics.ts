@@ -8,9 +8,8 @@ type RubricLike = {
 };
 
 const RUBRIC_GROUP_PRIORITY: Record<string, number> = {
-  fixed: 0,
-  preset: 1,
-  custom: 2,
+  preset: 0,
+  custom: 1,
 };
 
 export interface MissingRubricCoverage {
@@ -46,8 +45,6 @@ export const orderRubricsForDisplay = <T extends RubricLike>(rubrics: T[]): T[] 
 
 export const getRubricGroupLabel = (group: string): string => {
   switch (group) {
-    case "fixed":
-      return "Fixed";
     case "preset":
       return "Preset";
     case "custom":

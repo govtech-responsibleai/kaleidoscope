@@ -46,7 +46,7 @@ import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
 import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
-type SourceGroup = "fixed" | "preset" | "custom";
+type SourceGroup = "preset" | "custom";
 
 interface MetricSectionConfig {
   key: string;
@@ -522,9 +522,9 @@ export default function ScoringPage() {
                   value={index}
                   sx={{
                     ...tabSx,
-                    color: groupColors[section.sourceGroup].border,
+                    color: (groupColors[section.sourceGroup as keyof typeof groupColors] ?? groupColors.preset).border,
                     "&.Mui-selected": {
-                      color: groupColors[section.sourceGroup].border,
+                      color: (groupColors[section.sourceGroup as keyof typeof groupColors] ?? groupColors.preset).border,
                       fontWeight: 700,
                     },
                   }}
@@ -743,7 +743,7 @@ function JudgeStrip({
   onAddJudge: (config: DialogConfig) => void;
   dialogConfig: DialogConfig;
 }) {
-  const sectionColor = groupColors[section.sourceGroup];
+  const sectionColor = groupColors[section.sourceGroup as keyof typeof groupColors] ?? groupColors.preset;
   return (
     <Box
       data-testid={TESTIDS.JUDGE_LIST}

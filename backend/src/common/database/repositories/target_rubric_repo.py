@@ -40,9 +40,8 @@ class TargetRubricRepository:
 
         return query.order_by(
             case(
-                (TargetRubric.group == "fixed", 0),
-                (TargetRubric.group == "preset", 1),
-                else_=2,
+                (TargetRubric.group == "preset", 0),
+                else_=1,
             ),
             TargetRubric.created_at.asc(),
             TargetRubric.id.asc(),

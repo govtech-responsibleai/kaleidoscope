@@ -46,7 +46,7 @@ MOCK_LLM_METADATA = {
     "prompt_tokens": 100,
     "completion_tokens": 30,
     "total_cost": 0.0001,
-    "model": "litellm_proxy/gemini-3.1-flash-lite-preview-global",
+    "model": "gemini/gemini-3.1-flash-lite",
 }
 
 

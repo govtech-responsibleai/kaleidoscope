@@ -2,9 +2,25 @@
 Unit tests for QuestionGenerator service.
 """
 
+import os
 import pytest
+from pathlib import Path
 from unittest.mock import patch, MagicMock
 from types import SimpleNamespace
+
+
+def _load_gemini_key() -> str | None:
+    key = os.environ.get("GEMINI_API_KEY")
+    if key:
+        return key
+    env_file = Path(__file__).parents[3] / ".env"
+    if env_file.exists():
+        from dotenv import dotenv_values
+        return dotenv_values(env_file).get("GEMINI_API_KEY")
+    return None
+
+
+_GEMINI_KEY = _load_gemini_key()
 
 from src.common.database.models import JobStatusEnum
 from src.common.models import QuestionBase, QuestionListOutput, QuestionScope, QuestionType
@@ -703,3 +719,38 @@ class TestQuestionSimilarity:
         query2_ids = [cid for cid, _ in results[102]]
         assert 3 not in query1_ids
         assert 3 not in query2_ids
+
+
+@pytest.mark.unit
+@pytest.mark.slow
+@pytest.mark.skipif(not _GEMINI_KEY, reason="GEMINI_API_KEY not set in environment or .env")
+class TestLiveGeminiEmbeddings:
+    """Live tests against the real Gemini embedding API. Skipped when key is absent."""
+
+    def test_near_duplicate_questions_score_above_threshold(self):
+        """Synonym-swap near-duplicates must exceed the 0.7 dedupe threshold."""
+        results = find_similar_questions_batch(
+            query_texts=[(1, "can still use brunei dollar here?")],
+            candidate_texts=[(2, "can I still use brunei money here")],
+            threshold=0.7,
+            model="gemini/gemini-embedding-001",
+            provider_kwargs={"api_key": _GEMINI_KEY},
+        )
+        assert 2 in [cid for cid, _ in results[1]], (
+            "Expected 'brunei money' to be flagged as similar to 'brunei dollar' "
+            f"(got scores: {results[1]})"
+        )
+
+    def test_unrelated_questions_score_below_threshold(self):
+        """Genuinely different questions must not exceed the 0.7 threshold."""
+        results = find_similar_questions_batch(
+            query_texts=[(1, "can still use brunei dollar here?")],
+            candidate_texts=[(2, "how do I reset my password?")],
+            threshold=0.7,
+            model="gemini/gemini-embedding-001",
+            provider_kwargs={"api_key": _GEMINI_KEY},
+        )
+        assert results[1] == [], (
+            "Expected unrelated question to score below threshold "
+            f"(got scores: {results[1]})"
+        )

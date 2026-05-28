@@ -8,13 +8,12 @@ providers:
         label: API Key
         env_var: GEMINI_API_KEY
         required: true
-    default_model: gemini/gemini-3.1-flash-lite-preview
+    default_model: gemini/gemini-3.1-flash-lite
     common_models:
-      - gemini/gemini-3.1-flash-lite-preview
       - gemini/gemini-3-flash-preview
       - gemini/gemini-3.1-pro-preview
     embedding_models:
-      - gemini/text-embedding-004
+      - gemini/gemini-embedding-001
 
   - key: openai
     display_name: OpenAI

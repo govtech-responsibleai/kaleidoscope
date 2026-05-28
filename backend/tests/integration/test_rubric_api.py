@@ -23,7 +23,7 @@ class TestRubric:
     @staticmethod
     def _accuracy_rubric(test_db, target_id: int):
         return TargetRubricRepository.get_by_target(
-            test_db, target_id, group="fixed", name="Accuracy"
+            test_db, target_id, group="preset", name="Accuracy"
         )[0]
 
     def test_create_rubric(self, test_client, sample_target):
@@ -78,7 +78,7 @@ class TestRubric:
         names = {r["name"] for r in rubrics}
         assert names == {"Tone of Voice", "Response Relevance"}
 
-    def test_list_rubrics_does_not_create_fixed_accuracy_for_bare_target(self, test_client, test_db, sample_target):
+    def test_list_rubrics_does_not_bootstrap_accuracy_for_bare_target(self, test_client, test_db, sample_target):
         before_count = test_db.query(TargetRubric).filter_by(target_id=sample_target.id).count()
         assert before_count == 0
 
@@ -89,28 +89,28 @@ class TestRubric:
         after_count = test_db.query(TargetRubric).filter_by(target_id=sample_target.id).count()
         assert after_count == 0
 
-    def test_fixed_accuracy_cannot_be_updated(self, test_client, test_db, sample_target):
+    def test_accuracy_rubric_cannot_be_updated(self, test_client, test_db, sample_target):
         ensure_system_rubrics(test_db, sample_target.id)
-        fixed = self._accuracy_rubric(test_db, sample_target.id)
+        accuracy = self._accuracy_rubric(test_db, sample_target.id)
         rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
-        listed_fixed = next(r for r in rubrics if r["id"] == fixed.id)
+        listed = next(r for r in rubrics if r["id"] == accuracy.id)
 
         resp = test_client.put(
-            f"/api/v1/targets/{sample_target.id}/rubrics/{listed_fixed['id']}",
+            f"/api/v1/targets/{sample_target.id}/rubrics/{listed['id']}",
             json={"name": "Changed Accuracy"},
         )
         assert resp.status_code == 400
 
-    def test_fixed_accuracy_cannot_be_deleted(self, test_client, test_db, sample_target):
+    def test_accuracy_rubric_can_be_deleted(self, test_client, test_db, sample_target):
         ensure_system_rubrics(test_db, sample_target.id)
-        fixed = self._accuracy_rubric(test_db, sample_target.id)
+        accuracy = self._accuracy_rubric(test_db, sample_target.id)
         rubrics = test_client.get(f"/api/v1/targets/{sample_target.id}/rubrics").json()
-        listed_fixed = next(r for r in rubrics if r["id"] == fixed.id)
+        listed = next(r for r in rubrics if r["id"] == accuracy.id)
 
         resp = test_client.delete(
-            f"/api/v1/targets/{sample_target.id}/rubrics/{listed_fixed['id']}",
+            f"/api/v1/targets/{sample_target.id}/rubrics/{listed['id']}",
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 204
 
     def test_preset_rubric_cannot_be_updated(self, test_client, test_db, sample_target):
         """Preset (Empathy) rubric update -> 400."""
@@ -254,7 +254,7 @@ class TestRubric:
         assert custom_rubric_prompt_path(sample_rubric.id).read_text(encoding="utf-8") == updated_prompt
 
     def test_delete_rubric(self, test_client, sample_target, sample_rubric):
-        """DELETE removes the custom rubric but preserves backend-owned fixed/preset rubrics."""
+        """DELETE removes the custom rubric but preserves backend-owned preset rubrics."""
         resp = test_client.delete(
             f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
         )
@@ -459,3 +459,47 @@ class TestRubricValidation:
 
     # Rubric job start tests removed — /rubric-qa-jobs/start endpoint was
     # removed in the single-QAJob-per-question architecture.
+
+
+class TestJudgePromptSave:
+    """Tests for saving judge_prompt directly via PUT."""
+
+    @patch("src.rubric.api.routes.rubrics.generate_judge_prompt")
+    def test_put_only_judge_prompt_does_not_call_augmenter(
+        self, mock_generate, test_client, sample_target, sample_rubric,
+    ):
+        """PUT with only judge_prompt should persist directly without regeneration."""
+        resp = test_client.put(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
+            json={"judge_prompt": "Manually set prompt"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["judge_prompt"] == "Manually set prompt"
+        mock_generate.assert_not_called()
+
+    @patch("src.rubric.api.routes.rubrics.generate_judge_prompt")
+    def test_put_judge_prompt_deletes_stale_scores(
+        self, mock_generate, test_client, test_db, sample_target, sample_rubric,
+        sample_answer, sample_judge_claim_based,
+    ):
+        """Changing the judge prompt purges scores produced by the old prompt."""
+        score = AnswerScore(
+            answer_id=sample_answer.id,
+            rubric_id=sample_rubric.id,
+            judge_id=sample_judge_claim_based.id,
+            overall_label="Professional",
+            explanation="Scored with the old prompt",
+        )
+        test_db.add(score)
+        test_db.commit()
+
+        resp = test_client.put(
+            f"/api/v1/targets/{sample_target.id}/rubrics/{sample_rubric.id}",
+            json={"judge_prompt": "Updated prompt text"},
+        )
+
+        assert resp.status_code == 200
+        assert resp.json()["judge_prompt"] == "Updated prompt text"
+        mock_generate.assert_not_called()
+        test_db.expire_all()
+        assert test_db.query(AnswerScore).filter_by(rubric_id=sample_rubric.id).count() == 0

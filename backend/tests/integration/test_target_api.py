@@ -7,7 +7,7 @@ import pytest
 from src.common.database.models import Judge, TargetRubric
 from src.common.connectors.http_auth import decrypt_http_auth_secret
 from src.common.database.repositories import TargetHttpAuthSecretRepository, TargetRepository
-from src.rubric.services.fixed_rubrics import get_fixed_template
+from src.rubric.services.premade_rubrics import get_premade_template
 
 pytestmark = [pytest.mark.integration, pytest.mark.usefixtures("with_provider_bypass")]
 
@@ -15,8 +15,8 @@ class TestTargetAPI:
     """Integration tests for target API."""
 
     @staticmethod
-    def _fixed_accuracy_name() -> str:
-        return get_fixed_template("accuracy")["name"]
+    def _accuracy_name() -> str:
+        return get_premade_template("accuracy")["name"]
 
     def test_target_crud_flow(self, auth_client, auth_headers):
         """
@@ -54,9 +54,9 @@ class TestTargetAPI:
         assert rubrics_response.status_code == 200
         rubrics = rubrics_response.json()
         assert len(rubrics) == 1
-        accuracy_rubric = next((rubric for rubric in rubrics if rubric["name"] == self._fixed_accuracy_name()), None)
+        accuracy_rubric = next((rubric for rubric in rubrics if rubric["name"] == self._accuracy_name()), None)
         assert accuracy_rubric is not None
-        assert accuracy_rubric["group"] == "fixed"
+        assert accuracy_rubric["group"] == "preset"
 
         rubric_judges_response = auth_client.get(
             f"/api/v1/judges/by-rubric/{accuracy_rubric['id']}?target_id={target_id}",
@@ -265,7 +265,7 @@ class TestTargetAPI:
         )
         assert rubrics_response.status_code == 200
         accuracy_rubric = next(
-            rubric for rubric in rubrics_response.json() if rubric["name"] == self._fixed_accuracy_name()
+            rubric for rubric in rubrics_response.json() if rubric["name"] == self._accuracy_name()
         )
 
         db = test_db_factory()
@@ -290,7 +290,7 @@ class TestTargetAPI:
                 target_id=target_id,
                 rubric_id=empathy_rubric.id,
                 name="Empathy Baseline",
-                model_name="litellm_proxy/gemini-3.1-flash-lite-preview-global",
+                model_name="gemini/gemini-3.1-flash-lite",
                 prompt_template="Score empathy",
                 params={},
                 is_baseline=True,
@@ -385,7 +385,7 @@ class TestTargetAPI:
         assert initial_rubrics_response.status_code == 200
         initial_rubrics = initial_rubrics_response.json()
         assert len(initial_rubrics) == 1
-        assert initial_rubrics[0]["group"] == "fixed"
+        assert initial_rubrics[0]["group"] == "preset"
 
         premade_response = auth_client.get(
             f"/api/v1/targets/{target_id}/premade-rubrics",
@@ -426,7 +426,7 @@ class TestTargetAPI:
         assert updated_rubrics_response.status_code == 200
         updated_rubrics = updated_rubrics_response.json()
         assert len(updated_rubrics) == 2
-        assert [rubric["group"] for rubric in updated_rubrics] == ["fixed", "preset"]
+        assert [rubric["group"] for rubric in updated_rubrics] == ["preset", "preset"]
         assert any(rubric["id"] == created_preset["id"] for rubric in updated_rubrics)
 
         updated_premade_response = auth_client.get(
@@ -449,4 +449,4 @@ class TestTargetAPI:
         assert final_rubrics_response.status_code == 200
         final_rubrics = final_rubrics_response.json()
         assert len(final_rubrics) == 1
-        assert final_rubrics[0]["group"] == "fixed"
+        assert final_rubrics[0]["group"] == "preset"

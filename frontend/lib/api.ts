@@ -51,6 +51,7 @@ import {
   TargetRubricResponse,
   AnswerAnnotation,
   AnswerAnnotationUpsert,
+  AnnotationListResponse,
   RubricAnswerScore,
   ScoringPendingCounts,
   Status,
@@ -490,6 +491,9 @@ export const answerApi = {
 
 // Annotation endpoints
 export const annotationApi = {
+  listBySnapshot: (snapshotId: number) =>
+    api.get<AnnotationListResponse>(`/snapshots/${snapshotId}/annotations`),
+
   listByAnswer: (answerId: number) =>
     api.get<AnswerAnnotation[]>(`/answers/${answerId}/annotations`),
 

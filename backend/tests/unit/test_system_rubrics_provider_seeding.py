@@ -4,7 +4,7 @@ from src.rubric.services.system_rubrics import ensure_judges, ensure_system_rubr
 
 
 class TestSystemRubricProviderSeeding:
-    def test_fixed_rubric_prefers_recommended_provider_then_falls_back(self, test_db, test_user, provider_settings):
+    def test_accuracy_preset_prefers_recommended_provider_then_falls_back(self, test_db, test_user, provider_settings):
         target = Target(name="Target", user_id=test_user.id)
         test_db.add(target)
         test_db.commit()
@@ -18,7 +18,7 @@ class TestSystemRubricProviderSeeding:
             accuracy_rubric = TargetRubricRepository.get_by_target(
                 test_db,
                 target.id,
-                group="fixed",
+                group="preset",
                 name="Accuracy",
             )[0]
 
@@ -32,5 +32,5 @@ class TestSystemRubricProviderSeeding:
 
         assert len(judges) == 2
         assert judges[0].name == "Judge 1 (Recommended)"
-        assert judges[0].model_name == "gemini/gemini-3.1-flash-lite-preview"
+        assert judges[0].model_name == "gemini/gemini-3.1-flash-lite"
         assert judges[1].model_name == "openai/gpt-5.4-nano"

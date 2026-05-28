@@ -79,12 +79,13 @@ function defaultResponse(method: string, path: string): unknown {
   // Rubrics
   if (method === "GET" && pathMatches(path, "/targets/{id}/rubrics")) return [data.accuracyRubric];
   if (method === "POST" && pathMatches(path, "/targets/{id}/rubrics")) return { ...data.accuracyRubric, id: 999, name: "Completeness", group: "preset" };
+  if (method === "PUT" && pathMatches(path, "/targets/{id}/rubrics/{id}")) return data.customRubricWithPrompt;
   if (method === "GET" && pathMatches(path, "/targets/{id}/premade-rubrics")) return [data.premadeTemplate];
 
   // Snapshots
   if (method === "GET" && pathMatches(path, "/targets/{id}/snapshots")) return [data.snapshot];
   if (method === "POST" && path === "/snapshots") return data.snapshot;
-  if (method === "GET" && pathMatches(path, "/snapshots/{id}") && !path.includes("/stats") && !path.includes("/answers") && !path.includes("/questions") && !path.includes("/qa-jobs") && !path.includes("/results") && !path.includes("/scoring")) return data.snapshot;
+  if (method === "GET" && pathMatches(path, "/snapshots/{id}") && !path.includes("/stats") && !path.includes("/answers") && !path.includes("/annotations") && !path.includes("/questions") && !path.includes("/qa-jobs") && !path.includes("/results") && !path.includes("/scoring")) return data.snapshot;
   if (method === "GET" && pathMatches(path, "/snapshots/{id}/stats")) return data.snapshotStats;
 
   // Personas
@@ -121,6 +122,7 @@ function defaultResponse(method: string, path: string): unknown {
   if (method === "POST" && path === "/judges/seed") return [data.judge];
 
   // Scoring / metrics
+  if (method === "GET" && pathMatches(path, "/snapshots/{id}/annotations")) return { answers: [], total_answers: 0, total_annotations: 0 };
   if (method === "GET" && pathMatches(path, "/snapshots/{id}/scoring-status")) return data.scoringStatusComplete;
   if (method === "GET" && pathMatches(path, "/snapshots/{id}/scoring-rubrics")) return data.scoringRubricsResponse;
   if (method === "GET" && pathMatches(path, "/snapshots/{id}/results")) return data.scoringResultsResponse;
