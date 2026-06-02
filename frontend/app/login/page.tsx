@@ -11,13 +11,17 @@ import {
   Alert,
   CircularProgress,
   Stack,
+  Divider,
 } from "@mui/material";
 import { useRouter } from "next/navigation";
+import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google";
+import axios from "axios";
 import { authApi } from "@/lib/api";
 import Image from "next/image";
 
 export default function LoginPage() {
   const router = useRouter();
+  const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
   const [sessionExpired, setSessionExpired] = useState(false);
 
   useEffect(() => {
@@ -43,6 +47,28 @@ export default function LoginPage() {
       router.push("/");
     } catch {
       setError("Invalid username or password");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credential?: string) => {
+    setError("");
+    if (!credential) {
+      setError("Unable to sign in with Google. Please try again.");
+      return;
+    }
+    setLoading(true);
+
+    try {
+      await authApi.googleLogin(credential);
+      router.push("/");
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response?.status === 403) {
+        setError("Access is restricted to authorised email domains. Please sign in with your work account.");
+      } else {
+        setError("Unable to sign in with Google. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -109,6 +135,20 @@ export default function LoginPage() {
               {loading ? <CircularProgress size={24} /> : "Sign In"}
             </Button>
           </form>
+
+          {googleClientId && (
+            <>
+              <Divider sx={{ my: 3 }}>or</Divider>
+              <GoogleOAuthProvider clientId={googleClientId}>
+                <Box display="flex" justifyContent="center">
+                  <GoogleLogin
+                    onSuccess={(credentialResponse) => handleGoogleSuccess(credentialResponse.credential)}
+                    onError={() => setError("Unable to sign in with Google. Please try again.")}
+                  />
+                </Box>
+              </GoogleOAuthProvider>
+            </>
+          )}
         </CardContent>
       </Card>
     </Box>

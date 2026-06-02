@@ -8,11 +8,12 @@ export function middleware(request: NextRequest) {
 
   const cspHeader = `
     default-src 'self';
-    script-src 'self' 'nonce-${nonce}' 'strict-dynamic';
-    style-src 'self' 'unsafe-inline';
+    script-src 'self' 'nonce-${nonce}' 'strict-dynamic' https://accounts.google.com;
+    style-src 'self' 'unsafe-inline' https://accounts.google.com;
     img-src 'self' blob: data:;
     font-src 'self';
-    connect-src 'self' ${apiOrigin};
+    connect-src 'self' ${apiOrigin} https://accounts.google.com;
+    frame-src https://accounts.google.com;
     object-src 'none';
     base-uri 'self';
     form-action 'self';

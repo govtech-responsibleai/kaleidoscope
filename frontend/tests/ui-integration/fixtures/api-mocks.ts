@@ -60,6 +60,9 @@ function defaultResponse(method: string, path: string): unknown {
   if (method === "POST" && path === "/auth/login") {
     return { access_token: "fake-token-12345", token_type: "bearer" };
   }
+  if (method === "POST" && path === "/auth/google") {
+    return { access_token: "fake-google-token-12345", token_type: "bearer", is_admin: false, username: "alice@gov.sg" };
+  }
 
   // Targets
   if (method === "GET" && path === "/targets") return [data.target];

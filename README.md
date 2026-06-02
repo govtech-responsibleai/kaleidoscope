@@ -110,6 +110,8 @@ cd backend && uv run python scripts/generate_secret.py
 
 Set the outputs in `.env` or your deployment environment.
 
+Optional Google Sign-In is configured with `GOOGLE_CLIENT_ID`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, and `ALLOWED_EMAIL_DOMAINS`. Domains are exact-match only. If you keep the demo target variables from `.env.example`, replace the sample endpoint, response path, body template, and headers before users sign in. Full reference: [Authentication](docs/docs/configuration/2_authentication.md).
+
 > **Nemotron dataset**: The first call to sample personas downloads the configured NVIDIA Nemotron dataset and caches it to `~/.cache/huggingface/`. Expect time and disk on first run — subsequent calls are instant. See [Customising personas](#customising-personas) to change the dataset.
 
 ## 🧑‍🤝‍🧑 Customising personas

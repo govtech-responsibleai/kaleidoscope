@@ -18,6 +18,7 @@ const sidebars: SidebarsConfig = {
       customProps: {icon: 'IconBook'},
       items: [
         'configuration/providers',
+        'configuration/authentication',
         'configuration/environment-variables',
         'configuration/connect-your-target',
         'configuration/defining-rubrics',

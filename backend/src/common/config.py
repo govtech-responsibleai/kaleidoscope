@@ -59,6 +59,23 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 4320  # 3 days
     admin_api_key: str  # Required - for creating users via API
+    google_client_id: Optional[str] = None
+    allowed_email_domains: str = ""
+
+    # Demo target seed (optional; enabled when DEMO_TARGET_ENDPOINT is set)
+    demo_target_name: str = "Demo Chatbot"
+    demo_target_agency: Optional[str] = None
+    demo_target_purpose: Optional[str] = None
+    demo_target_target_users: Optional[str] = None
+    demo_target_endpoint: Optional[str] = None
+    demo_target_response_path: Optional[str] = None
+    demo_target_retrieved_context_path: Optional[str] = None
+    demo_target_body_template: Optional[str] = None
+    demo_target_headers: Optional[str] = None
+
+    # Admin seed (creates admin user on startup if both set and user doesn't exist)
+    seed_admin_username: Optional[str] = None
+    seed_admin_password: Optional[str] = None
 
     # Extensions (comma-separated list, e.g. "aibots,custom")
     kaleidoscope_extensions: str = ""

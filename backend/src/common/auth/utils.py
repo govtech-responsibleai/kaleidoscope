@@ -3,6 +3,7 @@
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from jose import jwt
+from typing import Optional
 
 from src.common.config import get_settings
 
@@ -15,8 +16,10 @@ def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
+def verify_password(plain_password: str, hashed_password: Optional[str]) -> bool:
     """Verify a password against a hash."""
+    if not hashed_password:
+        return False
     return pwd_context.verify(plain_password, hashed_password)
 
 

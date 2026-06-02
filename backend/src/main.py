@@ -55,15 +55,21 @@ async def lifespan(app: FastAPI):
     init_db()
     logger.info("✓ Database initialized")
 
-    # Seed default dev user when running with dev defaults (local dev only)
-    if settings.jwt_secret_key == "dev-jwt-secret":
-        db = SessionLocal()
-        try:
+    # Seed admin user from env vars, or fall back to dev/dev in local dev mode
+    db = SessionLocal()
+    try:
+        if settings.seed_admin_username and settings.seed_admin_password:
+            if not UserRepository.get_by_username(db, settings.seed_admin_username):
+                UserRepository.create(db, settings.seed_admin_username, hash_password(settings.seed_admin_password), is_admin=True)
+                logger.info("Admin user created (username: %s)", settings.seed_admin_username)
+        elif settings.seed_admin_username or settings.seed_admin_password:
+            logger.warning("Both SEED_ADMIN_USERNAME and SEED_ADMIN_PASSWORD must be set to seed an admin user")
+        elif settings.jwt_secret_key == "dev-jwt-secret":
             if not UserRepository.get_by_username(db, "dev"):
                 UserRepository.create(db, "dev", hash_password("dev"), is_admin=True)
-                logger.warning("⚠️  Dev user created (username: dev, password: dev) — change secrets before deploying to production")
-        finally:
-            db.close()
+                logger.warning("Dev user created (username: dev, password: dev) — change secrets before deploying to production")
+    finally:
+        db.close()
 
     # Load connector extensions (e.g. KALEIDOSCOPE_EXTENSIONS=aibots)
     from src.extensions import load_extensions
