@@ -454,9 +454,9 @@ export default function Home() {
             </div>
 
             <div className="feature-item reverse">
-              <div className="feature-screenshot offset-pair">
-                <img src="/kaleidoscope/img/scoring.png" alt="Scoring results" className="offset-back" />
-                <img src="/kaleidoscope/img/disagreement.png" alt="Judge disagreement analysis" className="offset-front" />
+              <div className="feature-screenshot stacked-pair">
+                <img src="/kaleidoscope/img/scoring.png" alt="Scoring results" />
+                <img src="/kaleidoscope/img/disagreement.png" alt="Judge disagreement analysis" />
               </div>
               <div className="feature-desc">
                 <h3>Calibrate LLM Judges</h3>
