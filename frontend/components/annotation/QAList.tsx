@@ -137,15 +137,23 @@ export default function QAList({
     };
   }, [targetId]);
 
+  const visibleQuestionIds = useMemo(
+    () => new Set(approvedQuestions.map((question) => question.id)),
+    [approvedQuestions]
+  );
+
   const savedSelections = useMemo(() => {
     const next = new Set<number>();
     Object.values(qaMap).forEach((entry) => {
-      if (entry.answer?.is_selected_for_annotation) {
+      if (
+        entry.answer?.is_selected_for_annotation &&
+        visibleQuestionIds.has(entry.questionId)
+      ) {
         next.add(entry.answer.id);
       }
     });
     return next;
-  }, [qaMap]);
+  }, [qaMap, visibleQuestionIds]);
 
   // Extract just the question and answer from qaMap 
   const questionAnswerMap = useMemo(() => {
@@ -367,10 +375,10 @@ export default function QAList({
   const activeJob = activeQuestion ? jobByQuestion[activeQuestion.id] ?? null : null;
 
   const annotatedCount = useMemo(() => {
-    return Object.values(qaMap).filter(
-      (entry) => entry.answer && annotationCompletenessByAnswerId[entry.answer.id]
+    return Array.from(savedSelections).filter(
+      (answerId) => annotationCompletenessByAnswerId[answerId]
     ).length;
-  }, [annotationCompletenessByAnswerId, qaMap]);
+  }, [annotationCompletenessByAnswerId, savedSelections]);
   const hasMissingSelectedAnnotations = savedSelections.size > 0 && annotatedCount < savedSelections.size;
 
   const handleFilterChange = (
