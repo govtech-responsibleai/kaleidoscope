@@ -15,8 +15,6 @@ from src.rubric.services.prompt_files import write_custom_rubric_prompt
 
 logger = logging.getLogger(__name__)
 
-AUGMENTER_MODEL = "litellm_proxy/gemini-3.1-pro-preview-global"
-
 AUGMENTATION_PROMPT = """\
 You are a prompt engineer specialising in LLM-as-judge evaluation prompts. Your task is to take a rubric definition for a single evaluation dimension and produce a complete, ready-to-use judge prompt.
 

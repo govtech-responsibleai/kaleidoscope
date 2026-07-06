@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import Dict, Iterable, List
+from typing import Iterable, List
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -36,28 +36,6 @@ RUBRIC_GROUP_CUSTOM = RubricGroup.custom.value
 
 # Preset template keys to auto-seed on target creation
 DEFAULT_PRESET_KEYS = ["accuracy"]
-
-
-AVAILABLE_MODELS = [
-    {"value": "gemini/gemini-3.1-flash-lite", "label": "Gemini 3.1 Flash Lite"},
-    {"value": "litellm_proxy/gemini-3-flash-preview", "label": "Gemini 3.1 Flash"},
-    {"value": "litellm_proxy/gemini-3.1-pro-preview-global", "label": "Gemini 3.1 Pro"},
-    {"value": "azure/gpt-5-nano-2025-08-07", "label": "GPT-5 nano"},
-    {"value": "azure/gpt-5-mini-2025-08-07", "label": "GPT-5 mini"},
-    {"value": "azure/gpt-5-2025-08-07", "label": "GPT-5"},
-    {"value": "litellm_proxy/claude-haiku-4-5@20251001-global", "label": "Haiku 4.5"},
-    {"value": "litellm_proxy/claude-sonnet-4-5@20250929-asia-southeast1", "label": "Sonnet 4.5"},
-    {"value": "litellm_proxy/claude-opus-4-5@20251101-asia-southeast1", "label": "Opus 4.5"},
-]
-
-AVAILABLE_MODEL_MAP: Dict[str, dict] = {model["value"]: model for model in AVAILABLE_MODELS}
-
-
-def _require_model(value: str) -> str:
-    """Ensure the requested model is defined in AVAILABLE_MODELS."""
-    if value not in AVAILABLE_MODEL_MAP:
-        raise RuntimeError(f"Model '{value}' is not defined in AVAILABLE_MODELS.")
-    return value
 
 
 EMPATHY_MODELS = [
