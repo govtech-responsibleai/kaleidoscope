@@ -293,38 +293,9 @@ export default function QAJobControl({
 
         const answers = answersResponse.data.answers;
 
-        // Ensure any already annotated answers stay in the annotation set.
-        const annotatedNeedingSelection = answers.filter(
-          (answer) => answer.has_annotation && !answer.is_selected_for_annotation
-        );
-        let normalizedAnswers = answers;
-
-        if (annotatedNeedingSelection.length > 0) {
-          try {
-            await answerApi.bulkSelection(snapshotId, {
-              selections: annotatedNeedingSelection.map((answer) => ({
-                answer_id: answer.id,
-                is_selected: true,
-              })),
-            });
-            if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
-            const annotatedIds = new Set(annotatedNeedingSelection.map((answer) => answer.id));
-            normalizedAnswers = answers.map((answer) =>
-              annotatedIds.has(answer.id)
-                ? { ...answer, is_selected_for_annotation: true }
-                : answer
-            );
-          } catch (err) {
-            console.error("Failed to sync annotation selections:", err);
-            notifyError("Some annotated answers temporarily dropped out of the annotation set.");
-          }
-        }
-
-        if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
-
         setQaMap(() => {
           const initial: QAMap = { ...qaMapRef.current };
-          normalizedAnswers.forEach((answer) => {
+          answers.forEach((answer) => {
             const existing = initial[answer.question_id];
             initial[answer.question_id] = {
               ...existing,

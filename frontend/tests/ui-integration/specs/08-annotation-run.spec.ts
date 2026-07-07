@@ -1,5 +1,5 @@
 import { test, expect } from "../fixtures/auth";
-import { TARGET_ID, SNAPSHOT_ID, completedQAJob } from "../fixtures/data";
+import { TARGET_ID, SNAPSHOT_ID, question, answer, completedQAJob } from "../fixtures/data";
 import { TESTIDS } from "../fixtures/testids";
 import { JobStatus, QAJobStageEnum } from "@/lib/types";
 
@@ -76,5 +76,85 @@ test.describe("Annotation run", () => {
 
     // QA list should be visible with populated content
     await expect(page.locator(`[data-testid="${TESTIDS.QA_LIST}"]`)).toBeVisible();
+  });
+
+  test("an annotated answer deselected from the set stays deselected after reload", async ({ authedPage: page }) => {
+    // Simulate post-save DB state: two approved questions, both answered and
+    // annotated, but only the second is selected for annotation. The first was
+    // deliberately deselected — it must NOT be auto-re-added on load.
+    const secondQuestion = { ...question, id: question.id + 1, text: "What is the exchange policy?" };
+    const deselectedAnswer = { ...answer, id: answer.id, is_selected_for_annotation: false, has_annotation: true };
+    const selectedAnswer = {
+      ...answer,
+      id: answer.id + 1,
+      question_id: secondQuestion.id,
+      is_selected_for_annotation: true,
+      has_annotation: true,
+    };
+
+    const secondJob = { ...completedQAJob, id: completedQAJob.id + 1, question_id: secondQuestion.id, answer_id: selectedAnswer.id };
+
+    await page.route(
+      (url) => /\/api\/v1\/targets\/\d+\/questions$/.test(url.pathname),
+      (route) => {
+        if (route.request().method().toUpperCase() !== "GET") return void route.fallback();
+        void route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ items: [question, secondQuestion], total: 2, skip: 0, limit: 250 }),
+        });
+      },
+    );
+
+    await page.route(
+      (url) => new RegExp(`/api/v1/snapshots/${SNAPSHOT_ID}/answers$`).test(url.pathname),
+      (route) => {
+        if (route.request().method().toUpperCase() !== "GET") return void route.fallback();
+        void route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ answers: [deselectedAnswer, selectedAnswer], total: 2 }),
+        });
+      },
+    );
+
+    await page.route(
+      (url) => new RegExp(`/api/v1/snapshots/${SNAPSHOT_ID}/qa-jobs$`).test(url.pathname) && !url.pathname.includes("/start"),
+      (route) => {
+        if (route.request().method().toUpperCase() !== "GET") return void route.fallback();
+        void route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([completedQAJob, secondJob]),
+        });
+      },
+    );
+
+    // The fix means the app must NOT re-select the deselected-but-annotated answer.
+    let reselected = false;
+    await page.route(
+      (url) => new RegExp(`/api/v1/snapshots/${SNAPSHOT_ID}/answers/bulk-selection$`).test(url.pathname),
+      (route) => {
+        const payload = route.request().postDataJSON() as { selections?: { answer_id: number; is_selected: boolean }[] };
+        if (payload?.selections?.some((s) => s.answer_id === deselectedAnswer.id && s.is_selected)) {
+          reselected = true;
+        }
+        void route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+      },
+    );
+
+    await page.goto(targetUrl(`/annotation?snapshot=${SNAPSHOT_ID}`));
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.locator(`[data-testid="${TESTIDS.QA_LIST}"]`)).toBeVisible();
+
+    // The deselected answer's checkbox must remain unchecked; the selected one checked.
+    const deselectedRow = page.locator("li", { hasText: `${question.id}.` });
+    const selectedRow = page.locator("li", { hasText: `${secondQuestion.id}.` });
+    await expect(deselectedRow.getByRole("checkbox")).not.toBeChecked();
+    await expect(selectedRow.getByRole("checkbox")).toBeChecked();
+
+    // And no re-selecting bulk-selection call was issued for the deselected answer.
+    expect(reselected).toBe(false);
   });
 });
