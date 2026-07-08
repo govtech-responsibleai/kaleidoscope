@@ -1,5 +1,7 @@
 """Auth routes for login and user management."""
 
+import logging
+from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header, status
@@ -15,6 +17,8 @@ from src.common.database.repositories.user_repo import UserRepository
 from src.common.auth.utils import verify_password, create_access_token, hash_password
 from src.common.auth.dependencies import require_admin
 from src.common.auth.demo_target_seed import seed_demo_target
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 settings = get_settings()
@@ -38,6 +42,12 @@ class CreateUserRequest(BaseModel):
 class GoogleLoginRequest(BaseModel):
     """Request model for Google Sign-In."""
     credential: str
+
+
+class SignupRequest(BaseModel):
+    """Request model for whitelist-gated self-signup."""
+    email: str
+    password: str
 
 
 class CreateUserResponse(BaseModel):
@@ -68,6 +78,37 @@ def _allowed_domains() -> set[str]:
 def _email_domain(email: str) -> str:
     """Extract a lower-case email domain."""
     return email.rsplit("@", 1)[-1].lower() if "@" in email else ""
+
+
+def _signup_whitelist() -> Optional[set[str]]:
+    """Load the self-signup email whitelist, read fresh on each call.
+
+    The whitelist is a plain-text file (one email per line) at
+    ``settings.signup_whitelist_path``. Blank lines and lines starting with
+    ``#`` are ignored, and emails are normalized to lower case for
+    case-insensitive matching.
+
+    Returns:
+        A set of allowed lower-case emails, or ``None`` if the file is missing
+        or unreadable (signalling that self-registration is not configured).
+    """
+    path = Path(settings.signup_whitelist_path)
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        logger.warning(
+            "Signup whitelist not found or unreadable at %s; self-registration is disabled",
+            settings.signup_whitelist_path,
+        )
+        return None
+
+    emails: set[str] = set()
+    for line in raw.splitlines():
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        emails.add(entry.lower())
+    return emails
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -161,6 +202,61 @@ def google_login(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is disabled",
         )
+
+    access_token = create_access_token(user.id)
+    return TokenResponse(
+        access_token=access_token,
+        is_admin=user.is_admin,
+        username=user.username,
+    )
+
+
+@router.post("/signup", response_model=TokenResponse)
+def signup(
+    request: SignupRequest,
+    db: Session = Depends(get_db),
+):
+    """Self-register a non-admin account if the email is whitelisted.
+
+    Whitelisted users are created with a hashed password, receive the
+    configured demo target, and are logged in immediately (JWT returned),
+    mirroring the account an admin would otherwise create for them.
+
+    Args:
+        request: Signup payload with email and password.
+        db: Database session.
+
+    Returns:
+        A token response with the issued JWT.
+
+    Raises:
+        HTTPException: 403 if self-registration is disabled or the email is not
+            whitelisted; 400 if an account with the email already exists.
+    """
+    email = request.email.strip().lower()
+
+    whitelist = _signup_whitelist()
+    if whitelist is None:
+        # File missing/unreadable: fail closed. The distinct warning is logged
+        # by _signup_whitelist(); the user sees a generic restriction message.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Self-registration is not available.",
+        )
+    if email not in whitelist:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="This email has not been invited to sign up.",
+        )
+
+    if UserRepository.get_by_username(db, email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An account with this email already exists.",
+        )
+
+    user = UserRepository.create(db, email, hash_password(request.password), is_admin=False)
+    seed_demo_target(db, int(user.id))  # type: ignore[arg-type]
 
     access_token = create_access_token(user.id)
     return TokenResponse(

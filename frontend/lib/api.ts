@@ -178,6 +178,19 @@ export const authApi = {
     return response.data;
   },
 
+  signup: async (email: string, password: string) => {
+    const response = await api.post<{
+      access_token: string;
+      token_type: string;
+      is_admin: boolean;
+      username: string;
+    }>("/auth/signup", { email, password });
+    localStorage.setItem("token", response.data.access_token);
+    localStorage.setItem("username", response.data.username);
+    localStorage.setItem("is_admin", String(response.data.is_admin));
+    return response.data;
+  },
+
   logout: () => {
     localStorage.removeItem("token");
     localStorage.removeItem("username");

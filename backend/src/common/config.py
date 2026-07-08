@@ -61,6 +61,8 @@ class Settings(BaseSettings):
     admin_api_key: str  # Required - for creating users via API
     google_client_id: Optional[str] = None
     allowed_email_domains: str = ""
+    # Path to an editable plain-text whitelist (one email per line) gating self-signup.
+    signup_whitelist_path: str = "backend/signup_whitelist.txt"
 
     # Demo target seed (optional; enabled when DEMO_TARGET_ENDPOINT is set)
     demo_target_name: str = "Demo Chatbot"
@@ -79,6 +81,9 @@ class Settings(BaseSettings):
 
     # Extensions (comma-separated list, e.g. "aibots,custom")
     kaleidoscope_extensions: str = ""
+
+    # CORS (comma-separated list of allowed origins, merged with localhost defaults)
+    cors_allowed_origins: str = ""
 
     # Nemotron persona dataset — Singapore is the default; swap via env var
     # for other countries. Must be a valid nvidia/Nemotron-Personas-* HF path.

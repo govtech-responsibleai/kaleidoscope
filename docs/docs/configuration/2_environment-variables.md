@@ -29,9 +29,10 @@ SEED_ADMIN_PASSWORD=change-me
 GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 NEXT_PUBLIC_GOOGLE_CLIENT_ID=your-google-oauth-client-id.apps.googleusercontent.com
 ALLOWED_EMAIL_DOMAINS=gov.sg,tech.gov.sg
+SIGNUP_WHITELIST_PATH=backend/signup_whitelist.txt
 ```
 
-`JWT_SECRET_KEY` signs auth tokens and encrypts stored credentials. `ADMIN_API_KEY` protects the admin API. `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD` can create the first admin user on startup. Google Sign-In is optional and requires both backend and frontend client ID variables plus `ALLOWED_EMAIL_DOMAINS`.
+`JWT_SECRET_KEY` signs auth tokens and encrypts stored credentials. `ADMIN_API_KEY` protects the admin API. `SEED_ADMIN_USERNAME` and `SEED_ADMIN_PASSWORD` can create the first admin user on startup. Google Sign-In is optional and requires both backend and frontend client ID variables plus `ALLOWED_EMAIL_DOMAINS`. `SIGNUP_WHITELIST_PATH` points to an editable email whitelist that enables self-signup; if the file is missing, self-registration is disabled.
 
 For production, generate strong random values:
 
@@ -55,7 +56,7 @@ DEMO_TARGET_BODY_TEMPLATE={"question":"{{prompt}}"}
 DEMO_TARGET_HEADERS={"Content-Type":"application/json","X-API-Key":"<secret-from-private-env>"}
 ```
 
-These variables configure the optional starter target created for new Google-auth users. They only apply when `DEMO_TARGET_ENDPOINT` is set. See [Authentication](./2_authentication.md#initial-demo-target-for-google-users) for details.
+These variables configure the optional starter target created for new users (Google Sign-In and self-signup). They only apply when `DEMO_TARGET_ENDPOINT` is set. See [Authentication](./2_authentication.md#initial-demo-target-for-new-users) for details.
 
 ## LLM Provider Keys
 
