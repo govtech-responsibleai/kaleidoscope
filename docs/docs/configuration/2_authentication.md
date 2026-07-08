@@ -57,6 +57,32 @@ When Google auth is not configured, password login still works. The frontend hid
 
 Google-auth users are created on first successful sign-in. These accounts do not have passwords, so they must continue signing in with Google unless an admin creates a separate password-based account.
 
+## Self-signup with an email whitelist
+
+You can let invited users create their own password-based accounts without an admin, gated by an editable email whitelist file. This is independent of Google Sign-In — a whitelisted user signs up with an email and password and then logs in through the normal password form.
+
+Point `SIGNUP_WHITELIST_PATH` at a plain-text file and add one invited email per line (blank lines and lines starting with `#` are ignored):
+
+```bash
+SIGNUP_WHITELIST_PATH=backend/signup_whitelist.txt
+```
+
+```text
+# signup_whitelist.txt
+alice@partner.org
+bob@example.com
+```
+
+The file is re-read on every signup attempt, so you can add or remove emails while the app is running — no restart needed. Matching is case-insensitive on the full email address.
+
+On the login page, invited users click **Sign up**, enter their email and a password, and are signed in immediately. New accounts are non-admin and receive the demo target (see below) just like Google users.
+
+Behaviour:
+
+- Email not in the whitelist → the signup is rejected with a clear "not invited" message.
+- Email already registered → the signup is rejected; the user should sign in instead.
+- Whitelist file missing or unreadable → **all** signups are rejected (fail closed) and the backend logs a warning that self-registration is disabled. Google Sign-In and password login are unaffected.
+
 ## Creating users
 
 After signing in as an admin, open the Administration page to create password-based users from the UI.
@@ -72,9 +98,9 @@ curl -X POST http://localhost:8000/api/v1/auth/admin/create-user \
 
 Set `"is_admin": true` only for users who should manage other accounts.
 
-## Initial demo target for Google users
+## Initial demo target for new users
 
-You can automatically create a starter HTTP target for each new Google-auth user by setting `DEMO_TARGET_ENDPOINT` and the related `DEMO_TARGET_*` variables:
+You can automatically create a starter HTTP target for each new user — whether they arrive through Google Sign-In or self-signup — by setting `DEMO_TARGET_ENDPOINT` and the related `DEMO_TARGET_*` variables:
 
 ```bash
 DEMO_TARGET_NAME=Demo Chatbot
@@ -88,4 +114,4 @@ DEMO_TARGET_BODY_TEMPLATE={"question":"{{prompt}}"}
 DEMO_TARGET_HEADERS={"Content-Type":"application/json","X-API-Key":"<secret-from-private-env>"}
 ```
 
-This only runs when `DEMO_TARGET_ENDPOINT` is set, and only for users created through Google Sign-In. Replace the example metadata, endpoint, response path, body template, and headers with values for your own demo target before sharing it with users.
+This only runs when `DEMO_TARGET_ENDPOINT` is set, and applies to users created through Google Sign-In and self-signup. Replace the example metadata, endpoint, response path, body template, and headers with values for your own demo target before sharing it with users.

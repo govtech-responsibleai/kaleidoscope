@@ -49,11 +49,13 @@ services:
       DEMO_TARGET_RETRIEVED_CONTEXT_PATH: ${DEMO_TARGET_RETRIEVED_CONTEXT_PATH:-}
       DEMO_TARGET_HEADERS: ${DEMO_TARGET_HEADERS:-}
       DEMO_TARGET_BODY_TEMPLATE: ${DEMO_TARGET_BODY_TEMPLATE:-}
+      SIGNUP_WHITELIST_PATH: /app/signup_whitelist.txt
     depends_on:
       db:
         condition: service_healthy
     volumes:
       - ./backend/src:/app/src
+      - ./backend/signup_whitelist.txt:/app/signup_whitelist.txt
     networks:
       - kaleidoscope-network
 

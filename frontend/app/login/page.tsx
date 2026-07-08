@@ -12,12 +12,15 @@ import {
   CircularProgress,
   Stack,
   Divider,
+  Link,
 } from "@mui/material";
 import { useRouter } from "next/navigation";
 import { GoogleLogin, GoogleOAuthProvider } from "@react-oauth/google";
 import axios from "axios";
 import { authApi } from "@/lib/api";
 import Image from "next/image";
+
+type AuthMode = "signin" | "signup";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,21 +35,47 @@ export default function LoginPage() {
     }
   }, []);
 
+  const [mode, setMode] = useState<AuthMode>("signin");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const switchMode = (next: AuthMode) => {
+    setMode(next);
+    setError("");
+    setPassword("");
+    setConfirmPassword("");
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setLoading(true);
 
+    if (mode === "signup" && password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
     try {
-      await authApi.login(username, password);
+      if (mode === "signin") {
+        await authApi.login(username, password);
+      } else {
+        await authApi.signup(username, password);
+      }
       router.push("/");
-    } catch {
-      setError("Invalid username or password");
+    } catch (err) {
+      if (mode === "signin") {
+        setError("Invalid username or password");
+      } else if (axios.isAxiosError(err) && err.response?.status === 403) {
+        setError("This email has not been invited to sign up. Please contact the organiser.");
+      } else if (axios.isAxiosError(err) && err.response?.status === 400) {
+        setError("An account with this email already exists. Try signing in instead.");
+      } else {
+        setError("Unable to create your account. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -74,6 +103,8 @@ export default function LoginPage() {
     }
   };
 
+  const isSignup = mode === "signup";
+
   return (
     <Box
       display="flex"
@@ -91,7 +122,7 @@ export default function LoginPage() {
             </Typography>
           </Stack>
           <Typography variant="body2" color="text.secondary" textAlign="center" mb={3}>
-            Sign in to continue
+            {isSignup ? "Create an account to continue" : "Sign in to continue"}
           </Typography>
 
           {sessionExpired && (
@@ -109,7 +140,8 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
-              label="Username"
+              label={isSignup ? "Email" : "Username"}
+              type={isSignup ? "email" : "text"}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               margin="normal"
@@ -125,6 +157,17 @@ export default function LoginPage() {
               margin="normal"
               required
             />
+            {isSignup && (
+              <TextField
+                fullWidth
+                label="Confirm password"
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                margin="normal"
+                required
+              />
+            )}
             <Button
               fullWidth
               variant="contained"
@@ -132,9 +175,27 @@ export default function LoginPage() {
               disabled={loading}
               sx={{ mt: 3 }}
             >
-              {loading ? <CircularProgress size={24} /> : "Sign In"}
+              {loading ? <CircularProgress size={24} /> : isSignup ? "Sign Up" : "Sign In"}
             </Button>
           </form>
+
+          <Typography variant="body2" color="text.secondary" textAlign="center" sx={{ mt: 2 }}>
+            {isSignup ? (
+              <>
+                Already have an account?{" "}
+                <Link component="button" type="button" onClick={() => switchMode("signin")}>
+                  Sign in
+                </Link>
+              </>
+            ) : (
+              <>
+                Been invited?{" "}
+                <Link component="button" type="button" onClick={() => switchMode("signup")}>
+                  Sign up
+                </Link>
+              </>
+            )}
+          </Typography>
 
           {googleClientId && (
             <>

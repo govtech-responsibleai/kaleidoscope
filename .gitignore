@@ -104,6 +104,9 @@ tsconfig.tsbuildinfo
 .env.*.local
 .envrc
 
+# === Self-signup whitelist (live file; edit locally, keep out of git) ===
+backend/signup_whitelist.txt
+
 # === IDE / Editor ===
 .vscode/
 .idea/

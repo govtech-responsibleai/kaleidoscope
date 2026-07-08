@@ -200,7 +200,7 @@ class TestDemoTargetSeeding:
             demo_target_target_users="Curious users.",
             demo_target_response_path="answer",
             demo_target_retrieved_context_path="sources",
-            demo_target_headers='{"Content-Type":"application/json","X-API-Key":"test-api13579"}',
+            demo_target_headers='{"Content-Type":"application/json","X-API-Key":"fake-api-key"}',
             demo_target_body_template='{"question":"{{prompt}}"}',
         ):
             target = seed_demo_target(test_db, test_user.id)
@@ -218,7 +218,7 @@ class TestDemoTargetSeeding:
             "auth": {
                 "preset": "x-api-key",
                 "is_configured": True,
-                "masked_value": "•••••••••3579",
+                "masked_value": "••••••••-key",
             },
             "body_template": {"question": "{{prompt}}"},
             "response_content_path": "answer",
@@ -226,7 +226,7 @@ class TestDemoTargetSeeding:
         }
         secret = TargetHttpAuthSecretRepository.get_by_target_id(test_db, target.id)
         assert secret is not None
-        assert decrypt_http_auth_secret(secret.encrypted_secret) == "test-api13579"
+        assert decrypt_http_auth_secret(secret.encrypted_secret) == "fake-api-key"
 
     def test_seed_demo_target_noops_when_endpoint_absent(self, test_db, test_user):
         """No DEMO_TARGET_ENDPOINT means no target is created."""
@@ -237,6 +237,111 @@ class TestDemoTargetSeeding:
 
         assert target is None
         assert test_db.query(Target).filter(Target.user_id == test_user.id).count() == 0
+
+@pytest.mark.integration
+class TestSignupEndpoint:
+    """Tests for POST /api/v1/auth/signup endpoint."""
+
+    def test_whitelisted_email_creates_user_and_returns_token(
+        self, auth_client, test_db_factory, tmp_path
+    ):
+        """A whitelisted email self-registers, seeds a demo target, and gets a JWT."""
+        whitelist = tmp_path / "signup_whitelist.txt"
+        whitelist.write_text("# invited\nnewbie@partner.org\n", encoding="utf-8")
+
+        with override_settings(
+            signup_whitelist_path=str(whitelist),
+            demo_target_endpoint="https://example.com/chat",
+            demo_target_response_path="answer",
+        ):
+            response = auth_client.post(
+                "/api/v1/auth/signup",
+                json={"email": "newbie@partner.org", "password": "s3cret-pw"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["access_token"]
+        assert data["token_type"] == "bearer"
+        assert data["is_admin"] is False
+        assert data["username"] == "newbie@partner.org"
+
+        db = test_db_factory()
+        try:
+            user = db.query(User).filter(User.username == "newbie@partner.org").one()
+            assert user.hashed_password is not None
+            assert user.is_admin is False
+            assert db.query(Target).filter(Target.user_id == user.id).count() == 1
+        finally:
+            db.close()
+
+    def test_whitelist_match_is_case_insensitive(self, auth_client, tmp_path):
+        """Signup email is matched against the whitelist case-insensitively."""
+        whitelist = tmp_path / "signup_whitelist.txt"
+        whitelist.write_text("Alice@Example.com\n", encoding="utf-8")
+
+        with override_settings(signup_whitelist_path=str(whitelist)):
+            response = auth_client.post(
+                "/api/v1/auth/signup",
+                json={"email": "alice@example.com", "password": "pw"},
+            )
+
+        assert response.status_code == 200
+
+    def test_non_whitelisted_email_returns_403_and_creates_no_user(
+        self, auth_client, test_db_factory, tmp_path
+    ):
+        """An email absent from the whitelist is rejected with 403."""
+        whitelist = tmp_path / "signup_whitelist.txt"
+        whitelist.write_text("someone@partner.org\n", encoding="utf-8")
+
+        with override_settings(signup_whitelist_path=str(whitelist)):
+            response = auth_client.post(
+                "/api/v1/auth/signup",
+                json={"email": "stranger@evil.com", "password": "pw"},
+            )
+
+        assert response.status_code == 403
+        assert "not been invited" in response.json()["detail"]
+
+        db = test_db_factory()
+        try:
+            assert db.query(User).filter(User.username == "stranger@evil.com").count() == 0
+        finally:
+            db.close()
+
+    def test_duplicate_email_returns_400(self, auth_client, test_db, tmp_path):
+        """Signing up an already-registered email returns 400."""
+        whitelist = tmp_path / "signup_whitelist.txt"
+        whitelist.write_text("dup@partner.org\n", encoding="utf-8")
+        test_db.add(User(username="dup@partner.org", hashed_password="x", is_active=True))
+        test_db.commit()
+
+        with override_settings(signup_whitelist_path=str(whitelist)):
+            response = auth_client.post(
+                "/api/v1/auth/signup",
+                json={"email": "dup@partner.org", "password": "pw"},
+            )
+
+        assert response.status_code == 400
+        assert "already exists" in response.json()["detail"]
+
+    def test_missing_whitelist_fails_closed_and_warns(
+        self, auth_client, tmp_path, caplog
+    ):
+        """A missing whitelist file rejects signup and logs a distinct warning."""
+        missing = tmp_path / "does_not_exist.txt"
+
+        with override_settings(signup_whitelist_path=str(missing)):
+            with caplog.at_level("WARNING", logger="src.common.auth.routes"):
+                response = auth_client.post(
+                    "/api/v1/auth/signup",
+                    json={"email": "anyone@partner.org", "password": "pw"},
+                )
+
+        assert response.status_code == 403
+        assert "self-registration is disabled" in caplog.text.lower()
+
 
 @pytest.mark.integration
 class TestCreateUserEndpoint:

@@ -1,0 +1,9 @@
+# Self-signup email whitelist
+# One email per line. Blank lines and lines starting with '#' are ignored.
+# Matching is case-insensitive on the full email address.
+#
+# Copy this file to signup_whitelist.txt and add invited emails below.
+# Edits take effect immediately (the file is re-read on each signup attempt).
+#
+# alice@example.com
+# bob@company.org
