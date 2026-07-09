@@ -14,19 +14,29 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Create SQLAlchemy engine.
-# pool_size must be large enough to cover concurrent background jobs + their
-# per-phase sub-sessions + incoming API request handlers simultaneously.
-# Rule of thumb: batch_max_concurrent_jobs(3) * sessions_per_job(~5) + api_buffer(10) = ~25
-engine = create_engine(
-    settings.database_url,
-    echo=settings.database_echo,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=20,        # Base connections to keep open
-    max_overflow=10,     # Additional burst connections (total max: 30)
-    pool_timeout=30,     # Wait up to 30s for a connection before failing
-    pool_recycle=1800,   # Recycle connections after 30 minutes
-)
+def build_engine(cfg):
+    """Build the SQLAlchemy engine from settings.
+
+    The pool ceiling (pool_size + max_overflow) MUST stay at or below the
+    database's per-role connection limit, which is shared across every app
+    replica using the same role. Exceeding it makes Postgres reject connections
+    with "FATAL: too many connections". Managed tiers can be as low as 10 — tune
+    via DB_POOL_SIZE / DB_MAX_OVERFLOW, and divide by the replica count if
+    several replicas share one role. Since scoring no longer holds a connection
+    across LLM calls, a small pool is sufficient even for large evaluations.
+    """
+    return create_engine(
+        cfg.database_url,
+        echo=cfg.database_echo,
+        pool_pre_ping=True,  # Verify connections before using
+        pool_size=cfg.db_pool_size,
+        max_overflow=cfg.db_max_overflow,
+        pool_timeout=cfg.db_pool_timeout,
+        pool_recycle=1800,   # Recycle connections after 30 minutes
+    )
+
+
+engine = build_engine(settings)
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

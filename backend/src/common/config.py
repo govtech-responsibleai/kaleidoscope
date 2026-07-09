@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     # Database Settings
     database_url: str = "postgresql://localhost:5432/kaleidoscope"
     database_echo: bool = False  # Set to True for SQL query logging
+    # Connection pool ceiling = db_pool_size + db_max_overflow. This MUST stay at
+    # or below the database's per-role connection limit (shared across all app
+    # replicas using the same role), or Postgres rejects new connections with
+    # "FATAL: too many connections". Managed tiers can be as low as 10.
+    db_pool_size: int = 5       # Base connections kept open
+    db_max_overflow: int = 5    # Additional burst connections (ceiling = size + overflow)
+    db_pool_timeout: int = 30   # Seconds to wait for a free connection before failing
 
     # LLM Settings
     default_llm_model: str = "gemini/gemini-2.5-flash-lite"
