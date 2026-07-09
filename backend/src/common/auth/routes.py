@@ -286,6 +286,7 @@ def create_user(
         )
 
     user = UserRepository.create(db, request.username, hash_password(request.password), request.is_admin)
+    seed_demo_target(db, int(user.id))  # type: ignore[arg-type]
     return CreateUserResponse(
         message=f"User '{user.username}' created successfully{' (admin)' if request.is_admin else ''}",
         username=user.username
@@ -306,6 +307,7 @@ def create_user_jwt(
         )
 
     user = UserRepository.create(db, request.username, hash_password(request.password), request.is_admin)
+    seed_demo_target(db, int(user.id))  # type: ignore[arg-type]
     return CreateUserResponse(
         message=f"User '{user.username}' created successfully{' (admin)' if request.is_admin else ''}",
         username=user.username
