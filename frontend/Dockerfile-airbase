@@ -1,0 +1,22 @@
+# Build: docker build --platform linux/amd64 -f Dockerfile-airbase -t airbase-kaleidoscope-frontend .
+FROM gdssingapore/airbase:node-22-builder AS builder
+ENV NEXT_TELEMETRY_DISABLED=1
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . ./
+
+# Next.js inlines NEXT_PUBLIC_* at build time
+RUN set -a && . ./.env.default && npm run build
+
+FROM gdssingapore/airbase:node-22
+WORKDIR /app
+RUN mkdir .next && chown app:app .next
+COPY --from=builder --chown=app:app /app/.next/standalone ./
+COPY --from=builder --chown=app:app /app/.next/static ./.next/static
+COPY --from=builder --chown=app:app /app/public ./public
+USER app
+# Next.js standalone server binds to $HOSTNAME. Airbase sets HOSTNAME to the pod
+# name, so the server binds to that name and the gateway (in another network
+# namespace) can't reach it -> 503. Force 0.0.0.0 to listen on all interfaces.
+CMD ["sh", "-c", "HOSTNAME=0.0.0.0 node server.js -p ${PORT:-3000}"]
