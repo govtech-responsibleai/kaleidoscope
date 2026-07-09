@@ -280,8 +280,33 @@ body {
   height: auto;
   border-radius: 8px;
 }
-.overview-diagram-long { display: block; }
+.overview-diagram-long {
+  display: block;
+  width: 80vw;
+  max-width: 80vw;
+  margin-left: 50%;
+  transform: translateX(-50%);
+}
 .overview-diagram-tall { display: none; }
+.overview-video-label {
+  font-size: 16px;
+  color: var(--muted);
+  margin-top: 40px;
+  margin-bottom: 16px;
+}
+.overview-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.overview-video iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
 
 /* Features section */
 .features-section {

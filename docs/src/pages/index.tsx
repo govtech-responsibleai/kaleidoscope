@@ -415,6 +415,16 @@ export default function Home() {
           <p className="section-subtitle">How Kaleidoscope works</p>
           <img src={workflowLongSrc} alt="Kaleidoscope workflow diagram" className="overview-diagram overview-diagram-long" />
           <img src={workflowTallSrc} alt="Kaleidoscope workflow diagram" className="overview-diagram overview-diagram-tall" />
+          <p className="overview-video-label">See it in action</p>
+          <div className="overview-video">
+            <iframe
+              src="https://www.youtube-nocookie.com/embed/OVOnroQ9vZg"
+              title="Kaleidoscope demo"
+              loading="lazy"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            ></iframe>
+          </div>
         </section>
 
         {/* Section 6: Key Features */}
