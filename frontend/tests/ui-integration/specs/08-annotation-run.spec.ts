@@ -1,5 +1,6 @@
 import { test, expect } from "../fixtures/auth";
 import { TARGET_ID, SNAPSHOT_ID, question, answer, completedQAJob } from "../fixtures/data";
+// `answer` is used by the transient-503 retry test below.
 import { TESTIDS } from "../fixtures/testids";
 import { JobStatus, QAJobStageEnum } from "@/lib/types";
 
@@ -76,6 +77,80 @@ test.describe("Annotation run", () => {
 
     // QA list should be visible with populated content
     await expect(page.locator(`[data-testid="${TESTIDS.QA_LIST}"]`)).toBeVisible();
+  });
+
+  test("transient 503 on answer fetch is retried and does NOT show the error banner while evaluating", async ({ authedPage: page }) => {
+    // A running (scoring) job so the hydrate effect fetches the answer.
+    const scoringJob = {
+      ...completedQAJob,
+      status: JobStatus.RUNNING,
+      stage: QAJobStageEnum.SCORING_ANSWERS,
+    };
+
+    // Keep the job list reporting "running" so the evaluation is considered active.
+    await page.route(
+      (url) =>
+        new RegExp(`/api/v1/snapshots/${SNAPSHOT_ID}/qa-jobs$`).test(url.pathname) &&
+        !url.pathname.includes("/start"),
+      (route) => {
+        if (route.request().method().toUpperCase() !== "GET") return void route.fallback();
+        void route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([scoringJob]),
+        });
+      },
+    );
+
+    // Return an empty snapshot answer list so the answer is NOT pre-cached — this
+    // forces the hydrate effect to fetch GET /answers/{id} (where we inject 503s).
+    await page.route(
+      (url) => new RegExp(`/api/v1/snapshots/${SNAPSHOT_ID}/answers$`).test(url.pathname),
+      (route) => {
+        if (route.request().method().toUpperCase() !== "GET") return void route.fallback();
+        void route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ answers: [], total: 0 }),
+        });
+      },
+    );
+
+    // Fail the first two GET /answers/{id} calls with 503, then succeed.
+    // This exercises the retry-with-backoff and the "don't alarm mid-run" banner rule.
+    let answerCalls = 0;
+    await page.route(
+      (url) => new RegExp(`/api/v1/answers/${answer.id}$`).test(url.pathname),
+      (route) => {
+        if (route.request().method().toUpperCase() !== "GET") return void route.fallback();
+        answerCalls += 1;
+        if (answerCalls <= 2) {
+          void route.fulfill({
+            status: 503,
+            contentType: "application/json",
+            body: JSON.stringify({ detail: "Database temporarily unavailable. Please try again." }),
+          });
+          return;
+        }
+        void route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify(answer),
+        });
+      },
+    );
+
+    await page.goto(targetUrl(`/annotation?snapshot=${SNAPSHOT_ID}`));
+    await page.waitForLoadState("networkidle");
+
+    // Give the retry/backoff time to run through the two 503s and succeed.
+    await expect
+      .poll(() => answerCalls, { timeout: 10000 })
+      .toBeGreaterThanOrEqual(3);
+
+    // The misleading banner must NOT appear while the evaluation is running,
+    // even though the answer GET failed transiently.
+    await expect(page.getByText("Unable to load answers for this snapshot.")).toHaveCount(0);
   });
 
   test("an annotated answer deselected from the set stays deselected after reload", async ({ authedPage: page }) => {

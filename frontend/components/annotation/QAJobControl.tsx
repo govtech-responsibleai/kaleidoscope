@@ -35,7 +35,13 @@ import {
 } from "@/app/targets/[id]/rubrics";
 import { GLOBAL_POLLING_INTERVAL } from "@/lib/constants";
 import { answerApi, getApiErrorMessage, qaJobApi, questionApi, targetApi } from "@/lib/api";
+import { mapWithConcurrency, retryTransient } from "@/lib/concurrency";
 import { usePolling } from "@/hooks/usePolling";
+
+// Max simultaneous hydrate requests. The browser caps ~6 connections/host; we
+// bound our own fan-out well below that so a large evaluation does not flood the
+// backend (which exhausted its DB connection pool and returned 503s).
+const HYDRATE_CONCURRENCY = 5;
 import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
 
 interface QAJobControlProps {
@@ -170,6 +176,16 @@ export default function QAJobControl({
   const failedCount = statusGroups[JobStatus.FAILED] ?? 0;
   const pausedCount = statusGroups[JobStatus.PAUSED] ?? 0;
 
+  // Mirror "is an evaluation currently running" into a ref so the fetch
+  // callbacks can read it without being re-created on every status change.
+  // During an active run, a transient GET failure (e.g. a throttled 503) must
+  // NOT surface the "Unable to load answers" banner — it is misleading while
+  // scoring is still in progress and will resolve on the next poll.
+  const evaluationRunningRef = useRef(false);
+  useEffect(() => {
+    evaluationRunningRef.current = runningCount > 0;
+  }, [runningCount]);
+
   // Track questions without answers (fetched from backend)
   const [questionsWithoutAnswers, setQuestionsWithoutAnswers] = useState<number[]>([]);
   const approvedQuestionIdSet = useMemo(() => new Set(approvedQuestionIds), [approvedQuestionIds]);
@@ -185,11 +201,17 @@ export default function QAJobControl({
         return null;
       }
       try {
-        const response = await answerApi.get(job.answer_id);
+        const response = await retryTransient(() => answerApi.get(job.answer_id!));
         return { answer: response.data };
       } catch (err) {
         console.error("Failed to fetch answer:", err);
-        notifyError("Unable to load answers for this snapshot.");
+        // While an evaluation is actively running, transient failures are
+        // expected under load and self-heal on the next poll — don't alarm the
+        // user. Only surface the banner when nothing is running (a genuine
+        // "can't load this snapshot" state).
+        if (!evaluationRunningRef.current) {
+          notifyError("Unable to load answers for this snapshot.");
+        }
         return null;
       }
     },
@@ -205,11 +227,11 @@ export default function QAJobControl({
         return null;
       }
       try {
-        const response = await answerApi.getClaims(
-          job.answer_id,
+        const response = await retryTransient(() => answerApi.getClaims(
+          job.answer_id!,
           judgeId,
           claimBasedRubricId,
-        );
+        ));
         const claims = response.data.claims.map((item) => {
           const claim = { ...item };
           delete claim.score;
@@ -232,11 +254,11 @@ export default function QAJobControl({
       const judgeId = getClaimBasedJudgeIdForJob(job);
       if (!job.answer_id || !judgeId || !claimBasedRubricId) return null;
       try {
-        const response = await answerApi.getScores(
-          job.answer_id,
+        const response = await retryTransient(() => answerApi.getScores(
+          job.answer_id!,
           judgeId,
           claimBasedRubricId,
-        );
+        ));
         return { answerScore: response.data };
       } catch (err) {
         console.error("Failed to fetch score:", err);
@@ -364,30 +386,40 @@ export default function QAJobControl({
     let cancelled = false;
 
     const hydrate = async () => {
-      const updates: { questionId: number; promise: Promise<Partial<QARecord> | null> }[] = [];
+      // Store deferred thunks (not live promises) so mapWithConcurrency actually
+      // gates how many requests are in flight — building a promise eagerly would
+      // fire it immediately and defeat the concurrency cap.
+      const updates: {
+        questionId: number;
+        run: () => Promise<Partial<QARecord> | null>;
+      }[] = [];
 
       for (const job of qaJobs) {
         if (!job.answer_id) continue;
 
         if (job.stage === QAJobStageEnum.PROCESSING_ANSWERS) {
-          updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
+          updates.push({ questionId: job.question_id, run: () => fetchAnswer(job) });
         } else if (job.stage === QAJobStageEnum.SCORING_ANSWERS) {
-          updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
-          updates.push({ questionId: job.question_id, promise: fetchClaims(job) });
+          updates.push({ questionId: job.question_id, run: () => fetchAnswer(job) });
+          updates.push({ questionId: job.question_id, run: () => fetchClaims(job) });
         } else if (job.stage === QAJobStageEnum.COMPLETED) {
-          updates.push({ questionId: job.question_id, promise: fetchAnswer(job) });
-          updates.push({ questionId: job.question_id, promise: fetchClaims(job, true) });
-          updates.push({ questionId: job.question_id, promise: fetchScore(job) });
+          updates.push({ questionId: job.question_id, run: () => fetchAnswer(job) });
+          updates.push({ questionId: job.question_id, run: () => fetchClaims(job, true) });
+          updates.push({ questionId: job.question_id, run: () => fetchScore(job) });
         }
       }
 
       if (updates.length === 0) return;
 
-      const results = await Promise.all(
-        updates.map(async ({ questionId, promise }) => ({
+      // Bound concurrency: for N completed jobs this could be up to 3N fetches.
+      // Firing them all at once floods the backend; cap in-flight requests.
+      const results = await mapWithConcurrency(
+        updates,
+        HYDRATE_CONCURRENCY,
+        async ({ questionId, run }) => ({
           questionId,
-          partial: await promise,
-        }))
+          partial: await run(),
+        })
       );
 
       if (cancelled || snapshotId !== activeSnapshotIdRef.current) return;
@@ -520,14 +552,16 @@ export default function QAJobControl({
         .map((entry) => entry.questionId)
     );
 
-    const entries = await Promise.all(
-      rubricSpecs.map(async (spec) => {
+    const entries = await mapWithConcurrency(
+      rubricSpecs,
+      HYDRATE_CONCURRENCY,
+      async (spec) => {
         try {
-          const response = await questionApi.listApprovedWithoutScores(
+          const response = await retryTransient(() => questionApi.listApprovedWithoutScores(
             snapshotId,
             spec.judge_id,
             spec.rubric_id,
-          );
+          ));
           return {
             rubricId: spec.rubric_id,
             questionIds: response.data
@@ -537,7 +571,7 @@ export default function QAJobControl({
         } catch {
           return { rubricId: spec.rubric_id, questionIds: [] };
         }
-      })
+      }
     );
 
     setMissingRubricCoverage(buildMissingRubricCoverage(entries, rubrics));

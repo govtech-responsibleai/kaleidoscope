@@ -7,6 +7,7 @@ any future endpoint types.
 
 import asyncio
 import logging
+import random
 
 import httpx
 from sqlalchemy.orm import Session
@@ -25,6 +26,24 @@ from src.common.llm import CostTracker
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+# Transient HTTP statuses worth retrying when calling the target endpoint.
+# 429 = rate limited; 500/502/503/504 = server-side/upstream overload (e.g. a
+# Gemini-backed target surfacing its upstream "503 UNAVAILABLE / high demand" as
+# a 502 gateway error). These clear on their own, so retrying beats failing.
+RETRYABLE_TARGET_STATUSES = frozenset({429, 500, 502, 503, 504})
+
+
+def _retry_backoff_seconds(attempt: int) -> float:
+    """Exponential backoff (2**attempt) with jitter.
+
+    Jitter is essential here: when many questions hit the same overloaded model
+    at once, a deterministic backoff makes them all retry in lockstep and slam
+    the model together again. Spreading retries across the window lets the
+    transient spike drain. Uses full jitter over [base, 2*base].
+    """
+    base = 2 ** attempt
+    return base + random.random() * base
 
 
 class AnswerGenerationError(Exception):
@@ -122,10 +141,10 @@ class AnswerGenerator:
                 return self._save_answer(question, response, snapshot_id)
 
             except TargetHttpError as e:
-                if e.status_code in (429, 503) and attempt < max_retries:
-                    wait = 2 ** attempt
+                if e.status_code in RETRYABLE_TARGET_STATUSES and attempt < max_retries:
+                    wait = _retry_backoff_seconds(attempt)
                     logger.warning(
-                        f"Target API returned {e.status_code}, retrying in {wait}s "
+                        f"Target API returned {e.status_code}, retrying in {wait:.1f}s "
                         f"(attempt {attempt + 1}/{max_retries})"
                     )
                     await asyncio.sleep(wait)
@@ -134,10 +153,10 @@ class AnswerGenerator:
                     f"API returned error {e.status_code}: {e.body}"
                 )
             except httpx.HTTPStatusError as e:
-                if e.response.status_code in (429, 503) and attempt < max_retries:
-                    wait = 2 ** attempt
+                if e.response.status_code in RETRYABLE_TARGET_STATUSES and attempt < max_retries:
+                    wait = _retry_backoff_seconds(attempt)
                     logger.warning(
-                        f"Target API returned {e.response.status_code}, retrying in {wait}s "
+                        f"Target API returned {e.response.status_code}, retrying in {wait:.1f}s "
                         f"(attempt {attempt + 1}/{max_retries})"
                     )
                     await asyncio.sleep(wait)
@@ -147,9 +166,9 @@ class AnswerGenerator:
                 )
             except httpx.TimeoutException as e:
                 if attempt < max_retries:
-                    wait = 2 ** attempt
+                    wait = _retry_backoff_seconds(attempt)
                     logger.warning(
-                        f"Target API timed out, retrying in {wait}s "
+                        f"Target API timed out, retrying in {wait:.1f}s "
                         f"(attempt {attempt + 1}/{max_retries})"
                     )
                     await asyncio.sleep(wait)

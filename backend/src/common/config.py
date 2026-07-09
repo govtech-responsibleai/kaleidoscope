@@ -44,7 +44,8 @@ class Settings(BaseSettings):
 
     # LLM Retry and Rate Limiting
     llm_num_retries: int = 5  # Number of retries for 429/503/timeout errors
-    llm_max_concurrent: int = 5  # Max concurrent async LLM calls (prevents rate limiting)
+    llm_timeout: int = 120  # Per-call LLM timeout (seconds); caps how long one stuck call blocks
+    llm_max_concurrent: int = 3  # Max concurrent async LLM calls (prevents upstream rate limiting)
     batch_max_concurrent_jobs: int = 3  # Max QA jobs processed in parallel within a batch
     batch_max_concurrent_claims: int = 5  # Max claims checked/scored in parallel per job
     batch_max_concurrent_scorers_per_job: int = 2  # Accuracy + rubric scorers within one QA job

@@ -411,7 +411,7 @@ class TestAnswerGeneratorRetry:
         test_db.refresh(qa_job)
         assert qa_job.status != JobStatusEnum.failed
         assert qa_job.answer_id is not None
-        mock_sleep.assert_awaited_once_with(1)
+        mock_sleep.assert_awaited_once()  # retried once (backoff now jittered)
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
@@ -443,7 +443,7 @@ class TestAnswerGeneratorRetry:
         test_db.refresh(qa_job)
         assert qa_job.status != JobStatusEnum.failed
         assert qa_job.answer_id is not None
-        mock_sleep.assert_awaited_once_with(1)
+        mock_sleep.assert_awaited_once()  # retried once (backoff now jittered)
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
@@ -475,7 +475,7 @@ class TestAnswerGeneratorRetry:
         test_db.refresh(qa_job)
         assert qa_job.status != JobStatusEnum.failed
         assert qa_job.answer_id is not None
-        mock_sleep.assert_awaited_once_with(1)
+        mock_sleep.assert_awaited_once()  # retried once (backoff now jittered)
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
@@ -507,7 +507,72 @@ class TestAnswerGeneratorRetry:
         test_db.refresh(qa_job)
         assert qa_job.status != JobStatusEnum.failed
         assert qa_job.answer_id is not None
-        mock_sleep.assert_awaited_once_with(1)
+        mock_sleep.assert_awaited_once()  # retried once (backoff now jittered)
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
+    @patch('src.query_generation.services.answer_generator.get_connector')
+    async def test_retry_on_502_succeeds(
+        self, mock_get_connector, mock_sleep, test_db, sample_qa_job_no_answer
+    ):
+        """502 Bad Gateway (e.g. a Gemini-backed target whose upstream is overloaded)
+        must be retried, not failed on the first attempt."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        target.endpoint_type = "http"
+        target.api_endpoint = "https://api.test.com"
+        target.endpoint_config = {"response_content_path": "output"}
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.side_effect = [
+            self._make_http_error(502, "Bad Gateway"),
+            _make_connector_response(),
+        ]
+        mock_get_connector.return_value = mock_connector
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        test_db.refresh(qa_job)
+        assert qa_job.status != JobStatusEnum.failed
+        assert qa_job.answer_id is not None
+        mock_sleep.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
+    @patch('src.query_generation.services.answer_generator.get_connector')
+    async def test_retry_on_target_http_502_succeeds(
+        self, mock_get_connector, mock_sleep, test_db, sample_qa_job_no_answer
+    ):
+        """Normalized TargetHttpError 502 retries and then succeeds."""
+        job_data = sample_qa_job_no_answer
+        qa_job = job_data["job"]
+        question = job_data["question"]
+        target = job_data["target"]
+
+        target.endpoint_type = "http"
+        target.api_endpoint = "https://api.test.com"
+        target.endpoint_config = {"response_content_path": "output"}
+        test_db.commit()
+
+        mock_connector = AsyncMock()
+        mock_connector.send_message.side_effect = [
+            self._make_target_http_error(502, "Bad Gateway"),
+            _make_connector_response(),
+        ]
+        mock_get_connector.return_value = mock_connector
+
+        generator = AnswerGenerator(test_db, qa_job.id)
+        await generator.generate_for_job(question.id, qa_job.snapshot_id)
+
+        test_db.refresh(qa_job)
+        assert qa_job.status != JobStatusEnum.failed
+        assert qa_job.answer_id is not None
+        mock_sleep.assert_awaited_once()
 
     @pytest.mark.asyncio
     @patch('src.query_generation.services.answer_generator.asyncio.sleep', new_callable=AsyncMock)
