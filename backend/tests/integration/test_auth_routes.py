@@ -378,6 +378,31 @@ class TestCreateUserEndpoint:
         data = response.json()
         assert "(admin)" in data["message"]
 
+    @patch('src.common.auth.routes.hash_password')
+    def test_create_user_seeds_demo_target_when_configured(
+        self, mock_hash, auth_client, test_db_factory
+    ):
+        """Admin-created users receive the configured demo target, like self-signup."""
+        mock_hash.return_value = "$2b$12$mockedhash"
+
+        with override_settings(
+            demo_target_endpoint="https://example.com/chat",
+            demo_target_response_path="answer",
+        ):
+            response = auth_client.post(
+                "/api/v1/auth/admin/create-user",
+                json={"username": "seeded", "password": "pw", "is_admin": False},
+                headers={"X-Admin-Key": settings.admin_api_key},
+            )
+
+        assert response.status_code == 200
+        db = test_db_factory()
+        try:
+            user = db.query(User).filter(User.username == "seeded").one()
+            assert db.query(Target).filter(Target.user_id == user.id).count() == 1
+        finally:
+            db.close()
+
     def test_create_user_with_invalid_admin_key_returns_403(self, auth_client):
         """Test creating user with invalid admin key returns 403."""
         response = auth_client.post(
