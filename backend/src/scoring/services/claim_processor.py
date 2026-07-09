@@ -4,7 +4,8 @@ Service for extracting and checking claims from answers.
 
 import logging
 import asyncio
-from typing import List
+from dataclasses import dataclass
+from typing import Callable, List
 from datetime import datetime
 from sqlalchemy.orm import Session
 
@@ -42,40 +43,65 @@ SENTENCE_TOKENIZER_ERROR = (
 )
 
 
+@dataclass
+class ClaimSnapshot:
+    """Plain snapshot of an extracted claim, safe to hold across LLM calls.
+
+    Detached from any ORM session so scoring never pins a pooled connection
+    while awaiting the (slow) checkworthy LLM calls.
+    """
+
+    id: int
+    claim_index: int
+    claim_text: str
+    answer_id: int
+    checkworthy: bool = True
+
+
 class ClaimProcessor:
     """Service for extracting and checking claims using LLM."""
 
-    def __init__(self, db: Session, job_id: int):
+    def __init__(self, session_factory: Callable[[], Session], job_id: int):
         """
         Initialize claim processor.
 
         Args:
-            db: Database session
+            session_factory: Callable returning a new DB session (e.g. ``SessionLocal``).
+                A short-lived session snapshots the data needed; no session is held
+                across the checkworthy LLM calls, so the connection pool is not pinned.
             job_id: QAJob ID for this processing run
         """
-        self.db = db
+        self.session_factory = session_factory
         self.job_id = job_id
         self.cost_tracker = CostTracker(job_id=job_id)
 
-        # Load job
-        self.job = QAJobRepository.get_by_id(db, job_id)
-        if not self.job:
-            raise ValueError(f"QAJob {job_id} not found")
+        db = session_factory()
+        try:
+            job = QAJobRepository.get_by_id(db, job_id)
+            if not job:
+                raise ValueError(f"QAJob {job_id} not found")
+            self.job_status = job.status
+            self.job_stage = job.stage
+            self.answer_id = job.answer_id
 
-        self.answer = AnswerRepository.get_by_id(db, self.job.answer_id)
-        if not self.answer:
-            raise ValueError(f"Answer {self.job.answer_id} not found")
-        target_owner_id = self.answer.question.target.user_id
-        if target_owner_id is None:
-            raise ValueError("Answer target owner could not be resolved for claim processing.")
+            answer = AnswerRepository.get_by_id(db, job.answer_id)
+            if not answer:
+                raise ValueError(f"Answer {job.answer_id} not found")
+            self.answer_content = answer.answer_content
+            self._system_prompt = answer.system_prompt or "[No system prompt available]"
+            target_owner_id = answer.question.target.user_id
+            if target_owner_id is None:
+                raise ValueError("Answer target owner could not be resolved for claim processing.")
 
-        # Lazily initialize LLM client so tests can override after instantiation
-        self._llm_model_name = require_default_generation_model(db, int(target_owner_id))
-        self._provider_kwargs = resolve_model_runtime_config(
-            db,
-            int(target_owner_id),
-            self._llm_model_name,
-        ).litellm_kwargs
+            # Lazily initialize LLM client so tests can override after instantiation
+            self._llm_model_name = require_default_generation_model(db, int(target_owner_id))
+            self._provider_kwargs = resolve_model_runtime_config(
+                db,
+                int(target_owner_id),
+                self._llm_model_name,
+            ).litellm_kwargs
+        finally:
+            db.close()
         self.llm_client = None
 
         # --- Pipeline steps (add new steps here) ---
@@ -105,15 +131,14 @@ class ClaimProcessor:
         """
         try:
             # Check if job is still running
-            if self.job.status != JobStatusEnum.running:
-                logger.info(f"QAJob {self.job_id} is not running (status={self.job.status.value}). Skipping claim processing.")
+            if self.job_status != JobStatusEnum.running:
+                logger.info(f"QAJob {self.job_id} is not running (status={self.job_status.value}). Skipping claim processing.")
                 return
 
-            # Get answer_id from job
-            answer_id = self.job.answer_id
+            answer_id = self.answer_id
 
             # Extract claims (synchronous)
-            claims = self._extract_claims(answer_id)
+            self._extract_claims(answer_id)
 
             # Check claims (asynchronous)
             await self._check_claims(answer_id)
@@ -127,17 +152,21 @@ class ClaimProcessor:
             logger.error(f"Claim processing failed for job {self.job_id}: {e}", exc_info=True)
 
             # Mark job as failed with error message
-            QAJobRepository.update_status(
-                self.db,
-                self.job_id,
-                JobStatusEnum.failed,
-                self.job.stage,
-                error_message=str(e)
-            )
+            db = self.session_factory()
+            try:
+                QAJobRepository.update_status(
+                    db,
+                    self.job_id,
+                    JobStatusEnum.failed,
+                    self.job_stage,
+                    error_message=str(e)
+                )
+            finally:
+                db.close()
             if raise_on_error:
                 raise
 
-    def _extract_claims(self, answer_id: int) -> List[AnswerClaim]:
+    def _extract_claims(self, answer_id: int) -> List[ClaimSnapshot]:
         """
         Extract claims from an answer using sentence tokenization.
 
@@ -145,43 +174,44 @@ class ClaimProcessor:
             answer_id: Answer ID to extract claims from
 
         Returns:
-            List of created AnswerClaim objects
+            List of ClaimSnapshot objects (detached plain data, not ORM objects)
         """
-        # Get the answer
-        answer = self.answer
-
-        # Cache system prompt for checkworthy checks
-        self._system_prompt = answer.system_prompt or "[No system prompt available]"
-
         if nltk is None:
             raise RuntimeError(SENTENCE_TOKENIZER_ERROR)
 
         try:
-            sentences = nltk.sent_tokenize(answer.answer_content)
+            sentences = nltk.sent_tokenize(self.answer_content)
         except LookupError as exc:
             raise RuntimeError(SENTENCE_TOKENIZER_ERROR) from exc
 
-        # Apply transforms pipeline
+        # Apply transforms pipeline (pure Python, no DB needed)
         sentences = self._apply_transforms(sentences)
 
-        # Create AnswerClaim records
-        claims = []
+        # Create AnswerClaim records in a short session, snapshotting ids+text.
         current_time = datetime.utcnow()
+        snapshots: List[ClaimSnapshot] = []
+        db = self.session_factory()
+        try:
+            for idx, sentence in enumerate(sentences):
+                claim = AnswerClaimRepository.create(db, {
+                    "answer_id": answer_id,
+                    "claim_index": idx,
+                    "claim_text": sentence.strip(),
+                    "checkworthy": True,  # Default to True, will be updated by check_claims
+                    "created_at": current_time,
+                    "checked_at": current_time  # Initially same as created_at
+                })
+                snapshots.append(ClaimSnapshot(
+                    id=claim.id,
+                    claim_index=idx,
+                    claim_text=sentence.strip(),
+                    answer_id=answer_id,
+                ))
+        finally:
+            db.close()
 
-        for idx, sentence in enumerate(sentences):
-            claim_data = {
-                "answer_id": answer_id,
-                "claim_index": idx,
-                "claim_text": sentence.strip(),
-                "checkworthy": True,  # Default to True, will be updated by check_claims
-                "created_at": current_time,
-                "checked_at": current_time  # Initially same as created_at
-            }
-            claim = AnswerClaimRepository.create(self.db, claim_data)
-            claims.append(claim)
-
-        logger.info(f"Extracted {len(claims)} claims from answer {answer_id}")
-        return claims
+        logger.info(f"Extracted {len(snapshots)} claims from answer {answer_id}")
+        return snapshots
 
     async def _check_claims(self, answer_id: int) -> None:
         """
@@ -190,15 +220,23 @@ class ClaimProcessor:
         Args:
             answer_id: Answer ID to check claims for
         """
-        # Get all claims for the answer
-        claims = AnswerClaimRepository.get_by_answer(self.db, answer_id)
+        # Snapshot all claims for the answer as plain data, then release the session.
+        db = self.session_factory()
+        try:
+            claims = [
+                ClaimSnapshot(id=c.id, claim_index=idx, claim_text=c.claim_text,
+                              answer_id=answer_id, checkworthy=c.checkworthy)
+                for idx, c in enumerate(AnswerClaimRepository.get_by_answer(db, answer_id))
+            ]
+        finally:
+            db.close()
 
         if not claims:
             logger.warning(f"No claims found for answer {answer_id}")
             return
 
-        # Run checkworthy checks asynchronously for all claims.
-        # Pass full claims list + index so each check can build surrounding context.
+        # Run checkworthy checks asynchronously for all claims. Each task opens its
+        # own short session for its single write — no session held across the LLM call.
         tasks = [
             self._check_single_claim(claim, idx, claims)
             for idx, claim in enumerate(claims)
@@ -207,11 +245,10 @@ class ClaimProcessor:
         settings = get_settings()
         await gather_with_concurrency(settings.batch_max_concurrent_claims, *tasks)
 
-        checkworthy_count = sum(1 for claim in claims if claim.checkworthy)
-        logger.info(f"Checked {len(claims)} claims for answer {answer_id}. {checkworthy_count} are checkworthy.")
+        logger.info(f"Checked {len(claims)} claims for answer {answer_id}.")
 
     async def _check_single_claim(
-        self, claim: AnswerClaim, idx: int, all_claims: List[AnswerClaim]
+        self, claim: ClaimSnapshot, idx: int, all_claims: List[ClaimSnapshot]
     ) -> None:
         """
         Check if a single claim is checkworthy using filters, then LLM.
@@ -220,17 +257,15 @@ class ClaimProcessor:
         is marked not checkworthy without calling the LLM.
 
         Args:
-            claim: AnswerClaim to check
+            claim: ClaimSnapshot to check
             idx: Index of this claim in the full claims list
-            all_claims: All claims for the answer (used to build surrounding context)
+            all_claims: All claim snapshots for the answer (used to build context)
         """
         # Run filters pipeline
         for f in self.filters:
             result = f.check(claim.claim_text)
             if result is False:
-                AnswerClaimRepository.update_checkworthy(
-                    self.db, claim.id, checkworthy=False, checked_at=datetime.utcnow()
-                )
+                self._persist_checkworthy(claim.id, checkworthy=False)
                 logger.debug(f"Claim {claim.id} filtered by {f.name}: not checkworthy")
                 return
 
@@ -238,7 +273,7 @@ class ClaimProcessor:
         # in the response (e.g. to identify headers, labels, or structural text).
         claim_context = self._build_claim_context(idx, all_claims)
 
-        # No filter matched — call LLM
+        # No filter matched — call LLM (no DB session open while awaiting)
         prompt = render_template(
             "checkworthy.md",
             system_prompt=self._system_prompt,
@@ -261,23 +296,29 @@ class ClaimProcessor:
             self.cost_tracker.add_call(metadata)
 
             # Update claim via repository
-            AnswerClaimRepository.update_checkworthy(
-                self.db, claim.id, checkworthy=result.checkworthy, checked_at=datetime.utcnow()
-            )
+            self._persist_checkworthy(claim.id, checkworthy=result.checkworthy)
 
             logger.debug(f"Claim {claim.id} checkworthy={result.checkworthy}: {result.reasoning}")
 
         except Exception as e:
             logger.error(f"Failed to check claim {claim.id}: {e}", exc_info=True)
             # Mark as checkworthy=True by default via repository
-            AnswerClaimRepository.update_checkworthy(
-                self.db, claim.id, checkworthy=True, checked_at=datetime.utcnow()
-            )
+            self._persist_checkworthy(claim.id, checkworthy=True)
             logger.warning(f"Claim {claim.id} marked as checkworthy=True due to error (will be judged)")
+
+    def _persist_checkworthy(self, claim_id: int, *, checkworthy: bool) -> None:
+        """Persist a single claim's checkworthy verdict in its own short session."""
+        db = self.session_factory()
+        try:
+            AnswerClaimRepository.update_checkworthy(
+                db, claim_id, checkworthy=checkworthy, checked_at=datetime.utcnow()
+            )
+        finally:
+            db.close()
 
     @staticmethod
     def _build_claim_context(
-        idx: int, all_claims: List[AnswerClaim], window: int = 2
+        idx: int, all_claims: List[ClaimSnapshot], window: int = 2
     ) -> str:
         """
         Build a short surrounding-context string for a claim.
@@ -336,15 +377,19 @@ class ClaimProcessor:
         summary = self.cost_tracker.get_summary()
 
         # Update job using repository (keeps current status/stage, adds costs)
-        QAJobRepository.update_status(
-            self.db,
-            self.job_id,
-            status=self.job.status,  # Keep current status
-            stage=self.job.stage,    # Keep current stage
-            prompt_tokens=summary["prompt_tokens"],
-            completion_tokens=summary["completion_tokens"],
-            total_cost=summary["total_cost"]
-        )
+        db = self.session_factory()
+        try:
+            QAJobRepository.update_status(
+                db,
+                self.job_id,
+                status=self.job_status,  # Keep current status
+                stage=self.job_stage,    # Keep current stage
+                prompt_tokens=summary["prompt_tokens"],
+                completion_tokens=summary["completion_tokens"],
+                total_cost=summary["total_cost"]
+            )
+        finally:
+            db.close()
 
         logger.info(f"Updated QAJob {self.job_id} costs: ${summary['total_cost']:.4f}")
 
@@ -359,18 +404,22 @@ class ClaimProcessor:
 
 
 async def extract_and_check_claims(
-    db: Session,
+    session_factory: Callable[[], Session],
     job_id: int,
     raise_on_error: bool = False,
 ) -> None:
     """Async convenience wrapper used by the QA job pipeline."""
     try:
-        processor = ClaimProcessor(db, job_id)
+        processor = ClaimProcessor(session_factory, job_id)
     except Exception as e:
         logger.error(f"ClaimProcessor init failed for job {job_id}: {e}", exc_info=True)
-        QAJobRepository.update_status(
-            db, job_id, JobStatusEnum.failed, error_message=str(e)
-        )
+        db = session_factory()
+        try:
+            QAJobRepository.update_status(
+                db, job_id, JobStatusEnum.failed, error_message=str(e)
+            )
+        finally:
+            db.close()
         if raise_on_error:
             raise
         return

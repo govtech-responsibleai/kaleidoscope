@@ -17,7 +17,7 @@ class TestAnswerJudge:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_score_claim_based_creates_n_scores(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test claim-based scoring creates N AnswerClaimScore records for N claims."""
         # sample_qa_job fixture creates judge bound to claim_based accuracy rubric
@@ -41,7 +41,7 @@ class TestAnswerJudge:
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -58,7 +58,7 @@ class TestAnswerJudge:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_score_claim_based_aggregation(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test claim-based aggregation uses majority vote (3 accurate, 2 inaccurate -> overall True)."""
         from src.common.database.models import AnswerClaim
@@ -106,7 +106,7 @@ class TestAnswerJudge:
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=mock_generate)
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -119,7 +119,7 @@ class TestAnswerJudge:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_score_response_level_single_score(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_kb_documents, sample_judge_response_level, sample_rubric
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_kb_documents, sample_judge_response_level, sample_rubric
     ):
         """Test response-level scoring creates 1 AnswerScore, no claim scores."""
         sample_qa_job.judge_id = sample_judge_response_level.id
@@ -145,7 +145,7 @@ class TestAnswerJudge:
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -162,7 +162,7 @@ class TestAnswerJudge:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_score_response_level_accuracy(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_kb_documents, sample_judge_response_level
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_kb_documents, sample_judge_response_level
     ):
         """Test response-level judgment label propagates to AnswerScore."""
         sample_qa_job.judge_id = sample_judge_response_level.id
@@ -188,7 +188,7 @@ class TestAnswerJudge:
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -201,7 +201,7 @@ class TestAnswerJudge:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_score_updates_job_costs(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test that scoring updates QAJob costs."""
         mock_llm_instance = MagicMock()
@@ -227,7 +227,7 @@ class TestAnswerJudge:
         initial_tokens = sample_qa_job.prompt_tokens
         initial_cost = sample_qa_job.total_cost
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         test_db.refresh(sample_qa_job)
@@ -237,14 +237,14 @@ class TestAnswerJudge:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_score_handles_llm_failure(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test that LLM errors result in default inaccurate scores."""
         mock_llm_instance = MagicMock()
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=Exception("LLM API error"))
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
@@ -262,7 +262,7 @@ class TestAnswerJudge:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_claim_level_persists_with_single_commit_boundary(
-        self, mock_llm_class, test_db, sample_qa_job, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_claims, sample_kb_documents
     ):
         """Claim-based writes should use one commit for the score + claim-score set."""
         for claim in sample_claims:
@@ -276,12 +276,29 @@ class TestAnswerJudge:
         ))
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id, skip_job_update=True)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id, skip_job_update=True)
 
-        with patch.object(test_db, "commit", wraps=test_db.commit) as mock_commit:
-            await scorer._score_claim_level()
+        # Persistence happens on a fresh session from the factory, not on `test_db`.
+        # Wrap the factory so each session it hands out counts its own commits; the
+        # snapshot session commits zero times and the persist session commits once.
+        commit_calls = []
+        real_factory = scorer.session_factory
 
-        assert mock_commit.call_count == 1
+        def counting_factory():
+            session = real_factory()
+            original_commit = session.commit
+
+            def counting_commit(*args, **kwargs):
+                commit_calls.append(1)
+                return original_commit(*args, **kwargs)
+
+            session.commit = counting_commit
+            return session
+
+        scorer.session_factory = counting_factory
+        await scorer._score_claim_level()
+
+        assert len(commit_calls) == 1
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.AnswerClaimScoreRepository.create_many_no_commit')
@@ -291,6 +308,7 @@ class TestAnswerJudge:
         mock_llm_class,
         mock_create_many_no_commit,
         test_db,
+        test_db_factory,
         sample_qa_job,
         sample_answer,
         sample_claims,
@@ -305,7 +323,7 @@ class TestAnswerJudge:
         mock_llm_class.return_value = mock_llm_instance
         mock_create_many_no_commit.side_effect = RuntimeError("boom")
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id, skip_job_update=True)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id, skip_job_update=True)
 
         with pytest.raises(RuntimeError, match="boom"):
             await scorer._score_claim_level()
@@ -325,7 +343,7 @@ class TestContextPriority:
     @patch('src.scoring.services.judge_scoring.get_loader')
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_claim_based_uses_rag_over_kb(
-        self, mock_llm_class, mock_get_loader, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, mock_get_loader, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """RAG citations take priority over KB documents for claim-based scoring."""
         sample_answer.rag_citations = [
@@ -343,7 +361,7 @@ class TestContextPriority:
         mock_loader.render_from_string.return_value = "mocked prompt"
         mock_get_loader.return_value = mock_loader
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         kb_text = mock_loader.render_from_string.call_args_list[0].kwargs.get('kb_documents')
@@ -354,7 +372,7 @@ class TestContextPriority:
     @patch('src.scoring.services.judge_scoring.get_loader')
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_claim_based_falls_back_to_kb(
-        self, mock_llm_class, mock_get_loader, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, mock_get_loader, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """KB documents used when no RAG citations for claim-based scoring."""
         sample_answer.rag_citations = None
@@ -370,7 +388,7 @@ class TestContextPriority:
         mock_loader.render_from_string.return_value = "mocked prompt"
         mock_get_loader.return_value = mock_loader
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         kb_text = mock_loader.render_from_string.call_args_list[0].kwargs.get('kb_documents')
@@ -380,7 +398,7 @@ class TestContextPriority:
     @patch('src.scoring.services.judge_scoring.get_loader')
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_claim_based_empty_when_no_context(
-        self, mock_llm_class, mock_get_loader, test_db, sample_qa_job, sample_answer, sample_claims
+        self, mock_llm_class, mock_get_loader, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims
     ):
         """Empty fallback when no RAG citations and no KB documents."""
         sample_answer.rag_citations = None
@@ -396,7 +414,7 @@ class TestContextPriority:
         mock_loader.render_from_string.return_value = "mocked prompt"
         mock_get_loader.return_value = mock_loader
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         kb_text = mock_loader.render_from_string.call_args_list[0].kwargs.get('kb_documents')
@@ -410,7 +428,7 @@ class TestAnswerJudgeErrors:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_claim_level_llm_error_captures_error_in_explanation(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Test that claim-level LLM errors are captured in claim score explanations."""
         mock_llm_instance = MagicMock()
@@ -419,7 +437,7 @@ class TestAnswerJudgeErrors:
         )
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         test_db.refresh(sample_qa_job)
@@ -439,7 +457,7 @@ class TestAnswerJudgeErrors:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_response_level_llm_error_sets_job_failed(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_kb_documents, sample_judge_response_level
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_kb_documents, sample_judge_response_level
     ):
         """Test that response-level LLM errors mark job as failed with error_message."""
         sample_qa_job.judge_id = sample_judge_response_level.id
@@ -451,7 +469,7 @@ class TestAnswerJudgeErrors:
         )
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         test_db.refresh(sample_qa_job)
@@ -462,7 +480,7 @@ class TestAnswerJudgeErrors:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_claim_based_accuracy_prompt_uses_accuracy_template(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Claim-based Accuracy scoring should render the Accuracy prompt template content."""
         mock_llm_instance = MagicMock()
@@ -472,7 +490,7 @@ class TestAnswerJudgeErrors:
         ))
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         prompt = mock_llm_instance.generate_structured_async.call_args_list[0].kwargs["prompt"]
@@ -482,7 +500,7 @@ class TestAnswerJudgeErrors:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_response_level_uses_rubric_prompt_when_present(
-        self, mock_llm_class, test_db, sample_qa_job, sample_judge_response_level, sample_rubric
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_judge_response_level, sample_rubric
     ):
         """Response-level scoring should render from the rubric prompt when present."""
         sample_rubric.judge_prompt = "Prompt for {{ Question }} and {{ Answer }}"
@@ -496,18 +514,18 @@ class TestAnswerJudgeErrors:
         ))
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         prompt = mock_llm_instance.generate_structured_async.call_args.kwargs["prompt"]
         assert "Prompt for" in prompt
-        assert scorer.answer.question.text in prompt
-        assert scorer.answer.answer_content in prompt
+        assert scorer.question_text in prompt
+        assert scorer.answer_content in prompt
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_response_level_falls_back_to_default_template_when_prompt_missing(
-        self, mock_llm_class, test_db, sample_qa_job, sample_judge_response_level, sample_rubric
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_judge_response_level, sample_rubric
     ):
         """Response-level scoring should fall back to the default rubric template when prompt content is missing."""
         sample_rubric.judge_prompt = None
@@ -521,7 +539,7 @@ class TestAnswerJudgeErrors:
         ))
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         prompt = mock_llm_instance.generate_structured_async.call_args.kwargs["prompt"]
@@ -543,7 +561,7 @@ class TestJudgeEnglishOutputDirective:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_response_level_appends_english_directive_to_prompt(
-        self, mock_llm_class, test_db, sample_qa_job, sample_judge_response_level, sample_rubric
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_judge_response_level, sample_rubric
     ):
         """Every response-level judge prompt ends with the English output directive."""
         sample_qa_job.judge_id = sample_judge_response_level.id
@@ -556,7 +574,7 @@ class TestJudgeEnglishOutputDirective:
         ))
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         prompt = mock_llm_instance.generate_structured_async.call_args.kwargs["prompt"]
@@ -566,7 +584,7 @@ class TestJudgeEnglishOutputDirective:
     @pytest.mark.asyncio
     @patch('src.scoring.services.judge_scoring.LLMClient')
     async def test_claim_level_appends_english_directive_to_prompt(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer, sample_claims, sample_kb_documents
     ):
         """Every claim-level judge prompt ends with the English output directive."""
         mock_llm_instance = MagicMock()
@@ -576,7 +594,7 @@ class TestJudgeEnglishOutputDirective:
         ))
         mock_llm_class.return_value = mock_llm_instance
 
-        scorer = AnswerJudge(test_db, sample_qa_job.id)
+        scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
 
         prompt = mock_llm_instance.generate_structured_async.call_args_list[0].kwargs["prompt"]

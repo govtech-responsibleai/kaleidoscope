@@ -251,10 +251,10 @@ class QAJobProcessor:
         await generate_answer_for_job(self.db, job.id, self.question_id, self.snapshot_id)
 
     async def _run_claim_processing(self, job: QAJob) -> None:
-        await extract_and_check_claims(self.db, job.id)
+        await extract_and_check_claims(SessionLocal, job.id)
 
     async def _run_scoring(self, job: QAJob) -> None:
-        judge = AnswerJudge(self.db, job.id, override_judge_id=self.judge_id)
+        judge = AnswerJudge(SessionLocal, job.id, override_judge_id=self.judge_id)
         await judge.score()
 
 
@@ -512,6 +512,7 @@ async def _score_response_level(
 
     Returns cost summary dict from AnswerJudge.
     """
+    # Short session: skip check only. The session is closed before the LLM calls.
     db = SessionLocal()
     try:
         job = QAJobRepository.get_by_id(db, job_id)
@@ -519,15 +520,21 @@ async def _score_response_level(
             if _is_rubric_score_complete(db, job.answer_id, judge_id, rubric_id):
                 logger.info(f"QAJob {job_id}: rubric {rubric_id} score already exists, skipping")
                 return {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0}
+    finally:
+        db.close()
 
-        judge = AnswerJudge(
-            db, job_id,
-            override_judge_id=judge_id,
-            override_rubric_id=rubric_id,
-            skip_job_update=True,
-        )
-        await judge.score(raise_on_error=True)
+    # Scoring: AnswerJudge owns its own short sessions; none held across judge.score()
+    judge = AnswerJudge(
+        SessionLocal, job_id,
+        override_judge_id=judge_id,
+        override_rubric_id=rubric_id,
+        skip_job_update=True,
+    )
+    await judge.score(raise_on_error=True)
 
+    # Short session: verify persistence.
+    db = SessionLocal()
+    try:
         job = QAJobRepository.get_by_id(db, job_id)
         if job and job.status == JobStatusEnum.failed:
             raise RuntimeError(job.error_message or f"Rubric scoring failed for rubric {rubric_id}")
@@ -551,6 +558,7 @@ async def _score_rubric_spec(
     rubric_id: int,
 ) -> dict:
     """Run one scheduled rubric spec, including claim extraction when required."""
+    # Short session: skip check + snapshot rubric state. Closed before LLM calls.
     db = SessionLocal()
     try:
         job = QAJobRepository.get_by_id(db, job_id)
@@ -558,44 +566,65 @@ async def _score_rubric_spec(
             raise RuntimeError(f"QAJob {job_id} not found")
         if not job.answer_id:
             raise RuntimeError(f"QAJob {job_id} has no answer after generation")
+        answer_id = job.answer_id
 
-        if _is_rubric_score_complete(db, job.answer_id, judge_id, rubric_id):
+        if _is_rubric_score_complete(db, answer_id, judge_id, rubric_id):
             logger.info(f"QAJob {job_id}: rubric {rubric_id} score already exists, skipping")
             return {"prompt_tokens": 0, "completion_tokens": 0, "total_cost": 0.0}
 
         rubric = TargetRubricRepository.get_by_id(db, rubric_id)
         if rubric is None:
             raise RuntimeError(f"Rubric {rubric_id} not found")
+        scoring_mode = rubric.scoring_mode
 
-        existing_claims = AnswerClaimRepository.get_by_answer(db, job.answer_id)
-        if rubric.scoring_mode == "claim_based":
-            if _claims_ready(existing_claims):
-                logger.info(f"QAJob {job_id}: checked claims already exist, skipping extraction")
-            else:
-                if existing_claims:
-                    AnswerClaimRepository.delete_by_answer(db, job.answer_id)
-                await extract_and_check_claims(db, job_id, raise_on_error=True)
+        existing_claims = AnswerClaimRepository.get_by_answer(db, answer_id)
+        claims_ready = _claims_ready(existing_claims)
+        has_existing_claims = bool(existing_claims)
+    finally:
+        db.close()
 
+    # Claim extraction (its own short sessions internally; none held here).
+    if scoring_mode == "claim_based":
+        if claims_ready:
+            logger.info(f"QAJob {job_id}: checked claims already exist, skipping extraction")
+        else:
+            if has_existing_claims:
+                db = SessionLocal()
+                try:
+                    AnswerClaimRepository.delete_by_answer(db, answer_id)
+                finally:
+                    db.close()
+            await extract_and_check_claims(SessionLocal, job_id, raise_on_error=True)
+
+            db = SessionLocal()
+            try:
                 refreshed = QAJobRepository.get_by_id(db, job_id)
                 if refreshed and refreshed.status == JobStatusEnum.failed:
                     raise RuntimeError(refreshed.error_message or f"Claim processing failed for rubric {rubric_id}")
+            finally:
+                db.close()
 
-        judge = AnswerJudge(
-            db,
-            job_id,
-            override_judge_id=judge_id,
-            override_rubric_id=rubric_id,
-            skip_job_update=True,
-        )
-        await judge.score(raise_on_error=True)
+    # Scoring: AnswerJudge owns its own short sessions; none held across judge.score()
+    judge = AnswerJudge(
+        SessionLocal,
+        job_id,
+        override_judge_id=judge_id,
+        override_rubric_id=rubric_id,
+        skip_job_update=True,
+    )
+    await judge.score(raise_on_error=True)
 
+    # Short session: verify persistence.
+    db = SessionLocal()
+    try:
         refreshed = QAJobRepository.get_by_id(db, job_id)
         if refreshed and refreshed.status == JobStatusEnum.failed:
             raise RuntimeError(refreshed.error_message or f"Rubric scoring failed for rubric {rubric_id}")
 
+        rubric = TargetRubricRepository.get_by_id(db, rubric_id)
         if not _is_rubric_score_complete(
             db,
-            job.answer_id,
+            answer_id,
             judge_id,
             rubric_id,
             rubric=rubric,

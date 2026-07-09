@@ -47,6 +47,21 @@ Judge reasoning is always written in English, regardless of the language the inp
 | Scoring responses | Judges evaluating |
 | Completed | All scores available |
 
+Questions are batched and queued: they run through the pipeline with bounded concurrency rather than all at once. A failed question shows its own error and does not block the others — the evaluate button then offers to re-run just the failed ones.
+
+### Failures on large runs
+
+On large runs (e.g. 30+ questions) some questions may fail with a provider error such as `ServiceUnavailableError` / HTTP 502 / 503 (`"This model is currently experiencing high demand"` / `UNAVAILABLE`). This is a **transient overload** of the underlying model — either your target application's model (surfaced as a `502` from the target) or a judge model — not a hard quota limit.
+
+Kaleidoscope retries these automatically with exponential backoff plus jitter (jitter spreads simultaneous retries so they don't all hit the overloaded model in the same instant). A question only fails after its retries are exhausted, and failures never block the other questions.
+
+If failures persist on large runs, reduce the sustained request rate:
+
+- **Target-side overload** (error traced to answer generation / a `502` from your target): lower `BATCH_MAX_CONCURRENT_JOBS` — this is how many questions call your target in parallel.
+- **Judge-side overload** (error during scoring): lower `LLM_MAX_CONCURRENT` and/or `BATCH_MAX_CONCURRENT_CLAIMS`.
+
+See [Environment Variables → LLM Concurrency & Throttling](./2_environment-variables.md#llm-concurrency--throttling). Re-running just the failed questions after the first pass usually succeeds, since the transient spike has passed and the queue is no longer saturated.
+
 ### Cost Tracking
 
 Every scoring job tracks token usage (prompt + completion) and estimated cost. View totals on the scoring page to monitor spend across different models and rubrics.

@@ -69,6 +69,26 @@ ANTHROPIC_API_KEY=...
 
 Keys set here become shared credentials available to all users. See [LLM Providers](./1_providers.md) for the list of default providers and their environment variables.
 
+## LLM Concurrency & Throttling
+
+These control how aggressively Kaleidoscope drives your target application and the judge models during large evaluations. The defaults are safe for most providers; tune them if you see transient overload or rate-limit errors (`ServiceUnavailableError`, HTTP 429/502/503) when running many questions at once.
+
+```bash
+LLM_MAX_CONCURRENT=3    # Max concurrent judge LLM calls per model (default 3)
+LLM_NUM_RETRIES=5       # Judge-call retries on 429/5xx/timeout before failing (default 5)
+LLM_TIMEOUT=120         # Per judge-call timeout in seconds (default 120)
+BATCH_MAX_CONCURRENT_JOBS=3           # Questions processed in parallel, incl. the target call (default 3)
+BATCH_MAX_CONCURRENT_CLAIMS=5         # Claims checked/scored in parallel per question (default 5)
+BATCH_MAX_CONCURRENT_SCORERS_PER_JOB=2  # Rubric scorers in parallel per question (default 2)
+```
+
+Which knob to reach for depends on where the failure occurs (the error message names the stage):
+
+- **Target application overloaded** (answer generation fails, often a `502` from your target): lower **`BATCH_MAX_CONCURRENT_JOBS`** — this bounds how many questions call your target at once. Target calls are retried automatically with jittered exponential backoff.
+- **Judge model overloaded** (scoring fails): lower **`LLM_MAX_CONCURRENT`** and/or **`BATCH_MAX_CONCURRENT_CLAIMS`** so fewer judge calls run concurrently.
+- **`LLM_TIMEOUT`** caps how long a single judge call can run. Keep it well below any load-balancer timeout.
+- These are provider/target-facing throttles; they do not affect how many browser requests the UI makes.
+
 ## Extensions
 
 ```bash

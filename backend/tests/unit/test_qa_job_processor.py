@@ -99,10 +99,14 @@ class TestQAJobProcessor:
         )
         await processor.run(job_id=job.id)
 
+        from src.scoring.services.qa_job_processor import SessionLocal
+
         mock_generate_answer.assert_not_awaited()
         mock_extract_claims.assert_not_awaited()
+        # Scoring now receives the session factory (not a live session) so it can
+        # open/close its own short sessions and never pin a pooled connection.
         MockAnswerJudge.assert_called_once_with(
-            test_db,
+            SessionLocal,
             job.id,
             override_judge_id=sample_judge_response_level.id,
         )
@@ -164,9 +168,11 @@ class TestQAJobProcessor:
         )
         await processor.run(job_id=sample_qa_job.id)
 
-        # Verify AnswerJudge was instantiated and score() called
+        # Verify AnswerJudge was instantiated with the session factory and score() called
+        from src.scoring.services.qa_job_processor import SessionLocal
+
         MockAnswerJudge.assert_called_once_with(
-            test_db,
+            SessionLocal,
             sample_qa_job.id,
             override_judge_id=sample_qa_job.judge_id,
         )
@@ -1334,3 +1340,203 @@ class TestBatchEdgeCases:
         assert len(result) == 2
         for job in result:
             assert job is not None
+
+
+@pytest.mark.unit
+@pytest.mark.slow
+class TestScoringConnectionPool:
+    """Regression tests: scoring must not hold a DB connection across LLM calls.
+
+    These reproduce the production 503 storm: during a large evaluation the
+    scoring coroutines used to pin a pooled connection for the entire duration
+    of the (slow) LLM calls, exhausting the connection pool. The fix releases
+    the session while awaiting the LLM, so the pool never runs dry.
+    """
+
+    def _build_small_pool_factory(self, tmp_path):
+        """A real QueuePool engine (pool_size=2, no overflow) over a temp SQLite file.
+
+        StaticPool (used by test_db_factory) shares one connection and does not
+        model checkout limits, so we build a genuine QueuePool here to exercise
+        the exhaustion behaviour the production Postgres pool exhibits.
+        """
+        from sqlalchemy import create_engine
+        from sqlalchemy.pool import QueuePool
+        from sqlalchemy.orm import sessionmaker
+        from src.common.database.connection import Base
+
+        engine = create_engine(
+            f"sqlite:///{tmp_path / 'pool.db'}",
+            connect_args={"check_same_thread": False},
+            poolclass=QueuePool,
+            pool_size=2,
+            max_overflow=0,
+            pool_timeout=2,
+        )
+        Base.metadata.create_all(engine)
+        factory = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        return engine, factory
+
+    def _seed_claim_based_scenario(self, factory, *, num_questions: int):
+        """Seed a target/snapshot with N answered questions + running claim jobs."""
+        from src.common.database.models import (
+            User, Target, Job, Persona, Question, Answer, Snapshot,
+            Judge, AnswerClaim, TargetRubric,
+            JobTypeEnum, JobStatusEnum, StatusEnum,
+            QuestionTypeEnum, QuestionScopeEnum, QAJob, QAJobTypeEnum, QAJobStageEnum,
+        )
+
+        db = factory()
+        try:
+            user = User(username="pool-user", is_admin=True)
+            db.add(user)
+            db.flush()
+
+            target = Target(
+                name="Pool Target", agency="A", purpose="p", target_users="u",
+                api_endpoint="https://api.test/chat", endpoint_type="http",
+                endpoint_config={"response_content_path": "output"}, user_id=user.id,
+            )
+            db.add(target)
+            db.flush()
+
+            # Claim-based rubric with an inline judge prompt (group != "custom" so
+            # resolve_rubric_prompt_text returns judge_prompt without file lookups).
+            rubric = TargetRubric(
+                target_id=target.id, name="Accuracy", criteria="c", options=["Accurate", "Inaccurate"],
+                group="system", scoring_mode="claim_based", best_option="Accurate",
+                judge_prompt="Judge this claim: {{ claim_text }}",
+            )
+            db.add(rubric)
+            db.flush()
+
+            judge = Judge(
+                name="Pool Judge", model_name="gemini/gemini-3.1-flash-lite",
+                prompt_template="t", params={}, rubric_id=rubric.id,
+                is_baseline=True, is_editable=False,
+            )
+            db.add(judge)
+
+            job = Job(target_id=target.id, type=JobTypeEnum.persona_generation,
+                      count_requested=1, model_used="m", status=JobStatusEnum.running)
+            db.add(job)
+            db.flush()
+            persona = Persona(job_id=job.id, target_id=target.id, title="t", info="i",
+                              style="s", use_case="u", status=StatusEnum.approved)
+            db.add(persona)
+            db.flush()
+
+            snapshot = Snapshot(target_id=target.id, name="v1", description="d")
+            db.add(snapshot)
+            db.flush()
+
+            all_jobs = []
+            for i in range(num_questions):
+                q = Question(
+                    job_id=job.id, persona_id=persona.id, target_id=target.id,
+                    text=f"Question {i}?", type=QuestionTypeEnum.typical,
+                    scope=QuestionScopeEnum.in_kb, status=StatusEnum.approved,
+                )
+                db.add(q)
+                db.flush()
+                ans = Answer(
+                    question_id=q.id, snapshot_id=snapshot.id,
+                    answer_content="A claim. Another claim.", system_prompt="sys",
+                    chat_id=f"c{i}", message_id=f"m{i}", is_selected_for_annotation=False,
+                )
+                db.add(ans)
+                db.flush()
+                # Pre-extract checkworthy claims so scoring goes straight to the LLM path.
+                db.add_all([
+                    AnswerClaim(answer_id=ans.id, claim_index=0, claim_text="A claim.",
+                                checkworthy=True, checked_at=ans.created_at),
+                    AnswerClaim(answer_id=ans.id, claim_index=1, claim_text="Another claim.",
+                                checkworthy=True, checked_at=ans.created_at),
+                ])
+                qa = QAJob(
+                    snapshot_id=snapshot.id, question_id=q.id, judge_id=judge.id,
+                    answer_id=ans.id, type=QAJobTypeEnum.claim_scoring_full,
+                    status=JobStatusEnum.running, stage=QAJobStageEnum.starting,
+                    rubric_specs=[{"rubric_id": rubric.id, "judge_id": judge.id}],
+                )
+                db.add(qa)
+                all_jobs.append(qa)
+            db.commit()
+            return (
+                snapshot.id,
+                [(j.id, j.question_id) for j in all_jobs],
+                rubric.id,
+                judge.id,
+            )
+        finally:
+            db.close()
+
+    @pytest.mark.asyncio
+    async def test_pool_not_exhausted_scoring_many_questions(self, tmp_path):
+        """Running ~40 claim jobs with slow LLM calls must not exhaust a size-2 pool.
+
+        Fails before the fix (sessions held across ``judge.score()`` → pool times
+        out) and passes after (sessions released during the LLM await).
+        """
+        import asyncio
+        from src.common.database.models import QAJob
+        from src.scoring.services import qa_job_processor
+        from src.common.models import ClaimJudgmentResult
+
+        engine, factory = self._build_small_pool_factory(tmp_path)
+        try:
+            snapshot_id, job_specs, rubric_id, judge_id = self._seed_claim_based_scenario(
+                factory, num_questions=40
+            )
+            job_ids = [jid for jid, _ in job_specs]
+            question_ids = [qid for _, qid in job_specs]
+
+            peak = {"checkedout": 0}
+
+            async def fake_generate(*args, **kwargs):
+                # Hold the slot briefly so many coroutines overlap, and record the
+                # worst-case number of connections checked out from the pool.
+                peak["checkedout"] = max(peak["checkedout"], engine.pool.checkedout())
+                await asyncio.sleep(0.02)
+                peak["checkedout"] = max(peak["checkedout"], engine.pool.checkedout())
+                return (
+                    ClaimJudgmentResult(label=True, reasoning="ok"),
+                    {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2,
+                     "model": "test", "cost": 0.0},
+                )
+
+            mock_llm = Mock()
+            mock_llm.generate_structured_async = AsyncMock(side_effect=fake_generate)
+
+            all_jobs = [QAJob(id=jid, question_id=qid, status=JobStatusEnum.running)
+                        for jid, qid in job_specs]
+
+            with patch.object(qa_job_processor, "SessionLocal", factory), \
+                 patch("src.scoring.services.judge_scoring.LLMClient", return_value=mock_llm), \
+                 patch("src.scoring.services.claim_processor.LLMClient", return_value=mock_llm):
+                # Must complete without raising sqlalchemy.exc.TimeoutError.
+                await qa_job_processor.run_qajobs_phased(
+                    snapshot_id=snapshot_id,
+                    question_ids=question_ids,
+                    all_jobs=all_jobs,
+                    rubric_specs=[{"rubric_id": rubric_id, "judge_id": judge_id}],
+                )
+
+            # The whole point of the fix: connections are released across LLM calls,
+            # so peak concurrent checkouts stays within the tiny pool.
+            assert peak["checkedout"] <= 2, (
+                f"pool exhausted: peak checkedout={peak['checkedout']} (limit 2)"
+            )
+
+            # And every job actually reached a terminal state (completed).
+            verify = factory()
+            try:
+                for jid in job_ids:
+                    job = QAJobRepository.get_by_id(verify, jid)
+                    assert job.status == JobStatusEnum.completed, (
+                        f"job {jid} status={job.status}"
+                    )
+            finally:
+                verify.close()
+        finally:
+            engine.dispose()

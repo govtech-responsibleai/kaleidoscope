@@ -6,7 +6,11 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock, AsyncMock
 from datetime import datetime
 
-from src.scoring.services.claim_processor import ClaimProcessor, SENTENCE_TOKENIZER_ERROR
+from src.scoring.services.claim_processor import (
+    ClaimProcessor,
+    ClaimSnapshot,
+    SENTENCE_TOKENIZER_ERROR,
+)
 from src.scoring.services.claim_processor_steps import (
     ClaimMergeCodeBlocks,
     ClaimCitationFilter,
@@ -19,9 +23,9 @@ from src.common.models import CheckworthyResult
 class TestClaimProcessor:
     """Unit tests for ClaimProcessor class."""
 
-    def test_extract_claims_creates_n_claims(self, test_db, sample_qa_job, sample_answer):
+    def test_extract_claims_creates_n_claims(self, test_db_factory, sample_qa_job, sample_answer):
         """Test that extracting claims from answer creates N claims for N sentences."""
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
 
         # Extract claims (answer has 3 sentences)
         claims = processor._extract_claims(sample_answer.id)
@@ -36,21 +40,21 @@ class TestClaimProcessor:
 
     @patch('src.scoring.services.claim_processor.nltk')
     def test_extract_claims_raises_nice_error_when_punkt_missing(
-        self, mock_nltk, test_db, sample_qa_job, sample_answer
+        self, mock_nltk, test_db_factory, sample_qa_job, sample_answer
     ):
         """Test that claim extraction raises a clear error when punkt is unavailable."""
         mock_nltk.sent_tokenize.side_effect = LookupError("punkt not found")
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
 
         with pytest.raises(RuntimeError, match="sentence tokenizer data"):
             processor._extract_claims(sample_answer.id)
 
     @patch('src.scoring.services.claim_processor.nltk', None)
     def test_extract_claims_raises_nice_error_when_nltk_missing(
-        self, test_db, sample_qa_job, sample_answer
+        self, test_db_factory, sample_qa_job, sample_answer
     ):
         """Test that claim extraction raises a clear error when nltk is not installed."""
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
 
         with pytest.raises(RuntimeError, match="sentence tokenizer data"):
             processor._extract_claims(sample_answer.id)
@@ -58,16 +62,19 @@ class TestClaimProcessor:
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
     async def test_check_claims_updates_all_checked_at(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer
     ):
         """Test that checking claims updates checked_at for all claims."""
-        # Create claims first
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
-        claims = processor._extract_claims(sample_answer.id)
+        from src.common.database.repositories.answer_claim_repo import AnswerClaimRepository
 
-        # Set created_at to a specific past time
+        # Create claims first
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
+        processor._extract_claims(sample_answer.id)
+
+        # Set created_at/checked_at to a specific past time on the persisted rows
         past_time = datetime(2024, 1, 1, 12, 0, 0)
-        for claim in claims:
+        orm_claims = AnswerClaimRepository.get_by_answer(test_db, sample_answer.id)
+        for claim in orm_claims:
             claim.created_at = past_time
             claim.checked_at = past_time
         test_db.commit()
@@ -93,19 +100,17 @@ class TestClaimProcessor:
         # Check claims
         await processor._check_claims(sample_answer.id)
 
-        # Verify all claims have updated checked_at
-        test_db.refresh(claims[0])
-        test_db.refresh(claims[1])
-        test_db.refresh(claims[2])
-
-        for claim in claims:
+        # Verify all claims have updated checked_at (read fresh from DB)
+        orm_claims = AnswerClaimRepository.get_by_answer(test_db, sample_answer.id)
+        for claim in orm_claims:
+            test_db.refresh(claim)
             assert claim.checked_at > past_time
             assert claim.checked_at != claim.created_at
 
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
     async def test_process_success(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer
     ):
         """Test full process pipeline: extract -> check -> update costs."""
         # Mock LLM - will be called 3 times (once per claim)
@@ -130,7 +135,7 @@ class TestClaimProcessor:
         mock_llm_class.return_value = mock_llm_instance
 
         # Process
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         await processor.process()
 
         # Verify claims created
@@ -151,14 +156,14 @@ class TestClaimProcessor:
         assert sample_qa_job.total_cost == pytest.approx(0.0004, rel=1e-6)
 
     @pytest.mark.asyncio
-    async def test_process_skips_if_not_running(self, test_db, sample_qa_job, sample_answer):
+    async def test_process_skips_if_not_running(self, test_db, test_db_factory, sample_qa_job, sample_answer):
         """Test that process exits early if job is not running."""
         # Set job to paused
         sample_qa_job.status = JobStatusEnum.paused
         test_db.commit()
 
         # Process
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         await processor.process()
 
         # Verify no claims created
@@ -169,7 +174,7 @@ class TestClaimProcessor:
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
     async def test_checkworthy_uses_zero_temperature(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer
     ):
         """Test that checkworthy LLM calls use temperature=0.0."""
         sample_answer.answer_content = "This is a long enough claim to pass the short filter."
@@ -185,7 +190,7 @@ class TestClaimProcessor:
         )
         mock_llm_class.return_value = mock_llm_instance
 
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         await processor.process()
 
         call_kwargs = mock_llm_instance.generate_structured_async.call_args[1]
@@ -194,7 +199,7 @@ class TestClaimProcessor:
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
     async def test_mermaid_block_stays_single_claim(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer
     ):
         """Test that a mermaid chart in an answer becomes one claim."""
         sample_answer.answer_content = (
@@ -219,16 +224,16 @@ class TestClaimProcessor:
         )
         mock_llm_class.return_value = mock_llm_instance
 
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         claims = processor._extract_claims(sample_answer.id)
 
         mermaid_claims = [c for c in claims if "```mermaid" in c.claim_text]
         assert len(mermaid_claims) == 1
         assert "flowchart LR" in mermaid_claims[0].claim_text
 
-    def test_build_claim_context(self, test_db, sample_qa_job, sample_answer):
+    def test_build_claim_context(self, test_db_factory, sample_qa_job, sample_answer):
         """Test that claim context includes surrounding claims with >>> <<< markers."""
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         claims = processor._extract_claims(sample_answer.id)
 
         # Build context for the middle claim (index 1)
@@ -246,7 +251,7 @@ class TestClaimProcessorErrors:
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.LLMClient')
     async def test_checkworthy_llm_error_defaults_to_checkworthy_true(
-        self, mock_llm_class, test_db, sample_qa_job, sample_answer
+        self, mock_llm_class, test_db, test_db_factory, sample_qa_job, sample_answer
     ):
         """Test that checkworthy LLM errors default claims to checkworthy=True."""
         # Update answer to have longer sentences that will be checked
@@ -261,7 +266,7 @@ class TestClaimProcessorErrors:
         mock_llm_class.return_value = mock_llm_instance
 
         # Process
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         await processor.process()
 
         # Verify claims were created and defaulted to checkworthy=True
@@ -277,7 +282,7 @@ class TestClaimProcessorErrors:
         assert sample_qa_job.status == JobStatusEnum.running
 
     @pytest.mark.asyncio
-    async def test_missing_answer_sets_job_failed_with_error_message(self, test_db, sample_qa_job):
+    async def test_missing_answer_sets_job_failed_with_error_message(self, test_db, test_db_factory, sample_qa_job):
         """Test that missing answer sets job failed with error_message."""
         from src.scoring.services.claim_processor import extract_and_check_claims
 
@@ -286,7 +291,7 @@ class TestClaimProcessorErrors:
         test_db.commit()
 
         # Process via the public wrapper so init errors are handled
-        await extract_and_check_claims(test_db, sample_qa_job.id)
+        await extract_and_check_claims(test_db_factory, sample_qa_job.id)
 
         # Verify job marked as failed
         test_db.refresh(sample_qa_job)
@@ -297,14 +302,14 @@ class TestClaimProcessorErrors:
     @pytest.mark.asyncio
     @patch('src.scoring.services.claim_processor.nltk')
     async def test_missing_punkt_sets_job_failed_with_nice_error_message(
-        self, mock_nltk, test_db, sample_qa_job
+        self, mock_nltk, test_db, test_db_factory, sample_qa_job
     ):
         """Test that missing punkt marks the job failed with an operational error message."""
         from src.scoring.services.claim_processor import extract_and_check_claims
 
         mock_nltk.sent_tokenize.side_effect = LookupError("punkt not found")
 
-        await extract_and_check_claims(test_db, sample_qa_job.id)
+        await extract_and_check_claims(test_db_factory, sample_qa_job.id)
 
         test_db.refresh(sample_qa_job)
         assert sample_qa_job.status == JobStatusEnum.failed
@@ -315,9 +320,9 @@ class TestClaimProcessorErrors:
 class TestClaimTransform:
     """Tests for ClaimTransform steps."""
 
-    def test_apply_transforms_comprehensive(self, test_db, sample_qa_job):
+    def test_apply_transforms_comprehensive(self, test_db_factory, sample_qa_job):
         """Test newline split + bracket shift transforms with no character loss."""
-        processor = ClaimProcessor(test_db, sample_qa_job.id)
+        processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         input_claims = [
             "First claim is long.\n(Second claim) text ",
             "[Third is (nested) long enough]"
