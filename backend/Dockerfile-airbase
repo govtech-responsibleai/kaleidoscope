@@ -1,0 +1,61 @@
+# Build: docker build --platform linux/amd64 -f Dockerfile-airbase -t airbase-kaleidoscope-api .
+FROM gdssingapore/airbase:python-3.13
+
+WORKDIR /app
+
+USER root
+RUN apt-get update && apt-get install -y \
+    postgresql-client \
+    wget \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Corporate proxy intercepts TLS, so huggingface.co (and other HTTPS hosts) fail
+# with SSL: CERTIFICATE_VERIFY_FAILED at build time. Install the Cloudflare/corp
+# root CA into the system bundle and point SSL_CERT_FILE at it — httpx (used by
+# huggingface_hub) honors SSL_CERT_FILE, so the Nemotron download below succeeds.
+RUN wget --no-check-certificate -q -O /usr/local/share/ca-certificates/Cloudflare_CA.crt \
+    https://seed-general-public-files.s3.ap-southeast-1.amazonaws.com/seed-cloudflare-root-certs/Cloudflare_CA.pem \
+    && update-ca-certificates
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+ENV NLTK_DATA=/usr/local/share/nltk_data
+
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+RUN uv run python -m nltk.downloader -d /usr/local/share/nltk_data punkt
+
+# Bake the Nemotron persona dataset at build time. Airbase runtime has no egress
+# to huggingface.co, so the dataset must live in the image — otherwise the lazy
+# load_dataset() call in persona_sampler.py hangs at request time and the gateway
+# returns 502. Same build-time-bake pattern as NLTK above.
+# HF_HOME must be set before the download (so the cache lands in the baked path
+# and is found at runtime). HF_HUB_OFFLINE is set AFTER the download so runtime
+# reads the baked cache only and never pings the hub (which would hang on airbase).
+# Dataset name is hardcoded to match the app default (config.py: nemotron_personas_dataset).
+ENV HF_HOME=/usr/local/share/hf
+RUN uv run python -c "from datasets import load_dataset; load_dataset('nvidia/Nemotron-Personas-Singapore')"
+ENV HF_HUB_OFFLINE=1
+
+COPY src/ ./src/
+
+# Self-signup email whitelist. Airbase deploys pre-built images and cannot mount
+# files at runtime, so the invited-emails list is baked into the image at build
+# time. The build reads the (git-ignored) signup_whitelist.txt from the local
+# build context. To change the invite list: edit signup_whitelist.txt, then
+# rebuild and redeploy the image. SIGNUP_WHITELIST_PATH points at the baked file.
+COPY signup_whitelist.txt ./signup_whitelist.txt
+ENV SIGNUP_WHITELIST_PATH=/app/signup_whitelist.txt
+
+# chown /app AND the HF cache: the dataset was baked as root, but the container
+# runs as `app`, and datasets writes a .lock file into the cache dir at load time
+# (even in offline mode). Without this the offline read fails with PermissionError.
+RUN chmod -R 755 ./src/ && chown -R app:app /app /usr/local/share/hf
+
+USER app
+
+EXPOSE 8000
+
+CMD ["sh", "-c", "uv run uvicorn src.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
