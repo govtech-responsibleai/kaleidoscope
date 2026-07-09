@@ -24,7 +24,7 @@ docker compose exec db psql -U kaleidoscope kaleidoscope  # postgres shell
 
 ## Environment Variables
 
-Copy `.env.example` → `.env` before starting. The compose file reads `.env` for LLM API keys and secrets. `DATABASE_URL` is injected directly by compose and does not need to be set in `.env`.
+Copy `backend/.env.example` → `backend/.env` before starting. The compose file reads `backend/.env` (backend service) and `frontend/.env` (frontend service) for LLM API keys and secrets — the per-service `.env` files, **not** a root `.env`. `DATABASE_URL` is injected directly by compose and does not need to be set in `.env`.
 
 ## Dev Mode
 
