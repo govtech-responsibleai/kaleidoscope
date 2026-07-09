@@ -15,9 +15,17 @@ cp .env.example .env
 
 ```bash
 DATABASE_URL=postgresql://kaleidoscope:kaleidoscope_dev_password@db:5432/kaleidoscope
+
+# Connection pool (defaults: 5 + 5). Optional — override only if your DB's
+# per-role connection limit requires it.
+DB_POOL_SIZE=5
+DB_MAX_OVERFLOW=5
+DB_POOL_TIMEOUT=30
 ```
 
 When running with Docker, use `db` as the host (the container name). For local development without Docker, use `localhost`.
+
+**Connection pool ceiling.** The pool opens at most `DB_POOL_SIZE + DB_MAX_OVERFLOW` connections. This ceiling **must stay at or below your database's per-role connection limit** — the limit is shared across every app replica using the same role, plus any migration or `psql` session. If the pool tries to exceed it, Postgres rejects new connections with `FATAL: too many connections` and requests fail with a `503`. Managed tiers can be low (some are capped at **10**). If you run multiple replicas, size the pool so `replicas × (DB_POOL_SIZE + DB_MAX_OVERFLOW)` stays under the limit with headroom. Scoring no longer holds a connection while waiting on LLM calls, so a small pool handles large evaluations fine.
 
 ## Authentication
 

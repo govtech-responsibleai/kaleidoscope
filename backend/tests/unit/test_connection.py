@@ -8,6 +8,43 @@ from sqlalchemy import create_engine, inspect, text
 
 
 @pytest.mark.unit
+class TestConnectionPoolConfig:
+    """The pool ceiling must come from settings, not be hardcoded.
+
+    Regression: a hardcoded pool_size=20 + max_overflow=10 (ceiling 30) exceeded a
+    managed DB role limit of 10, causing "FATAL: too many connections". The ceiling
+    must be env-tunable so a deploy can keep it under its role limit.
+    """
+
+    def test_engine_pool_uses_configured_size(self):
+        from src.common.config import Settings
+        from src.common.database.connection import build_engine
+
+        settings = Settings(
+            database_url="postgresql://localhost:5432/x",
+            db_pool_size=4,
+            db_max_overflow=3,
+            db_pool_timeout=15,
+        )
+
+        engine = build_engine(settings)
+        try:
+            assert engine.pool.size() == 4
+            assert engine.pool._max_overflow == 3
+            # Ceiling stays small so it can sit under a low managed-DB role limit.
+            assert engine.pool.size() + engine.pool._max_overflow <= 10
+        finally:
+            engine.dispose()
+
+    def test_default_pool_ceiling_is_conservative(self):
+        """The out-of-the-box ceiling must be small enough for low-limit managed DBs."""
+        from src.common.config import Settings
+
+        defaults = Settings(database_url="postgresql://localhost:5432/x")
+        assert defaults.db_pool_size + defaults.db_max_overflow <= 10
+
+
+@pytest.mark.unit
 class TestEnsureColumns:
     """Tests for the idempotent ensure_columns() schema-evolution helper."""
 
