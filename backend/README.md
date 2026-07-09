@@ -85,6 +85,8 @@ Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to automatically trace all L
 
 The persona sampler loads an NVIDIA Nemotron dataset on first use (lazy, cached to `~/.cache/huggingface/`). The dataset is controlled by `NEMOTRON_PERSONAS_DATASET` — see the root README for usage.
 
+> **Docker builds**: the `Dockerfile` bakes the default Singapore dataset into the image at build time (downloaded into `HF_HOME`, then `HF_HUB_OFFLINE=1`) so the container never needs runtime egress to `huggingface.co`. Deploy environments without that egress would otherwise hang inside `load_dataset()` at request time. Only the default Singapore dataset is baked; changing `NEMOTRON_PERSONAS_DATASET` for a Docker deploy also requires updating the bake line in the `Dockerfile` and rebuilding.
+
 Singapore and USA ship with native style templates that match their dataset schemas. Any other dataset falls back to a generic style sentence, and a warning is logged on first load naming the dataset. To add a style template for another country, update `STYLE_TEMPLATES` and `TEMPLATE_REQUIRED_COLUMNS` in [`src/query_generation/services/persona_sampler.py`](src/query_generation/services/persona_sampler.py).
 
 ## Tests
