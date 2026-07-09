@@ -194,18 +194,17 @@ export default function Home() {
       ) : (
         <Box
           display="grid"
-          gap={3}
+          gap={2.5}
           sx={{
             gridTemplateColumns: {
-              xs: "repeat(1, minmax(0, 1fr))",
-              sm: "repeat(2, minmax(0, 1fr))",
-              md: "repeat(3, minmax(0, 1fr))",
-              lg: "repeat(4, minmax(0, 1fr))",
+              xs: "1fr",
+              sm: "repeat(auto-fill, minmax(340px, 1fr))",
             },
           }}
         >
           {targets.map((target) => {
             const theme = getTargetTheme(target.name);
+            const monogram = target.name.trim().charAt(0).toUpperCase() || "?";
             const createdDate = new Date(target.created_at).toLocaleDateString("en-US", {
               month: "short",
               day: "numeric",
@@ -214,146 +213,130 @@ export default function Home() {
             return (
               <Card
                 key={target.id}
+                onClick={() => handleTargetClick(target.id)}
                 sx={{
-                  minWidth: 0,
-                  height: "100%",
                   display: "flex",
                   flexDirection: "column",
+                  height: "100%",
+                  p: 2.5,
                   cursor: "pointer",
-                  position: "relative",
-                  borderRadius: "10px",
-                  border: "1px solid #E0E0E0",
-                  overflow: "hidden",
+                  borderRadius: "12px",
+                  border: "1px solid",
+                  borderColor: "grey.200",
                   boxShadow: "none",
-                  "&::before": {
-                    content: '""',
-                    position: "absolute",
-                    zIndex: 2,
-                    inset: 0,
-                    borderStyle: "solid",
-                    borderWidth: "1px",
+                  transition: "border-color 0.2s cubic-bezier(0.22, 1, 0.36, 1), background-color 0.2s cubic-bezier(0.22, 1, 0.36, 1)",
+                  "&:hover": {
                     borderColor: theme.primary,
-                    borderRadius: "10px",
-                    opacity: 0,
-                    transition: "opacity 0.2s ease",
-                    pointerEvents: "none",
+                    backgroundColor: theme.light,
                   },
-                  "&:hover::before": {
+                  "&:hover .target-delete": {
                     opacity: 1,
-                    transition: "opacity 0.75s ease",
-                  },
-                  "&::after": {
-                    content: '""',
-                    position: "absolute",
-                    zIndex: 1,
-                    bottom: 0,
-                    left: 0,
-                    right: 0,
-                    height: "50%",
-                    background: `linear-gradient(to top, ${theme.light}, transparent)`,
-                    opacity: 0,
-                    transition: "opacity 0.25s ease",
-                    pointerEvents: "none",
-                  },
-                  "&:hover::after": {
-                    opacity: 0.5,
                   },
                 }}
-                onClick={() => handleTargetClick(target.id)}
               >
-                {/* Gradient accent line */}
-                <Box
-                  sx={{
-                    height: 4,
-                    background: theme.gradient,
-                  }}
-                />
-
-                {/* Card body */}
-                <Box sx={{ p: 2, flexGrow: 1, minWidth: 0, display: "flex", flexDirection: "column" }}>
-                  <Typography
-                    variant="h6"
-                    component="h2"
-                    fontWeight={600}
+                {/* Header: monogram + name/meta */}
+                <Box sx={{ display: "flex", alignItems: "flex-start", gap: 1.75, mb: 1.5 }}>
+                  <Box
+                    aria-hidden
                     sx={{
-                      whiteSpace: "nowrap",
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      mb: 0.25,
+                      flexShrink: 0,
+                      width: 52,
+                      height: 52,
+                      borderRadius: "12px",
+                      background: theme.gradient,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      color: "#fff",
+                      fontWeight: 700,
+                      fontSize: "1.4rem",
+                      lineHeight: 1,
+                      userSelect: "none",
                     }}
                   >
-                    {target.name}
-                  </Typography>
-
-                  {(target.agency || target.owner_username) && (
-                    <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5, minWidth: 0 }}>
-                      {target.agency && (
-                        <Typography
-                          variant="body2"
-                          color="text.secondary"
-                          sx={{
-                            whiteSpace: "nowrap",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                          }}
-                        >
-                          {target.agency}
-                        </Typography>
-                      )}
-                      {target.agency && target.owner_username && (
-                        <Typography variant="body2" color="text.disabled">·</Typography>
-                      )}
-                      {target.owner_username && (
-                        <Typography
-                          variant="caption"
-                          color="text.disabled"
-                          sx={{ whiteSpace: "nowrap" }}
-                        >
-                          {target.owner_username}
-                        </Typography>
-                      )}
-                    </Box>
-                  )}
-
-                  {target.purpose && (
+                    {monogram}
+                  </Box>
+                  <Box sx={{ minWidth: 0, flexGrow: 1 }}>
                     <Typography
-                      variant="body2"
-                      color="text.secondary"
+                      variant="h6"
+                      component="h2"
+                      fontWeight={600}
                       sx={{
+                        lineHeight: 1.3,
+                        mb: 0.25,
                         display: "-webkit-box",
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: "vertical",
                         overflow: "hidden",
-                        mb: 1,
                       }}
                     >
-                      {target.purpose}
+                      {target.name}
                     </Typography>
-                  )}
+                    {(target.agency || target.owner_username) && (
+                      <Box sx={{ display: "flex", alignItems: "center", flexWrap: "wrap", columnGap: 0.75 }}>
+                        {target.agency && (
+                          <Typography variant="body2" color="text.secondary">
+                            {target.agency}
+                          </Typography>
+                        )}
+                        {target.agency && target.owner_username && (
+                          <Typography variant="body2" color="text.disabled">·</Typography>
+                        )}
+                        {target.owner_username && (
+                          <Typography variant="body2" color="text.disabled">
+                            {target.owner_username}
+                          </Typography>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                </Box>
 
-                  {/* Footer row */}
-                  <Box
+                {target.purpose && (
+                  <Typography
+                    variant="body2"
+                    color="text.secondary"
                     sx={{
-                      mt: "auto",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
+                      display: "-webkit-box",
+                      WebkitLineClamp: 2,
+                      WebkitBoxOrient: "vertical",
+                      overflow: "hidden",
+                      lineHeight: 1.5,
+                      mb: 2,
                     }}
                   >
-                    <Typography variant="caption" color="text.disabled">
-                      {createdDate}
-                    </Typography>
-                    <IconButton
-                      size="small"
-                      onClick={(e) => handleDeleteClick(e, target)}
-                      sx={{
-                        opacity: 0.5,
-                        "&:hover": { opacity: 1, color: "error.main" },
-                      }}
-                    >
-                      <IconTrash {...compactActionIconProps} />
-                    </IconButton>
-                  </Box>
+                    {target.purpose}
+                  </Typography>
+                )}
+
+                {/* Footer: date + delete */}
+                <Box
+                  sx={{
+                    mt: "auto",
+                    pt: 1.5,
+                    borderTop: "1px solid",
+                    borderColor: "grey.100",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  <Typography variant="caption" color="text.disabled" sx={{ whiteSpace: "nowrap" }}>
+                    {createdDate}
+                  </Typography>
+                  <IconButton
+                    size="small"
+                    className="target-delete"
+                    aria-label={`Delete ${target.name}`}
+                    onClick={(e) => handleDeleteClick(e, target)}
+                    sx={{
+                      opacity: { xs: 1, md: 0.35 },
+                      transition: "opacity 0.15s ease, color 0.15s ease",
+                      "&:hover": { opacity: 1, color: "error.main" },
+                    }}
+                  >
+                    <IconTrash {...compactActionIconProps} />
+                  </IconButton>
                 </Box>
               </Card>
             );
