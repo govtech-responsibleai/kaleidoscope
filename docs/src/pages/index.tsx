@@ -197,7 +197,7 @@ export default function Home() {
             We introduce <strong>Kaleidoscope</strong>, an end-to-end workflow for contextual, functional evaluation, from evaluation set construction to human-aligned automated judging.
           </p>
           <div className="pill-buttons">
-            <a href="#" className="pill-btn">
+            <a href="https://arxiv.org/abs/2607.14673" target="_blank" rel="noopener" className="pill-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2z"/><path d="M9 17h6"/><path d="M9 13h6"/></svg>
               Paper
             </a>
