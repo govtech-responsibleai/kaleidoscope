@@ -92,7 +92,7 @@ Kaleidoscope logo at `static/img/kaleidoscope-logo.png`.
 |-------------|-----|
 | Open-source repo | https://github.com/govtech-responsibleai/kaleidoscope |
 | Product landing page | (internal — configure per deployment env) |
-| Interest registration form | https://form.gov.sg/69e83290aeb614f9009112a5 |
+| Interest registration form | https://form.gov.sg/6a7fc3e5284409310d0aa5a6 |
 
 ---
 

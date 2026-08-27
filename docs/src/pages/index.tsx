@@ -493,7 +493,7 @@ export default function Home() {
           <p className="wog-text">
             <a href="https://www.aiguardian.gov.sg/#litmus" target="_blank" rel="noopener">Litmus</a> is AI Guardian&rsquo;s testing and evaluation platform for Whole-of-Government AI products. We are extending Litmus to support Kaleidoscope&rsquo;s structured evaluation workflow in the upcoming months.
           </p>
-          <a href="https://eval.ai-platform.string.sg/" target="_blank" rel="noopener" className="wog-btn">
+          <a href="https://form.gov.sg/6a7fc3e5284409310d0aa5a6" target="_blank" rel="noopener" className="wog-btn">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
             Indicate Interest
           </a>

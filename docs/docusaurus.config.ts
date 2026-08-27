@@ -97,7 +97,7 @@ const config: Config = {
           position: 'right',
         },
         {
-          href: 'https://eval.ai-platform.string.sg/',
+          href: 'https://form.gov.sg/6a7fc3e5284409310d0aa5a6',
           label: 'WOG? Find out more.',
           position: 'right',
           className: 'navbar-cta-button',
@@ -123,7 +123,7 @@ const config: Config = {
         {
           title: 'More',
           items: [
-            { label: 'WOG? Find out more', href: 'https://eval.ai-platform.string.sg/' },
+            { label: 'WOG? Find out more', href: 'https://form.gov.sg/6a7fc3e5284409310d0aa5a6' },
           ],
         },
       ],
