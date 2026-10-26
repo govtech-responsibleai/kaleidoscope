@@ -7,11 +7,51 @@ const FULL_TEXT = 'The chatbot should only provide accurate information.';
 const TYPE_SPEED = 42;
 const HOLD = 5450;
 
+const NAV_SECTIONS = [
+  {id: 'overview', label: 'Overview'},
+  {id: 'features', label: 'Features'},
+  {id: 'assurance', label: 'AssuranceAI'},
+];
+
+type FeatureImage = {src: string; alt: string; className?: string};
+
+const FEATURES: {title: string; description: string; layout?: string; images: FeatureImage[]}[] = [
+  {
+    title: 'Define Custom Rubrics',
+    description: 'Define evaluation criteria in natural language with guided workflows. Rubrics capture what “good” means for your specific AI product.',
+    images: [{src: '/kaleidoscope/img/rubrics.png', alt: 'Custom rubrics interface'}],
+  },
+  {
+    title: 'Generate Diverse Test Sets',
+    description: 'Synthesise realistic, varied inputs using persona-driven generation. Cover edge cases and representative user archetypes automatically.',
+    layout: 'offset-pair',
+    images: [
+      {src: '/kaleidoscope/img/persona-1.png', alt: 'Persona generation', className: 'offset-back'},
+      {src: '/kaleidoscope/img/persona-2.png', alt: 'Generated personas', className: 'offset-front'},
+    ],
+  },
+  {
+    title: 'Streamline Human Review',
+    description: 'Purpose-built annotation and validation workflows designed to reduce reviewer fatigue while maintaining rigorous human oversight.',
+    images: [{src: '/kaleidoscope/img/highlighter.png', alt: 'Annotation highlighting'}],
+  },
+  {
+    title: 'Calibrate LLM Judges',
+    description: 'Score responses with LLM judges calibrated against human annotations. Measure reliability and track alignment with human ground truth.',
+    layout: 'stacked-pair',
+    images: [
+      {src: '/kaleidoscope/img/scoring.png', alt: 'Scoring results'},
+      {src: '/kaleidoscope/img/disagreement.png', alt: 'Judge disagreement analysis'},
+    ],
+  },
+];
+
 export default function Home() {
   const logoSrc = useBaseUrl('/img/kaleidoscope-logo-text-2.png');
   const docsUrl = useBaseUrl('/docs/getting-started/quickstart');
   const workflowLongSrc = useBaseUrl('/img/workflow_long.svg');
   const workflowTallSrc = useBaseUrl('/img/workflow_tall.svg');
+  const assuranceMarkSrc = useBaseUrl('/img/aiguardian-mark.svg');
 
   const typeTextRef = useRef<HTMLSpanElement>(null);
   const criteriaCardRef = useRef<HTMLDivElement>(null);
@@ -23,7 +63,10 @@ export default function Home() {
   const [copied, setCopied] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const [scrollProgress, setScrollProgress] = useState(0);
+  const [activeSection, setActiveSection] = useState('');
   const [activeCard, setActiveCard] = useState(0);
+  const [overviewTab, setOverviewTab] = useState<'workflow' | 'video'>('workflow');
+  const [activeFeature, setActiveFeature] = useState(0);
 
   useEffect(() => {
     const timeouts: ReturnType<typeof setTimeout>[] = [];
@@ -140,9 +183,21 @@ export default function Home() {
     container?.addEventListener('scroll', onScroll);
     window.addEventListener('scroll', onScroll);
 
+    // Highlight the nav link of the section in view
+    const sectionObserver = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) setActiveSection(entry.target.id);
+      });
+    }, {rootMargin: '-40% 0px -55% 0px'});
+    NAV_SECTIONS.forEach(({id}) => {
+      const section = document.getElementById(id);
+      if (section) sectionObserver.observe(section);
+    });
+
     return () => {
       timeouts.forEach(clearTimeout);
       observers.forEach(o => o.disconnect());
+      sectionObserver.disconnect();
       container?.removeEventListener('scroll', onScroll);
       window.removeEventListener('scroll', onScroll);
       stopCarousel();
@@ -211,7 +266,7 @@ export default function Home() {
             </a>
             <a href={docsUrl} className="pill-btn">
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 13a8 8 0 0 1 7 7a6 6 0 0 0 3 -5a9 9 0 0 0 6 -8a3 3 0 0 0 -3 -3a9 9 0 0 0 -8 6a6 6 0 0 0 -5 3"/><path d="M7 14a6 6 0 0 0 -3 6a6 6 0 0 0 6 -3"/><circle cx="15" cy="9" r="1"/></svg>
-              Getting Started
+              Documentation
             </a>
           </div>
         </section>
@@ -401,22 +456,27 @@ export default function Home() {
         </div>{/* end .hero-viewport */}
 
         {/* Section 4: Sticky Nav */}
-        <nav className="sticky-nav" style={{
+        <nav className={`sticky-nav ${scrollProgress > 0.5 ? 'dark' : ''}`} style={{
           background: `rgba(30, 27, 75, ${scrollProgress})`,
         }}>
-          <a href="#overview" className="sticky-nav-link" style={{ color: scrollProgress > 0.5 ? '#e2e8f0' : undefined }}>Overview</a>
-          <a href="#features" className="sticky-nav-link" style={{ color: scrollProgress > 0.5 ? '#e2e8f0' : undefined }}>Features</a>
-          <a href="#wog" className="sticky-nav-link" style={{ color: scrollProgress > 0.5 ? '#e2e8f0' : undefined }}>WOG</a>
+          {NAV_SECTIONS.map(({id, label}) => (
+            <a key={id} href={`#${id}`} className={`sticky-nav-link ${activeSection === id ? 'active' : ''}`}>{label}</a>
+          ))}
         </nav>
 
         {/* Section 5: Overview */}
         <section className="overview-section" id="overview">
           <h2>Overview</h2>
           <p className="section-subtitle">How Kaleidoscope works</p>
-          <img src={workflowLongSrc} alt="Kaleidoscope workflow diagram" className="overview-diagram overview-diagram-long" />
-          <img src={workflowTallSrc} alt="Kaleidoscope workflow diagram" className="overview-diagram overview-diagram-tall" />
-          <p className="overview-video-label">See it in action</p>
-          <div className="overview-video">
+          <div className="tab-bar" role="tablist" aria-label="Overview">
+            <button role="tab" id="tab-workflow" aria-controls="panel-workflow" aria-selected={overviewTab === 'workflow'} className={`tab-btn ${overviewTab === 'workflow' ? 'active' : ''}`} onClick={() => setOverviewTab('workflow')}>Workflow</button>
+            <button role="tab" id="tab-video" aria-controls="panel-video" aria-selected={overviewTab === 'video'} className={`tab-btn ${overviewTab === 'video' ? 'active' : ''}`} onClick={() => setOverviewTab('video')}>Demo video</button>
+          </div>
+          <div role="tabpanel" id="panel-workflow" aria-labelledby="tab-workflow" hidden={overviewTab !== 'workflow'}>
+            <img src={workflowLongSrc} alt="Kaleidoscope workflow diagram" className="overview-diagram overview-diagram-long" />
+            <img src={workflowTallSrc} alt="Kaleidoscope workflow diagram" className="overview-diagram overview-diagram-tall" />
+          </div>
+          <div role="tabpanel" id="panel-video" aria-labelledby="tab-video" hidden={overviewTab !== 'video'} className="overview-video">
             <iframe
               src="https://www.youtube-nocookie.com/embed/OVOnroQ9vZg"
               title="Kaleidoscope demo"
@@ -431,71 +491,43 @@ export default function Home() {
         <section className="features-section" id="features">
           <h2>Key Features</h2>
 
-          <div className="features-list">
-            <div className="feature-item">
-              <div className="feature-screenshot">
-                <img src="/kaleidoscope/img/rubrics.png" alt="Custom rubrics interface" />
-              </div>
-              <div className="feature-desc">
-                <h3>Define Custom Rubrics</h3>
-                <p>Define evaluation criteria in natural language with guided workflows. Rubrics capture what &ldquo;good&rdquo; means for your specific AI product.</p>
+          <div className="feature-viewer">
+            <div className="feature-tabs" role="tablist" aria-label="Key features" aria-orientation="vertical">
+              {FEATURES.map((feature, i) => (
+                <button
+                  key={feature.title}
+                  role="tab"
+                  id={`feature-tab-${i}`}
+                  aria-controls="feature-panel"
+                  aria-selected={activeFeature === i}
+                  className={`feature-tab ${activeFeature === i ? 'active' : ''}`}
+                  onClick={() => setActiveFeature(i)}
+                >
+                  <h3>{feature.title}</h3>
+                  <p>{feature.description}</p>
+                </button>
+              ))}
+            </div>
+            <div className="feature-panel" role="tabpanel" id="feature-panel" aria-labelledby={`feature-tab-${activeFeature}`}>
+              <div className={`feature-screenshot ${FEATURES[activeFeature].layout ?? ''}`}>
+                {FEATURES[activeFeature].images.map(image => (
+                  <img key={image.src} src={image.src} alt={image.alt} className={image.className} />
+                ))}
               </div>
             </div>
-
-            <div className="feature-item reverse">
-              <div className="feature-screenshot offset-pair">
-                <img src="/kaleidoscope/img/persona-1.png" alt="Persona generation" className="offset-back" />
-                <img src="/kaleidoscope/img/persona-2.png" alt="Generated personas" className="offset-front" />
-              </div>
-              <div className="feature-desc">
-                <h3>Generate Diverse Test Sets</h3>
-                <p>Synthesise realistic, varied inputs using persona-driven generation. Cover edge cases and representative user archetypes automatically.</p>
-              </div>
-            </div>
-
-            <div className="feature-item">
-              <div className="feature-screenshot">
-                <img src="/kaleidoscope/img/highlighter.png" alt="Annotation highlighting" />
-              </div>
-              <div className="feature-desc">
-                <h3>Streamline Human Review</h3>
-                <p>Purpose-built annotation and validation workflows designed to reduce reviewer fatigue while maintaining rigorous human oversight.</p>
-              </div>
-            </div>
-
-            <div className="feature-item reverse">
-              <div className="feature-screenshot stacked-pair">
-                <img src="/kaleidoscope/img/scoring.png" alt="Scoring results" />
-                <img src="/kaleidoscope/img/disagreement.png" alt="Judge disagreement analysis" />
-              </div>
-              <div className="feature-desc">
-                <h3>Calibrate LLM Judges</h3>
-                <p>Score responses with LLM judges calibrated against human annotations. Measure reliability and track alignment with human ground truth.</p>
-              </div>
-            </div>
-
-            {/* TODO: uncomment when demo video is ready
-            <div className="feature-video">
-              <div className="video-placeholder">&#9654; Demo Video</div>
-              <p className="video-caption">See Kaleidoscope in action</p>
-            </div>
-            */}
           </div>
         </section>
 
         {/* Section 7: WOG */}
-        <section className="wog-section" id="wog">
-          <div className="wog-mascots">
-            <img src="/kaleidoscope/img/litmus_mascot.svg" alt="Litmus" className="wog-mascot" />
-            <img src="/kaleidoscope/img/sentinel_mascot.svg" alt="Sentinel" className="wog-mascot" />
-          </div>
+        <section className="wog-section" id="assurance">
+          <img src={assuranceMarkSrc} alt="AssuranceAI" className="wog-logo" />
           <h2>For Singapore Government Agencies</h2>
           <p className="wog-text">
-            <a href="https://www.aiguardian.gov.sg/#litmus" target="_blank" rel="noopener">Litmus</a> is AI Guardian&rsquo;s testing and evaluation platform for Whole-of-Government AI products. We are extending Litmus to support Kaleidoscope&rsquo;s structured evaluation workflow in the upcoming months.
+            Kaleidoscope is the core engine of Litmus, GovTech AssuranceAI&rsquo;s platform that helps government teams evaluate their AI systems before they deploy. Government teams can use the same workflow, hosted and managed, through Litmus.
           </p>
-          <a href="https://form.gov.sg/6a7fc3e5284409310d0aa5a6" target="_blank" rel="noopener" className="wog-btn">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-            Indicate Interest
+          <a href="https://assurance.ai.tech.gov.sg/litmus" target="_blank" rel="noopener" className="wog-btn">
+            Start using Litmus (Beta)
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
           </a>
         </section>
 
