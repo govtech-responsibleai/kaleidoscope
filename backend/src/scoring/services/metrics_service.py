@@ -5,11 +5,12 @@ Service for calculating judge alignment and accuracy metrics.
 import csv
 import io
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 from collections import Counter
 from sqlalchemy.orm import Session
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 
+from src.common.config import get_settings
 from src.common.database.repositories.answer_score_repo import AnswerScoreRepository
 from src.common.database.repositories.answer_repo import AnswerRepository
 from src.common.database.repositories.annotation_repo import AnnotationRepository
@@ -31,11 +32,13 @@ from src.common.models.metrics import (
     AlignedJudge,
     JudgeAlignmentResponse,
     JudgeAccuracyResponse,
+    JudgeReliabilityStatus,
     JudgeRowResult,
     JudgeScoreSummary,
     ScoringContract,
     ScoringRowResult,
     SnapshotMetric,
+    VerdictStatus,
     MetricsByRubric,
     SnapshotMetricsResponse,
     ConfusionMatrixResponse,
@@ -49,7 +52,6 @@ from src.common.models.metrics import (
 )
 
 logger = logging.getLogger(__name__)
-RELIABILITY_THRESHOLD = 0.5
 
 
 def _format_label(label: Optional[str]) -> str:
@@ -152,32 +154,6 @@ class MetricsService:
         aggregate_score = accurate_count / total_answers if total_answers > 0 else 0.0
         return accurate_count, inaccurate_count, pending_count, edited_count, round(aggregate_score, 3)
 
-    def _get_accuracy_reliability_map(
-        self,
-        snapshot_id: int,
-        answers: List[Answer],
-    ) -> Tuple[Dict[int, float], Dict[int, str]]:
-        judge_ids_in_snapshot = set()
-        for answer in answers:
-            for score in answer.scores:
-                judge_ids_in_snapshot.add(score.judge_id)
-
-        judges = JudgeRepository.get_all(self.db)
-        judge_name_map = {judge.id: judge.name for judge in judges}
-        reliability_map: Dict[int, float] = {}
-
-        for judge_id in judge_ids_in_snapshot:
-            try:
-                metrics = self.calculate_judge_alignment(snapshot_id, judge_id)
-                reliability_map[judge_id] = metrics.f1 or 0.0
-            except ValueError:
-                reliability_map[judge_id] = 0.0
-            except Exception:
-                logger.exception("Failed to calculate reliability for judge %s", judge_id)
-                reliability_map[judge_id] = 0.0
-
-        return reliability_map, judge_name_map
-
     def _get_human_label_map(
         self,
         answer_ids: List[int],
@@ -205,18 +181,66 @@ class MetricsService:
         snapshot_id: int,
         judge_id: int,
         rubric_id: int,
-    ) -> float:
+    ) -> Optional[JudgeAlignmentResponse]:
+        """Alignment of one judge against human labels, or None when nothing can be compared.
+
+        A missing result means "not calibrated"; it is deliberately distinct from
+        a judge that was compared and scored 0.0.
+        """
         try:
-            return self.calculate_judge_alignment(snapshot_id, judge_id, rubric_id).f1 or 0.0
+            return self.calculate_judge_alignment(snapshot_id, judge_id, rubric_id)
         except ValueError:
-            return 0.0
+            return None
         except Exception:
             logger.exception(
                 "Failed to calculate reliability for judge %s on rubric %s",
                 judge_id,
                 rubric_id,
             )
-            return 0.0
+            return None
+
+    def _reliability_status(self, alignment: Optional[JudgeAlignmentResponse]) -> JudgeReliabilityStatus:
+        """Classify an alignment result against the configured gate."""
+        settings = get_settings()
+        if alignment is None or alignment.sample_count == 0:
+            return "not_calibrated"
+        if alignment.sample_count < settings.min_calibration_samples:
+            return "insufficient_calibration"
+        if alignment.f1 >= settings.reliability_threshold:
+            return "aligned"
+        return "unreliable"
+
+    def _verdict_status(
+        self,
+        judge_statuses: Iterable[Optional[JudgeReliabilityStatus]],
+        calibration_count: int,
+    ) -> VerdictStatus:
+        """Why an aggregate is or is not available for a rubric.
+
+        Decision order:
+        1. Any judge status is "aligned" -> "ready".
+        2. `calibration_count == 0` -> "not_calibrated" (no human labels yet).
+        3. `calibration_count` is below the configured floor -> "insufficient_calibration"
+           (not enough labels exist yet, independent of judge state).
+        4. Any judge status is "unreliable" -> "no_aligned_judge" (a judge was measured
+           on enough labels and failed).
+        5. Any judge status is "insufficient_calibration" or "not_calibrated", or `None`
+           (a configured judge that has not produced results) -> "insufficient_calibration"
+           (labels exist but no judge has scored enough of them yet).
+        6. Otherwise (no judges configured) -> "no_aligned_judge".
+        """
+        statuses = list(judge_statuses)
+        if any(status == "aligned" for status in statuses):
+            return "ready"
+        if calibration_count == 0:
+            return "not_calibrated"
+        if calibration_count < get_settings().min_calibration_samples:
+            return "insufficient_calibration"
+        if any(status == "unreliable" for status in statuses):
+            return "no_aligned_judge"
+        if any(status in ("insufficient_calibration", "not_calibrated", None) for status in statuses):
+            return "insufficient_calibration"
+        return "no_aligned_judge"
 
     def _require_snapshot_and_rubric(self, snapshot_id: int, rubric_id: int):
         """Validate a snapshot/rubric pair and return both rows."""
@@ -243,7 +267,7 @@ class MetricsService:
         rubric,
         answers: List[Answer],
         relevant_judges,
-    ) -> Tuple[List[JudgeScoreSummary], List[AlignedJudge], Dict[int, float], List]:
+    ) -> Tuple[List[JudgeScoreSummary], List[AlignedJudge], List]:
         """Return all-judge summaries plus the aligned judges currently visible in rows."""
         relevant_judge_ids = {judge.id for judge in relevant_judges}
         judge_ids_with_scores = {
@@ -253,19 +277,18 @@ class MetricsService:
             if score.rubric_id == rubric.id and score.judge_id in relevant_judge_ids
         }
 
-        reliability_map = {
+        alignment_map = {
             judge.id: self._calculate_judge_reliability(snapshot_id, judge.id, rubric.id)
             for judge in relevant_judges
         }
-        aligned_judge_rows = [
-            judge for judge in relevant_judges
-            if reliability_map.get(judge.id, 0.0) >= RELIABILITY_THRESHOLD
-        ]
+        status_map = {judge_id: self._reliability_status(a) for judge_id, a in alignment_map.items()}
+        aligned_judge_rows = [judge for judge in relevant_judges if status_map[judge.id] == "aligned"]
         aligned_judges = [
             AlignedJudge(
                 judge_id=judge.id,
                 name=judge.name,
-                f1=round(reliability_map.get(judge.id, 0.0), 3),
+                f1=round(alignment_map[judge.id].f1, 3),
+                sample_count=alignment_map[judge.id].sample_count,
             )
             for judge in aligned_judge_rows
         ]
@@ -286,14 +309,16 @@ class MetricsService:
                 JudgeScoreSummary(
                     judge_id=judge.id,
                     name=judge.name,
-                    reliability=round(reliability_map.get(judge.id, 0.0), 3) if has_results else None,
+                    reliability=round(alignment_map[judge.id].f1, 3) if has_results and alignment_map[judge.id] else None,
+                    sample_count=alignment_map[judge.id].sample_count if alignment_map[judge.id] else 0,
+                    reliability_status=status_map[judge.id] if has_results else None,
                     accuracy=judge_accuracy.accuracy if judge_accuracy else None,
                     accurate_count=judge_accuracy.accurate_count if judge_accuracy else 0,
                     total_answers=judge_accuracy.total_answers if judge_accuracy else 0,
                 )
             )
 
-        return judge_summaries, aligned_judges, reliability_map, aligned_judge_rows
+        return judge_summaries, aligned_judges, aligned_judge_rows
 
     def _build_visible_score_map(
         self,
@@ -365,11 +390,13 @@ class MetricsService:
         ]
         override_map = {override.answer_id: override for override in overrides}
         human_label_map = self._get_human_label_map(answer_ids, rubric)
+        selected_ids = [answer.id for answer in answers if answer.is_selected_for_annotation]
+        calibration_count = len(self._get_human_label_map(selected_ids, rubric))
 
         relevant_judges = JudgeRepository.get_for_rubric(
             self.db, rubric.id, target_id=snapshot.target_id
         )
-        judge_summaries, aligned_judges, _reliability_map, visible_judges = self._build_judge_summaries(
+        judge_summaries, aligned_judges, visible_judges = self._build_judge_summaries(
             snapshot_id,
             rubric,
             answers,
@@ -396,13 +423,23 @@ class MetricsService:
             lambda value, best_option=best_option: value == best_option,
         )
 
+        settings = get_settings()
+        verdict_status = self._verdict_status(
+            [summary.reliability_status for summary in judge_summaries],
+            calibration_count,
+        )
         return ScoringContract(
             rubric_id=rubric.id,
             rubric_name=rubric.name,
             group=rubric.group,
             best_option=best_option,
             snapshot_id=snapshot_id,
-            aggregated_score=aggregate_score,
+            aggregated_score=aggregate_score if verdict_status == "ready" else None,
+            verdict_status=verdict_status,
+            calibration_count=calibration_count,
+            reliability_threshold=settings.reliability_threshold,
+            min_calibration_samples=settings.min_calibration_samples,
+            recommended_calibration_samples=settings.recommended_calibration_samples,
             total_answers=len(rows),
             accurate_count=accurate_count,
             inaccurate_count=inaccurate_count,
@@ -563,6 +600,8 @@ class MetricsService:
         Returns:
             Dict with metrics: {"f1": 0.85, "precision": 0.82, "recall": 0.88, "accuracy": 0.84}
 
+        Ground truth is the rubric annotation only; scoring-page label overrides are not consulted.
+
         Raises:
             ValueError: If no annotations or scores found for comparison
         """
@@ -590,17 +629,6 @@ class MetricsService:
         )
         if not scores:
             raise ValueError(f"No scores found for judge {judge_id}, snapshot {snapshot_id} on selected answers")
-
-        # Label overrides take precedence over rubric annotations for ground truth
-        overrides = AnswerLabelOverrideRepository.get_by_snapshot(self.db, snapshot_id)
-        override_map = {
-            o.answer_id: canonicalize_rubric_option_value(rubric, o.edited_value)
-            for o in overrides
-            if o.rubric_id == rubric.id
-        }
-        for answer_id, label in override_map.items():
-            if answer_id in annotation_map and label is not None:
-                annotation_map[answer_id] = label
 
         # Create mapping of answer_id -> score label
         score_map = {
@@ -711,7 +739,7 @@ class MetricsService:
 
         For each answer:
         1. Gets scores from all judges
-        2. Computes per-judge reliability (F1) and filters to judges above 0.5
+        2. Computes per-judge reliability (F1) and filters to judges at or above the configured reliability threshold
         3. Aggregates the reliable labels via majority vote (ties captured explicitly)
 
         Also computes and returns the judge reliability map (B2: inlined).
@@ -791,7 +819,7 @@ class MetricsService:
         logger.info(
             "Snapshot %s summary: Accuracy=%.3f (%s/%s), Aligned judges: %s, Edited: %s",
             snapshot_id,
-            contract.aggregated_score,
+            contract.aggregated_score if contract.aggregated_score is not None else float("nan"),
             contract.accurate_count,
             contract.total_answers,
             len(contract.aligned_judges),
@@ -799,6 +827,8 @@ class MetricsService:
         )
         return SnapshotMetric(
             aggregated_score=contract.aggregated_score,
+            verdict_status=contract.verdict_status,
+            calibration_count=contract.calibration_count,
             total_answers=contract.total_answers,
             accurate_count=contract.accurate_count,
             inaccurate_count=contract.inaccurate_count,
@@ -981,6 +1011,8 @@ class MetricsService:
                     rubric_id=contract.rubric_id,
                     rubric_name=contract.rubric_name,
                     aggregated_score=contract.aggregated_score,
+                    verdict_status=contract.verdict_status,
+                    calibration_count=contract.calibration_count,
                     total_answers=contract.total_answers,
                     accurate_count=contract.accurate_count,
                     inaccurate_count=contract.inaccurate_count,

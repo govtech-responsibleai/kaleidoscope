@@ -125,10 +125,7 @@ class AnswerJudge:
         finally:
             db.close()
 
-        self.llm_client = LLMClient(
-            model=self.judge_model_name,
-            provider_kwargs=runtime_config.litellm_kwargs,
-        )
+        self.llm_client = LLMClient.from_runtime_config(runtime_config)
 
     async def score(self, raise_on_error: bool = False) -> None:
         """

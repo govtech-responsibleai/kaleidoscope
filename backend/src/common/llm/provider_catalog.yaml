@@ -116,6 +116,51 @@ providers:
       - fireworks/deepseek-ai/deepseek-v4-pro
     embedding_models: []
 
+  - key: govtech
+    display_name: GovTech AI Platform
+    litellm_prefix: govtech/
+    litellm_route: openai/
+    logo_path: /icons/govtech-ai-platform.svg
+    description: OpenAI-compatible gateway to Azure, Bedrock and Vertex models for Singapore Government use. Set the API base URL and key from the platform console.
+    credential_fields:
+      - key: PLATFORM_API_KEY
+        label: API Key
+        env_var: PLATFORM_API_KEY
+        required: true
+      - key: PLATFORM_API_BASE_URL
+        label: API Base
+        env_var: PLATFORM_API_BASE_URL
+        required: true
+    default_model: govtech/gpt-5.6-luna
+    common_models:
+      - govtech/bedrock.claude-haiku-4-5
+      - govtech/gemini-3.5-flash-lite
+      - govtech/gpt-5.6-sol
+      - govtech/azure.claude-sonnet-5
+      - govtech/gemini-3.5-flash
+    embedding_models:
+      - govtech/text-embedding-3-small
+    # USD per 1M tokens from the platform price list (Sept 2026). Models LiteLLM
+    # already prices under the openai provider (gpt-5.6-*, text-embedding-3-small)
+    # are deliberately absent: LiteLLM's own table is used for those.
+    pricing:
+      govtech/bedrock.claude-haiku-4-5:
+        input: 1.00
+        output: 5.00
+        cache_read: 0.10
+      govtech/gemini-3.5-flash-lite:
+        input: 0.30
+        output: 2.50
+        cache_read: 0.03
+      govtech/gemini-3.5-flash:
+        input: 1.50
+        output: 9.00
+        cache_read: 0.15
+      govtech/azure.claude-sonnet-5:
+        input: 3.00
+        output: 15.00
+        cache_read: 0.30
+
 services:
   - key: serper
     display_name: Serper

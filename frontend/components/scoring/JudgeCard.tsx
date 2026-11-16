@@ -24,6 +24,7 @@ import { usePolling } from "@/hooks/usePolling";
 import { getModelIcon } from "@/lib/modelIcons";
 import { compactActionIconProps } from "@/lib/styles";
 import { deriveJudgePendingState } from "@/components/scoring/judgePendingState.mjs";
+import { judgeReliabilityText, judgeReliabilityTooltip, type GateSettings } from "@/lib/reliability";
 
 interface JudgeCardProps {
   judge: JudgeConfig;
@@ -34,6 +35,8 @@ interface JudgeCardProps {
   pendingCount: number | null;
   scoreLabel?: string;
   hasQuestionsWithoutAnswers: boolean;
+  gate: GateSettings;
+  calibrationCount: number;
   onJobStart: (judgeId: number) => Promise<QAJob[] | null>;
   onJobComplete: () => Promise<void> | void;
   onEdit: () => void;
@@ -51,6 +54,8 @@ export default function JudgeCard({
   pendingCount: pendingCountProp,
   scoreLabel = "score",
   hasQuestionsWithoutAnswers,
+  gate,
+  calibrationCount,
   onJobStart,
   onJobComplete,
   onEdit,
@@ -135,7 +140,7 @@ export default function JudgeCard({
     pendingCountProp,
     summaryTotalAnswers: summary?.total_answers,
   });
-  const hasSummaryValues = !isRunning && summary?.accuracy != null && summary?.reliability != null;
+  const hasSummaryValues = !isRunning && summary?.accuracy != null;
 
   const handleRun = async () => {
     const initialPending = pendingCount ?? await fetchPendingCount();
@@ -216,27 +221,25 @@ export default function JudgeCard({
             </Stack>
 
             {/* Reliability - minimalistic text */}
-            {hasSummaryValues ? (
+            {hasSummaryValues && summary ? (
               <Stack
                 direction="row"
                 spacing={0.5}
                 alignItems="center"
                 sx={{
                   mt: 1,
-                  color: summary.reliability! >= 0.5 ? "success.main" : "error.main"
+                  color:
+                    summary.reliability_status === "aligned"
+                      ? "success.main"
+                      : summary.reliability_status === "unreliable"
+                        ? "error.main"
+                        : "text.secondary",
                 }}
               >
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontWeight: 500,
-                  }}
-                >
-                  {summary.reliability! >= 0.5 ? "✓" : "✗"} {(summary.reliability! * 100).toFixed(0)}% reliability
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  {judgeReliabilityText(summary.reliability_status, summary.reliability, summary.sample_count, gate, calibrationCount)}
                 </Typography>
-                <Tooltip
-                  title={`Measures how well this judge's judgments match your annotations. ≥50% is considered reliable.`}
-                >
+                <Tooltip title={judgeReliabilityTooltip(gate)}>
                   <IconInfoCircle {...compactActionIconProps} style={{ cursor: "help" }} />
                 </Tooltip>
               </Stack>

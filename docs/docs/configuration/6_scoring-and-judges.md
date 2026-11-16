@@ -88,12 +88,31 @@ For claim-based rubrics like Accuracy, the UI shows individual claims extracted 
 
 ## Judge Reliability
 
-Once you've annotated enough responses, Kaleidoscope compares judge scores against your annotations using **macro F1** as the primary reliability metric. 
+Once you've annotated responses, Kaleidoscope compares each judge's labels against your annotations using **macro F1**. Three numbers govern the gate, all set by environment variables (see [Environment Variables](2_environment-variables.md#judge-reliability-gate)):
 
-A judge with **F1 >= 0.5** is considered "aligned" and trusted for aggregation. Judges below this threshold are flagged as unreliable and their scores are excluded from the aggregated verdict.
+| Setting | Default | Meaning |
+|---|---|---|
+| `RELIABILITY_THRESHOLD` | 0.5 | Macro-F1 a judge must reach to join the aggregated verdict |
+| `MIN_CALIBRATION_SAMPLES` | 20 | Below this many annotated responses for a rubric, no judge is gated in or out and the aggregate is withheld |
+| `RECOMMENDED_CALIBRATION_SAMPLES` | 30 | The annotation target the UI nudges you towards |
 
-:::info For developers
-The reliability threshold is configurable [here](https://github.com/govtech-responsibleai/kaleidoscope/blob/main/backend/src/scoring/services/metrics_service.py) with `RELIABILITY_THRESHOLD`.
+Each judge shows one of four states:
+
+| State | Meaning |
+|---|---|
+| **Aligned** | F1 ≥ threshold on ≥ the minimum number of labels — its votes count |
+| **Unreliable** | Compared on enough labels and fell below the threshold — excluded |
+| **Not calibrated (n of 20)** | Fewer labels than the minimum — reliability is shown for information only |
+| **Not calibrated (0 of 20)** | No annotations for this rubric yet, or the judge has not scored the annotated responses yet |
+
+### How many responses should I annotate?
+
+The defaults come from a resampling study on the public RubricBench calibration set (three judges, fourteen rubrics, 200 random calibration draws per size). With 10 labels a judge's reliability estimate has a standard deviation of about ±0.13, so a true 0.6 judge fails the 0.5 gate roughly one time in five. At 20 labels the SD is ±0.09, at 30 it is ±0.06, and at 50 ±0.04. Twenty is the floor at which the gate stops being noise; thirty or more is recommended. The 0.5 threshold sits only 0.02 above the score a judge gets by always predicting the majority label on the most skewed rubrics, so on rubrics where more than about 85% of responses share one label, a judge with no real signal can clear it once enough labels accumulate. Raise `RELIABILITY_THRESHOLD` to 0.6 for such rubrics, and for any rubric on which no judge clears 0.5 by a comfortable margin (a judge at 0.50–0.55 is within noise of a judge with no signal); the study found 0.6 keeps the false-admit rate flat as annotations grow, at the cost of excluding some judges that would have aligned. On a rubric where no judge reaches the threshold, Kaleidoscope withholds the automated score rather than reporting one — that is the intended behaviour, and it means the rubric needs human review.
+
+Calibration ground truth is the annotation you save in the evaluation set. Editing an aggregated label on the scoring page changes the reported verdict but never the calibration.
+
+:::note
+Judge scoring now runs at temperature 0 for models that allow it; reliability scores computed before this change were produced at temperature 1.0 and may differ slightly.
 :::
 
 ## Multiple Judges
@@ -112,11 +131,18 @@ For each response and rubric, Kaleidoscope aggregates scores from all aligned ju
 |-------|---------|
 | **Majority** | Aligned judges agree on one option |
 | **Majority tied** | Aligned judges split evenly - no clear winner |
-| **No aligned judge** | No judges meet the reliability threshold |
+| **Not calibrated** | Fewer than the minimum number of annotated responses, or the judges have not yet scored enough of the annotated responses — score withheld |
+| **No aligned judge** | Enough annotations, but no judge meets the reliability threshold — score withheld, human review required |
 | **Override** | A human manually edited the aggregated label |
 | **Pending** | Scoring not yet complete for all aligned judges |
 
+A withheld score is shown as a gap on the report trend chart, never as 0%.
+
 Users can manually override any aggregated verdict if you disagree with the majority.
+
+### Upgrading from an earlier version
+
+Earlier versions gated judges with no minimum number of annotations. After upgrading, any rubric with fewer than `MIN_CALIBRATION_SAMPLES` (default 20) annotated responses shows its automated score as withheld until it reaches the floor. Reliability values recorded before the upgrade were computed at temperature 1.0 and are recomputed on the next scoring run.
 
 ### Custom Judges
 

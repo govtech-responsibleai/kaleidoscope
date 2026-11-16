@@ -47,6 +47,8 @@ PROVIDER_SETTING_DEFAULTS = {
     "openrouter_api_key": None,
     "openrouter_api_base": None,
     "fireworks_ai_api_key": None,
+    "platform_api_key": None,
+    "platform_api_base_url": None,
     "serper_api_key": None,
 }
 
@@ -88,6 +90,13 @@ def override_settings(**values):
     finally:
         for key, value in original.items():
             setattr(settings, key, value)
+
+
+@pytest.fixture(autouse=True)
+def calibration_floor_for_fixtures():
+    """Fixtures carry 10 human labels; lower the floor so gate tests stay meaningful."""
+    with override_settings(min_calibration_samples=1, recommended_calibration_samples=1):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -196,8 +205,8 @@ def with_provider_bypass():
         ("src.query_generation.api.routes.jobs.require_default_generation_model", default_runtime.model_name),
         ("src.scoring.api.routes.judges.require_valid_model_for_user", None),
         ("src.scoring.api.routes.judges.get_valid_model_options", seeded_model_options),
-        ("src.rubric.services.system_rubrics.list_resolved_providers", [resolved_provider]),
-        ("src.rubric.services.system_rubrics.get_valid_model_options", seeded_model_options),
+        ("src.common.llm.provider_service.list_resolved_providers", [resolved_provider]),
+        ("src.common.llm.provider_service.get_valid_model_options", seeded_model_options),
         ("src.rubric.services.system_rubrics._select_seed_models", seeded_models),
         ("src.query_generation.services.persona_generator.resolve_model_runtime_config_for_target", default_runtime),
         ("src.query_generation.services.question_generator.resolve_model_runtime_config_for_target", default_runtime),

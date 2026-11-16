@@ -10,10 +10,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.common.database.models import Judge, TargetRubric
-from src.common.database.repositories.judge_repo import JudgeRepository
-from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
-from src.common.database.repositories.target_repo import TargetRepository
-from src.common.llm.provider_service import _model_label, get_valid_model_options, list_resolved_providers
 from src.rubric.services.premade_rubrics import get_premade_template, list_premade_templates
 from src.rubric.services.prompt_files import load_prompt_template_text
 
@@ -60,6 +56,10 @@ JUDGE_NAMES = ["Judge 1 (Recommended)", "Judge 2", "Judge 3"]
 
 
 def _model_pool_to_configs(models: List[str], prompt_template: str, is_baseline_idx: int = 0) -> List[dict]:
+    # Deferred import: breaks the repositories -> system_rubrics -> provider_service
+    # import cycle (provider_service imports TargetRepository at module scope).
+    from src.common.llm.provider_service import _model_label
+
     return [
         {
             "name": JUDGE_NAMES[idx],
@@ -75,6 +75,10 @@ def _model_pool_to_configs(models: List[str], prompt_template: str, is_baseline_
 
 
 def _valid_provider_default_models(db: Session, user_id: int) -> list[str]:
+    # Deferred import: breaks the repositories -> system_rubrics -> provider_service
+    # import cycle (provider_service imports TargetRepository at module scope).
+    from src.common.llm.provider_service import list_resolved_providers
+
     return [
         provider.catalog.default_model
         for provider in list_resolved_providers(db, user_id)
@@ -83,6 +87,14 @@ def _valid_provider_default_models(db: Session, user_id: int) -> list[str]:
 
 
 def _select_seed_models(db: Session, rubric: TargetRubric) -> list[str]:
+    # Deferred import: breaks the repositories -> system_rubrics -> provider_service
+    # import cycle (provider_service imports TargetRepository at module scope).
+    from src.common.llm.provider_service import get_valid_model_options
+    # Deferred import: breaks the repositories -> system_rubrics import cycle too
+    # (importing this at module scope forces repositories/__init__.py to run in
+    # full, which imports annotation_repo, which needs system_rubrics back).
+    from src.common.database.repositories.target_repo import TargetRepository
+
     target = TargetRepository.get_by_id(db, int(rubric.target_id))
     if not target or target.user_id is None:
         return []
@@ -227,6 +239,11 @@ def build_preset_definition(name: str) -> dict | None:
 
 def ensure_system_rubrics(db: Session, target_id: int) -> None:
     """Bootstrap default preset rubrics for a newly created target."""
+    # Deferred import: breaks the repositories -> system_rubrics import cycle
+    # (importing this at module scope forces repositories/__init__.py to run in
+    # full, which imports annotation_repo, which needs system_rubrics back).
+    from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
+
     for position, key in enumerate(DEFAULT_PRESET_KEYS):
         definition = build_preset_definition(key)
         if definition is None:
@@ -268,6 +285,11 @@ def ensure_judges(db: Session, rubric_id: int) -> None:
         db: Database session
         rubric_id: ID of the TargetRubric to seed judges for
     """
+    # Deferred import: breaks the repositories -> system_rubrics import cycle
+    # (importing this at module scope forces repositories/__init__.py to run in
+    # full, which imports annotation_repo, which needs system_rubrics back).
+    from src.common.database.repositories.judge_repo import JudgeRepository
+
     rubric = db.query(TargetRubric).get(rubric_id)
     if rubric is None:
         return

@@ -140,3 +140,16 @@ data/
 # Backend migrations (local test helpers only)
 backend/src/common/database/migrations/*
 !backend/src/common/database/migrations/.gitkeep
+
+# Experiment outputs (predictions, CSVs, reports)
+backend/experiments/**/outputs/**
+!backend/experiments/**/outputs/**/
+!backend/experiments/**/outputs/**/predictions_labels.jsonl
+!backend/experiments/**/outputs/**/summary.md
+!backend/experiments/**/outputs/**/summary.csv
+!backend/experiments/**/outputs/**/by_rubric.md
+!backend/experiments/**/outputs/**/gate_operating_characteristics.csv
+!backend/experiments/**/outputs/**/baselines.csv
+!backend/experiments/**/outputs/**/synthetic_gate_pass_rates.csv
+!backend/experiments/**/outputs/**/synthetic_gate_pass_rates_by_rubric.csv
+!backend/experiments/**/outputs/**/judge_reliability_full.csv

@@ -6,10 +6,15 @@ import pytest
 from unittest.mock import patch
 from src.common.database.repositories.target_rubric_repo import TargetRubricRepository
 from src.common.database.models import (
+    Answer,
     AnswerLabelOverride,
     AnswerScore,
     Judge,
     Annotation,
+    Question,
+    QuestionScopeEnum,
+    QuestionTypeEnum,
+    StatusEnum,
 )
 
 from src.scoring.services.metrics_service import MetricsService
@@ -54,6 +59,26 @@ class TestMetricsService:
         assert 0 <= metrics.precision <= 1
         assert 0 <= metrics.recall <= 1
         assert 0 <= metrics.accuracy <= 1
+
+    def test_alignment_ignores_label_overrides(
+        self, test_db, sample_annotations, sample_answer_scores, sample_snapshot, sample_judge_claim_based
+    ):
+        """Overrides edit the reported verdict; they must never change the calibration ground truth."""
+        service = MetricsService(test_db)
+        rubric_id = sample_judge_claim_based.rubric_id
+        before = service.calculate_judge_alignment(sample_snapshot.id, sample_judge_claim_based.id, rubric_id)
+
+        # Flip every human label via overrides; alignment must not move.
+        for annotation in sample_annotations:
+            test_db.add(AnswerLabelOverride(
+                answer_id=annotation.answer_id, rubric_id=rubric_id,
+                edited_value="Inaccurate" if annotation.label else "Accurate",
+            ))
+        test_db.commit()
+
+        after = service.calculate_judge_alignment(sample_snapshot.id, sample_judge_claim_based.id, rubric_id)
+        assert after.f1 == before.f1
+        assert after.accuracy == before.accuracy
 
     def test_calculate_accuracy(
         self, test_db, sample_answer_scores, sample_snapshot, sample_judge_claim_based
@@ -517,3 +542,226 @@ class TestMetricsService:
         assert contract.inaccurate_count == 1
         assert contract.edited_count == 1
         assert contract.aggregated_score == 0.9
+
+    def test_judge_without_annotations_is_not_calibrated_not_zero(
+        self, test_db, sample_snapshot, sample_answer, sample_judge_claim_based
+    ):
+        """No human labels must surface as 'not calibrated', never as reliability 0.0."""
+        sample_answer.is_selected_for_annotation = True
+        test_db.add(AnswerScore(
+            answer_id=sample_answer.id, rubric_id=sample_judge_claim_based.rubric_id,
+            judge_id=sample_judge_claim_based.id, overall_label="Accurate", explanation="x",
+        ))
+        test_db.commit()
+
+        service = MetricsService(test_db)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        summary = next(s for s in contract.judge_summaries if s.judge_id == sample_judge_claim_based.id)
+        assert summary.reliability is None
+        assert summary.sample_count == 0
+        assert summary.reliability_status == "not_calibrated"
+        assert contract.aligned_judges == []
+
+    def test_judge_below_calibration_floor_is_not_aligned(
+        self, test_db, sample_annotations, sample_answer_scores, sample_snapshot, sample_judge_claim_based
+    ):
+        """Ten labels with a floor of twenty: reliability is shown but the judge is not gated in."""
+        from tests.conftest import override_settings
+
+        service = MetricsService(test_db)
+        with override_settings(min_calibration_samples=20, recommended_calibration_samples=30):
+            contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        summary = next(s for s in contract.judge_summaries if s.judge_id == sample_judge_claim_based.id)
+        assert summary.sample_count == 10
+        assert summary.reliability is not None and summary.reliability >= 0.5
+        assert summary.reliability_status == "insufficient_calibration"
+        assert contract.aligned_judges == []
+
+    def test_judge_at_floor_and_above_threshold_is_aligned_with_sample_count(
+        self, test_db, sample_annotations, sample_answer_scores, sample_snapshot, sample_judge_claim_based
+    ):
+        service = MetricsService(test_db)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        summary = next(s for s in contract.judge_summaries if s.judge_id == sample_judge_claim_based.id)
+        assert summary.reliability_status == "aligned"
+        aligned = next(j for j in contract.aligned_judges if j.judge_id == sample_judge_claim_based.id)
+        assert aligned.sample_count == 10
+
+    def test_judge_below_threshold_is_unreliable(
+        self, test_db, sample_annotations, sample_snapshot, sample_judge_claim_based
+    ):
+        """A judge that contradicts every human label is 'unreliable', not merely unaligned."""
+        for annotation in sample_annotations:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id, rubric_id=sample_judge_claim_based.rubric_id,
+                judge_id=sample_judge_claim_based.id,
+                overall_label="Inaccurate" if annotation.label else "Accurate", explanation="inverted",
+            ))
+        test_db.commit()
+        service = MetricsService(test_db)
+        contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        summary = next(s for s in contract.judge_summaries if s.judge_id == sample_judge_claim_based.id)
+        assert summary.reliability_status == "unreliable"
+        assert summary.reliability == 0.0
+        assert contract.aligned_judges == []
+
+    def test_contract_withholds_score_when_no_judge_is_aligned(
+        self, test_db, sample_annotations, sample_snapshot, sample_judge_claim_based
+    ):
+        for annotation in sample_annotations:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id, rubric_id=sample_judge_claim_based.rubric_id,
+                judge_id=sample_judge_claim_based.id,
+                overall_label="Inaccurate" if annotation.label else "Accurate", explanation="inverted",
+            ))
+        test_db.commit()
+        contract = MetricsService(test_db)._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        assert contract.aggregated_score is None
+        assert contract.verdict_status == "no_aligned_judge"
+        assert contract.calibration_count == 10
+
+    def test_contract_reports_not_calibrated_without_labels(
+        self, test_db, sample_snapshot, sample_answer, sample_judge_claim_based
+    ):
+        sample_answer.is_selected_for_annotation = True
+        test_db.add(AnswerScore(answer_id=sample_answer.id, rubric_id=sample_judge_claim_based.rubric_id,
+                                judge_id=sample_judge_claim_based.id, overall_label="Accurate", explanation="x"))
+        test_db.commit()
+        contract = MetricsService(test_db)._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        assert contract.verdict_status == "not_calibrated"
+        assert contract.aggregated_score is None
+        assert contract.calibration_count == 0
+
+    def test_contract_reports_insufficient_calibration_below_floor(
+        self, test_db, sample_annotations, sample_answer_scores, sample_snapshot, sample_judge_claim_based
+    ):
+        from tests.conftest import override_settings
+        with override_settings(min_calibration_samples=20, recommended_calibration_samples=30):
+            contract = MetricsService(test_db)._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        assert contract.verdict_status == "insufficient_calibration"
+        assert contract.aggregated_score is None
+        assert contract.min_calibration_samples == 20
+        assert contract.recommended_calibration_samples == 30
+        assert contract.reliability_threshold == 0.5
+
+    def test_contract_is_ready_with_an_aligned_judge(
+        self, test_db, sample_annotations, sample_answer_scores, sample_snapshot, sample_judge_claim_based
+    ):
+        contract = MetricsService(test_db)._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+        assert contract.verdict_status == "ready"
+        assert contract.aggregated_score is not None
+
+    def test_contract_reports_insufficient_calibration_when_judge_scored_only_part_of_labels(
+        self, test_db, sample_annotations, sample_snapshot, sample_judge_claim_based
+    ):
+        """A judge that has scored only some of the annotated answers is still calibrating, not failed."""
+        from tests.conftest import override_settings
+
+        for annotation in sample_annotations[:5]:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_judge_claim_based.rubric_id,
+                judge_id=sample_judge_claim_based.id,
+                overall_label="Accurate" if annotation.label else "Inaccurate",
+                explanation="partial scoring",
+            ))
+        test_db.commit()
+
+        service = MetricsService(test_db)
+        with override_settings(min_calibration_samples=8, recommended_calibration_samples=10):
+            contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+
+        summary = next(s for s in contract.judge_summaries if s.judge_id == sample_judge_claim_based.id)
+        assert summary.reliability_status == "insufficient_calibration"
+        assert summary.sample_count == 5
+        assert contract.verdict_status == "insufficient_calibration"
+
+    def test_contract_reports_insufficient_calibration_when_judge_scored_none_of_selected_answers(
+        self, test_db, sample_annotations, sample_snapshot, sample_judge_claim_based, sample_target,
+        sample_job, sample_personas,
+    ):
+        """Scores exist for the judge, but none on a selected/annotated answer: it has not been calibrated yet."""
+        unselected_question = Question(
+            job_id=sample_job.id,
+            target_id=sample_target.id,
+            persona_id=sample_personas[0].id,
+            text="An unselected question?",
+            type=QuestionTypeEnum.typical,
+            scope=QuestionScopeEnum.in_kb,
+            status=StatusEnum.approved,
+        )
+        test_db.add(unselected_question)
+        test_db.flush()
+        unselected_answer = Answer(
+            question_id=unselected_question.id,
+            snapshot_id=sample_snapshot.id,
+            answer_content="Not selected for annotation.",
+            chat_id="chatUnselected",
+            message_id="msgUnselected",
+            is_selected_for_annotation=False,
+        )
+        test_db.add(unselected_answer)
+        test_db.commit()
+
+        test_db.add(AnswerScore(
+            answer_id=unselected_answer.id,
+            rubric_id=sample_judge_claim_based.rubric_id,
+            judge_id=sample_judge_claim_based.id,
+            overall_label="Accurate",
+            explanation="scored but not selected for annotation",
+        ))
+        test_db.commit()
+
+        contract = MetricsService(test_db)._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+
+        summary = next(s for s in contract.judge_summaries if s.judge_id == sample_judge_claim_based.id)
+        assert summary.reliability_status == "not_calibrated"
+        assert contract.verdict_status == "insufficient_calibration"
+        assert contract.calibration_count == 10
+
+    def test_contract_reports_no_aligned_judge_with_one_unreliable_and_one_still_calibrating_judge(
+        self, test_db, sample_annotations, sample_snapshot, sample_judge_claim_based
+    ):
+        """An unreliable judge plus a judge still calibrating: withheld for the failure, not the wait."""
+        from tests.conftest import override_settings
+
+        second_judge = Judge(
+            name="Second Claim-Based Judge",
+            model_name="gemini/gemini-3.1-flash-lite",
+            prompt_template="Test prompt template",
+            params={"temperature": 0.7},
+            rubric_id=sample_judge_claim_based.rubric_id,
+            is_baseline=False,
+            is_editable=True,
+        )
+        test_db.add(second_judge)
+        test_db.commit()
+        test_db.refresh(second_judge)
+
+        for annotation in sample_annotations:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=sample_judge_claim_based.rubric_id,
+                judge_id=sample_judge_claim_based.id,
+                overall_label="Inaccurate" if annotation.label else "Accurate",
+                explanation="inverted",
+            ))
+        for annotation in sample_annotations[:5]:
+            test_db.add(AnswerScore(
+                answer_id=annotation.answer_id,
+                rubric_id=second_judge.rubric_id,
+                judge_id=second_judge.id,
+                overall_label="Accurate" if annotation.label else "Inaccurate",
+                explanation="correct but still calibrating",
+            ))
+        test_db.commit()
+
+        service = MetricsService(test_db)
+        with override_settings(min_calibration_samples=8, recommended_calibration_samples=10):
+            contract = service._build_base_scoring_contract(sample_snapshot.id, sample_judge_claim_based.rubric_id)
+
+        first_summary = next(s for s in contract.judge_summaries if s.judge_id == sample_judge_claim_based.id)
+        second_summary = next(s for s in contract.judge_summaries if s.judge_id == second_judge.id)
+        assert first_summary.reliability_status == "unreliable"
+        assert second_summary.reliability_status == "insufficient_calibration"
+        assert contract.verdict_status == "no_aligned_judge"

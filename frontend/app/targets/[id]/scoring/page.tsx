@@ -45,6 +45,7 @@ import {
 import { actionIconProps, compactActionIconProps } from "@/lib/styles";
 import { groupColors } from "@/lib/theme";
 import { TESTIDS } from "@/tests/ui-integration/fixtures/testids";
+import { DEFAULT_GATE, verdictWithheldText, type GateSettings } from "@/lib/reliability";
 
 type SourceGroup = "preset" | "custom";
 
@@ -630,6 +631,8 @@ function buildMetricSections({
       edited_count: contract.edited_count,
       judge_alignment_range: contract.judge_alignment_range,
       aligned_judges: contract.aligned_judges,
+      verdict_status: contract.verdict_status,
+      calibration_count: contract.calibration_count,
     } satisfies SnapshotMetric : null;
 
     return {
@@ -694,6 +697,23 @@ function MetricSection({
             loading={loading}
             emptyMessage={section.emptyMessage}
             gaugeLabel={section.gaugeLabel}
+            gate={
+              section.contract
+                ? {
+                    reliability_threshold: section.contract.reliability_threshold,
+                    min_calibration_samples: section.contract.min_calibration_samples,
+                    recommended_calibration_samples: section.contract.recommended_calibration_samples,
+                  }
+                : DEFAULT_GATE
+            }
+            hasUnreliableJudge={
+              section.contract?.judge_summaries.some((s) => s.reliability_status === "unreliable") ?? false
+            }
+            hasCalibratingJudge={
+              section.contract?.judge_summaries.some(
+                (s) => s.reliability_status === "insufficient_calibration" || s.reliability_status === "not_calibrated"
+              ) ?? false
+            }
           />
         </Box>
 
@@ -744,6 +764,13 @@ function JudgeStrip({
   dialogConfig: DialogConfig;
 }) {
   const sectionColor = groupColors[section.sourceGroup as keyof typeof groupColors] ?? groupColors.preset;
+  const gate: GateSettings = section.contract
+    ? {
+        reliability_threshold: section.contract.reliability_threshold,
+        min_calibration_samples: section.contract.min_calibration_samples,
+        recommended_calibration_samples: section.contract.recommended_calibration_samples,
+      }
+    : DEFAULT_GATE;
   return (
     <Box
       data-testid={TESTIDS.JUDGE_LIST}
@@ -828,6 +855,8 @@ function JudgeStrip({
                 pendingCount={pendingCount}
                 scoreLabel={section.rubric?.best_option || section.rubric?.options?.[0]?.option || section.title}
                 hasQuestionsWithoutAnswers={questionsWithoutAnswers > 0}
+                gate={gate}
+                calibrationCount={section.contract?.calibration_count ?? 0}
                 onJobStart={(judgeId) => onJobStart(judgeId, section.rubric!.id)}
                 onJobComplete={() => onJobComplete(section.rubric!.id)}
                 onEdit={() => onEditJudge(judge, dialogConfig)}
@@ -851,11 +880,17 @@ function MetricSummaryTile({
   loading,
   emptyMessage,
   gaugeLabel,
+  gate,
+  hasUnreliableJudge = false,
+  hasCalibratingJudge = false,
 }: {
   metric: SnapshotMetric | null;
   loading: boolean;
   emptyMessage: string;
   gaugeLabel: string;
+  gate: GateSettings;
+  hasUnreliableJudge?: boolean;
+  hasCalibratingJudge?: boolean;
 }) {
   if (loading) {
     return (
@@ -878,7 +913,7 @@ function MetricSummaryTile({
     );
   }
 
-  const hasReliableJudges = metric.aligned_judges.length > 0;
+  const hasReliableJudges = metric.verdict_status === "ready";
   const reliableJudgeCount = metric.aligned_judges.length;
   const alignmentRange = metric.judge_alignment_range;
 
@@ -896,7 +931,10 @@ function MetricSummaryTile({
         </Typography>
       ) : (
         <Typography variant="body2" color="warning.dark" fontWeight={600}>
-          Score withheld until at least one reliable judge is available
+          {verdictWithheldText(metric.verdict_status, metric.calibration_count, gate, {
+            hasUnreliableJudge,
+            hasCalibratingJudge,
+          })}
         </Typography>
       )}
     </Stack>

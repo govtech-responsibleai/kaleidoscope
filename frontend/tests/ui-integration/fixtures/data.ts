@@ -280,13 +280,20 @@ export const scoringResultsResponse: ScoringResultsResponse = {
   pending_count: 0,
   edited_count: 0,
   judge_alignment_range: { min: 0.75, max: 0.85 },
-  aligned_judges: [{ judge_id: JUDGE_ID, name: judge.name, f1: 0.8 }],
+  aligned_judges: [{ judge_id: JUDGE_ID, name: judge.name, f1: 0.8, sample_count: 25 }],
+  verdict_status: "ready",
+  calibration_count: 25,
+  reliability_threshold: 0.5,
+  min_calibration_samples: 20,
+  recommended_calibration_samples: 30,
   best_option: "correct",
   judge_summaries: [
     {
       judge_id: JUDGE_ID,
       name: judge.name,
       reliability: 0.8,
+      sample_count: 25,
+      reliability_status: "aligned",
       accuracy: 0.8,
       accurate_count: 4,
       total_answers: 5,
@@ -338,6 +345,8 @@ export const snapshotMetricsResponse: SnapshotMetricsResponse = {
           edited_count: 0,
           judge_alignment_range: { min: 0.75, max: 0.85 },
           aligned_judges: [],
+          verdict_status: "ready",
+          calibration_count: 25,
         },
       ],
     },
@@ -376,4 +385,32 @@ export const providerSetupResponse: ProviderSetupResponse = {
     judge_default_models: ["openai/gpt-4o"],
     web_search_enabled: false,
   },
+};
+
+/** The same scoring contract mid-calibration: the gate is not yet armed, so no verdict is emitted. */
+export const scoringContractInsufficientCalibration: ScoringResultsResponse = {
+  ...scoringResultsResponse,
+  aggregated_score: null,
+  aligned_judges: [],
+  verdict_status: "insufficient_calibration",
+  calibration_count: 12,
+  judge_summaries: scoringResultsResponse.judge_summaries.map((summary) => ({
+    ...summary,
+    reliability: 0.62,
+    sample_count: 12,
+    reliability_status: "insufficient_calibration" as const,
+  })),
+};
+
+/** Labels exist, but the judge has not scored any of them yet: withheld for the wait, not a failure. */
+export const scoringContractJudgesUnscored: ScoringResultsResponse = {
+  ...scoringContractInsufficientCalibration,
+  calibration_count: 25,
+  verdict_status: "insufficient_calibration",
+  judge_summaries: scoringContractInsufficientCalibration.judge_summaries.map((summary) => ({
+    ...summary,
+    reliability: null,
+    sample_count: 0,
+    reliability_status: "not_calibrated" as const,
+  })),
 };

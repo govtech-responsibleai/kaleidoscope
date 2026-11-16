@@ -667,10 +667,14 @@ export interface SnapshotResultsResponse {
   results: ResultRow[];
 }
 
+export type JudgeReliabilityStatus = "aligned" | "unreliable" | "insufficient_calibration" | "not_calibrated";
+export type VerdictStatus = "ready" | "not_calibrated" | "insufficient_calibration" | "no_aligned_judge";
+
 export interface AlignedJudge {
   judge_id: number;
   name: string;
   f1: number;
+  sample_count: number;
 }
 
 export interface SnapshotMetric {
@@ -679,7 +683,7 @@ export interface SnapshotMetric {
   created_at: string;
   rubric_id?: number | null;
   rubric_name?: string | null;
-  aggregated_score: number;
+  aggregated_score: number | null;
   total_answers: number;
   accurate_count: number;
   inaccurate_count: number;
@@ -687,12 +691,16 @@ export interface SnapshotMetric {
   edited_count: number;
   judge_alignment_range: { min: number; max: number } | null;
   aligned_judges: AlignedJudge[];
+  verdict_status: VerdictStatus;
+  calibration_count: number;
 }
 
 export interface JudgeScoreSummary {
   judge_id: number;
   name: string;
   reliability: number | null;
+  sample_count: number;
+  reliability_status: JudgeReliabilityStatus | null;
   accuracy: number | null;
   accurate_count: number;
   total_answers: number;
@@ -732,6 +740,9 @@ export interface ScoringContract extends SnapshotMetric {
   best_option?: string | null;
   judge_summaries: JudgeScoreSummary[];
   rows: ScoringRowResult[];
+  reliability_threshold: number;
+  min_calibration_samples: number;
+  recommended_calibration_samples: number;
 }
 
 export interface SnapshotScoringContractsResponse {
