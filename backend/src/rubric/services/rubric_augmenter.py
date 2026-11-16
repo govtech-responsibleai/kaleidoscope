@@ -188,7 +188,7 @@ def generate_judge_prompt(
         raise ValueError("Target owner could not be resolved for rubric augmentation.")
     model_name = require_default_generation_model(db, int(target.user_id))
     runtime_config = resolve_model_runtime_config(db, int(target.user_id), model_name)
-    llm_client = LLMClient(model=model_name, provider_kwargs=runtime_config.litellm_kwargs)
+    llm_client = LLMClient.from_runtime_config(runtime_config)
     response = llm_client.generate(
         prompt=prompt,
         temperature=0.3,

@@ -81,6 +81,11 @@ async def lifespan(app: FastAPI):
     if langfuse_url:
         logger.info(f"✓ Langfuse instrumentation enabled: {langfuse_url}")
 
+    # Register catalog-declared pricing so cost tracking works for gateway models
+    from src.common.llm.pricing import register_catalog_pricing
+    if register_catalog_pricing():
+        logger.info("✓ Catalog model pricing registered with LiteLLM")
+
     logger.info("✓ API ready")
 
     yield

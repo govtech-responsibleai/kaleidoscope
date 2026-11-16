@@ -95,7 +95,7 @@ class TestClaimProcessor:
         mock_llm_instance.generate_structured_async = AsyncMock(
             return_value=(mock_checkworthy_result, mock_metadata)
         )
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         # Check claims
         await processor._check_claims(sample_answer.id)
@@ -132,7 +132,7 @@ class TestClaimProcessor:
             )
 
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         # Process
         processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
@@ -188,7 +188,7 @@ class TestClaimProcessor:
                  "model": "gemini/gemini-3.1-flash-lite", "cost": 0.0001}
             )
         )
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         await processor.process()
@@ -222,7 +222,7 @@ class TestClaimProcessor:
                  "model": "gemini/gemini-3.1-flash-lite", "cost": 0.0001}
             )
         )
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         processor = ClaimProcessor(test_db_factory, sample_qa_job.id)
         claims = processor._extract_claims(sample_answer.id)
@@ -263,7 +263,7 @@ class TestClaimProcessorErrors:
         mock_llm_instance.generate_structured_async = AsyncMock(
             side_effect=Exception("Checkworthy LLM API error")
         )
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         # Process
         processor = ClaimProcessor(test_db_factory, sample_qa_job.id)

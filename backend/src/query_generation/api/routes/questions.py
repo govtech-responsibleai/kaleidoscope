@@ -265,9 +265,10 @@ def find_similar_questions_endpoint(
         embedding_model = "gemini/gemini-embedding-001"
         runtime_kwargs = {}
         if target.user_id is not None:
-            embedding_model = require_default_embedding_model(db, int(target.user_id))
-            runtime_config = resolve_model_runtime_config(db, int(target.user_id), embedding_model)
+            catalog_model = require_default_embedding_model(db, int(target.user_id))
+            runtime_config = resolve_model_runtime_config(db, int(target.user_id), catalog_model)
             runtime_kwargs = runtime_config.litellm_kwargs
+            embedding_model = runtime_config.litellm_model
         similar_results = find_similar_questions_batch(
             query_texts=query_texts,
             candidate_texts=candidate_texts,

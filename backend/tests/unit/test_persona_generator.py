@@ -134,7 +134,7 @@ class TestPersonaGenerator:
         }
 
         mock_llm_instance.generate_structured.return_value = (mock_persona_list, mock_metadata)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         generator = PersonaGenerator(test_db, sample_job.id)
         personas_data = generator.generate()
@@ -160,7 +160,7 @@ class TestPersonaGenerator:
         # Setup mock LLM client to raise error
         mock_llm_instance = MagicMock()
         mock_llm_instance.generate_structured.side_effect = Exception("LLM API error")
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         generator = PersonaGenerator(test_db, sample_job.id)
 

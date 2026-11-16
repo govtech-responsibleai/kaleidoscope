@@ -79,10 +79,7 @@ class QuestionGenerator:
             raise ValueError(f"Target {self.job.target_id} not found")
 
         runtime_config = resolve_model_runtime_config_for_target(db, self.target.id, self.job.model_used)
-        self.llm_client = LLMClient(
-            model=self.job.model_used,
-            provider_kwargs=runtime_config.litellm_kwargs,
-        )
+        self.llm_client = LLMClient.from_runtime_config(runtime_config)
 
     def generate(self) -> List[Dict[str, Any]]:
         """
