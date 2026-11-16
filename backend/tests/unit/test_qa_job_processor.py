@@ -1512,8 +1512,10 @@ class TestScoringConnectionPool:
                         for jid, qid in job_specs]
 
             with patch.object(qa_job_processor, "SessionLocal", factory), \
-                 patch("src.scoring.services.judge_scoring.LLMClient", return_value=mock_llm), \
-                 patch("src.scoring.services.claim_processor.LLMClient", return_value=mock_llm):
+                 patch("src.scoring.services.judge_scoring.LLMClient") as mock_judge_llm_class, \
+                 patch("src.scoring.services.claim_processor.LLMClient") as mock_claim_llm_class:
+                mock_judge_llm_class.from_runtime_config.return_value = mock_llm
+                mock_claim_llm_class.from_runtime_config.return_value = mock_llm
                 # Must complete without raising sqlalchemy.exc.TimeoutError.
                 await qa_job_processor.run_qajobs_phased(
                     snapshot_id=snapshot_id,

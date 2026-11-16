@@ -7,7 +7,7 @@ with automatic retry, error handling, and token tracking.
 import asyncio
 import logging
 import threading
-from typing import Dict, List, Optional, Any, Type, TypeVar
+from typing import Dict, List, Optional, Any, Type, TypeVar, TYPE_CHECKING
 from pydantic import BaseModel
 import litellm
 
@@ -15,6 +15,9 @@ import dotenv
 dotenv.load_dotenv()
 
 from src.common.config import get_settings, MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE
+
+if TYPE_CHECKING:
+    from src.common.llm.provider_service import ProviderRuntimeConfig
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
@@ -33,17 +36,44 @@ class LLMClient:
     _semaphores: dict[tuple[str, asyncio.AbstractEventLoop], asyncio.Semaphore] = {}
     _sem_lock = threading.Lock()
 
-    def __init__(self, model: Optional[str] = None, provider_kwargs: Optional[Dict[str, Any]] = None):
+    def __init__(
+        self,
+        model: Optional[str] = None,
+        provider_kwargs: Optional[Dict[str, Any]] = None,
+        litellm_model: Optional[str] = None,
+    ):
         """
         Initialize LLM client.
 
         Args:
-            model: Model name (e.g., "gpt-4o-mini", "claude-3-5-sonnet-20241022")
-                   Defaults to settings.default_llm_model
+            model: Catalog-facing model name (e.g. "gemini/gemini-3.1-flash-lite").
+                   Used for logging, concurrency limits and provider-specific
+                   behaviour. Defaults to settings.default_llm_model.
             provider_kwargs: Provider-specific kwargs injected into LiteLLM calls
+            litellm_model: Model name sent to LiteLLM on the wire. Defaults to
+                   ``model``. Differs for providers that route through another
+                   LiteLLM provider (e.g. "govtech/x" → "openai/x").
         """
         self.model = model or settings.default_llm_model
+        self.litellm_model = litellm_model or self.model
         self.provider_kwargs = provider_kwargs or {}
+
+    @classmethod
+    def from_runtime_config(cls, config: "ProviderRuntimeConfig") -> "LLMClient":
+        """Build a client from a resolved provider runtime config.
+
+        Args:
+            config: Result of ``resolve_model_runtime_config`` or
+                ``resolve_model_runtime_config_from_env``.
+
+        Returns:
+            A client whose display model, wire model and provider kwargs match the config.
+        """
+        return cls(
+            model=config.model_name,
+            provider_kwargs=config.litellm_kwargs,
+            litellm_model=config.litellm_model,
+        )
 
     def _get_semaphore(self) -> asyncio.Semaphore:
         """Get or create a semaphore bound to the current running event loop."""
@@ -165,7 +195,7 @@ class LLMClient:
 
             request_kwargs = {**self.provider_kwargs, **kwargs}
             response = litellm.completion(
-                model=self.model,
+                model=self.litellm_model,
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -329,7 +359,7 @@ class LLMClient:
         messages.append({"role": "user", "content": schema_prompt})
 
         # Check if model forces temperature params (e.g. for reasoning)
-        if [keyword in self.model for keyword in MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE]:
+        if any(keyword in self.model for keyword in MODEL_KEYWORDS_WITH_FIXED_TEMPERATURE):
             temperature = 1.0
             
         try:
@@ -353,7 +383,7 @@ class LLMClient:
                 )
                 request_kwargs = {**self.provider_kwargs, **kwargs}
                 response = await litellm.acompletion(
-                    model=self.model,
+                    model=self.litellm_model,
                     messages=messages,
                     temperature=temperature,
                     max_tokens=max_tokens,

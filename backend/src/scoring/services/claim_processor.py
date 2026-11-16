@@ -95,11 +95,11 @@ class ClaimProcessor:
 
             # Lazily initialize LLM client so tests can override after instantiation
             self._llm_model_name = require_default_generation_model(db, int(target_owner_id))
-            self._provider_kwargs = resolve_model_runtime_config(
+            self._runtime_config = resolve_model_runtime_config(
                 db,
                 int(target_owner_id),
                 self._llm_model_name,
-            ).litellm_kwargs
+            )
         finally:
             db.close()
         self.llm_client = None
@@ -396,10 +396,7 @@ class ClaimProcessor:
     def _get_llm_client(self):
         """Create or return the cached LLM client."""
         if self.llm_client is None:
-            self.llm_client = LLMClient(
-                model=self._llm_model_name,
-                provider_kwargs=self._provider_kwargs,
-            )
+            self.llm_client = LLMClient.from_runtime_config(self._runtime_config)
         return self.llm_client
 
 

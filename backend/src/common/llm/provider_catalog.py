@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ProviderCredentialField(BaseModel):
@@ -16,6 +17,19 @@ class ProviderCredentialField(BaseModel):
     label: str
     env_var: str
     required: bool = True
+
+
+class ModelPricing(BaseModel):
+    """USD cost per 1M tokens for one catalog model.
+
+    Used to register pricing with LiteLLM for models it does not know about
+    (for example models served through an OpenAI-compatible gateway).
+    """
+
+    input: float
+    output: float
+    cache_read: float | None = None
+    mode: Literal["chat", "embedding"] = "chat"
 
 
 class ProviderCatalogEntry(BaseModel):
@@ -30,6 +44,32 @@ class ProviderCatalogEntry(BaseModel):
     default_model: str
     common_models: list[str] = Field(default_factory=list)
     embedding_models: list[str] = Field(default_factory=list)
+    # When set, models under ``litellm_prefix`` are sent to LiteLLM under this
+    # prefix instead (e.g. ``openai/`` for an OpenAI-compatible gateway).
+    litellm_route: str | None = None
+    # Optional per-model pricing keyed by the catalog-facing model name.
+    pricing: dict[str, ModelPricing] = Field(default_factory=dict)
+
+    @field_validator("litellm_route")
+    @classmethod
+    def _route_ends_with_slash(cls, value: str | None) -> str | None:
+        if value is not None and not value.endswith("/"):
+            raise ValueError("litellm_route must end with '/'")
+        return value
+
+    def to_litellm_model(self, model_name: str) -> str:
+        """Translate a catalog-facing model name into the name LiteLLM receives.
+
+        Args:
+            model_name: Model name as stored in the catalog and the database.
+
+        Returns:
+            The same name when no ``litellm_route`` is set; otherwise the name
+            with ``litellm_prefix`` swapped for ``litellm_route``.
+        """
+        if not self.litellm_route:
+            return model_name
+        return f"{self.litellm_route}{model_name.removeprefix(self.litellm_prefix)}"
 
 
 class ProviderServiceEntry(BaseModel):

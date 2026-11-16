@@ -69,7 +69,7 @@ class WebSearchService:
             raise ValueError(f"Target {target_id} has no owner for provider resolution")
         default_model = require_default_generation_model(db, int(self.target.user_id))
         runtime_config = resolve_model_runtime_config(db, int(self.target.user_id), default_model)
-        self.llm_client = LLMClient(model=default_model, provider_kwargs=runtime_config.litellm_kwargs)
+        self.llm_client = LLMClient.from_runtime_config(runtime_config)
         self.serper_api_key = resolve_serper_api_key(db, int(self.target.user_id))
 
     def generate_search_queries(self) -> List[str]:

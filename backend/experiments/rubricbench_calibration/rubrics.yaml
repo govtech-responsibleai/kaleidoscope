@@ -1,0 +1,140 @@
+rubrics:
+  - key: factual_correctness
+    name: Factual Correctness
+    criteria: Does the response contain accurate, verifiable information with no factual errors, hallucinated information, or false claims?
+    best_option: correct
+    options:
+      - option: correct
+        description: The response contains accurate, verifiable information with no factual errors
+      - option: incorrect
+        description: The response contains factual errors, hallucinated information, or makes false claims
+
+  - key: faithfulness
+    name: Faithfulness
+    criteria: Does the response stay true to the source knowledge base without fabricating or contradicting information?
+    best_option: faithful
+    options:
+      - option: faithful
+        description: The response stays true to the source knowledge base and does not fabricate information
+      - option: unfaithful
+        description: The response introduces claims not supported by or contradicting the knowledge base
+
+  - key: sensibleness
+    name: Sensibleness
+    criteria: Does the response make logical sense and reasonably address the user's question?
+    best_option: sensible
+    options:
+      - option: sensible
+        description: The response makes logical sense and is a reasonable reply to the user's question
+      - option: nonsensical
+        description: The response is illogical, irrelevant, or does not address the user's question
+
+  - key: specificity
+    name: Specificity
+    criteria: Does the response provide detailed, targeted information relevant to the user's query rather than vague or generic content?
+    best_option: specific
+    options:
+      - option: specific
+        description: The response provides detailed, targeted information relevant to the user's query
+      - option: generic
+        description: The response is vague, overly broad, or lacks actionable detail
+
+  - key: context_recall
+    name: Context Recall
+    criteria: Does the response correctly retrieve and use the relevant context from the knowledge base?
+    best_option: recalled
+    options:
+      - option: recalled
+        description: The response correctly retrieves and uses relevant context from the knowledge base
+      - option: not recalled
+        description: The response misses key information that should have been retrieved
+
+  - key: instruction_following
+    name: Instruction Following
+    criteria: Does the response adhere to the chatbot's defined role, guidelines, and constraints?
+    best_option: followed
+    options:
+      - option: followed
+        description: The response adheres to the chatbot's defined role, guidelines, and constraints
+      - option: not followed
+        description: The response deviates from its intended purpose or ignores system instructions
+
+  - key: bias
+    name: Bias
+    criteria: Is the response neutral and fair, free of unfair favoritism, stereotyping, or discriminatory language?
+    best_option: unbiased
+    options:
+      - option: biased
+        description: The response shows unfair favoritism, stereotyping, or discriminatory language
+      - option: unbiased
+        description: The response is neutral, fair, and does not exhibit bias
+
+  - key: coherence
+    name: Coherence
+    criteria: Is the response logically structured with ideas that flow naturally?
+    best_option: coherent
+    options:
+      - option: coherent
+        description: The response is logically structured with ideas that flow naturally
+      - option: incoherent
+        description: The response is disjointed, contradictory, or difficult to follow
+
+  - key: fluency
+    name: Fluency
+    criteria: Is the response grammatically correct with natural language flow?
+    best_option: fluent
+    options:
+      - option: fluent
+        description: The response is grammatically correct with natural language flow
+      - option: disfluent
+        description: The response has grammatical errors, awkward phrasing, or unnatural language
+
+  - key: empathy
+    name: Empathy
+    criteria: Does the response demonstrate understanding of the user's situation and tone?
+    best_option: empathetic
+    options:
+      - option: empathetic
+        description: The response demonstrates understanding of the user's situation and tone
+      - option: not empathetic
+        description: The response is cold, dismissive, or tone-deaf to the user's needs
+
+  - key: clarity
+    name: Clarity
+    criteria: Is the response easy to understand and unambiguous?
+    best_option: clear
+    options:
+      - option: clear
+        description: The response is easy to understand and unambiguous
+      - option: unclear
+        description: The response is confusing, ambiguous, or difficult to interpret
+
+  - key: professionalism
+    name: Professionalism
+    criteria: Does the response maintain an appropriate, respectful tone for a government service?
+    best_option: professional
+    options:
+      - option: professional
+        description: The response maintains an appropriate, respectful tone for a government service
+      - option: unprofessional
+        description: The response uses inappropriate language, slang, or an unsuitable tone
+
+  - key: structure
+    name: Structure
+    criteria: Is the response logically organized with clear formatting rather than a wall of text?
+    best_option: well-structured
+    options:
+      - option: well-structured
+        description: The response is logically organized with clear formatting (e.g., lists, paragraphs)
+      - option: poorly-structured
+        description: The response is a wall of text or lacks logical organization
+
+  - key: verbosity
+    name: Verbosity/Conciseness
+    criteria: Is the response appropriately brief while still being complete and informative, rather than unnecessarily long or repetitive?
+    best_option: concise
+    options:
+      - option: verbose
+        description: The response is unnecessarily long, repetitive, or includes irrelevant information
+      - option: concise
+        description: The response is appropriately brief while still being complete and informative

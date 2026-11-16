@@ -72,6 +72,8 @@ These variables configure the optional starter target created for new users (Goo
 GEMINI_API_KEY=...
 OPENAI_API_KEY=...
 ANTHROPIC_API_KEY=...
+PLATFORM_API_KEY=...
+PLATFORM_API_BASE_URL=https://api.ai.tech.gov.sg
 # etc.
 ```
 
@@ -96,6 +98,16 @@ Which knob to reach for depends on where the failure occurs (the error message n
 - **Judge model overloaded** (scoring fails): lower **`LLM_MAX_CONCURRENT`** and/or **`BATCH_MAX_CONCURRENT_CLAIMS`** so fewer judge calls run concurrently.
 - **`LLM_TIMEOUT`** caps how long a single judge call can run. Keep it well below any load-balancer timeout.
 - These are provider/target-facing throttles; they do not affect how many browser requests the UI makes.
+
+### Judge reliability gate
+
+```bash
+RELIABILITY_THRESHOLD=0.5            # Macro-F1 a judge needs to enter the aggregate
+MIN_CALIBRATION_SAMPLES=20           # No gating below this many human labels per rubric
+RECOMMENDED_CALIBRATION_SAMPLES=30   # Annotation target shown in the UI
+```
+
+`RELIABILITY_THRESHOLD` is the macro-F1 score a judge must reach against human annotations to be trusted in the aggregated verdict. `MIN_CALIBRATION_SAMPLES` is the number of human labels below which no judge is gated in or out. `RECOMMENDED_CALIBRATION_SAMPLES` is the annotation target the UI nudges annotators towards. See [Judge Reliability](./6_scoring-and-judges.md#judge-reliability) for details.
 
 ## Extensions
 
@@ -132,3 +144,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000/api/v1
 ```
 
 When running with Docker, the default `http://localhost:8000/api/v1` works for local development. For production, replace with your deployed backend URL (e.g. `https://api.your-domain.com/api/v1`).
+
+## Experiments
+
+```bash
+HF_TOKEN=hf_...
+```
+
+Only needed to run the scripts under `backend/experiments/`. RubricBench is a gated HuggingFace dataset; accept its terms and create a read token first.

@@ -43,6 +43,8 @@ ENV_VAR_TO_SETTING_ATTR = {
     "OPENROUTER_API_KEY": "openrouter_api_key",
     "OPENROUTER_API_BASE": "openrouter_api_base",
     "FIREWORKS_AI_API_KEY": "fireworks_ai_api_key",
+    "PLATFORM_API_KEY": "platform_api_key",
+    "PLATFORM_API_BASE_URL": "platform_api_base_url",
     "SERPER_API_KEY": "serper_api_key",
 }
 
@@ -73,11 +75,24 @@ class ResolvedService:
 
 @dataclass
 class ProviderRuntimeConfig:
-    """Per-model provider config ready to pass into LiteLLM."""
+    """Per-model provider config ready to pass into LiteLLM.
+
+    Attributes:
+        provider_key: Catalog provider key.
+        model_name: Catalog-facing model name (stored in the DB, shown in the UI).
+        litellm_kwargs: Provider-specific kwargs (api_key, api_base, ...).
+        litellm_model: Model name LiteLLM receives on the wire. Equals
+            ``model_name`` unless the provider declares ``litellm_route``.
+    """
 
     provider_key: str
     model_name: str
     litellm_kwargs: dict[str, Any]
+    litellm_model: Optional[str] = None
+
+    def __post_init__(self) -> None:
+        if self.litellm_model is None:
+            self.litellm_model = self.model_name
 
 
 def _normalize_value(value: Any) -> Optional[str]:
@@ -414,7 +429,36 @@ def _provider_kwargs(provider_key: str, credentials: dict[str, str]) -> dict[str
         return {"api_key": credentials["GEMINI_API_KEY"]}
     if provider_key == "fireworks":
         return {"api_key": credentials["FIREWORKS_AI_API_KEY"]}
+    if provider_key == "govtech":
+        return {
+            "api_key": credentials["PLATFORM_API_KEY"],
+            "api_base": credentials["PLATFORM_API_BASE_URL"],
+        }
     return {}
+
+
+def _build_runtime_config(
+    provider: ProviderCatalogEntry,
+    model_name: str,
+    credentials: dict[str, str],
+) -> ProviderRuntimeConfig:
+    """Build a `ProviderRuntimeConfig` for a resolved provider and credential set.
+
+    Args:
+        provider: Catalog entry for the model's provider.
+        model_name: Catalog-facing model name.
+        credentials: Effective credential values keyed by credential field key.
+
+    Returns:
+        A `ProviderRuntimeConfig` with `litellm_kwargs` mapped from `credentials`
+        and `litellm_model` translated via `provider.to_litellm_model`.
+    """
+    return ProviderRuntimeConfig(
+        provider_key=provider.key,
+        model_name=model_name,
+        litellm_kwargs=_provider_kwargs(provider.key, credentials),
+        litellm_model=provider.to_litellm_model(model_name),
+    )
 
 
 def resolve_model_runtime_config(db: Session, user_id: int, model_name: str) -> ProviderRuntimeConfig:
@@ -426,11 +470,25 @@ def resolve_model_runtime_config(db: Session, user_id: int, model_name: str) -> 
     )
     if not resolved or not resolved.is_valid:
         raise ValueError(f"Provider '{provider.display_name}' is not configured for this user.")
-    return ProviderRuntimeConfig(
-        provider_key=provider.key,
-        model_name=model_name,
-        litellm_kwargs=_provider_kwargs(provider.key, resolved.credentials),
-    )
+    return _build_runtime_config(provider, model_name, resolved.credentials)
+
+
+def resolve_model_runtime_config_from_env(model_name: str) -> ProviderRuntimeConfig:
+    """Resolve runtime config from shared environment credentials only.
+
+    Used by scripts and experiments that run outside a request and have no user.
+
+    Args:
+        model_name: Catalog-facing model name.
+
+    Raises:
+        ValueError: If the provider is unknown or its required env vars are missing.
+    """
+    provider = _provider_from_model(model_name)
+    credentials = _field_values_from_settings(provider.credential_fields)
+    if not _has_required_fields(provider.credential_fields, credentials):
+        raise ValueError(f"Provider '{provider.display_name}' is not configured in the environment.")
+    return _build_runtime_config(provider, model_name, credentials)
 
 
 def resolve_model_runtime_config_for_target(

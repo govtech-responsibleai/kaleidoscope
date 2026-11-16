@@ -20,6 +20,7 @@ backend/src/
       cost_tracker.py
       instrumentation.py  Langfuse OTEL callback
       provider_catalog.yaml  Provider + model definitions
+      pricing.py    Registers catalog pricing with LiteLLM
     models/         Pydantic request/response schemas
     prompts/
       templates/    Jinja2 Markdown prompt templates
@@ -27,6 +28,7 @@ backend/src/
   extensions/       Optional connectors (e.g. aibots/)
   query_generation/ Personas, questions, answers, KB, web search
   scoring/          Claims, judge scoring, metrics, QA jobs
+  experiments/      Reproducible studies (see experiments/rubricbench_calibration/README.md)
 ```
 
 ## API Reference
@@ -76,6 +78,9 @@ Supported providers and their required env vars are in [`src/common/llm/provider
 | AWS Bedrock | `AWS_BEARER_TOKEN_BEDROCK` |
 | OpenRouter | `OPENROUTER_API_KEY` |
 | Fireworks | `FIREWORKS_AI_API_KEY` |
+| GovTech AI Platform | `PLATFORM_API_KEY` + `PLATFORM_API_BASE_URL` |
+
+`RELIABILITY_THRESHOLD`, `MIN_CALIBRATION_SAMPLES`, `RECOMMENDED_CALIBRATION_SAMPLES` — judge reliability gate; see docs/docs/configuration/6_scoring-and-judges.md.
 
 ## Observability (Langfuse)
 
