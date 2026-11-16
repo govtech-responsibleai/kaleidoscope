@@ -282,7 +282,7 @@ class TestLabelOverrideAPI:
 
 
 class TestLabelOverrideReliability:
-    """Tests that label overrides affect judge reliability via alignment calculation."""
+    """Label overrides change the reported verdict but never the judge-reliability ground truth."""
 
     def test_override_does_not_modify_annotation(self, test_client, test_db, sample_answer):
         """Label override should not create or modify annotations."""
@@ -320,13 +320,14 @@ class TestLabelOverrideReliability:
         assert annotation.option_value == "Inaccurate"
         assert annotation.notes == "Original notes"
 
-    def test_override_takes_precedence_in_alignment(
+    def test_override_does_not_affect_alignment(
         self, test_client, test_db, sample_answer, sample_judge_claim_based
     ):
         """
-        Override should take precedence over rubric-native annotation in judge alignment.
+        Overrides edit the reported verdict only; ground truth for judge alignment
+        is the rubric-native annotation and must not move when an override is added.
         Rubric annotation says Inaccurate, override says Accurate, judge says Accurate
-        → alignment should use override (match).
+        → alignment still uses the rubric annotation (mismatch, unaffected by the override).
         """
         from src.common.database.models import AnswerScore, Annotation
 
@@ -360,14 +361,14 @@ class TestLabelOverrideReliability:
         assert response.status_code == 200
         assert response.json()["accuracy"] == 0.0
 
-        # Override to Accurate (True) — now matches judge
+        # Override to Accurate (True) — reported verdict changes, but ground truth must not
         test_client.put(_accuracy_override_path(test_db, sample_answer), json={"edited_value": "accurate"})
 
         response = test_client.get(
             f"/api/v1/snapshots/{sample_answer.snapshot_id}/judges/{sample_judge_claim_based.id}/rubrics/{sample_judge_claim_based.rubric_id}/alignment"
         )
         assert response.status_code == 200
-        assert response.json()["accuracy"] == 1.0
+        assert response.json()["accuracy"] == 0.0
 
     def test_override_on_unselected_answer_no_reliability_impact(
         self, test_client, test_db, sample_answer, sample_judge_claim_based

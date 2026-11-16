@@ -10,6 +10,7 @@ import { IconAlertTriangle } from "@tabler/icons-react";
 import { SnapshotMetric } from "@/lib/types";
 import ScoreGauge from "@/components/shared/AccuracyGauge";
 import { statusIconProps } from "@/lib/styles";
+import { DEFAULT_GATE, verdictWithheldText, type GateSettings } from "@/lib/reliability";
 
 interface SnapshotAccuracyCardProps {
   snapshotMetric: SnapshotMetric | null;
@@ -19,6 +20,8 @@ interface SnapshotAccuracyCardProps {
   showWarningBox?: boolean;
   title?: string;
   gaugeLabel?: string;
+  gate?: GateSettings;
+  hasUnreliableJudge?: boolean;
 }
 
 export default function SnapshotScoreCard({
@@ -29,6 +32,8 @@ export default function SnapshotScoreCard({
   showWarningBox = false,
   title = "Overall Score",
   gaugeLabel = "Aggregated Score",
+  gate = DEFAULT_GATE,
+  hasUnreliableJudge = false,
 }: SnapshotAccuracyCardProps) {
   if (loading) {
     return (
@@ -61,7 +66,7 @@ export default function SnapshotScoreCard({
     );
   }
 
-  const hasReliableJudges = snapshotMetric.aligned_judges.length > 0;
+  const hasReliableJudges = snapshotMetric.verdict_status === "ready";
   const reliableJudgeCount = snapshotMetric.aligned_judges.length;
   const alignmentRange = snapshotMetric.judge_alignment_range;
 
@@ -107,13 +112,13 @@ export default function SnapshotScoreCard({
                 Evaluation to be improved
               </Typography>
               <Typography variant="caption" color="text.secondary">
-                No aligned judges found
+                {verdictWithheldText(snapshotMetric.verdict_status, snapshotMetric.calibration_count, gate, { hasUnreliableJudge })}
               </Typography>
             </Box>
           </Box>
         ) : (
-          <Typography variant="body2" color="text.secondary">
-            No reliable judges yet
+          <Typography variant="body2" color={showWarningBox ? "warning.dark" : "text.secondary"} fontWeight={showWarningBox ? 600 : 400} textAlign="center">
+            {verdictWithheldText(snapshotMetric.verdict_status, snapshotMetric.calibration_count, gate, { hasUnreliableJudge })}
           </Typography>
         )}
 

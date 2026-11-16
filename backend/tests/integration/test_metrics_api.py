@@ -332,6 +332,8 @@ class TestMetricsAPI:
         rubric_entry = next(entry for entry in data["rubrics"] if entry["rubric_id"] == sample_rubric.id)
         assert accuracy_entry["snapshots"][0]["snapshot_id"] == sample_snapshot.id
         assert rubric_entry["snapshots"][0]["aggregated_score"] == 0.9
+        assert rubric_entry["snapshots"][0]["verdict_status"] == "ready"
+        assert rubric_entry["snapshots"][0]["calibration_count"] > 0
 
     def test_rubric_scoped_judge_accuracy_and_missing_score_lookup_use_rubric_identity(
         self,

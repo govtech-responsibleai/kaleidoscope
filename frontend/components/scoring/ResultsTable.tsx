@@ -48,6 +48,7 @@ import {
   tableHeaderCellSx,
   tableHeaderRowSx,
 } from "@/lib/styles";
+import { DEFAULT_GATE, judgeReliabilityText, type GateSettings } from "@/lib/reliability";
 
 interface ResultsTableProps {
   resultsResponse: ScoringResultsResponse | null;
@@ -173,17 +174,24 @@ export default function ResultsTable({
     () => (activeRubric?.judges ?? []).filter((judge) => visibleJudgeIds.has(judge.id)),
     [activeRubric, visibleJudgeIds],
   );
-  const excludedJudgeIds = useMemo(
-    () => new Set(
+  const gate: GateSettings = resultsResponse
+    ? {
+        reliability_threshold: resultsResponse.reliability_threshold,
+        min_calibration_samples: resultsResponse.min_calibration_samples,
+        recommended_calibration_samples: resultsResponse.recommended_calibration_samples,
+      }
+    : DEFAULT_GATE;
+  const excludedJudgeSummaries = useMemo(
+    () => new Map(
       (resultsResponse?.judge_summaries ?? [])
-        .filter((summary) => summary.reliability != null && summary.reliability < 0.5)
-        .map((summary) => summary.judge_id),
+        .filter((summary) => summary.reliability_status != null && summary.reliability_status !== "aligned")
+        .map((summary) => [summary.judge_id, summary] as const),
     ),
     [resultsResponse],
   );
   const excludedJudges = useMemo(
-    () => (activeRubric?.judges ?? []).filter((judge) => excludedJudgeIds.has(judge.id)),
-    [activeRubric, excludedJudgeIds],
+    () => (activeRubric?.judges ?? []).filter((judge) => excludedJudgeSummaries.has(judge.id)),
+    [activeRubric, excludedJudgeSummaries],
   );
   const personas = useMemo(
     () => (resultsResponse?.persona_options ?? []).map((option) => ({
@@ -364,8 +372,37 @@ export default function ResultsTable({
       </Box>
 
       {excludedJudges.length > 0 && (
-        <Alert severity="warning" sx={{ mx: 2, mb: 1 }}>
-          Excluded judges (not reliable): {excludedJudges.map((judge) => judge.name).join(", ")}
+        <Alert
+          severity={
+            excludedJudges.some((judge) => excludedJudgeSummaries.get(judge.id)?.reliability_status === "unreliable")
+              ? "warning"
+              : "info"
+          }
+          sx={{ mx: 2, mb: 1 }}
+        >
+          <Stack spacing={0.25}>
+            <Typography variant="body2" fontWeight={600}>Judges not in the aggregate</Typography>
+            {excludedJudges.map((judge) => {
+              const summary = excludedJudgeSummaries.get(judge.id) ?? null;
+              return (
+                <Typography
+                  key={judge.id}
+                  variant="body2"
+                  sx={{
+                    color: summary?.reliability_status === "unreliable" ? "error.main" : "text.secondary",
+                  }}
+                >
+                  {judge.name}: {judgeReliabilityText(
+                    summary?.reliability_status ?? null,
+                    summary?.reliability ?? null,
+                    summary?.sample_count ?? 0,
+                    gate,
+                    resultsResponse?.calibration_count ?? 0,
+                  )}
+                </Typography>
+              );
+            })}
+          </Stack>
         </Alert>
       )}
 

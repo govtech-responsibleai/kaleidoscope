@@ -39,7 +39,7 @@ class TestAnswerJudge:
             )
 
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -104,7 +104,7 @@ class TestAnswerJudge:
             return result, metadata
 
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=mock_generate)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -143,7 +143,7 @@ class TestAnswerJudge:
             )
 
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -186,7 +186,7 @@ class TestAnswerJudge:
             )
 
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -222,7 +222,7 @@ class TestAnswerJudge:
             )
 
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=async_return)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         initial_tokens = sample_qa_job.prompt_tokens
         initial_cost = sample_qa_job.total_cost
@@ -242,7 +242,7 @@ class TestAnswerJudge:
         """Test that LLM errors result in default inaccurate scores."""
         mock_llm_instance = MagicMock()
         mock_llm_instance.generate_structured_async = AsyncMock(side_effect=Exception("LLM API error"))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -274,7 +274,7 @@ class TestAnswerJudge:
             ClaimJudgmentResult(label=True, reasoning="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id, skip_job_update=True)
 
@@ -320,7 +320,7 @@ class TestAnswerJudge:
             ClaimJudgmentResult(label=True, reasoning="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
         mock_create_many_no_commit.side_effect = RuntimeError("boom")
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id, skip_job_update=True)
@@ -356,7 +356,7 @@ class TestContextPriority:
             ClaimJudgmentResult(label=True, reasoning="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
         mock_loader = MagicMock()
         mock_loader.render_from_string.return_value = "mocked prompt"
         mock_get_loader.return_value = mock_loader
@@ -383,7 +383,7 @@ class TestContextPriority:
             ClaimJudgmentResult(label=True, reasoning="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
         mock_loader = MagicMock()
         mock_loader.render_from_string.return_value = "mocked prompt"
         mock_get_loader.return_value = mock_loader
@@ -409,7 +409,7 @@ class TestContextPriority:
             ClaimJudgmentResult(label=True, reasoning="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
         mock_loader = MagicMock()
         mock_loader.render_from_string.return_value = "mocked prompt"
         mock_get_loader.return_value = mock_loader
@@ -435,7 +435,7 @@ class TestAnswerJudgeErrors:
         mock_llm_instance.generate_structured_async = AsyncMock(
             side_effect=Exception("LLM API rate limit exceeded")
         )
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -467,7 +467,7 @@ class TestAnswerJudgeErrors:
         mock_llm_instance.generate_structured_async = AsyncMock(
             side_effect=Exception("LLM service unavailable")
         )
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -488,7 +488,7 @@ class TestAnswerJudgeErrors:
             ClaimJudgmentResult(label=True, reasoning="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -512,7 +512,7 @@ class TestAnswerJudgeErrors:
             RubricJudgmentResult(chosen_option=sample_rubric.best_option, explanation="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -537,7 +537,7 @@ class TestAnswerJudgeErrors:
             RubricJudgmentResult(chosen_option=sample_rubric.best_option, explanation="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -572,7 +572,7 @@ class TestJudgeEnglishOutputDirective:
             RubricJudgmentResult(chosen_option=sample_rubric.best_option, explanation="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()
@@ -592,7 +592,7 @@ class TestJudgeEnglishOutputDirective:
             ClaimJudgmentResult(label=True, reasoning="OK"),
             {"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "model": "test", "cost": 0.0001}
         ))
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         scorer = AnswerJudge(test_db_factory, sample_qa_job.id)
         await scorer.score()

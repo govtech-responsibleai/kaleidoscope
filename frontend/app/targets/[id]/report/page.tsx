@@ -177,7 +177,7 @@ export default function TargetReport() {
           key: definition.key,
           label: definition.label,
           color: definition.color,
-          value: metric?.aggregated_score ?? null,
+          value: metric && metric.verdict_status === "ready" ? metric.aggregated_score : null,
           totalAnswers: metric?.total_answers ?? null,
         };
       }),

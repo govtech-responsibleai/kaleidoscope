@@ -123,6 +123,8 @@ test.describe("Rubrics prompt editing (buffered field)", () => {
                   edited_count: 0,
                   judge_alignment_range: null,
                   aligned_judges: [],
+                  verdict_status: "ready",
+                  calibration_count: 25,
                 },
               ],
             },

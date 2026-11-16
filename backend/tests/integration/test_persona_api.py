@@ -57,7 +57,7 @@ class TestPersonaGenerationAPI:
         }
 
         mock_llm_instance.generate_structured.return_value = (mock_persona_list, mock_metadata)
-        mock_llm_class.return_value = mock_llm_instance
+        mock_llm_class.from_runtime_config.return_value = mock_llm_instance
 
         # Patch SessionLocal so the background task uses the test DB
         with patch('src.common.database.connection.SessionLocal', test_db_factory):

@@ -5,6 +5,7 @@ Loads environment variables and provides centralized configuration access.
 """
 
 from typing import Optional
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 
@@ -43,6 +44,8 @@ class Settings(BaseSettings):
     openrouter_api_key: Optional[str] = None
     openrouter_api_base: Optional[str] = None
     fireworks_ai_api_key: Optional[str] = None
+    platform_api_key: Optional[str] = None   # GovTech AI Platform (OpenAI-compatible gateway)
+    platform_api_base_url: Optional[str] = None
     litellm_proxy_api_key: Optional[str] = None
     litellm_proxy_api_base: Optional[str] = None
 
@@ -56,6 +59,17 @@ class Settings(BaseSettings):
     batch_max_concurrent_jobs: int = 3  # Max QA jobs processed in parallel within a batch
     batch_max_concurrent_claims: int = 5  # Max claims checked/scored in parallel per job
     batch_max_concurrent_scorers_per_job: int = 2  # Accuracy + rubric scorers within one QA job
+
+    # Judge reliability gate (see docs/docs/configuration/6_scoring-and-judges.md)
+    reliability_threshold: float = Field(0.5, ge=0.0, le=1.0)  # Macro-F1 a judge must reach to join the aggregate
+    min_calibration_samples: int = Field(20, ge=1)  # Below this many human labels no judge is gated in or out
+    recommended_calibration_samples: int = Field(30, ge=1)  # UI nudges annotators towards this many
+
+    @model_validator(mode="after")
+    def _calibration_floor_below_recommendation(self) -> "Settings":
+        if self.min_calibration_samples > self.recommended_calibration_samples:
+            raise ValueError("MIN_CALIBRATION_SAMPLES must not exceed RECOMMENDED_CALIBRATION_SAMPLES")
+        return self
 
     # Langfuse Observability (optional)
     langfuse_public_key: Optional[str] = None

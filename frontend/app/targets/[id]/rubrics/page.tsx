@@ -106,7 +106,7 @@ export default function RubricsPage() {
             || metric.edited_count > 0
             || metric.accurate_count > 0
             || metric.inaccurate_count > 0
-            || metric.aligned_judges.length > 0
+            || metric.verdict_status === "ready"
             || metric.judge_alignment_range !== null
           );
           if (hasMetricData) {

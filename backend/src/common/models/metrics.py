@@ -41,11 +41,17 @@ class SnapshotResultsResponse(BaseModel):
     results: List[AggregatedResult] = Field(default_factory=list)
 
 
+JudgeReliabilityStatus = Literal["aligned", "unreliable", "insufficient_calibration", "not_calibrated"]
+
+VerdictStatus = Literal["ready", "not_calibrated", "insufficient_calibration", "no_aligned_judge"]
+
+
 class AlignedJudge(BaseModel):
     """A judge that meets the reliability threshold."""
     judge_id: int
     name: str
     f1: float
+    sample_count: int
 
 
 class JudgeAlignmentResponse(BaseModel):
@@ -71,7 +77,9 @@ class SnapshotMetric(BaseModel):
     created_at: Optional[str] = None
     rubric_id: Optional[int] = None
     rubric_name: Optional[str] = None
-    aggregated_score: float
+    aggregated_score: Optional[float] = None  # None whenever verdict_status != "ready"
+    verdict_status: VerdictStatus = "ready"
+    calibration_count: int = 0
     total_answers: int
     accurate_count: int
     inaccurate_count: int
@@ -109,6 +117,8 @@ class JudgeScoreSummary(BaseModel):
     judge_id: int
     name: str
     reliability: Optional[float] = None
+    sample_count: int = 0
+    reliability_status: Optional[JudgeReliabilityStatus] = None
     accuracy: Optional[float] = None
     accurate_count: int
     total_answers: int
@@ -150,6 +160,9 @@ class ScoringContract(SnapshotMetric):
     rubric_name: str
     group: str
     best_option: Optional[str] = None
+    reliability_threshold: float = 0.5
+    min_calibration_samples: int = 20
+    recommended_calibration_samples: int = 30
     judge_summaries: List[JudgeScoreSummary] = Field(default_factory=list)
     rows: List[ScoringRowResult] = Field(default_factory=list)
 

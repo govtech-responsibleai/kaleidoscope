@@ -16,7 +16,7 @@ For both setup and development, direct your agent to **[`AGENTS.md`](AGENTS.md)*
 git clone https://github.com/govtech-responsibleai/kaleidoscope.git
 
 cd kaleidoscope
-cp .env.example .env          # add your LLM API key — see [Providers](#providers)
+cp backend/.env.example backend/.env   # add your LLM API key — see [Providers](#providers)
 
 docker compose up -d   # log in: dev / dev
 ```
@@ -45,7 +45,7 @@ A default admin user (`dev` / `dev`) is created on first startup. Add more users
 
 <img src=".github/screenshots/scoring2.png" alt="scoring" width="90%"/>
 
-**Measure judge reliability** — evaluate answers with multiple LLM judges for comparison. Judge reliability is calculated from human annotations. Only reliable judges contribute to aggregated scores.
+**Measure judge reliability** — evaluate answers with multiple LLM judges and calibrate each against your human annotations. Aggregation is conditional on that alignment: only judges that meet the reliability threshold on at least a minimum number of annotated responses vote, and a rubric with no aligned judge is withheld rather than scored. Observability platforms report judge–human agreement; Kaleidoscope gates on it.
 
 
 ## 🔌 Providers
@@ -61,6 +61,7 @@ Kaleidoscope uses **LiteLLM** — any provider LiteLLM supports works out of the
 | AWS Bedrock | `AWS_BEARER_TOKEN_BEDROCK` |
 | OpenRouter | `OPENROUTER_API_KEY` |
 | Fireworks | `FIREWORKS_AI_API_KEY` |
+| GovTech AI Platform | `PLATFORM_API_KEY` + `PLATFORM_API_BASE_URL` |
 
 Default models and the full list live in [`backend/src/common/llm/provider_catalog.yaml`](backend/src/common/llm/provider_catalog.yaml) — add your own there.
 
